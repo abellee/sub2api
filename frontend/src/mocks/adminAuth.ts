@@ -2,8 +2,24 @@ import type { AuthResponse, CurrentUserResponse, LoginRequest, User } from '@/ty
 
 const MOCK_ADMIN_TOKEN = 'sub2api-local-admin-mock-token'
 
-export const isAdminAuthMockEnabled =
-  import.meta.env.DEV && import.meta.env.VITE_ENABLE_ADMIN_MOCK === 'true'
+interface AdminAuthMockEnvironment {
+  dev: boolean
+  mode: string
+  enabled?: string
+}
+
+export function shouldEnableAdminAuthMock(environment: AdminAuthMockEnvironment): boolean {
+  const isDevelopmentLikeMode = environment.mode === 'development' || environment.mode === 'test'
+  return environment.dev &&
+    isDevelopmentLikeMode &&
+    environment.enabled === 'true'
+}
+
+export const isAdminAuthMockEnabled = shouldEnableAdminAuthMock({
+  dev: import.meta.env.DEV,
+  mode: import.meta.env.MODE,
+  enabled: import.meta.env.VITE_ENABLE_ADMIN_MOCK
+})
 
 function createMockAdmin(email: string): User {
   const now = new Date().toISOString()
