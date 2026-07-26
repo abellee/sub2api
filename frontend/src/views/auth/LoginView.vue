@@ -11,7 +11,7 @@
         </p>
       </div>
       <!-- Login Form -->
-      <form @submit.prevent="handleLogin" class="space-y-5">
+      <form @submit.prevent="handleLogin" :novalidate="isAdminAuthMockEnabled" class="space-y-5">
         <!-- Email Input -->
         <div>
           <label for="email" class="input-label">
@@ -216,6 +216,7 @@ import { getPublicSettings, isTotp2FARequired, isWeChatWebOAuthEnabled } from '@
 import type { LoginAgreementDocument, TotpLoginResponse } from '@/types'
 import { extractI18nErrorMessage } from '@/utils/apiError'
 import { clearAllAffiliateReferralCodes } from '@/utils/oauthAffiliate'
+import { isAdminAuthMockEnabled } from '@/mocks/adminAuth'
 
 const { t } = useI18n()
 const LOGIN_AGREEMENT_STORAGE_KEY = 'sub2api_login_agreement_consent'
@@ -312,6 +313,12 @@ onMounted(async () => {
     const message = t('auth.reloginRequired')
     errorMessage.value = message
     appStore.showWarning(message)
+  }
+
+  if (isAdminAuthMockEnabled) {
+    agreementAccepted.value = true
+    publicSettingsLoaded.value = true
+    return
   }
 
   try {
@@ -439,7 +446,7 @@ function validateForm(): boolean {
   if (!formData.email.trim()) {
     errors.email = t('auth.emailRequired')
     isValid = false
-  } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+  } else if (!isAdminAuthMockEnabled && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
     errors.email = t('auth.invalidEmail')
     isValid = false
   }
@@ -448,13 +455,13 @@ function validateForm(): boolean {
   if (!formData.password) {
     errors.password = t('auth.passwordRequired')
     isValid = false
-  } else if (formData.password.length < 6) {
+  } else if (!isAdminAuthMockEnabled && formData.password.length < 6) {
     errors.password = t('auth.passwordMinLength')
     isValid = false
   }
 
   // Turnstile validation
-  if (turnstileEnabled.value && !turnstileToken.value) {
+  if (!isAdminAuthMockEnabled && turnstileEnabled.value && !turnstileToken.value) {
     errors.turnstile = t('auth.completeVerification')
     isValid = false
   }
@@ -498,7 +505,9 @@ async function handleLogin(): Promise<void> {
     appStore.showSuccess(t('auth.loginSuccess'))
 
     // Redirect to dashboard or intended route
-    const redirectTo = (router.currentRoute.value.query.redirect as string) || '/dashboard'
+    const redirectTo =
+      (router.currentRoute.value.query.redirect as string) ||
+      (authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
     await router.push(redirectTo)
   } catch (error: unknown) {
     // Reset Turnstile on error
@@ -532,7 +541,9 @@ async function handle2FAVerify(code: string): Promise<void> {
     appStore.showSuccess(t('auth.loginSuccess'))
 
     // Redirect to dashboard or intended route
-    const redirectTo = (router.currentRoute.value.query.redirect as string) || '/dashboard'
+    const redirectTo =
+      (router.currentRoute.value.query.redirect as string) ||
+      (authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
     await router.push(redirectTo)
   } catch (error: unknown) {
     const err = error as { message?: string; response?: { data?: { message?: string } } }

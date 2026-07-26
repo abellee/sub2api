@@ -149,6 +149,31 @@
 
     <!-- Bottom Section -->
     <div class="mt-auto border-t border-gray-100 p-3 dark:border-dark-800">
+      <div
+        v-show="sideWidgetVisible && (!sidebarCollapsed || sideWidgetHasIcon)"
+        class="relative mb-2"
+        :class="sidebarCollapsed ? 'h-10 w-full' : 'h-16 w-full overflow-hidden'"
+        @mouseenter="showSideWidgetPreview"
+        @mouseleave="hideSideWidgetPreview"
+      >
+        <iframe
+          ref="sideWidgetFrameRef"
+          class="block border-0 bg-transparent transition-[width,height] duration-200"
+          :class="[
+            sidebarCollapsed
+              ? sideWidgetPreview
+                ? 'absolute bottom-0 left-0 z-50 h-16 w-[232px] rounded-lg shadow-xl'
+                : 'absolute bottom-0 left-0 z-50 h-10 w-12'
+              : 'h-full w-full'
+          ]"
+          src="https://widget.llmfree.work/side.html?v=202607270310"
+          title="Sidebar widget"
+          scrolling="no"
+          sandbox="allow-scripts allow-same-origin allow-popups"
+          @load="handleSideWidgetLoad"
+        ></iframe>
+      </div>
+
       <!-- Theme Toggle -->
       <button
         @click="toggleTheme"
@@ -197,6 +222,14 @@ import { sanitizeSvg } from '@/utils/sanitize'
 import { sanitizeUrl } from '@/utils/url'
 import { FeatureFlags, makeSidebarFlag } from '@/utils/featureFlags'
 import { useBatchImageAccess } from '@/composables/useBatchImageAccess'
+import {
+  closeFloatingWidget,
+  parseFloatingWidgetConfig,
+  readFloatingWidgetRecord,
+  shouldShowFloatingWidget,
+  type FloatingWidgetConfig,
+  type FloatingWidgetStorageRecord
+} from '@/components/common/floatingWidgetVisibility'
 
 interface NavItem {
   path: string
@@ -248,7 +281,15 @@ const sidebarCollapsed = computed(() => appStore.sidebarCollapsed)
 const mobileOpen = computed(() => appStore.mobileOpen)
 const isAdmin = computed(() => authStore.isAdmin)
 const sidebarNavRef = ref<HTMLElement | null>(null)
+const sideWidgetFrameRef = ref<HTMLIFrameElement | null>(null)
+const sideWidgetHasIcon = ref(false)
+const sideWidgetVisible = ref(false)
+const sideWidgetPreview = ref(false)
+const sideWidgetConfig = ref<FloatingWidgetConfig | null>(null)
+const sideWidgetStorageRecord = ref<FloatingWidgetStorageRecord | null>(null)
 const isDark = ref(document.documentElement.classList.contains('dark'))
+
+const SIDE_WIDGET_ORIGIN = 'https://widget.llmfree.work'
 
 const homePath = computed(() => (isAdmin.value ? '/admin/dashboard' : '/dashboard'))
 
@@ -845,6 +886,95 @@ function toggleTheme() {
   localStorage.setItem('theme', isDark.value ? 'dark' : 'light')
 }
 
+function sendSideWidgetMode() {
+  sideWidgetFrameRef.value?.contentWindow?.postMessage(
+    {
+      type: 'side-mode',
+      mode: sidebarCollapsed.value && !sideWidgetPreview.value ? 'icon' : 'full'
+    },
+    SIDE_WIDGET_ORIGIN
+  )
+}
+
+function handleSideWidgetLoad() {
+  sideWidgetFrameRef.value?.contentWindow?.postMessage(
+    { type: 'side-config-request' },
+    SIDE_WIDGET_ORIGIN
+  )
+  sendSideWidgetMode()
+}
+
+function showSideWidgetPreview() {
+  if (!sidebarCollapsed.value || !sideWidgetHasIcon.value) return
+
+  sideWidgetPreview.value = true
+  void nextTick(sendSideWidgetMode)
+}
+
+function hideSideWidgetPreview() {
+  if (!sideWidgetPreview.value) return
+
+  sideWidgetPreview.value = false
+  void nextTick(sendSideWidgetMode)
+}
+
+function handleSideWidgetPointerMove(event: PointerEvent) {
+  if (!sideWidgetPreview.value || !sideWidgetFrameRef.value) return
+
+  const rect = sideWidgetFrameRef.value.getBoundingClientRect()
+  if (
+    event.clientX < rect.left ||
+    event.clientX > rect.right ||
+    event.clientY < rect.top ||
+    event.clientY > rect.bottom
+  ) {
+    hideSideWidgetPreview()
+  }
+}
+
+function handleSideWidgetMessage(event: MessageEvent) {
+  if (event.origin !== SIDE_WIDGET_ORIGIN || event.source !== sideWidgetFrameRef.value?.contentWindow) return
+
+  if (event.data?.type === 'side-close') {
+    if (!sideWidgetConfig.value?.closable || !sideWidgetStorageRecord.value) return
+
+    sideWidgetStorageRecord.value = closeFloatingWidget(
+      window.localStorage,
+      sideWidgetConfig.value,
+      sideWidgetStorageRecord.value
+    )
+    sideWidgetVisible.value = false
+    sideWidgetPreview.value = false
+    return
+  }
+
+  if (event.data?.type === 'side-hover') {
+    if (event.data.hovered === true) showSideWidgetPreview()
+    else hideSideWidgetPreview()
+    return
+  }
+
+  if (event.data?.type !== 'side-config') return
+
+  const nextConfig = parseFloatingWidgetConfig(event.data.config)
+  if (!nextConfig) {
+    sideWidgetConfig.value = null
+    sideWidgetStorageRecord.value = null
+    sideWidgetHasIcon.value = false
+    sideWidgetVisible.value = false
+    return
+  }
+
+  const nextRecord = readFloatingWidgetRecord(window.localStorage, nextConfig)
+  sideWidgetConfig.value = nextConfig
+  sideWidgetStorageRecord.value = nextRecord
+  sideWidgetHasIcon.value =
+    event.data.hasIcon === true ||
+    (typeof event.data.icon === 'string' && event.data.icon.trim().length > 0)
+  sideWidgetVisible.value = shouldShowFloatingWidget(nextConfig, nextRecord)
+  sendSideWidgetMode()
+}
+
 function closeMobile() {
   appStore.setMobileOpen(false)
 }
@@ -933,7 +1063,14 @@ watch(
   { immediate: true }
 )
 
+watch(sidebarCollapsed, () => {
+  sideWidgetPreview.value = false
+  void nextTick(sendSideWidgetMode)
+})
+
 onMounted(() => {
+  window.addEventListener('message', handleSideWidgetMessage)
+  window.addEventListener('pointermove', handleSideWidgetPointerMove)
   void refreshBatchImageAccess()
   if (isAdmin.value) {
     adminSettingsStore.fetch()
@@ -949,6 +1086,8 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('message', handleSideWidgetMessage)
+  window.removeEventListener('pointermove', handleSideWidgetPointerMove)
   if (sidebarNavRef.value) {
     appStore.sidebarScrollTop = sidebarNavRef.value.scrollTop
   }
