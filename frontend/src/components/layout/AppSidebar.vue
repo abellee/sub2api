@@ -166,7 +166,7 @@
                 : 'absolute bottom-0 left-0 z-50 h-10 w-12'
               : 'h-full w-full'
           ]"
-          src="https://widget.llmfree.work/side.html?v=202607270320"
+          :src="SIDE_WIDGET_URL"
           title="Sidebar widget"
           scrolling="no"
           sandbox="allow-scripts allow-same-origin allow-popups"
@@ -289,7 +289,8 @@ const sideWidgetConfig = ref<FloatingWidgetConfig | null>(null)
 const sideWidgetStorageRecord = ref<FloatingWidgetStorageRecord | null>(null)
 const isDark = ref(document.documentElement.classList.contains('dark'))
 
-const SIDE_WIDGET_ORIGIN = 'https://widget.llmfree.work'
+const SIDE_WIDGET_URL = `https://widget.llmfree.work/side.html?t=${Date.now()}`
+const SIDE_WIDGET_ORIGIN = new URL(SIDE_WIDGET_URL).origin
 
 const homePath = computed(() => (isAdmin.value ? '/admin/dashboard' : '/dashboard'))
 

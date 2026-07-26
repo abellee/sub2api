@@ -47,7 +47,7 @@ import {
   type FloatingWidgetStorageRecord
 } from './floatingWidgetVisibility'
 
-const WIDGET_URL = 'https://widget.llmfree.work/float.html?v=202607270320'
+const WIDGET_URL = `https://widget.llmfree.work/float.html?t=${Date.now()}`
 const WIDGET_ORIGIN = new URL(WIDGET_URL).origin
 const DEFAULT_SIZE: FloatingWidgetSize = { width: 180, height: 100 }
 
