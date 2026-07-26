@@ -166,7 +166,7 @@
                 : 'absolute bottom-0 left-0 z-50 h-10 w-12'
               : 'h-full w-full'
           ]"
-          src="https://widget.llmfree.work/side.html?v=202607270310"
+          src="https://widget.llmfree.work/side.html?v=202607270320"
           title="Sidebar widget"
           scrolling="no"
           sandbox="allow-scripts allow-same-origin allow-popups"
