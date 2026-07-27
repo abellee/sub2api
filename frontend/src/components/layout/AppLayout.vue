@@ -17,7 +17,6 @@
       <!-- Main Content -->
       <main class="relative min-h-[calc(100vh-4rem)] p-4 md:p-6 lg:p-8">
         <slot />
-        <FloatingIframeWidget />
       </main>
     </div>
   </div>
@@ -32,7 +31,6 @@ import { useOnboardingTour } from '@/composables/useOnboardingTour'
 import { useOnboardingStore } from '@/stores/onboarding'
 import AppSidebar from './AppSidebar.vue'
 import AppHeader from './AppHeader.vue'
-import FloatingIframeWidget from '@/components/common/FloatingIframeWidget.vue'
 
 const appStore = useAppStore()
 const authStore = useAuthStore()

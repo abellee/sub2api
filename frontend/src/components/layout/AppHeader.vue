@@ -24,17 +24,6 @@
       <!-- Right: Announcements + Docs + Language + Subscriptions + Balance + User Dropdown -->
       <div class="flex min-w-0 items-center gap-1 sm:gap-3">
         <div class="flex h-14 flex-shrink-0 items-center gap-1.5">
-          <iframe
-            ref="headerWidgetFrameRef"
-            class="pointer-events-none absolute h-px w-px opacity-0"
-            src="https://widget.llmfree.work/header.html?v=202607270290"
-            title="Header widget data provider"
-            tabindex="-1"
-            aria-hidden="true"
-            sandbox="allow-scripts allow-same-origin"
-            @load="requestHeaderWidgetData"
-          ></iframe>
-
           <div class="hidden items-center gap-1.5 lg:flex">
             <div
               v-for="status in headerWidgetStatuses"
@@ -592,9 +581,10 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { storeToRefs } from 'pinia'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { useAppStore, useAuthStore, useOnboardingStore } from '@/stores'
+import { useAppStore, useAuthStore, useOnboardingStore, useRemoteWidgetsStore } from '@/stores'
 import { useAdminSettingsStore } from '@/stores/adminSettings'
 import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import SubscriptionProgressMini from '@/components/common/SubscriptionProgressMini.vue'
@@ -603,33 +593,6 @@ import Icon from '@/components/icons/Icon.vue'
 import { sanitizeUrl } from '@/utils/url'
 import { useClipboard } from '@/composables/useClipboard'
 
-interface HeaderWidgetConfig {
-  qq: {
-    groupName: string
-    groupNumber: string
-    groupLink: string
-    logoUrl: string
-    qrUrl: string
-  }
-  telegram: {
-    groupName: string
-    link: string
-    logoUrl: string
-    qrUrl: string
-  }
-  refreshInterval: number
-}
-
-interface HeaderWidgetStatus {
-  id: string
-  name: string
-  indicator: string
-  description: string
-  checkedAt: string
-}
-
-const HEADER_WIDGET_ORIGIN = 'https://widget.llmfree.work'
-
 const router = useRouter()
 const route = useRoute()
 const { t } = useI18n()
@@ -637,7 +600,13 @@ const appStore = useAppStore()
 const authStore = useAuthStore()
 const adminSettingsStore = useAdminSettingsStore()
 const onboardingStore = useOnboardingStore()
+const remoteWidgetsStore = useRemoteWidgetsStore()
 const { copyToClipboard } = useClipboard()
+const {
+  headerConfig: headerWidgetConfig,
+  headerStatuses: headerWidgetStatuses,
+  headerCountdown: headerStatusCountdown
+} = storeToRefs(remoteWidgetsStore)
 
 const user = computed(() => authStore.user)
 const dropdownOpen = ref(false)
@@ -645,11 +614,6 @@ const dropdownRef = ref<HTMLElement | null>(null)
 const mobileHeaderWidgetOpen = ref(false)
 const mobileHeaderWidgetTab = ref<'qq' | 'telegram'>('qq')
 const mobileHeaderWidgetRef = ref<HTMLElement | null>(null)
-const headerWidgetFrameRef = ref<HTMLIFrameElement | null>(null)
-const headerWidgetConfig = ref<HeaderWidgetConfig | null>(null)
-const headerWidgetStatuses = ref<HeaderWidgetStatus[]>([])
-const headerStatusCountdown = ref(0)
-let headerStatusCountdownTimer: number | undefined
 const contactInfo = computed(() => appStore.contactInfo)
 const docUrl = computed(() => sanitizeUrl(appStore.docUrl))
 const avatarUrl = computed(() => user.value?.avatar_url?.trim() || '')
@@ -731,63 +695,6 @@ async function copyTelegramGroupLink() {
   await copyToClipboard(headerWidgetConfig.value.telegram.link, 'Telegram 群组链接已复制')
 }
 
-function requestHeaderWidgetData() {
-  headerWidgetFrameRef.value?.contentWindow?.postMessage(
-    { type: 'header-data-request' },
-    HEADER_WIDGET_ORIGIN
-  )
-}
-
-function handleHeaderWidgetMessage(event: MessageEvent) {
-  if (event.origin !== HEADER_WIDGET_ORIGIN || event.data?.type !== 'header-data') return
-
-  const qq = event.data.config?.qq
-  const telegram = event.data.config?.telegram
-  if (
-    !qq ||
-    typeof qq.groupName !== 'string' ||
-    typeof qq.groupNumber !== 'string' ||
-    typeof qq.groupLink !== 'string' ||
-    typeof qq.logoUrl !== 'string' ||
-    typeof qq.qrUrl !== 'string' ||
-    !telegram ||
-    typeof telegram.groupName !== 'string' ||
-    typeof telegram.link !== 'string' ||
-    typeof telegram.logoUrl !== 'string' ||
-    typeof telegram.qrUrl !== 'string' ||
-    typeof event.data.config.refreshInterval !== 'number' ||
-    !Number.isFinite(event.data.config.refreshInterval)
-  ) {
-    return
-  }
-
-  const statuses = Array.isArray(event.data.statuses)
-    ? event.data.statuses.filter((status: unknown): status is HeaderWidgetStatus => {
-        if (!status || typeof status !== 'object') return false
-        const value = status as Record<string, unknown>
-        return typeof value.id === 'string'
-          && typeof value.name === 'string'
-          && typeof value.indicator === 'string'
-          && typeof value.description === 'string'
-          && typeof value.checkedAt === 'string'
-      })
-    : []
-
-  headerWidgetConfig.value = {
-    qq,
-    telegram,
-    refreshInterval: event.data.config.refreshInterval
-  }
-  headerWidgetStatuses.value = statuses
-  headerStatusCountdown.value = Math.max(1, Math.ceil(event.data.config.refreshInterval / 1000))
-}
-
-function tickHeaderStatusCountdown() {
-  if (headerStatusCountdown.value > 0) {
-    headerStatusCountdown.value -= 1
-  }
-}
-
 function headerStatusDotClass(indicator: string) {
   if (indicator === 'none') return 'bg-emerald-500 shadow-[0_0_0_3px_rgba(16,185,129,0.14)]'
   if (indicator === 'minor' || indicator === 'maintenance') {
@@ -831,17 +738,10 @@ function handleClickOutside(event: MouseEvent) {
 
 onMounted(() => {
   document.addEventListener('click', handleClickOutside)
-  window.addEventListener('message', handleHeaderWidgetMessage)
-  headerStatusCountdownTimer = window.setInterval(tickHeaderStatusCountdown, 1000)
-  window.setTimeout(requestHeaderWidgetData, 100)
 })
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', handleClickOutside)
-  window.removeEventListener('message', handleHeaderWidgetMessage)
-  if (headerStatusCountdownTimer !== undefined) {
-    window.clearInterval(headerStatusCountdownTimer)
-  }
 })
 </script>
 
