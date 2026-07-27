@@ -6,6 +6,7 @@ import NavigationProgress from '@/components/common/NavigationProgress.vue'
 import AdminComplianceDialog from '@/components/admin/AdminComplianceDialog.vue'
 import { resolveRouteDocumentTitle } from '@/router/title'
 import AnnouncementPopup from '@/components/common/AnnouncementPopup.vue'
+import PersistentRemoteWidgets from '@/components/common/PersistentRemoteWidgets.vue'
 import { useAppStore, useAuthStore, useSubscriptionStore, useAnnouncementStore, useAdminComplianceStore, useAdminSettingsStore } from '@/stores'
 import { getSetupStatus } from '@/api/setup'
 import { updateFavicon } from '@/utils/branding'
@@ -139,6 +140,7 @@ onMounted(async () => {
 <template>
   <NavigationProgress />
   <RouterView />
+  <PersistentRemoteWidgets v-if="authStore.isAuthenticated" />
   <Toast />
   <AnnouncementPopup />
   <AdminComplianceDialog />

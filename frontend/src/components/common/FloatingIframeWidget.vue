@@ -30,7 +30,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import {
   fitFloatingWidgetSize,
   getVisibleMainBounds,
@@ -50,6 +51,7 @@ import {
 const WIDGET_URL = `https://widget.llmfree.work/float.html?t=${Date.now()}`
 const WIDGET_ORIGIN = new URL(WIDGET_URL).origin
 const DEFAULT_SIZE: FloatingWidgetSize = { width: 180, height: 100 }
+const route = useRoute()
 
 const widgetElement = ref<HTMLElement | null>(null)
 const iframeElement = ref<HTMLIFrameElement | null>(null)
@@ -141,18 +143,30 @@ function requestConfig(): void {
   iframeElement.value?.contentWindow?.postMessage({ type: 'float-config-request' }, WIDGET_ORIGIN)
 }
 
-onMounted(async () => {
+async function connectMainElement(): Promise<void> {
   await nextTick()
-  mainElement = widgetElement.value?.parentElement ?? null
+  const nextMainElement = document.querySelector<HTMLElement>('main')
+  if (nextMainElement === mainElement) {
+    scheduleLayout()
+    return
+  }
+
+  mainResizeObserver?.disconnect()
+  mainElement = nextMainElement
   if (!mainElement) return
 
   mainResizeObserver = new ResizeObserver(scheduleLayout)
   mainResizeObserver.observe(mainElement)
+  scheduleLayout()
+}
 
+watch(() => route.fullPath, connectMainElement, { flush: 'post' })
+
+onMounted(async () => {
   window.addEventListener('message', handleWidgetMessage)
   window.addEventListener('resize', scheduleLayout)
   window.addEventListener('scroll', scheduleLayout, true)
-  updateLayout()
+  await connectMainElement()
 })
 
 onBeforeUnmount(() => {
