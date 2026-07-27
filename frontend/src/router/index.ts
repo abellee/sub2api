@@ -36,7 +36,7 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/components/LlmFreeHomePage.vue'),
     meta: {
       requiresAuth: false,
-      title: 'Home'
+      title: 'Claude、GPT、Gemini API 中转站'
     }
   },
   {

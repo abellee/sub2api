@@ -1,0 +1,29 @@
+# LLM Free
+
+> LLM Free is a professional AI API gateway for developers and teams. It provides an OpenAI-compatible endpoint for accessing Claude, GPT, Gemini, and other supported models through one API.
+
+## Official URLs
+
+- Website: https://llmfree.work/home
+- API endpoint: https://api.llmfree.work
+- Sitemap: https://llmfree.work/sitemap.xml
+- Telegram community: https://t.me/+nqFUXD_y66liYTll
+
+## Core capabilities
+
+- OpenAI-compatible API protocol
+- Unified access to multiple leading AI model providers
+- API key management
+- Request, token usage, and cost visibility
+- Routing and availability management
+
+## Intended audience
+
+LLM Free serves developers, AI application builders, automation teams, and organizations that need a stable unified interface for multiple large language models.
+
+## Brand and contact
+
+- Brand name: LLM Free
+- Service category: AI API gateway and AI API relay
+- Business support QQ: 751077517
+- Trial credit: Register and join the QQ or Telegram community to request trial credit

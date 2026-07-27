@@ -52,6 +52,15 @@ func TestInjectSiteTitle(t *testing.T) {
 		assert.Equal(t, string(html), string(result))
 	})
 
+	t.Run("preserves_custom_seo_title", func(t *testing.T) {
+		html := []byte(`<html><head><title>LLM Free - Claude、GPT、Gemini API 中转站</title></head><body></body></html>`)
+		settingsJSON := []byte(`{"site_name":"LLM Free"}`)
+
+		result := injectSiteTitle(html, settingsJSON)
+
+		assert.Equal(t, html, result)
+	})
+
 	t.Run("returns_unchanged_when_invalid_json", func(t *testing.T) {
 		html := []byte(`<html><head><title>Sub2API - AI API Gateway</title></head><body></body></html>`)
 		settingsJSON := []byte(`{invalid json}`)
