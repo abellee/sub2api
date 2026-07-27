@@ -1,0 +1,24 @@
+User-agent: *
+Allow: /home
+Allow: /assets/
+Allow: /llmfree/
+
+Disallow: /api/
+Disallow: /v1/
+Disallow: /admin/
+Disallow: /auth/
+Disallow: /dashboard
+Disallow: /keys
+Disallow: /usage
+Disallow: /profile
+Disallow: /subscriptions
+Disallow: /purchase
+Disallow: /orders
+Disallow: /payment/
+Disallow: /redeem
+Disallow: /affiliate
+Disallow: /available-channels
+Disallow: /key-usage
+Disallow: /setup
+
+Sitemap: https://llmfree.work/sitemap.xml

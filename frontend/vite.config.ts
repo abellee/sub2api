@@ -31,7 +31,7 @@ function injectBranding(html: string, config: { site_name?: string; site_logo?: 
   const siteName = config.site_name?.trim()
   if (siteName) {
     brandedHtml = brandedHtml.replace(
-      /<title>[^<]*<\/title>/i,
+      /<title>\s*Sub2API(?:\s*-\s*AI API Gateway)?\s*<\/title>/i,
       `<title>${escapeHtml(siteName)} - AI API Gateway</title>`,
     )
   }

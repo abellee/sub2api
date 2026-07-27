@@ -6,7 +6,7 @@ import { setLocale } from '@/i18n'
 
 type ThemeChoice = 'system' | 'light' | 'dark'
 
-const THEME_KEY = 'theme'
+const THEME_KEY = 'llmfree-home-theme'
 const BUSINESS_QQ = '751077517'
 const authStore = useAuthStore()
 const { locale } = useI18n()
@@ -37,15 +37,8 @@ async function selectLanguage(code: 'zh' | 'en', event: Event) {
 
 function selectTheme(theme: ThemeChoice, event: Event) {
   themeChoice.value = theme
-  if (theme === 'system') localStorage.removeItem(THEME_KEY)
-  else localStorage.setItem(THEME_KEY, theme)
-  applyDocumentTheme(theme)
+  localStorage.setItem(THEME_KEY, theme)
   closeDropdown(event)
-}
-
-function applyDocumentTheme(theme: ThemeChoice) {
-  const useDark = theme === 'system' ? systemDark.value : theme === 'dark'
-  document.documentElement.classList.toggle('dark', useDark)
 }
 
 function handleDropdownToggle(event: Event) {
@@ -65,7 +58,6 @@ function handleDocumentClick(event: MouseEvent) {
 
 function handleSystemThemeChange(event: MediaQueryListEvent) {
   systemDark.value = event.matches
-  if (themeChoice.value === 'system') applyDocumentTheme('system')
 }
 
 function fallbackCopy(value: string) {
@@ -145,7 +137,6 @@ const structuredData = {
 }
 
 onMounted(() => {
-  applyDocumentTheme(themeChoice.value)
   document.addEventListener('click', handleDocumentClick)
   systemThemeQuery.addEventListener('change', handleSystemThemeChange)
 
@@ -881,6 +872,10 @@ curl https://api.llmfree.work/v1/chat/completions \
     border-color: var(--forest);
     background: var(--forest);
     color: #ffffff;
+  }
+
+  .llmf-page[data-theme="dark"] .llmf-header-action-primary {
+    color: #111412;
   }
 
   .llmf-auth-guest {

@@ -284,6 +284,10 @@ func injectSiteTitle(html, settingsJSON []byte) []byte {
 	if titleStart == -1 || titleEnd == -1 || titleEnd <= titleStart {
 		return html
 	}
+	currentTitle := strings.TrimSpace(string(html[titleStart+len("<title>") : titleEnd]))
+	if currentTitle != "Sub2API" && currentTitle != "Sub2API - AI API Gateway" {
+		return html
+	}
 
 	newTitle := []byte("<title>" + htmlpkg.EscapeString(cfg.SiteName) + " - AI API Gateway</title>")
 	var buf bytes.Buffer
