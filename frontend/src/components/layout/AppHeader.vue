@@ -204,7 +204,7 @@
             <transition name="dropdown">
               <div
                 v-if="mobileHeaderWidgetOpen"
-                class="fixed right-2 top-16 z-[70] mt-2 max-h-[calc(100vh-5rem)] w-[min(22rem,calc(100vw-1rem))] overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-2xl dark:border-dark-600 dark:bg-dark-800"
+                class="fixed inset-x-2 top-16 z-[70] mt-2 max-h-[calc(100vh-5rem)] w-auto overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-2xl dark:border-dark-600 dark:bg-dark-800"
               >
                 <div
                   v-if="headerWidgetStatuses.length"
@@ -227,7 +227,7 @@
                         {{ headerStatusCountdown }}s
                       </span>
                     </div>
-                    <p class="mt-2 line-clamp-2 text-xs text-gray-600 dark:text-dark-300">
+                    <p class="mt-2 truncate text-xs text-gray-600 dark:text-dark-300">
                       {{ status.description }}
                     </p>
                     <p class="mt-1 text-[11px] text-gray-400 dark:text-dark-400">
@@ -261,7 +261,7 @@
                   </div>
 
                   <div v-if="mobileHeaderWidgetTab === 'qq'" class="mt-4">
-                    <div class="flex items-center gap-2 text-left">
+                    <div class="flex items-center gap-3 text-left">
                       <img
                         :src="headerWidgetConfig.qq.logoUrl"
                         alt="LLM-Free Logo"
