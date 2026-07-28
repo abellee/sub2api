@@ -727,6 +727,7 @@ function buildSelfNavItems(withDashboard: boolean): NavItem[] {
       icon: null,
       iconSvg: item.icon_svg,
     })),
+    { path: '/model-plaza', label: t('nav.modelPlaza'), icon: ChannelIcon },
   )
   return items
 }

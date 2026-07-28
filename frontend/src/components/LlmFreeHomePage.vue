@@ -3,8 +3,11 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
 import { setLocale } from '@/i18n'
+import ModelPlazaContent from '@/components/model-plaza/ModelPlazaContent.vue'
 
 type ThemeChoice = 'system' | 'light' | 'dark'
+
+const props = withDefaults(defineProps<{ page?: 'home' | 'models' }>(), { page: 'home' })
 
 const THEME_KEY = 'llmfree-home-theme'
 const BUSINESS_QQ = '751077517'
@@ -169,7 +172,14 @@ onBeforeUnmount(() => {
 
       <div class="llmf-nav-right">
         <nav class="llmf-nav-links" aria-label="Primary">
-          <RouterLink to="/available-channels" title="模型广场 / Model Plaza">
+          <RouterLink v-if="props.page === 'models'" to="/home" title="首页 / Home">
+            <span class="llmf-nav-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="m3 10 9-7 9 7"></path><path d="M5 9.5V21h14V9.5"></path><path d="M9 21v-7h6v7"></path></svg>
+            </span>
+            <span class="llmf-nav-link-label"><span data-lang="zh">首页</span><span data-lang="en">Home</span></span>
+          </RouterLink>
+
+          <RouterLink to="/models" title="模型广场 / Model Plaza">
             <span class="llmf-nav-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"></rect><rect x="14" y="3" width="7" height="7" rx="1"></rect><rect x="3" y="14" width="7" height="7" rx="1"></rect><rect x="14" y="14" width="7" height="7" rx="1"></rect></svg>
             </span>
@@ -228,7 +238,7 @@ onBeforeUnmount(() => {
     </div>
   </header>
 
-  <main>
+  <main v-if="props.page === 'home'">
     <section class="llmf-hero">
       <div class="llmf-wrap">
         <div class="llmf-hero-grid">
@@ -466,8 +476,57 @@ curl https://api.llmfree.work/v1/chat/completions \
     </section>
   </main>
 
+  <main v-else class="llmf-model-plaza-page">
+    <div class="llmf-wrap">
+      <section class="llmf-model-plaza-intro">
+        <div class="llmf-model-plaza-copy">
+          <div class="llmf-kicker"><span data-lang="zh">模型目录</span><span data-lang="en">MODEL DIRECTORY</span></div>
+          <h1><span data-lang="zh">模型广场</span><span data-lang="en">Model Plaza</span></h1>
+          <p data-lang="zh">按分组浏览可用模型，对比输入、缓存与输出价格。</p>
+          <p data-lang="en">Browse available models by group and compare input, cache, and output prices.</p>
+        </div>
+
+        <figure class="llmf-model-plaza-visual" aria-label="OpenAI、Claude 与 Gemini 通过 LLM Free 统一 API 接入">
+          <div class="llmf-visual-grid" aria-hidden="true"></div>
+          <div class="llmf-visual-flow" aria-hidden="true">
+            <span></span><span></span><span></span>
+          </div>
+
+          <div class="llmf-model-node llmf-model-node-openai">
+            <span class="llmf-model-logo llmf-model-logo-openai">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21.55 10.004a5.416 5.416 0 0 0-.478-4.501c-1.217-2.09-3.662-3.166-6.05-2.66A5.59 5.59 0 0 0 10.831 1C8.39.995 6.224 2.546 5.473 4.838A5.553 5.553 0 0 0 1.76 7.496a5.487 5.487 0 0 0 .691 6.5 5.416 5.416 0 0 0 .477 4.502c1.217 2.09 3.662 3.165 6.05 2.66A5.586 5.586 0 0 0 13.168 23c2.443.006 4.61-1.546 5.361-3.84a5.553 5.553 0 0 0 3.715-2.66 5.488 5.488 0 0 0-.693-6.497v.001Zm-8.381 11.558a4.199 4.199 0 0 1-2.675-.954l.132-.074 4.44-2.53a.71.71 0 0 0 .364-.623v-6.176l1.877 1.069c.02.01.033.029.036.05v5.115c-.003 2.274-1.87 4.118-4.174 4.123ZM4.192 17.78a4.059 4.059 0 0 1-.498-2.763l.131.078 4.44 2.53c.225.13.504.13.73 0l5.42-3.088v2.138a.068.068 0 0 1-.027.057L9.9 19.288c-1.999 1.136-4.552.46-5.707-1.51ZM3.023 8.216A4.15 4.15 0 0 1 5.198 6.41l-.002.151v5.06c0 .26.139.5.364.624l5.42 3.087-1.876 1.07a.067.067 0 0 1-.063.005l-4.489-2.559c-1.995-1.14-2.679-3.658-1.53-5.63Zm15.417 3.54-5.42-3.088L14.896 7.6a.067.067 0 0 1 .063-.006l4.489 2.557c1.998 1.14 2.683 3.662 1.529 5.633a4.163 4.163 0 0 1-2.174 1.807V12.38a.71.71 0 0 0-.363-.623Zm1.867-2.773-.132-.078-4.44-2.53a.731.731 0 0 0-.729 0l-5.42 3.088V7.325c0-.023.01-.044.027-.057L14.1 4.713c2-1.137 4.555-.46 5.707 1.513.487.833.664 1.809.499 2.757ZM8.566 12.793l-1.877-1.068a.065.065 0 0 1-.036-.051V6.559c.001-2.277 1.873-4.122 4.181-4.12.976 0 1.92.338 2.671.954l-.131.073-4.44 2.53a.71.71 0 0 0-.365.623l-.003 6.174Zm1.02-2.168L12 9.25l2.414 1.375v2.75L12 14.75l-2.415-1.375v-2.75Z"/></svg>
+            </span>
+            <span><strong>OpenAI</strong><small>GPT · API</small></span>
+          </div>
+
+          <div class="llmf-model-node llmf-model-node-claude">
+            <span class="llmf-model-logo llmf-model-logo-claude">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.709 15.955l4.72-2.647.08-.23-.08-.128H9.2l-.79-.048-2.698-.073-2.339-.097-2.266-.122-.571-.121L0 11.784l.055-.352.48-.321.686.06 1.52.103 2.278.158 1.652.097 2.449.255h.389l.055-.157-.134-.098-.103-.097-2.358-1.596-2.552-1.688-1.336-.972-.724-.491-.364-.462-.158-1.008.656-.722.881.06.225.061.893.686 1.908 1.476 2.491 1.833.365.304.145-.103.019-.073-.164-.274-1.355-2.446-1.446-2.49-.644-1.032-.17-.619a2.97 2.97 0 0 1-.104-.729L6.283.134 6.696 0l.996.134.42.364.62 1.414 1.002 2.229 1.555 3.03.456.898.243.832.091.255h.158V9.01l.128-1.706.237-2.095.23-2.695.08-.76.376-.91.747-.492.584.28.48.685-.067.444-.286 1.851-.559 2.903-.364 1.942h.212l.243-.242.985-1.306 1.652-2.064.73-.82.85-.904.547-.431h1.033l.76 1.129-.34 1.166-1.064 1.347-.881 1.142-1.264 1.7-.79 1.36.073.11.188-.02 2.856-.606 1.543-.28 1.841-.315.833.388.091.395-.328.807-1.969.486-2.309.462-3.439.813-.042.03.049.061 1.549.146.662.036h1.622l3.02.225.79.522.474.638-.079.485-1.215.62-1.64-.389-3.829-.91-1.312-.329h-.182v.11l1.093 1.068 2.006 1.81 2.509 2.33.127.578-.322.455-.34-.049-2.205-1.657-.851-.747-1.926-1.62h-.128v.17l.444.649 2.345 3.521.122 1.08-.17.353-.608.213-.668-.122-1.374-1.925-1.415-2.167-1.143-1.943-.14.08-.674 7.254-.316.37-.729.28-.607-.461-.322-.747.322-1.476.389-1.924.315-1.53.286-1.9.17-.632-.012-.042-.14.018-1.434 1.967-2.18 2.945-1.726 1.845-.414.164-.717-.37.067-.662.401-.589 2.388-3.036 1.44-1.882.93-1.086-.006-.158h-.055L4.132 18.56l-1.13.146-.487-.456.061-.746.231-.243 1.908-1.312-.006.006Z"/></svg>
+            </span>
+            <span><strong>Claude</strong><small>Anthropic · API</small></span>
+          </div>
+
+          <div class="llmf-model-node llmf-model-node-gemini">
+            <span class="llmf-model-logo llmf-model-logo-gemini">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.616 10.835a14.147 14.147 0 0 1-4.45-3.001 14.111 14.111 0 0 1-3.678-6.452.503.503 0 0 0-.975 0 14.134 14.134 0 0 1-3.679 6.452 14.155 14.155 0 0 1-4.45 3.001c-.65.28-1.318.505-2.002.678a.502.502 0 0 0 0 .975c.684.172 1.35.397 2.002.677a14.147 14.147 0 0 1 4.45 3.001 14.112 14.112 0 0 1 3.679 6.453.502.502 0 0 0 .975 0c.172-.685.397-1.351.677-2.003a14.145 14.145 0 0 1 3.001-4.45 14.113 14.113 0 0 1 6.453-3.678.503.503 0 0 0 0-.975 13.245 13.245 0 0 1-2.003-.678Z"/></svg>
+            </span>
+            <span><strong>Gemini</strong><small>Google · API</small></span>
+          </div>
+
+          <div class="llmf-gateway-node">
+            <span class="llmf-gateway-pulse" aria-hidden="true"></span>
+            <img src="/llmfree/llmfree-logo-transparent.png" alt="">
+            <span><strong>LLM Free</strong><small>Unified API Gateway</small></span>
+          </div>
+          <div class="llmf-visual-endpoint"><span>POST</span><code>/v1/chat/completions</code></div>
+        </figure>
+      </section>
+      <ModelPlazaContent variant="home" :language="language" />
+    </div>
+  </main>
+
   <footer class="llmf-footer">
-    <div class="llmf-wrap llmf-community-cta">
+    <div v-if="props.page === 'home'" class="llmf-wrap llmf-community-cta">
       <div>
         <h2 data-lang="zh">加入社群，领取试用额度</h2>
         <h2 data-lang="en">Join the community and claim trial credit</h2>
@@ -1574,6 +1633,179 @@ curl https://api.llmfree.work/v1/chat/completions \
   transform: translateY(0);
 }
 
+.llmf-model-plaza-page {
+  min-height: calc(100vh - 176px);
+  padding: 42px 0 84px;
+}
+
+.llmf-model-plaza-intro {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 430px);
+  align-items: center;
+  gap: clamp(44px, 7vw, 92px);
+  margin-bottom: 38px;
+}
+
+.llmf-model-plaza-copy {
+  max-width: 660px;
+}
+
+.llmf-model-plaza-intro h1 {
+  margin: 12px 0 14px;
+  color: var(--ink);
+  font-family: Georgia, "Times New Roman", "Noto Serif SC", serif;
+  font-size: 46px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.llmf-model-plaza-intro p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.8;
+  white-space: nowrap;
+}
+
+.llmf-model-plaza-visual {
+  position: relative;
+  width: 100%;
+  height: 258px;
+  margin: 0;
+  overflow: hidden;
+  isolation: isolate;
+  -webkit-mask-image: linear-gradient(to right, #000 0%, #000 68%, transparent 100%);
+  mask-image: linear-gradient(to right, #000 0%, #000 68%, transparent 100%);
+}
+
+.llmf-visual-grid {
+  position: absolute;
+  inset: 8px 0 12px 0;
+  z-index: -2;
+  background-image:
+    linear-gradient(to right, color-mix(in srgb, var(--line) 55%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--line) 55%, transparent) 1px, transparent 1px);
+  background-size: 28px 28px;
+  opacity: .7;
+}
+
+.llmf-visual-flow {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+}
+
+.llmf-visual-flow::before,
+.llmf-visual-flow::after,
+.llmf-visual-flow span {
+  content: "";
+  position: absolute;
+  height: 1px;
+  transform-origin: left center;
+  background: linear-gradient(90deg, var(--line), var(--forest));
+}
+
+.llmf-visual-flow::before { top: 48px; left: 127px; width: 126px; transform: rotate(25deg); }
+.llmf-visual-flow::after { top: 200px; left: 127px; width: 126px; transform: rotate(-25deg); }
+.llmf-visual-flow span:nth-child(1) { top: 126px; left: 127px; width: 118px; }
+.llmf-visual-flow span:nth-child(2) { top: 126px; left: 300px; width: 116px; }
+.llmf-visual-flow span:nth-child(3) { top: 126px; left: 232px; width: 7px; height: 7px; border-radius: 50%; background: var(--forest); box-shadow: 0 0 0 5px color-mix(in srgb, var(--forest) 14%, transparent); }
+
+.llmf-model-node,
+.llmf-gateway-node {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ink);
+}
+
+.llmf-model-node { left: 0; }
+.llmf-model-node-openai { top: 22px; }
+.llmf-model-node-claude { top: 101px; }
+.llmf-model-node-gemini { top: 180px; }
+
+.llmf-model-logo {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--shadow) 55%, transparent);
+}
+
+.llmf-model-logo svg { width: 21px; height: 21px; fill: currentColor; }
+.llmf-model-logo-openai { color: var(--ink); }
+.llmf-model-logo-claude { color: #c66b3d; }
+.llmf-model-logo-gemini { color: #4285f4; }
+
+.llmf-model-node strong,
+.llmf-gateway-node strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.llmf-model-node small,
+.llmf-gateway-node small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 9px;
+}
+
+.llmf-gateway-node {
+  top: 91px;
+  left: 242px;
+  width: 148px;
+  min-height: 72px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--forest) 42%, var(--line));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  box-shadow: 0 16px 38px color-mix(in srgb, var(--shadow) 80%, transparent);
+}
+
+.llmf-gateway-node img { width: 36px; height: 36px; object-fit: contain; }
+.llmf-gateway-node small { color: var(--forest); }
+
+.llmf-gateway-pulse {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #39a96b;
+  box-shadow: 0 0 0 4px color-mix(in srgb, #39a96b 15%, transparent);
+}
+
+.llmf-visual-endpoint {
+  position: absolute;
+  top: 178px;
+  left: 270px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.llmf-visual-endpoint span {
+  color: var(--forest);
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.llmf-visual-endpoint code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
 .llmf-footer {
     padding: 42px 0;
     background: var(--surface);
@@ -1613,6 +1845,7 @@ curl https://api.llmfree.work/v1/chat/completions \
     .llmf-principles { grid-template-columns: 1fr; gap: 48px; }
     .llmf-section-title-compact { white-space: normal; }
     .llmf-faq { grid-template-columns: 1fr; gap: 36px; }
+    .llmf-model-plaza-intro { grid-template-columns: minmax(0, 1fr) 350px; gap: 34px; }
   }
 
   @media (max-width: 680px) {
@@ -1646,6 +1879,21 @@ curl https://api.llmfree.work/v1/chat/completions \
     .llmf-principle { grid-template-columns: 78px 1fr; gap: 14px; }
     .llmf-footer-inner { align-items: flex-start; flex-direction: column; }
     .llmf-community-cta { grid-template-columns: 1fr; }
+    .llmf-model-plaza-page { padding: 44px 0 64px; }
+    .llmf-model-plaza-intro { grid-template-columns: 1fr; gap: 24px; margin-bottom: 28px; }
+    .llmf-model-plaza-intro h1 { font-size: 36px; }
+    .llmf-model-plaza-intro p { white-space: normal; }
+    .llmf-model-plaza-visual { width: min(100%, 430px); height: 232px; }
+    .llmf-model-node-openai { top: 10px; }
+    .llmf-model-node-claude { top: 88px; }
+    .llmf-model-node-gemini { top: 166px; }
+    .llmf-gateway-node { top: 78px; }
+    .llmf-visual-flow::before { top: 36px; }
+    .llmf-visual-flow::after { top: 187px; }
+    .llmf-visual-flow span:nth-child(1),
+    .llmf-visual-flow span:nth-child(2),
+    .llmf-visual-flow span:nth-child(3) { top: 113px; }
+    .llmf-visual-endpoint { top: 165px; }
     .llmf-community-actions { justify-content: flex-start; }
     .llmf-nav { flex-wrap: wrap; padding: 10px 0; }
     .llmf-nav-right { width: 100%; justify-content: space-between; }

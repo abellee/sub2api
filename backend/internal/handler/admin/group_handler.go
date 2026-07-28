@@ -26,6 +26,14 @@ type GroupHandler struct {
 	groupCapacityService *service.GroupCapacityService
 }
 
+type publicModelPlazaGroup struct {
+	ID               int64                         `json:"id"`
+	Name             string                        `json:"name"`
+	Platform         string                        `json:"platform"`
+	RateMultiplier   float64                       `json:"rate_multiplier"`
+	ModelsListConfig service.GroupModelsListConfig `json:"models_list_config"`
+}
+
 // GetLiveCapability 返回当前服务端是否具备生成 Live attestation 的运行环境。
 func (h *GroupHandler) GetLiveCapability(c *gin.Context) {
 	err := liveattestation.NewProvider().Check(c.Request.Context())
@@ -417,6 +425,32 @@ func (h *GroupHandler) GetAll(c *gin.Context) {
 	outGroups := make([]dto.AdminGroup, 0, len(groups))
 	for i := range groups {
 		outGroups = append(outGroups, *dto.GroupFromServiceAdmin(&groups[i]))
+	}
+	response.Success(c, outGroups)
+}
+
+// ListPublicModelPlazaGroups returns the active, non-exclusive groups used by the public model plaza.
+// GET /api/v1/model-plaza/groups
+func (h *GroupHandler) ListPublicModelPlazaGroups(c *gin.Context) {
+	groups, err := h.adminService.GetAllGroups(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	outGroups := make([]publicModelPlazaGroup, 0, len(groups))
+	for i := range groups {
+		group := &groups[i]
+		if group.IsExclusive || !group.IsActive() || !group.ModelsListConfig.Enabled || len(group.ModelsListConfig.Models) == 0 {
+			continue
+		}
+		outGroups = append(outGroups, publicModelPlazaGroup{
+			ID:               group.ID,
+			Name:             group.Name,
+			Platform:         group.Platform,
+			RateMultiplier:   group.RateMultiplier,
+			ModelsListConfig: group.ModelsListConfig,
+		})
 	}
 	response.Success(c, outGroups)
 }
