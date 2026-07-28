@@ -28,7 +28,7 @@ const dashboardPath = computed(() => authStore.isAdmin ? '/admin/dashboard' : '/
 const primaryActionPath = computed(() => isAuthenticated.value ? dashboardPath.value : '/register')
 
 function closeDropdown(event: Event) {
-  ;(event.currentTarget as HTMLElement | null)?.closest('details')?.removeAttribute('open')
+  (event.currentTarget as HTMLElement | null)?.closest('details')?.removeAttribute('open')
 }
 
 async function selectLanguage(code: 'zh' | 'en', event: Event) {
