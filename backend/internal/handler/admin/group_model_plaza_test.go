@@ -20,6 +20,7 @@ func TestListPublicModelPlazaGroupsFiltersAndSanitizes(t *testing.T) {
 		{ID: 2, Name: "Exclusive", Platform: service.PlatformOpenAI, IsExclusive: true, Status: service.StatusActive, ModelsListConfig: service.GroupModelsListConfig{Enabled: true, Models: []string{"gpt-5"}}},
 		{ID: 3, Name: "Disabled", Platform: service.PlatformAnthropic, Status: service.StatusDisabled, ModelsListConfig: service.GroupModelsListConfig{Enabled: true, Models: []string{"claude-sonnet-4-6"}}},
 		{ID: 4, Name: "No list", Platform: service.PlatformAnthropic, Status: service.StatusActive},
+		{ID: 5, Name: "Configured list", Platform: service.PlatformOpenAI, RateMultiplier: 0.3, Status: service.StatusActive, ModelsListConfig: service.GroupModelsListConfig{Models: []string{"gpt-5.2"}}},
 	}
 
 	router := gin.New()
@@ -34,6 +35,7 @@ func TestListPublicModelPlazaGroupsFiltersAndSanitizes(t *testing.T) {
 	encoded, err := json.Marshal(body.Data)
 	require.NoError(t, err)
 	require.Contains(t, string(encoded), `"name":"Public"`)
+	require.Contains(t, string(encoded), `"name":"Configured list"`)
 	require.NotContains(t, string(encoded), "Exclusive")
 	require.NotContains(t, string(encoded), "Disabled")
 	require.NotContains(t, string(encoded), "description")

@@ -441,7 +441,7 @@ func (h *GroupHandler) ListPublicModelPlazaGroups(c *gin.Context) {
 	outGroups := make([]publicModelPlazaGroup, 0, len(groups))
 	for i := range groups {
 		group := &groups[i]
-		if group.IsExclusive || !group.IsActive() || !group.ModelsListConfig.Enabled || len(group.ModelsListConfig.Models) == 0 {
+		if group.IsExclusive || !group.IsActive() || len(group.ModelsListConfig.Models) == 0 {
 			continue
 		}
 		outGroups = append(outGroups, publicModelPlazaGroup{
