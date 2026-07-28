@@ -698,6 +698,13 @@ func TestEmbeddedFrontendBypassesBareVideoAPIRoutes(t *testing.T) {
 	}
 }
 
+func TestEmbeddedFrontendDistinguishesModelsPageFromModelsAPI(t *testing.T) {
+	require.False(t, shouldBypassEmbeddedFrontend("/models", "text/html,application/xhtml+xml"))
+	require.True(t, shouldBypassEmbeddedFrontend("/models", "application/json"))
+	require.True(t, shouldBypassEmbeddedFrontend("/models", "*/*"))
+	require.True(t, shouldBypassEmbeddedFrontend("/models"))
+}
+
 func TestNewFrontendServer(t *testing.T) {
 	t.Run("creates_server_successfully", func(t *testing.T) {
 		provider := &mockSettingsProvider{
