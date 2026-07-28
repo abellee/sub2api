@@ -221,7 +221,9 @@ func RegisterAuthRoutes(
 	}
 
 	// 模型广场仅公开展示启用中的非专属分组及其模型白名单。
-	v1.GET("/model-plaza/groups", h.Admin.Group.ListPublicModelPlazaGroups)
+	if h.Admin != nil && h.Admin.Group != nil {
+		v1.GET("/model-plaza/groups", h.Admin.Group.ListPublicModelPlazaGroups)
+	}
 
 	// 需要认证的当前用户信息
 	authenticated := v1.Group("")
