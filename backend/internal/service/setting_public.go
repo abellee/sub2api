@@ -238,6 +238,8 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyChannelMonitorVisibility,
 		SettingKeyAvailableChannelsEnabled,
 		SettingKeySubscriptionEnabled,
+		SettingKeyPublicTransitEnabled,
+		SettingKeyPublicTransitPageEnabled,
 		SettingKeyModelPlazaEnabled,
 		SettingKeyModelPlazaRequireAuth,
 		SettingKeyPluginManagementEnabled,
@@ -368,6 +370,8 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		ChannelMonitorVisibility:             normalizeChannelMonitorVisibility(settings[SettingKeyChannelMonitorVisibility]),
 
 		AvailableChannelsEnabled: settings[SettingKeyAvailableChannelsEnabled] == "true",
+		PublicTransitEnabled:     !isFalseSettingValue(settings[SettingKeyPublicTransitEnabled]),
+		PublicTransitPageEnabled: publicTransitPageEnabledFromSettings(settings),
 
 		SubscriptionEnabled: !isFalseSettingValue(settings[SettingKeySubscriptionEnabled]),
 
@@ -740,6 +744,8 @@ type PublicSettingsInjectionPayload struct {
 	ChannelMonitorVisible      bool `json:"channel_monitor_visible"`
 	AvailableChannelsEnabled   bool `json:"available_channels_enabled"`
 	SubscriptionEnabled        bool `json:"subscription_enabled"`
+	PublicTransitEnabled       bool `json:"public_transit_enabled"`
+	PublicTransitPageEnabled   bool `json:"public_transit_page_enabled"`
 	ModelPlazaEnabled          bool `json:"model_plaza_enabled"`
 	ModelPlazaRequireAuth      bool `json:"model_plaza_require_auth"`
 	PluginManagementEnabled    bool `json:"plugin_management_enabled"`
@@ -830,6 +836,8 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		ChannelMonitorVisible:                settings.ChannelMonitorVisible,
 		AvailableChannelsEnabled:             settings.AvailableChannelsEnabled,
 		SubscriptionEnabled:                  settings.SubscriptionEnabled,
+		PublicTransitEnabled:                 settings.PublicTransitEnabled,
+		PublicTransitPageEnabled:             settings.PublicTransitPageEnabled,
 		ModelPlazaEnabled:                    settings.ModelPlazaEnabled,
 		ModelPlazaRequireAuth:                settings.ModelPlazaRequireAuth,
 		PluginManagementEnabled:              settings.PluginManagementEnabled,

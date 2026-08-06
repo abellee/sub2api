@@ -326,6 +326,8 @@ type SystemSettings struct {
 
 	// Available Channels feature switch (user-facing aggregate view)
 	AvailableChannelsEnabled bool `json:"available_channels_enabled"`
+	PublicTransitEnabled     bool `json:"public_transit_enabled"`
+	PublicTransitPageEnabled bool `json:"public_transit_page_enabled"`
 
 	// Subscription feature switch: gates the whole user-facing subscription surface
 	// (sidebar entries, purchase-page subscription tab, header badge, /subscriptions route).
@@ -444,6 +446,8 @@ type PublicSettings struct {
 	ChannelMonitorVisible bool `json:"channel_monitor_visible"`
 
 	AvailableChannelsEnabled bool `json:"available_channels_enabled"`
+	PublicTransitEnabled     bool `json:"public_transit_enabled"`
+	PublicTransitPageEnabled bool `json:"public_transit_page_enabled"`
 
 	SubscriptionEnabled bool `json:"subscription_enabled"`
 

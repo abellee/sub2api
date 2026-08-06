@@ -123,6 +123,22 @@ type GroupUsageSummary struct {
 	TotalCost     float64 `json:"total_cost"`
 }
 
+// GroupCacheUsageSummary represents rolling cache usage windows for a single group.
+type GroupCacheUsageSummary struct {
+	GroupID int64                 `json:"group_id"`
+	Last24h GroupCacheUsageWindow `json:"last_24h"`
+	Last7d  GroupCacheUsageWindow `json:"last_7d"`
+	Total   GroupCacheUsageWindow `json:"total"`
+}
+
+// GroupCacheUsageWindow represents cache usage within one rolling time window.
+type GroupCacheUsageWindow struct {
+	InputTokens         int64   `json:"input_tokens"`
+	CacheCreationTokens int64   `json:"cache_creation_tokens"`
+	CacheReadTokens     int64   `json:"cache_read_tokens"`
+	CacheHitRate        float64 `json:"cache_hit_rate"`
+}
+
 // GroupStat represents usage statistics for a single group
 type GroupStat struct {
 	GroupID     int64   `json:"group_id"`

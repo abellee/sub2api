@@ -2870,6 +2870,10 @@ func (r *stubUsageLogRepo) GetAllGroupUsageSummary(ctx context.Context, todaySta
 	return nil, errors.New("not implemented")
 }
 
+func (r *stubUsageLogRepo) GetGroupCacheUsageSummary(ctx context.Context, since24h, since7d time.Time) ([]usagestats.GroupCacheUsageSummary, error) {
+	return nil, errors.New("not implemented")
+}
+
 type stubSettingRepo struct {
 	all map[string]string
 }
