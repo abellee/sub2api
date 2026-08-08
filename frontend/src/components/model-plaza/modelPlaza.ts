@@ -1,4 +1,4 @@
-import type { ModelPlazaGroup, OfficialModelPrice } from '@/api/modelPlaza'
+import type { LegacyModelPlazaGroup, OfficialModelPrice } from '@/api/modelPlaza'
 
 export interface ModelPlazaEntry extends OfficialModelPrice {
   id: string
@@ -12,7 +12,7 @@ export function canonicalModelId(modelId: string): string {
 }
 
 export function buildModelPlazaEntries(
-  groups: ModelPlazaGroup[],
+  groups: LegacyModelPlazaGroup[],
   officialModels: Record<string, OfficialModelPrice>,
 ): ModelPlazaEntry[] {
   const officialById = new Map(
