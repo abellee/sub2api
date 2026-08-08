@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { getModelPlazaGroups, getOfficialModelPrices, type ModelPlazaGroup } from '@/api/modelPlaza'
+import { getModelPlazaGroups, getOfficialModelPrices, type LegacyModelPlazaGroup } from '@/api/modelPlaza'
 import { extractApiErrorMessage } from '@/utils/apiError'
 import { buildModelPlazaEntries, type ModelPlazaEntry } from './modelPlaza'
 
@@ -10,7 +10,7 @@ type ViewMode = 'card' | 'list'
 
 const props = withDefaults(defineProps<{ variant?: 'console' | 'home'; language?: Language }>(), { variant: 'console' })
 const { locale } = useI18n()
-const groups = ref<ModelPlazaGroup[]>([])
+const groups = ref<LegacyModelPlazaGroup[]>([])
 const entries = ref<ModelPlazaEntry[]>([])
 const selectedGroup = ref<number | 'all'>('all')
 const query = ref('')
@@ -47,7 +47,7 @@ function providerMark(provider: string) { return provider === 'anthropic' ? 'A' 
 function formatPrice(value: number) { return Number(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
 function formatActualPrice(value: number, rateMultiplier: number) { return Number(value * rateMultiplier).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
 function formatRate(value: number) { return `${Number(value).toFixed(4).replace(/\.?0+$/, '')}x` }
-function isLowestRate(group: ModelPlazaGroup) { return lowestRateMultiplier.value !== null && Math.abs(group.rate_multiplier - lowestRateMultiplier.value) < Number.EPSILON }
+function isLowestRate(group: LegacyModelPlazaGroup) { return lowestRateMultiplier.value !== null && Math.abs(group.rate_multiplier - lowestRateMultiplier.value) < Number.EPSILON }
 function setView(nextView: ViewMode) { view.value = nextView; localStorage.setItem('llmfree-model-view', nextView) }
 
 async function loadData() {
