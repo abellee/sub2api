@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { modelPlazaAPI, type ModelPlazaGroup } from '@/api/modelPlaza'
 import { extractApiErrorMessage } from '@/utils/apiError'
-import { buildModelPlazaEntries, type ModelPlazaEntry } from './modelPlaza'
+import { buildModelPlazaEntries, formatActualModelPrice, type ModelPlazaEntry } from './modelPlaza'
 
 type Language = 'zh' | 'en'
 type ViewMode = 'card' | 'list'
@@ -45,7 +45,7 @@ const updatedLabel = computed(() => {
 function providerLabel(provider: string) { return ({ anthropic: 'Claude', openai: 'OpenAI', gemini: 'Gemini', google: 'Gemini', grok: 'Grok' } as Record<string, string>)[provider] ?? provider }
 function providerMark(provider: string) { return provider === 'anthropic' ? 'A' : provider === 'gemini' || provider === 'google' ? 'G' : provider === 'grok' ? 'X' : 'OA' }
 function formatPrice(value: number | null) { return value == null ? '-' : Number(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
-function formatActualPrice(value: number | null, rateMultiplier: number) { return value == null ? '-' : Number(value * rateMultiplier).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
+function formatActualPrice(value: number | null, rateMultiplier: number) { return formatActualModelPrice(value, rateMultiplier) }
 function formatRate(value: number) { return `${Number(value).toFixed(4).replace(/\.?0+$/, '')}x` }
 function isLowestRate(group: ModelPlazaGroup) { return lowestRateMultiplier.value !== null && Math.abs((group.user_rate_multiplier ?? group.rate_multiplier) - lowestRateMultiplier.value) < Number.EPSILON }
 function setView(nextView: ViewMode) { view.value = nextView; localStorage.setItem('llmfree-model-view', nextView) }

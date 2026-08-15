@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildModelPlazaEntries } from '../modelPlaza'
+import { buildModelPlazaEntries, formatActualModelPrice } from '../modelPlaza'
 
 describe('model plaza matching', () => {
   it('maps Sub2API official token prices to per-million model plaza entries', () => {
@@ -83,5 +83,22 @@ describe('model plaza matching', () => {
     expect(entries).toEqual([expect.objectContaining({
       id: 'gemini-unpriced', provider: 'gemini', input: null, output: null, cache: null,
     })])
+  })
+})
+
+describe('model plaza actual price formatting', () => {
+  it('keeps every meaningful decimal place for low prices', () => {
+    expect(formatActualModelPrice(0.03, 0.08)).toBe('0.0024')
+    expect(formatActualModelPrice(0.000001, 0.08)).toBe('0.00000008')
+  })
+
+  it('avoids binary floating point artifacts while retaining two minimum decimals', () => {
+    expect(formatActualModelPrice(0.1, 0.2)).toBe('0.02')
+    expect(formatActualModelPrice(2.5, 0.15)).toBe('0.375')
+    expect(formatActualModelPrice(5, 2)).toBe('10.00')
+  })
+
+  it('keeps missing prices as a dash', () => {
+    expect(formatActualModelPrice(null, 0.08)).toBe('-')
   })
 })
