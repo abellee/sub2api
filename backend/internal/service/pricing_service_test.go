@@ -454,25 +454,28 @@ func TestGetModelPricing_OpenAICompactAliasUsesStaticFallback(t *testing.T) {
 	require.InDelta(t, 1.5e-5, got.OutputCostPerToken, 1e-12)
 }
 
-func TestPricingService_Gemini36FlashThinkingTiersUseBasePricing(t *testing.T) {
-	basePricing := &LiteLLMModelPricing{
-		InputCostPerToken:       1.5e-6,
-		OutputCostPerToken:      7.5e-6,
-		CacheReadInputTokenCost: 0.15e-6,
-	}
+func TestPricingService_GeminiFlashThinkingTiersUseBasePricing(t *testing.T) {
+	gemini35 := &LiteLLMModelPricing{InputCostPerToken: 1.5e-6, OutputCostPerToken: 9e-6}
+	gemini36 := &LiteLLMModelPricing{InputCostPerToken: 1.5e-6, OutputCostPerToken: 7.5e-6}
+	gemini37 := &LiteLLMModelPricing{InputCostPerToken: 0.75e-6, OutputCostPerToken: 3.75e-6}
 	svc := &PricingService{pricingData: map[string]*LiteLLMModelPricing{
-		"gemini-3.6-flash": basePricing,
+		"gemini-3.5-flash": gemini35,
+		"gemini-3.6-flash": gemini36,
+		"gemini-3.7-flash": gemini37,
 	}}
 
-	for _, model := range []string{
-		"gemini-3.6-flash",
-		"gemini-3.6-flash-high",
-		"gemini-3.6-flash-low",
-		"gemini-3.6-flash-medium",
-		"gemini-3.6-flash-tiered",
+	for model, expected := range map[string]*LiteLLMModelPricing{
+		"gemini-3.5-flash-extra-low": gemini35,
+		"gemini-3.5-flash-low":       gemini35,
+		"gemini-3.6-flash":           gemini36,
+		"gemini-3.6-flash-high":      gemini36,
+		"gemini-3.6-flash-low":       gemini36,
+		"gemini-3.6-flash-medium":    gemini36,
+		"gemini-3.6-flash-tiered":    gemini36,
+		"gemini-3.7-flash-high":      gemini37,
 	} {
 		t.Run(model, func(t *testing.T) {
-			require.Same(t, basePricing, svc.GetModelPricing(model))
+			require.Same(t, expected, svc.GetModelPricing(model))
 		})
 	}
 }
@@ -488,29 +491,50 @@ func TestPricingService_Gemini36FlashTierSpecificPricingTakesPrecedence(t *testi
 	require.Same(t, tierPricing, svc.GetModelPricing("models/gemini-3.6-flash-low"))
 }
 
-func TestBillingService_Gemini36FlashThinkingTierFallbacksAreBillable(t *testing.T) {
-	svc := NewBillingService(&config.Config{}, nil)
-	tokens := UsageTokens{InputTokens: 1_000_000, OutputTokens: 1_000_000, CacheReadTokens: 1_000_000}
+func TestPricingService_GeminiFlashAliasesUseStaticFallbackWithStaleCache(t *testing.T) {
+	svc := &PricingService{pricingData: map[string]*LiteLLMModelPricing{}}
 
-	for _, model := range []string{
-		"gemini-3.6-flash",
-		"gemini-3.6-flash-high",
-		"gemini-3.6-flash-low",
-		"gemini-3.6-flash-medium",
-		"gemini-3.6-flash-tiered",
+	for model, expected := range map[string][3]float64{
+		"gemini-3.5-flash-extra-low": {1.5e-6, 9e-6, 0.15e-6},
+		"gemini-3.5-flash-low":       {1.5e-6, 9e-6, 0.15e-6},
+		"gemini-3.7-flash-high":      {0.75e-6, 3.75e-6, 0.075e-6},
 	} {
 		t.Run(model, func(t *testing.T) {
-			cost, err := svc.CalculateCost(model, tokens, 1)
-			require.NoError(t, err)
-			require.InDelta(t, 1.5, cost.InputCost, 1e-12)
-			require.InDelta(t, 7.5, cost.OutputCost, 1e-12)
-			require.InDelta(t, 0.15, cost.CacheReadCost, 1e-12)
-			require.InDelta(t, 9.15, cost.TotalCost, 1e-12)
+			pricing := svc.GetModelPricing(model)
+			require.NotNil(t, pricing)
+			require.InDelta(t, expected[0], pricing.InputCostPerToken, 1e-12)
+			require.InDelta(t, expected[1], pricing.OutputCostPerToken, 1e-12)
+			require.InDelta(t, expected[2], pricing.CacheReadInputTokenCost, 1e-12)
 		})
 	}
 }
 
-func TestDefaultPricingIncludesGemini36FlashRates(t *testing.T) {
+func TestBillingService_GeminiFlashThinkingTierFallbacksAreBillable(t *testing.T) {
+	svc := NewBillingService(&config.Config{}, nil)
+	tokens := UsageTokens{InputTokens: 1_000_000, OutputTokens: 1_000_000, CacheReadTokens: 1_000_000}
+
+	for model, expected := range map[string][4]float64{
+		"gemini-3.5-flash-extra-low": {1.5, 9, 0.15, 10.65},
+		"gemini-3.5-flash-low":       {1.5, 9, 0.15, 10.65},
+		"gemini-3.6-flash":           {1.5, 7.5, 0.15, 9.15},
+		"gemini-3.6-flash-high":      {1.5, 7.5, 0.15, 9.15},
+		"gemini-3.6-flash-low":       {1.5, 7.5, 0.15, 9.15},
+		"gemini-3.6-flash-medium":    {1.5, 7.5, 0.15, 9.15},
+		"gemini-3.6-flash-tiered":    {1.5, 7.5, 0.15, 9.15},
+		"gemini-3.7-flash-high":      {0.75, 3.75, 0.075, 4.575},
+	} {
+		t.Run(model, func(t *testing.T) {
+			cost, err := svc.CalculateCost(model, tokens, 1)
+			require.NoError(t, err)
+			require.InDelta(t, expected[0], cost.InputCost, 1e-12)
+			require.InDelta(t, expected[1], cost.OutputCost, 1e-12)
+			require.InDelta(t, expected[2], cost.CacheReadCost, 1e-12)
+			require.InDelta(t, expected[3], cost.TotalCost, 1e-12)
+		})
+	}
+}
+
+func TestDefaultPricingIncludesCurrentGeminiFlashRates(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "resources", "model-pricing", "model_prices_and_context_window.json"))
 	require.NoError(t, err)
 
@@ -520,13 +544,22 @@ func TestDefaultPricingIncludesGemini36FlashRates(t *testing.T) {
 	pricingSvc.pricingData = pricingData
 	billingSvc := NewBillingService(&config.Config{}, pricingSvc)
 
-	for _, model := range []string{"gemini-3.6-flash", "gemini-3.6-flash-low", "gemini-3.6-flash-high"} {
+	for model, expected := range map[string][3]float64{
+		"gemini-3.5-flash":           {1.5e-6, 9e-6, 0.15e-6},
+		"gemini-3.5-flash-extra-low": {1.5e-6, 9e-6, 0.15e-6},
+		"gemini-3.5-flash-low":       {1.5e-6, 9e-6, 0.15e-6},
+		"gemini-3.6-flash":           {1.5e-6, 7.5e-6, 0.15e-6},
+		"gemini-3.6-flash-low":       {1.5e-6, 7.5e-6, 0.15e-6},
+		"gemini-3.6-flash-high":      {1.5e-6, 7.5e-6, 0.15e-6},
+		"gemini-3.7-flash":           {0.75e-6, 3.75e-6, 0.075e-6},
+		"gemini-3.7-flash-high":      {0.75e-6, 3.75e-6, 0.075e-6},
+	} {
 		t.Run(model, func(t *testing.T) {
 			pricing, err := billingSvc.GetModelPricing(model)
 			require.NoError(t, err)
-			require.InDelta(t, 1.5e-6, pricing.InputPricePerToken, 1e-12)
-			require.InDelta(t, 7.5e-6, pricing.OutputPricePerToken, 1e-12)
-			require.InDelta(t, 0.15e-6, pricing.CacheReadPricePerToken, 1e-12)
+			require.InDelta(t, expected[0], pricing.InputPricePerToken, 1e-12)
+			require.InDelta(t, expected[1], pricing.OutputPricePerToken, 1e-12)
+			require.InDelta(t, expected[2], pricing.CacheReadPricePerToken, 1e-12)
 		})
 	}
 }

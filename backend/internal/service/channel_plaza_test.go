@@ -65,13 +65,27 @@ func TestListConfiguredPlazaGroups_UsesGroupModelListWithoutChannelIntersection(
 			InputCostPerToken:  3e-7,
 			OutputCostPerToken: 2.5e-6,
 		},
+		"gemini-3.5-flash": {
+			Mode:               "chat",
+			InputCostPerToken:  1.5e-6,
+			OutputCostPerToken: 9e-6,
+		},
+		"gemini-3.7-flash": {
+			Mode:               "chat",
+			InputCostPerToken:  0.75e-6,
+			OutputCostPerToken: 3.75e-6,
+		},
 	})
 	groups := []Group{
 		{
 			ID: 12, Name: "Gemini", Platform: PlatformGemini, RateMultiplier: 0.15,
 			ModelsListConfig: GroupModelsListConfig{
 				Enabled: false,
-				Models:  []string{"gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash", "unknown-gemini"},
+				Models: []string{
+					"gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash",
+					"gemini-3.5-flash-extra-low", "gemini-3.5-flash-low", "gemini-3.7-flash-high",
+					"unknown-gemini",
+				},
 			},
 		},
 		{ID: 13, Name: "empty", Platform: PlatformOpenAI, RateMultiplier: 1},
@@ -82,13 +96,21 @@ func TestListConfiguredPlazaGroups_UsesGroupModelListWithoutChannelIntersection(
 	require.NoError(t, err)
 	require.Len(t, out, 1)
 	require.Equal(t, "Gemini", out[0].Name)
-	require.Equal(t, []string{"gemini-2.5-flash", "gemini-2.5-pro", "unknown-gemini"}, []string{
-		out[0].Models[0].Name,
-		out[0].Models[1].Name,
-		out[0].Models[2].Name,
+	require.Equal(t, []string{
+		"gemini-2.5-flash", "gemini-2.5-pro", "gemini-3.5-flash-extra-low",
+		"gemini-3.5-flash-low", "gemini-3.7-flash-high", "unknown-gemini",
+	}, []string{
+		out[0].Models[0].Name, out[0].Models[1].Name, out[0].Models[2].Name,
+		out[0].Models[3].Name, out[0].Models[4].Name, out[0].Models[5].Name,
 	})
 	require.NotNil(t, out[0].Models[0].OfficialPricing)
-	require.Nil(t, out[0].Models[2].OfficialPricing, "missing price must not remove a configured model")
+	require.NotNil(t, out[0].Models[2].OfficialPricing)
+	require.NotNil(t, out[0].Models[3].OfficialPricing)
+	require.NotNil(t, out[0].Models[4].OfficialPricing)
+	require.InDelta(t, 1.5e-6, *out[0].Models[2].OfficialPricing.InputPrice, 1e-12)
+	require.InDelta(t, 1.5e-6, *out[0].Models[3].OfficialPricing.InputPrice, 1e-12)
+	require.InDelta(t, 0.75e-6, *out[0].Models[4].OfficialPricing.InputPrice, 1e-12)
+	require.Nil(t, out[0].Models[5].OfficialPricing, "missing price must not remove a configured model")
 }
 
 func TestListPlazaGroups_DedupFirstWinsWithPricingUpgrade(t *testing.T) {
