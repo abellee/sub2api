@@ -251,6 +251,9 @@ func RegisterAuthRoutes(
 	if h.Admin != nil && h.Admin.Group != nil {
 		v1.GET("/model-plaza/groups", h.Admin.Group.ListPublicModelPlazaGroups)
 	}
+	if h.ModelPlaza != nil {
+		v1.GET("/model-plaza/public", panelRateLimiter.PublicIP(), h.ModelPlaza.GetPublic)
+	}
 
 	// 需要认证的当前用户信息
 	authenticated := v1.Group("")
