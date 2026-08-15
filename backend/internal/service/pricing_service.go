@@ -102,6 +102,22 @@ var (
 		Mode:                    "chat",
 		SupportsPromptCaching:   true,
 	}
+	gemini35FlashFallbackPricing = &LiteLLMModelPricing{
+		InputCostPerToken:       1.5e-06,
+		OutputCostPerToken:      9e-06,
+		CacheReadInputTokenCost: 1.5e-07,
+		LiteLLMProvider:         "vertex_ai-language-models",
+		Mode:                    "chat",
+		SupportsPromptCaching:   true,
+	}
+	gemini37FlashFallbackPricing = &LiteLLMModelPricing{
+		InputCostPerToken:       7.5e-07,
+		OutputCostPerToken:      3.75e-06,
+		CacheReadInputTokenCost: 7.5e-08,
+		LiteLLMProvider:         "vertex_ai-language-models",
+		Mode:                    "chat",
+		SupportsPromptCaching:   true,
+	}
 )
 
 // LiteLLMModelPricing LiteLLM价格数据结构
@@ -657,6 +673,16 @@ func (s *PricingService) GetModelPricing(modelName string) *LiteLLMModelPricing 
 		return pricing
 	}
 
+	// Provider-specific thinking tiers share the public base model's token rate.
+	// Keep static current rates so a stale persisted pricing cache cannot make
+	// newly introduced aliases appear unpriced or bypass billing.
+	switch normalizeModelNameForPricing(modelLower) {
+	case "gemini-3.5-flash":
+		return gemini35FlashFallbackPricing
+	case "gemini-3.7-flash":
+		return gemini37FlashFallbackPricing
+	}
+
 	// 4. 基于模型系列匹配（Claude）
 	if pricing := s.matchByModelFamily(lookupCandidates[0]); pricing != nil {
 		return pricing
@@ -797,18 +823,19 @@ func normalizeModelNameForPricing(model string) string {
 	return normalizeGeminiThinkingTierAlias(model)
 }
 
-// normalizeGeminiThinkingTierAlias maps Antigravity's Gemini 3.6 Flash
-// thinking-tier model IDs to the public base model. The tier controls reasoning
-// behavior, not the published token rate, so this keeps -high/-low/-medium and
-// -tiered requests on the same price card as gemini-3.6-flash.
+// normalizeGeminiThinkingTierAlias maps provider-specific thinking-tier IDs to
+// their public base models. The tier changes reasoning behavior, not token rates.
 func normalizeGeminiThinkingTierAlias(model string) string {
-	const baseModel = "gemini-3.6-flash"
-	for _, tier := range []string{"-high", "-low", "-medium", "-tiered"} {
-		if model == baseModel+tier {
-			return baseModel
-		}
+	switch model {
+	case "gemini-3.5-flash-extra-low", "gemini-3.5-flash-low":
+		return "gemini-3.5-flash"
+	case "gemini-3.6-flash-high", "gemini-3.6-flash-low", "gemini-3.6-flash-medium", "gemini-3.6-flash-tiered":
+		return "gemini-3.6-flash"
+	case "gemini-3.7-flash-high":
+		return "gemini-3.7-flash"
+	default:
+		return model
 	}
-	return model
 }
 
 func lastSegment(model string) string {
