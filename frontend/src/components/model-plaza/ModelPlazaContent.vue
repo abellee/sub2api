@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { getModelPlazaGroups, getOfficialModelPrices, type LegacyModelPlazaGroup } from '@/api/modelPlaza'
+import { modelPlazaAPI, type ModelPlazaGroup } from '@/api/modelPlaza'
 import { extractApiErrorMessage } from '@/utils/apiError'
 import { buildModelPlazaEntries, type ModelPlazaEntry } from './modelPlaza'
 
@@ -10,7 +10,7 @@ type ViewMode = 'card' | 'list'
 
 const props = withDefaults(defineProps<{ variant?: 'console' | 'home'; language?: Language }>(), { variant: 'console' })
 const { locale } = useI18n()
-const groups = ref<LegacyModelPlazaGroup[]>([])
+const groups = ref<ModelPlazaGroup[]>([])
 const entries = ref<ModelPlazaEntry[]>([])
 const selectedGroup = ref<number | 'all'>('all')
 const query = ref('')
@@ -21,9 +21,9 @@ const stale = ref(false)
 const view = ref<ViewMode>(localStorage.getItem('llmfree-model-view') === 'list' ? 'list' : 'card')
 const language = computed<Language>(() => props.language ?? (locale.value.startsWith('zh') ? 'zh' : 'en'))
 const text = computed(() => language.value === 'zh' ? {
-  source: '官方价格数据源', updated: '数据更新时间', connecting: '正在连接...', pending: '等待首次更新', cached: '（缓存）', placeholder: '搜索模型，例如 gpt-5、claude-sonnet', clear: '清空搜索', card: '卡片视图', list: '列表视图', all: '全部分组', lowest: '最低', models: '个可用模型', groups: '个分组', input: '输入', cache: '缓存', output: '输出', original: '原价', actual: '实际', model: '模型', rate: '费率倍数', group: '分组', unit: '单位', retry: '重新加载', failed: '暂时无法加载模型价格', empty: '没有符合条件的模型', emptyHint: '请更换分组或搜索关键词。', disclaimer: '本页官方原价仅供参考，实际价格按官方原价乘以当前分组费率倍数计算。价格会随上游模型厂商的官方定价实时变动，最终账单请以控制台和账单记录为准。',
+  source: 'Sub2API 官方价格', updated: '数据更新时间', connecting: '正在连接...', pending: '等待接口返回', cached: '', placeholder: '搜索模型，例如 gpt-5、claude-sonnet', clear: '清空搜索', card: '卡片视图', list: '列表视图', all: '全部分组', lowest: '最低', models: '个可用模型', groups: '个分组', input: '输入', cache: '缓存', output: '输出', original: '原价', actual: '实际', model: '模型', rate: '费率倍数', group: '分组', unit: '单位', retry: '重新加载', failed: '暂时无法加载模型价格', empty: '没有符合条件的模型', emptyHint: '请更换分组或搜索关键词。', disclaimer: '本页官方原价来自 Sub2API 的模型定价服务，仅供参考；实际价格按当前分组费率倍数计算，最终账单请以控制台和账单记录为准。',
 } : {
-  source: 'Official pricing source', updated: 'Last updated', connecting: 'Connecting...', pending: 'Waiting for first update', cached: ' (cached)', placeholder: 'Search models, e.g. gpt-5 or claude-sonnet', clear: 'Clear search', card: 'Card view', list: 'List view', all: 'All groups', lowest: 'LOWEST', models: 'available models', groups: 'groups', input: 'Input', cache: 'Cache', output: 'Output', original: 'List', actual: 'Actual', model: 'Model', rate: 'Rate', group: 'Group', unit: 'Unit', retry: 'Retry', failed: 'Model pricing is temporarily unavailable', empty: 'No matching models', emptyHint: 'Try another group or search term.', disclaimer: 'Official list prices are for reference, and actual prices are calculated using the current group rate. Prices update in real time with upstream model providers; final charges remain subject to console billing records.',
+  source: 'Sub2API official pricing', updated: 'Data updated', connecting: 'Connecting...', pending: 'Waiting for response', cached: '', placeholder: 'Search models, e.g. gpt-5 or claude-sonnet', clear: 'Clear search', card: 'Card view', list: 'List view', all: 'All groups', lowest: 'LOWEST', models: 'available models', groups: 'groups', input: 'Input', cache: 'Cache', output: 'Output', original: 'List', actual: 'Actual', model: 'Model', rate: 'Rate', group: 'Group', unit: 'Unit', retry: 'Retry', failed: 'Model pricing is temporarily unavailable', empty: 'No matching models', emptyHint: 'Try another group or search term.', disclaimer: 'Official list prices come from Sub2API pricing data; actual charges use the current group rate multiplier and the console billing records remain authoritative.',
 })
 
 const filteredEntries = computed(() => {
@@ -35,31 +35,30 @@ const filteredEntries = computed(() => {
   })
 })
 const visibleGroupCount = computed(() => new Set(filteredEntries.value.map((entry) => entry.groupId)).size)
-const lowestRateMultiplier = computed(() => groups.value.length > 0 ? Math.min(...groups.value.map((group) => group.rate_multiplier)) : null)
+const lowestRateMultiplier = computed(() => groups.value.length > 0 ? Math.min(...groups.value.map((group) => group.user_rate_multiplier ?? group.rate_multiplier)) : null)
 const updatedLabel = computed(() => {
   if (loading.value) return text.value.connecting
   if (!updatedAt.value) return text.value.pending
   return `${updatedAt.value.toLocaleString(language.value === 'zh' ? 'zh-CN' : 'en-US', { hour12: false })}${stale.value ? text.value.cached : ''}`
 })
 
-function providerLabel(provider: string) { return provider === 'anthropic' ? 'Claude' : 'OpenAI' }
-function providerMark(provider: string) { return provider === 'anthropic' ? 'A' : 'OA' }
-function formatPrice(value: number) { return Number(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
-function formatActualPrice(value: number, rateMultiplier: number) { return Number(value * rateMultiplier).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
+function providerLabel(provider: string) { return ({ anthropic: 'Claude', openai: 'OpenAI', gemini: 'Gemini', google: 'Gemini', grok: 'Grok' } as Record<string, string>)[provider] ?? provider }
+function providerMark(provider: string) { return provider === 'anthropic' ? 'A' : provider === 'gemini' || provider === 'google' ? 'G' : provider === 'grok' ? 'X' : 'OA' }
+function formatPrice(value: number | null) { return value == null ? '-' : Number(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
+function formatActualPrice(value: number | null, rateMultiplier: number) { return value == null ? '-' : Number(value * rateMultiplier).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
 function formatRate(value: number) { return `${Number(value).toFixed(4).replace(/\.?0+$/, '')}x` }
-function isLowestRate(group: LegacyModelPlazaGroup) { return lowestRateMultiplier.value !== null && Math.abs(group.rate_multiplier - lowestRateMultiplier.value) < Number.EPSILON }
+function isLowestRate(group: ModelPlazaGroup) { return lowestRateMultiplier.value !== null && Math.abs((group.user_rate_multiplier ?? group.rate_multiplier) - lowestRateMultiplier.value) < Number.EPSILON }
 function setView(nextView: ViewMode) { view.value = nextView; localStorage.setItem('llmfree-model-view', nextView) }
 
 async function loadData() {
   loading.value = true
   error.value = ''
   try {
-    const [groupData, priceData] = await Promise.all([getModelPlazaGroups(), getOfficialModelPrices()])
-    groups.value = groupData
-    entries.value = buildModelPlazaEntries(groupData, priceData.models)
-    const parsed = priceData.updated_at ? new Date(priceData.updated_at) : null
-    updatedAt.value = parsed && !Number.isNaN(parsed.getTime()) ? parsed : null
-    stale.value = Boolean(priceData.stale)
+    const plaza = await modelPlazaAPI.getModelPlaza()
+    groups.value = plaza.groups
+    entries.value = buildModelPlazaEntries(plaza.groups)
+    updatedAt.value = new Date()
+    stale.value = false
   } catch (loadError) {
     error.value = extractApiErrorMessage(loadError, text.value.failed)
     groups.value = []

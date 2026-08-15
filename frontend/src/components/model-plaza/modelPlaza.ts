@@ -1,7 +1,11 @@
-import type { LegacyModelPlazaGroup, OfficialModelPrice } from '@/api/modelPlaza'
+import type { ModelPlazaGroup, PlazaOfficialPricing } from '@/api/modelPlaza'
 
-export interface ModelPlazaEntry extends OfficialModelPrice {
+export interface ModelPlazaEntry {
   id: string
+  provider: string
+  input: number | null
+  output: number | null
+  cache: number | null
   groupId: number
   groupName: string
   rateMultiplier: number
@@ -12,22 +16,40 @@ export function canonicalModelId(modelId: string): string {
 }
 
 export function buildModelPlazaEntries(
-  groups: LegacyModelPlazaGroup[],
-  officialModels: Record<string, OfficialModelPrice>,
+  groups: ModelPlazaGroup[],
 ): ModelPlazaEntry[] {
-  const officialById = new Map(
-    Object.entries(officialModels).map(([id, model]) => [canonicalModelId(id), model]),
-  )
-
   return groups.flatMap((group) => {
     const seen = new Set<string>()
-    return (group.models_list_config.models ?? []).flatMap((configuredId) => {
-      const id = canonicalModelId(configuredId)
+    return group.models.flatMap((model) => {
+      const id = canonicalModelId(model.name)
       if (seen.has(id)) return []
       seen.add(id)
-      const official = officialById.get(id)
-      if (!official || official.provider !== group.platform) return []
-      return [{ ...official, id, groupId: group.id, groupName: group.name, rateMultiplier: group.rate_multiplier }]
+      const official = model.official_pricing
+      if (!official || !hasPrice(official)) return []
+      return [{
+        id,
+        provider: normalizeProvider(model.platform || group.platform),
+        input: perMillion(official.input_price),
+        output: perMillion(official.output_price),
+        cache: perMillion(official.cache_read_price ?? official.cache_write_price),
+        groupId: group.id,
+        groupName: group.name,
+        rateMultiplier: group.user_rate_multiplier ?? group.rate_multiplier,
+      }]
     })
   })
+}
+
+function hasPrice(pricing: PlazaOfficialPricing) {
+  return [pricing.input_price, pricing.output_price, pricing.cache_read_price, pricing.cache_write_price]
+    .some((value) => typeof value === 'number' && value > 0)
+}
+
+function perMillion(value: number | null | undefined) {
+  return typeof value === 'number' ? value * 1_000_000 : null
+}
+
+function normalizeProvider(provider: string) {
+  const value = provider.toLowerCase()
+  return value === 'google' ? 'gemini' : value
 }
