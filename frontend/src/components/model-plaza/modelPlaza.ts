@@ -70,7 +70,16 @@ function toScaledInteger(value: number): { integer: bigint; scale: number } {
 }
 
 function perMillion(value: number | null | undefined) {
-  return typeof value === 'number' ? value * 1_000_000 : null
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null
+
+  const scaled = toScaledInteger(value)
+  const scale = scaled.scale - 6
+  if (scale <= 0) return Number(scaled.integer * (10n ** BigInt(-scale)))
+
+  const negative = scaled.integer < 0n
+  const digits = (negative ? -scaled.integer : scaled.integer).toString().padStart(scale + 1, '0')
+  const decimal = `${digits.slice(0, -scale)}.${digits.slice(-scale)}`
+  return Number(`${negative ? '-' : ''}${decimal}`)
 }
 
 function normalizeProvider(provider: string) {

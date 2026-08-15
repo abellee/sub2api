@@ -62,6 +62,40 @@ describe('model plaza matching', () => {
     expect(entries[0]).toEqual(expect.objectContaining({ provider: 'gemini', input: 0.3, output: 2.5, cache: null }))
   })
 
+  it('does not introduce floating point artifacts while converting prices per million', () => {
+    const entries = buildModelPlazaEntries([{
+      id: 2,
+      name: 'Welfare',
+      description: '',
+      platform: 'openai',
+      subscription_type: 'standard',
+      rate_multiplier: 0.08,
+      peak_rate_enabled: false,
+      peak_start: '',
+      peak_end: '',
+      peak_rate_multiplier: 1,
+      is_exclusive: false,
+      image_rate_independent: false,
+      image_rate_multiplier: 1,
+      models: [{
+        name: 'gpt-low-price',
+        platform: 'openai',
+        pricing: null,
+        official_pricing: {
+          input_price: 0.0000002,
+          output_price: 0.0000012,
+          cache_write_price: null,
+          cache_read_price: 0.00000002,
+        },
+      }],
+    }])
+
+    expect(entries[0]).toEqual(expect.objectContaining({ input: 0.2, cache: 0.02, output: 1.2 }))
+    expect(formatActualModelPrice(entries[0].input, entries[0].rateMultiplier)).toBe('0.016')
+    expect(formatActualModelPrice(entries[0].cache, entries[0].rateMultiplier)).toBe('0.0016')
+    expect(formatActualModelPrice(entries[0].output, entries[0].rateMultiplier)).toBe('0.096')
+  })
+
   it('keeps configured models even when Sub2API has no official price', () => {
     const entries = buildModelPlazaEntries([{
       id: 12,
