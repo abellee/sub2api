@@ -35,6 +35,40 @@ export function buildModelPlazaEntries(
   })
 }
 
+export function formatActualModelPrice(value: number | null, rateMultiplier: number): string {
+  if (value == null || !Number.isFinite(value) || !Number.isFinite(rateMultiplier)) return '-'
+
+  const left = toScaledInteger(value)
+  const right = toScaledInteger(rateMultiplier)
+  const product = left.integer * right.integer
+  const scale = left.scale + right.scale
+  const negative = product < 0n
+  const digits = (negative ? -product : product).toString().padStart(scale + 1, '0')
+  const integerPart = scale === 0 ? digits : digits.slice(0, -scale)
+  const rawFraction = scale === 0 ? '' : digits.slice(-scale)
+  const fraction = rawFraction.replace(/0+$/, '')
+  const groupedInteger = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+  const paddedFraction = fraction.length < 2 ? fraction.padEnd(2, '0') : fraction
+
+  return `${negative ? '-' : ''}${groupedInteger}.${paddedFraction}`
+}
+
+function toScaledInteger(value: number): { integer: bigint; scale: number } {
+  const negative = value < 0
+  const [coefficient, exponentText = '0'] = Math.abs(value).toString().toLowerCase().split('e')
+  const [integerPart, fractionPart = ''] = coefficient.split('.')
+  let digits = `${integerPart}${fractionPart}`.replace(/^0+(?=\d)/, '')
+  let scale = fractionPart.length - Number(exponentText)
+
+  if (scale < 0) {
+    digits += '0'.repeat(-scale)
+    scale = 0
+  }
+
+  const integer = BigInt(digits || '0')
+  return { integer: negative ? -integer : integer, scale }
+}
+
 function perMillion(value: number | null | undefined) {
   return typeof value === 'number' ? value * 1_000_000 : null
 }
