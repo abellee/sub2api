@@ -153,6 +153,35 @@ func (s *ChannelService) ListPlazaGroups(ctx context.Context) ([]PlazaGroup, err
 		}
 	}
 
+	// Keep explicitly configured public model lists visible even when a group
+	// currently has no active channel carrying the model. This is important for
+	// model-plaza catalog entries such as Gemini, where the group configuration
+	// is the source of truth for the advertised model list.
+	for _, gid := range order {
+		g := groupEnt[gid]
+		pg := byGroup[gid]
+		if g == nil || pg == nil || pg.Platform == PlatformComposite {
+			continue
+		}
+		idx := modelIdx[gid]
+		if idx == nil {
+			idx = make(map[modelKey]int, len(g.ModelsListConfig.Models))
+			modelIdx[gid] = idx
+		}
+		for _, configuredName := range g.ModelsListConfig.Models {
+			name := strings.TrimSpace(configuredName)
+			if name == "" {
+				continue
+			}
+			key := modelKey{platform: pg.Platform, name: name}
+			if _, seen := idx[key]; seen {
+				continue
+			}
+			idx[key] = len(pg.Models)
+			pg.Models = append(pg.Models, PlazaModel{Name: name, Platform: pg.Platform})
+		}
+	}
+
 	officialMemo := make(map[string]*PlazaOfficialPricing)
 	out := make([]PlazaGroup, 0, len(order))
 	for _, gid := range order {
