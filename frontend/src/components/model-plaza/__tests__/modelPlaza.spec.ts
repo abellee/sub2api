@@ -1,13 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { buildModelPlazaEntries, canonicalModelId } from '../modelPlaza'
+import { buildModelPlazaEntries } from '../modelPlaza'
 
 describe('model plaza matching', () => {
-  it('removes compact and dashed date suffixes', () => {
-    expect(canonicalModelId('claude-sonnet-4-5-20250929')).toBe('claude-sonnet-4-5')
-    expect(canonicalModelId('claude-sonnet-4-5-2025-09-29')).toBe('claude-sonnet-4-5')
-    expect(canonicalModelId('gpt-5.2')).toBe('gpt-5.2')
-  })
-
   it('maps Sub2API official token prices to per-million model plaza entries', () => {
     const entries = buildModelPlazaEntries([{
       id: 7,
@@ -37,7 +31,7 @@ describe('model plaza matching', () => {
     }])
 
     expect(entries).toEqual([expect.objectContaining({
-      id: 'claude-sonnet-4-5', provider: 'anthropic', input: 3, cache: 0.3, output: 15,
+      id: 'claude-sonnet-4-5-20250929', provider: 'anthropic', input: 3, cache: 0.3, output: 15,
       groupId: 7, groupName: 'CC - Kiro', rateMultiplier: 0.12,
     })])
   })
@@ -66,5 +60,28 @@ describe('model plaza matching', () => {
     }])
 
     expect(entries[0]).toEqual(expect.objectContaining({ provider: 'gemini', input: 0.3, output: 2.5, cache: null }))
+  })
+
+  it('keeps configured models even when Sub2API has no official price', () => {
+    const entries = buildModelPlazaEntries([{
+      id: 12,
+      name: 'Gemini',
+      description: '',
+      platform: 'gemini',
+      subscription_type: 'standard',
+      rate_multiplier: 0.15,
+      peak_rate_enabled: false,
+      peak_start: '',
+      peak_end: '',
+      peak_rate_multiplier: 1,
+      is_exclusive: false,
+      image_rate_independent: false,
+      image_rate_multiplier: 1,
+      models: [{ name: 'gemini-unpriced', platform: 'gemini', pricing: null, official_pricing: null }],
+    }])
+
+    expect(entries).toEqual([expect.objectContaining({
+      id: 'gemini-unpriced', provider: 'gemini', input: null, output: null, cache: null,
+    })])
   })
 })
