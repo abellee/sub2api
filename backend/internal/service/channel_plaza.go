@@ -153,35 +153,6 @@ func (s *ChannelService) ListPlazaGroups(ctx context.Context) ([]PlazaGroup, err
 		}
 	}
 
-	// Keep explicitly configured public model lists visible even when a group
-	// currently has no active channel carrying the model. This is important for
-	// model-plaza catalog entries such as Gemini, where the group configuration
-	// is the source of truth for the advertised model list.
-	for _, gid := range order {
-		g := groupEnt[gid]
-		pg := byGroup[gid]
-		if g == nil || pg == nil || pg.Platform == PlatformComposite {
-			continue
-		}
-		idx := modelIdx[gid]
-		if idx == nil {
-			idx = make(map[modelKey]int, len(g.ModelsListConfig.Models))
-			modelIdx[gid] = idx
-		}
-		for _, configuredName := range g.ModelsListConfig.Models {
-			name := strings.TrimSpace(configuredName)
-			if name == "" {
-				continue
-			}
-			key := modelKey{platform: pg.Platform, name: name}
-			if _, seen := idx[key]; seen {
-				continue
-			}
-			idx[key] = len(pg.Models)
-			pg.Models = append(pg.Models, PlazaModel{Name: name, Platform: pg.Platform})
-		}
-	}
-
 	officialMemo := make(map[string]*PlazaOfficialPricing)
 	out := make([]PlazaGroup, 0, len(order))
 	for _, gid := range order {
@@ -199,6 +170,71 @@ func (s *ChannelService) ListPlazaGroups(ctx context.Context) ([]PlazaGroup, err
 			pg.Models[j].OfficialPricing = s.lookupOfficialPricing(pg.Models[j].Name, officialMemo)
 		}
 		out = append(out, *pg)
+	}
+
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].RateMultiplier != out[j].RateMultiplier {
+			return out[i].RateMultiplier < out[j].RateMultiplier
+		}
+		return out[i].Name < out[j].Name
+	})
+	return out, nil
+}
+
+// ListConfiguredPlazaGroups returns the public catalog exactly as configured
+// in each active group's models_list_config. Official pricing enriches entries
+// when available but never determines whether a configured model is visible.
+func (s *ChannelService) ListConfiguredPlazaGroups(ctx context.Context) ([]PlazaGroup, error) {
+	groups, err := s.groupRepo.ListActive(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list active groups: %w", err)
+	}
+
+	officialMemo := make(map[string]*PlazaOfficialPricing)
+	out := make([]PlazaGroup, 0, len(groups))
+	for i := range groups {
+		g := &groups[i]
+		if len(g.ModelsListConfig.Models) == 0 {
+			continue
+		}
+		pg := PlazaGroup{
+			ID:                   g.ID,
+			Name:                 g.Name,
+			Description:          g.Description,
+			Platform:             g.Platform,
+			SubscriptionType:     g.SubscriptionType,
+			RateMultiplier:       g.RateMultiplier,
+			PeakRateEnabled:      g.PeakRateEnabled,
+			PeakStart:            g.PeakStart,
+			PeakEnd:              g.PeakEnd,
+			PeakRateMultiplier:   g.PeakRateMultiplier,
+			IsExclusive:          g.IsExclusive,
+			ImageRateIndependent: g.ImageRateIndependent,
+			ImageRateMultiplier:  g.ImageRateMultiplier,
+		}
+		seen := make(map[string]struct{}, len(g.ModelsListConfig.Models))
+		for _, configuredName := range g.ModelsListConfig.Models {
+			name := strings.TrimSpace(configuredName)
+			if name == "" {
+				continue
+			}
+			if _, exists := seen[name]; exists {
+				continue
+			}
+			seen[name] = struct{}{}
+			pg.Models = append(pg.Models, PlazaModel{
+				Name:            name,
+				Platform:        g.Platform,
+				OfficialPricing: s.lookupOfficialPricing(name, officialMemo),
+			})
+		}
+		if len(pg.Models) == 0 {
+			continue
+		}
+		sort.SliceStable(pg.Models, func(i, j int) bool {
+			return pg.Models[i].Name < pg.Models[j].Name
+		})
+		out = append(out, pg)
 	}
 
 	sort.SliceStable(out, func(i, j int) bool {

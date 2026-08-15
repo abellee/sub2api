@@ -58,6 +58,39 @@ func TestListPlazaGroups_GroupCentricAggregation(t *testing.T) {
 	require.Equal(t, "claude-sonnet", out[0].Models[1].Name)
 }
 
+func TestListConfiguredPlazaGroups_UsesGroupModelListWithoutChannelIntersection(t *testing.T) {
+	pricingSvc := newStubPricingServiceFromMap(map[string]*LiteLLMModelPricing{
+		"gemini-2.5-flash": {
+			Mode:               "chat",
+			InputCostPerToken:  3e-7,
+			OutputCostPerToken: 2.5e-6,
+		},
+	})
+	groups := []Group{
+		{
+			ID: 12, Name: "Gemini", Platform: PlatformGemini, RateMultiplier: 0.15,
+			ModelsListConfig: GroupModelsListConfig{
+				Enabled: false,
+				Models:  []string{"gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash", "unknown-gemini"},
+			},
+		},
+		{ID: 13, Name: "empty", Platform: PlatformOpenAI, RateMultiplier: 1},
+	}
+
+	out, err := newPlazaChannelService(nil, groups, pricingSvc).ListConfiguredPlazaGroups(context.Background())
+
+	require.NoError(t, err)
+	require.Len(t, out, 1)
+	require.Equal(t, "Gemini", out[0].Name)
+	require.Equal(t, []string{"gemini-2.5-flash", "gemini-2.5-pro", "unknown-gemini"}, []string{
+		out[0].Models[0].Name,
+		out[0].Models[1].Name,
+		out[0].Models[2].Name,
+	})
+	require.NotNil(t, out[0].Models[0].OfficialPricing)
+	require.Nil(t, out[0].Models[2].OfficialPricing, "missing price must not remove a configured model")
+}
+
 func TestListPlazaGroups_DedupFirstWinsWithPricingUpgrade(t *testing.T) {
 	// 同名模型:先见者胜;仅当已存条目无定价而新条目有定价时升级替换。
 	unpriced := Channel{
