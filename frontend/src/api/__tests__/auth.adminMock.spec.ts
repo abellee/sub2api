@@ -1,13 +1,18 @@
-import { beforeEach, describe, expect, it } from 'vitest'
-import { login } from '@/api/auth'
-import { shouldEnableAdminAuthMock } from '@/mocks/adminAuth'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 beforeEach(() => {
   localStorage.clear()
+  vi.resetModules()
+})
+
+afterEach(() => {
+  vi.unstubAllEnvs()
 })
 
 describe('development admin auth mock', () => {
-  it('is enabled only in development mode', () => {
+  it('is enabled only in development mode', async () => {
+    const { shouldEnableAdminAuthMock } = await import('@/mocks/adminAuth')
+
     expect(shouldEnableAdminAuthMock({
       dev: true,
       mode: 'development',
@@ -31,6 +36,9 @@ describe('development admin auth mock', () => {
   })
 
   it('accepts arbitrary non-empty credentials as an administrator', async () => {
+    vi.stubEnv('VITE_ENABLE_ADMIN_MOCK', 'true')
+    const { login } = await import('@/api/auth')
+
     const response = await login({
       email: 'anything',
       password: 'x'
