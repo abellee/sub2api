@@ -1,24 +1,45 @@
-/**
- * formatScaled formats a per-token (or per-request) USD price scaled by `scale`.
- *
- *   formatScaled(0.000003, 1_000_000)    → "$3"      // per 1M tokens
- *   formatScaled(0.5,        1)          → "$0.5"    // per request
- *   formatScaled(null,       1_000_000)  → "-"
- *   formatScaled(0.000003, 1_000_000, 2) → "$3.00"   // pad to ≥2 decimals
- *   formatScaled(1.25e-8,  1_000_000, 2) → "$0.0125" // longer decimals kept as-is
- *
- * Uses toPrecision(10) then strips trailing zeros to avoid IEEE 754 display noise.
- * `minFractionDigits` pads the result back up to a minimum number of decimals.
- */
-export function formatScaled(value: number | null, scale: number, minFractionDigits = 0): string {
+import Decimal from 'decimal.js'
+
+export type PricingValue = Decimal.Value
+
+/** Format a decimal without scientific notation, preserving every meaningful digit. */
+export function formatDecimal(
+  value: PricingValue | null | undefined,
+  minFractionDigits = 0,
+  groupThousands = false,
+): string {
   if (value == null) return '-'
-  let s = (value * scale).toPrecision(10).replace(/\.?0+$/, '')
-  if (minFractionDigits > 0 && !s.includes('e')) {
-    const dot = s.indexOf('.')
-    const digits = dot === -1 ? 0 : s.length - dot - 1
-    if (digits < minFractionDigits) {
-      s = (dot === -1 ? `${s}.` : s) + '0'.repeat(minFractionDigits - digits)
-    }
+
+  let decimal: Decimal
+  try {
+    decimal = new Decimal(value)
+  } catch {
+    return '-'
   }
-  return `$${s}`
+  if (!decimal.isFinite()) return '-'
+
+  const [integerPart, fractionPart = ''] = decimal.toFixed().split('.')
+  const paddedFraction = fractionPart.length < minFractionDigits
+    ? fractionPart.padEnd(minFractionDigits, '0')
+    : fractionPart
+  const groupedInteger = groupThousands
+    ? integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+    : integerPart
+  return paddedFraction ? `${groupedInteger}.${paddedFraction}` : groupedInteger
+}
+
+/** Scale and multiply a price entirely in decimal arithmetic before formatting. */
+export function formatScaled(
+  value: PricingValue | null | undefined,
+  scale: PricingValue,
+  minFractionDigits = 0,
+  multiplier: PricingValue = 1,
+): string {
+  if (value == null) return '-'
+  try {
+    const scaled = new Decimal(value).mul(scale).mul(multiplier)
+    return `$${formatDecimal(scaled, minFractionDigits)}`
+  } catch {
+    return '-'
+  }
 }

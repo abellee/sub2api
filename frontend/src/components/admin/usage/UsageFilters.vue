@@ -172,6 +172,25 @@
 
       <!-- Right: actions -->
       <div v-if="showActions" class="flex w-full flex-wrap items-center justify-end gap-3 sm:w-auto">
+        <label
+          v-if="mode === 'usage' && autoRefresh !== undefined"
+          class="inline-flex cursor-pointer items-center gap-2 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300"
+        >
+          <input
+            type="checkbox"
+            class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-600 dark:bg-dark-800"
+            :checked="autoRefresh"
+            :aria-label="t('common.autoRefresh.enable')"
+            @change="handleAutoRefreshChange"
+          />
+          <span>{{ t('common.autoRefresh.enable') }}</span>
+          <span v-if="autoRefresh && autoRefreshPending" class="text-xs text-primary-600 dark:text-primary-400">
+            {{ t('common.loading') }}
+          </span>
+          <span v-else-if="autoRefresh && autoRefreshCountdown !== undefined" class="font-mono text-xs text-primary-600 dark:text-primary-400">
+            {{ t('common.autoRefresh.countdown', { seconds: autoRefreshCountdown }) }}
+          </span>
+        </label>
         <button type="button" @click="$emit('refresh')" class="btn btn-secondary">
           {{ t('common.refresh') }}
         </button>
@@ -209,6 +228,12 @@ interface Props {
   endDate: string
   showActions?: boolean
   modelOptions?: string[]
+  /** 使用记录页的自动刷新开关；未传入时不显示复选框。 */
+  autoRefresh?: boolean
+  /** 自动刷新剩余秒数。 */
+  autoRefreshCountdown?: number
+  /** 自动刷新请求正在执行。 */
+  autoRefreshPending?: boolean
   /**
    * errors 模式:隐藏用量专属字段/按钮,显示错误类型+状态码(错误请求 tab 用)
    * ranking 模式:同 usage 但隐藏计费模式筛选与清理/导出按钮(用户排行 tab 用)
@@ -225,6 +250,7 @@ const props = withDefaults(defineProps<Props>(), {
 })
 const emit = defineEmits([
   'update:modelValue',
+  'update:autoRefresh',
   'change',
   'refresh',
   'reset',
@@ -319,6 +345,10 @@ const upstreamModelMismatchOptions = ref<SelectOption[]>([
 ])
 
 const emitChange = () => emit('change')
+
+const handleAutoRefreshChange = (event: Event) => {
+  emit('update:autoRefresh', (event.target as HTMLInputElement).checked)
+}
 
 const clearPendingUserSearch = () => {
   if (userSearchTimeout) {

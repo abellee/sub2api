@@ -70,6 +70,7 @@ import DOMPurify from 'dompurify'
 import Icon from '@/components/icons/Icon.vue'
 import PlazaFilterBar from './PlazaFilterBar.vue'
 import PlazaGroupSection from './PlazaGroupSection.vue'
+import { modelPlazaProviderForGroup } from '@/components/model-plaza/modelPlaza'
 import type { ModelPlazaGroup, ModelPlazaResponse } from '@/api/modelPlaza'
 import { useAuthStore } from '@/stores/auth'
 
@@ -104,21 +105,49 @@ function effectiveRate(g: ModelPlazaGroup): number {
 }
 
 const platforms = computed(() =>
-  [...new Set((props.response?.groups ?? []).map((g) => g.platform).filter(Boolean))].sort()
+  [...new Set((props.response?.groups ?? []).map(modelPlazaProviderForGroup).filter(Boolean))].sort()
 )
+
+// Use the first available provider as the initial branch of the catalog. Users
+// can still choose "all providers" when they need a cross-provider view.
+watch(platforms, (list) => {
+  if (list.length === 0) {
+    selectedPlatform.value = 'all'
+    return
+  }
+  if (selectedPlatform.value === 'all' || !list.includes(selectedPlatform.value)) {
+    selectedPlatform.value = list[0]
+  }
+}, { immediate: true })
 
 const groupOptions = computed(() =>
   (props.response?.groups ?? []).map((g) => ({
     id: g.id,
     name: g.name,
-    platform: g.platform,
+    platform: modelPlazaProviderForGroup(g),
     rate: effectiveRate(g)
   }))
 )
 
+watch([selectedPlatform, groupOptions], () => {
+  if (
+    selectedGroupId.value !== 'all' &&
+    selectedPlatform.value !== 'all' &&
+    !groupOptions.value.some(
+      (group) => group.id === selectedGroupId.value && group.platform === selectedPlatform.value
+    )
+  ) {
+    selectedGroupId.value = 'all'
+  }
+})
+
 /** 全量生效倍率;当前组合下不可用的项由 FilterBar 置灰而非隐藏。 */
 const rates = computed(() =>
-  [...new Set((props.response?.groups ?? []).map(effectiveRate))].sort((a, b) => a - b)
+  [...new Set(
+    (props.response?.groups ?? [])
+      .filter((group) => selectedPlatform.value === 'all' || modelPlazaProviderForGroup(group) === selectedPlatform.value)
+      .map(effectiveRate)
+  )].sort((a, b) => a - b)
 )
 
 /** 数据刷新后选中的倍率可能不复存在,重置为全部。 */
@@ -131,7 +160,7 @@ watch(rates, (list) => {
 const filteredGroups = computed(() => {
   let groups = props.response?.groups ?? []
   if (selectedPlatform.value !== 'all') {
-    groups = groups.filter((g) => g.platform === selectedPlatform.value)
+    groups = groups.filter((g) => modelPlazaProviderForGroup(g) === selectedPlatform.value)
   }
   if (selectedGroupId.value !== 'all') {
     groups = groups.filter((g) => g.id === selectedGroupId.value)

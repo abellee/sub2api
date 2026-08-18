@@ -19,6 +19,9 @@ const subscriptionStore = useSubscriptionStore()
 const announcementStore = useAnnouncementStore()
 const adminComplianceStore = useAdminComplianceStore()
 const adminSettingsStore = useAdminSettingsStore()
+const USER_REFRESH_MIN_INTERVAL_MS = 5000
+let lastUserRefreshAt = 0
+let userRefreshInFlight: Promise<unknown> | null = null
 
 function updateDocumentTitle() {
   const customMenuItems = [
@@ -58,6 +61,22 @@ function onVisibilityChange() {
   if (document.visibilityState === 'visible' && authStore.isAuthenticated) {
     announcementStore.fetchAnnouncements()
   }
+}
+
+function refreshCurrentUserAfterNavigation() {
+  if (!authStore.isAuthenticated || userRefreshInFlight) return
+
+  const now = Date.now()
+  if (now - lastUserRefreshAt < USER_REFRESH_MIN_INTERVAL_MS) return
+  lastUserRefreshAt = now
+
+  userRefreshInFlight = authStore.refreshUser()
+    .catch((error) => {
+      console.error('Failed to refresh current user after navigation:', error)
+    })
+    .finally(() => {
+      userRefreshInFlight = null
+    })
 }
 
 function onAdminComplianceRequired(event: Event) {
@@ -103,14 +122,16 @@ watch(
   { immediate: true }
 )
 
-// Route change trigger (throttled by store)
-router.afterEach(() => {
+// Route changes refresh balance-bearing user data at most once every five seconds.
+const removeRouteAfterEach = router.afterEach(() => {
   if (authStore.isAuthenticated) {
     announcementStore.fetchAnnouncements()
+    refreshCurrentUserAfterNavigation()
   }
 })
 
 onBeforeUnmount(() => {
+  removeRouteAfterEach()
   document.removeEventListener('visibilitychange', onVisibilityChange)
   window.removeEventListener('admin-compliance-required', onAdminComplianceRequired)
 })

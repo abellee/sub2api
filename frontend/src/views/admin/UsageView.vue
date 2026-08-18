@@ -83,7 +83,7 @@
           </button>
         </div>
 
-        <UsageFilters v-model="filters" ref="usageFiltersRef" flat :mode="activeTab" class="border-b border-gray-100 dark:border-dark-700/50" :start-date="startDate" :end-date="endDate" :exporting="exporting" :model-options="modelNameOptions" @change="applyFilters" @refresh="refreshData" @reset="resetFilters" @cleanup="openCleanupDialog" @export="exportToExcel">
+        <UsageFilters v-model="filters" ref="usageFiltersRef" flat :mode="activeTab" :auto-refresh="autoRefreshEnabled" :auto-refresh-countdown="autoRefreshCountdown" :auto-refresh-pending="autoRefreshPending" class="border-b border-gray-100 dark:border-dark-700/50" :start-date="startDate" :end-date="endDate" :exporting="exporting" :model-options="modelNameOptions" @change="applyFilters" @refresh="refreshData" @update:autoRefresh="autoRefreshEnabled = $event" @reset="resetFilters" @cleanup="openCleanupDialog" @export="exportToExcel">
           <template #after-reset>
             <div v-if="activeTab !== 'ranking'" class="relative" ref="columnDropdownRef">
               <button
@@ -228,6 +228,10 @@ const upstreamEndpointStats = ref<EndpointStat[]>([])
 const endpointPathStats = ref<EndpointStat[]>([])
 const endpointStatsLoading = ref(false)
 let abortController: AbortController | null = null; let exportAbortController: AbortController | null = null
+const autoRefreshEnabled = ref(false)
+const autoRefreshCountdown = ref(0)
+const autoRefreshPending = ref(false)
+let autoRefreshTimer: number | null = null
 let chartReqSeq = 0
 let statsReqSeq = 0
 let modelStatsReqSeq = 0
@@ -385,16 +389,61 @@ const buildUsageListParams = (
   }
 }
 
-const loadLogs = async () => {
+const loadLogs = async (): Promise<boolean> => {
   abortController?.abort(); const c = new AbortController(); abortController = c; loading.value = true
   try {
     const res = await adminAPI.usage.list(
       buildUsageListParams(pagination.page, pagination.page_size, false),
       { signal: c.signal }
     )
-    if(!c.signal.aborted) { usageLogs.value = res.items; pagination.total = res.total }
-  } catch (error: any) { if(error?.name !== 'AbortError') console.error('Failed to load usage logs:', error) } finally { if(abortController === c) loading.value = false }
+    if (c.signal.aborted) return false
+    usageLogs.value = res.items
+    pagination.total = res.total
+    return true
+  } catch (error: any) {
+    if (error?.name !== 'AbortError') console.error('Failed to load usage logs:', error)
+    return false
+  } finally {
+    if (abortController === c) loading.value = false
+  }
 }
+
+const stopAutoRefresh = () => {
+  if (autoRefreshTimer !== null) {
+    window.clearInterval(autoRefreshTimer)
+    autoRefreshTimer = null
+  }
+  autoRefreshCountdown.value = 0
+}
+
+const refreshLogsAutomatically = async () => {
+  if (!autoRefreshEnabled.value || autoRefreshPending.value || loading.value) return
+
+  autoRefreshPending.value = true
+  autoRefreshCountdown.value = 0
+  await loadLogs()
+  autoRefreshPending.value = false
+
+  // A failed request starts a fresh retry window; a successful request starts
+  // the next normal refresh window. Neither path can overlap another request.
+  if (autoRefreshEnabled.value) autoRefreshCountdown.value = 5
+}
+
+const startAutoRefresh = () => {
+  stopAutoRefresh()
+  if (!autoRefreshEnabled.value) return
+  autoRefreshCountdown.value = 5
+  autoRefreshTimer = window.setInterval(() => {
+    if (autoRefreshPending.value) return
+    if (autoRefreshCountdown.value <= 1) {
+      if (!loading.value) void refreshLogsAutomatically()
+    } else {
+      autoRefreshCountdown.value -= 1
+    }
+  }, 1000)
+}
+
+watch(autoRefreshEnabled, startAutoRefresh)
 const loadStats = async (force = false) => {
   const seq = ++statsReqSeq
   endpointStatsLoading.value = true
@@ -865,7 +914,7 @@ onMounted(() => {
   loadSavedErrColumns()
   document.addEventListener('click', handleColumnClickOutside)
 })
-onUnmounted(() => { abortController?.abort(); exportAbortController?.abort(); document.removeEventListener('click', handleColumnClickOutside) })
+onUnmounted(() => { stopAutoRefresh(); abortController?.abort(); exportAbortController?.abort(); document.removeEventListener('click', handleColumnClickOutside) })
 
 watch(modelDistributionSource, (source) => {
   void loadModelStats(source)

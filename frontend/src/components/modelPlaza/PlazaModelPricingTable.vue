@@ -65,6 +65,7 @@
           <!-- 模型名 + 非 token 计费模式徽章 -->
           <td class="border-r border-gray-100 py-2.5 pl-5 pr-4 align-middle dark:border-dark-700/60">
             <div class="flex flex-wrap items-center gap-1.5">
+              <ModelIcon :model="m.platform" size="18px" />
               <span class="font-medium text-gray-900 dark:text-white">{{ m.name }}</span>
               <span
                 v-if="platform && m.platform !== platform"
@@ -212,6 +213,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { formatScaled } from '@/utils/pricing'
+import ModelIcon from '@/components/common/ModelIcon.vue'
 import { platformAccentColor, platformBadgeLightClass, platformLabel } from '@/utils/platformColors'
 import {
   BILLING_MODE_TOKEN,
@@ -282,7 +284,7 @@ const MIN_DECIMALS = 2
 /** 实付价 = 渠道单价 × 生效倍率,按 $/1M token 展示。 */
 function paidPerMillion(value: number | null | undefined): string {
   if (value == null) return '-'
-  return formatScaled(value * effectiveRate.value, PER_MILLION, MIN_DECIMALS)
+  return formatScaled(value, PER_MILLION, MIN_DECIMALS, effectiveRate.value)
 }
 
 /** 图片计费模型且分组开启生图独立倍率:实付倍率取独立倍率,与计费口径一致。 */
@@ -298,7 +300,7 @@ function requestRate(m: PlazaModel): number {
 /** 按次 / 按图片单价(乘该行生效倍率,不换算 1M)。 */
 function paidRequestPrice(m: PlazaModel, value: number | null | undefined): string {
   if (value == null) return '-'
-  return formatScaled(value * requestRate(m), 1, MIN_DECIMALS)
+  return formatScaled(value, 1, MIN_DECIMALS, requestRate(m))
 }
 
 /** 官方参考价不乘倍率。 */

@@ -38,13 +38,22 @@ export interface ModelPlazaGroup {
 export interface ModelPlazaResponse {
   description: string
   groups: ModelPlazaGroup[]
+  /** Development-only fallback payload marker. */
+  demo?: boolean
 }
 
 export async function getModelPlaza(options?: { signal?: AbortSignal }): Promise<ModelPlazaResponse> {
-  const { data } = await apiClient.get<ModelPlazaResponse>('/model-plaza/public', {
-    signal: options?.signal
-  })
-  return data
+  try {
+    const { data } = await apiClient.get<ModelPlazaResponse>('/model-plaza/public', {
+      signal: options?.signal
+    })
+    if (!import.meta.env.DEV || data.groups.length > 0) return data
+  } catch (error) {
+    if (!import.meta.env.DEV || options?.signal?.aborted) throw error
+  }
+
+  const { createDevModelPlazaResponse } = await import('./modelPlazaMock')
+  return createDevModelPlazaResponse()
 }
 
 export const modelPlazaAPI = { getModelPlaza }

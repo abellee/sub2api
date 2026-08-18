@@ -163,7 +163,7 @@ const iconKey = computed(() => {
   const modelLower = props.model.toLowerCase()
 
   // OpenAI models
-  if (modelLower.startsWith('gpt') || modelLower.startsWith('o1') ||
+  if (modelLower === 'openai' || modelLower.startsWith('gpt') || modelLower.startsWith('o1') ||
       modelLower.startsWith('o3') || modelLower.startsWith('o4') ||
       modelLower.includes('chatgpt') || modelLower.includes('dall-e') ||
       modelLower.includes('whisper') || modelLower.includes('tts-1') ||
@@ -172,10 +172,10 @@ const iconKey = computed(() => {
       modelLower.includes('curie') || modelLower.includes('ada')) return 'openai'
 
   // Anthropic Claude
-  if (modelLower.includes('claude')) return 'claude'
+  if (modelLower === 'anthropic' || modelLower.includes('claude')) return 'claude'
 
   // Google Gemini
-  if (modelLower.includes('gemini') || modelLower.includes('gemma') ||
+  if (modelLower === 'google' || modelLower.includes('gemini') || modelLower.includes('gemma') ||
       modelLower.includes('learnlm') || modelLower.includes('imagen-') ||
       modelLower.includes('veo-')) return 'gemini'
 
