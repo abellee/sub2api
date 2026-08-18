@@ -117,6 +117,7 @@ vi.mock('vue-router', () => ({
 
 const AppLayoutStub = { template: '<div><slot /></div>' }
 const UsageFiltersStub = defineComponent({
+  props: ['autoRefresh', 'autoRefreshCountdown', 'autoRefreshPending'],
   setup(_, { expose }) {
     const userKeyword = ref('')
     let userSearchRevision = 0
@@ -131,7 +132,7 @@ const UsageFiltersStub = defineComponent({
     })
     return { userKeyword }
   },
-  template: '<div><span data-test="user-filter-label">{{ userKeyword }}</span><slot name="after-reset" /></div>',
+  template: '<div><span data-test="user-filter-label">{{ userKeyword }}</span><button data-test="auto-refresh" @click="$emit(\'update:autoRefresh\', true)">auto</button><span data-test="auto-refresh-countdown">{{ autoRefreshCountdown }}</span><span data-test="auto-refresh-pending">{{ autoRefreshPending }}</span><slot name="after-reset" /></div>',
 })
 const UsageTableStub = {
   props: ['columns'],
@@ -209,6 +210,54 @@ describe('admin UsageView route filters', () => {
     expect(getById).toHaveBeenCalledWith(42, true)
     expect(list).toHaveBeenCalledWith(expect.objectContaining({ user_id: 42 }), expect.anything())
     expect(wrapper.find('[data-test="user-filter-label"]').text()).toBe('route-user@test.com')
+  })
+
+  it('refreshes the usage list every five seconds while auto refresh is enabled', async () => {
+    const wrapper = mountRouteFilteredUsageView()
+    await flushPromises()
+    const initialCalls = list.mock.calls.length
+
+    await wrapper.get('[data-test="auto-refresh"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test="auto-refresh-countdown"]').text()).toBe('5')
+
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(wrapper.get('[data-test="auto-refresh-countdown"]').text()).toBe('4')
+
+    let resolveRefresh!: (value: { items: never[]; total: number; pages: number }) => void
+    list.mockImplementationOnce(() => new Promise((resolve) => { resolveRefresh = resolve }))
+    await vi.advanceTimersByTimeAsync(4000)
+    expect(list).toHaveBeenCalledTimes(initialCalls + 1)
+    expect(wrapper.get('[data-test="auto-refresh-pending"]').text()).toBe('true')
+    expect(wrapper.get('[data-test="auto-refresh-countdown"]').text()).toBe('0')
+
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(list).toHaveBeenCalledTimes(initialCalls + 1)
+    expect(wrapper.get('[data-test="auto-refresh-countdown"]').text()).toBe('0')
+
+    resolveRefresh({ items: [], total: 0, pages: 0 })
+    await flushPromises()
+    expect(wrapper.get('[data-test="auto-refresh-pending"]').text()).toBe('false')
+    expect(wrapper.get('[data-test="auto-refresh-countdown"]').text()).toBe('5')
+  })
+
+  it('retries five seconds after an automatic refresh request fails', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const wrapper = mountRouteFilteredUsageView()
+    await flushPromises()
+    const initialCalls = list.mock.calls.length
+    list.mockRejectedValueOnce(new Error('temporary failure'))
+
+    await wrapper.get('[data-test="auto-refresh"]').trigger('click')
+    await vi.advanceTimersByTimeAsync(5000)
+    await flushPromises()
+    expect(list).toHaveBeenCalledTimes(initialCalls + 1)
+    expect(wrapper.get('[data-test="auto-refresh-countdown"]').text()).toBe('5')
+
+    await vi.advanceTimersByTimeAsync(5000)
+    await flushPromises()
+    expect(list).toHaveBeenCalledTimes(initialCalls + 2)
+    consoleError.mockRestore()
   })
 
   it('does not apply a stale routed user label after user_id changes', async () => {

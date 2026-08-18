@@ -543,11 +543,18 @@ export default {
     noSearchResult: 'No matching models',
     anonymousHint: 'Sign in to see your exclusive groups and personal rates',
     filters: {
-      platformLabel: 'Platform',
+      platformLabel: 'Provider',
+      providerLabel: 'Model provider',
+      providerHint: 'Choose a provider first, then browse its groups',
       groupLabel: 'Group',
+      allProviders: 'All providers',
+      allGroups: 'All groups',
+      noGroupsForProvider: 'No groups are available for this provider',
+      lowest: 'LOWEST',
       rateLabel: 'Rate',
       modelLabel: 'Model',
       searchPlaceholder: 'Search models',
+      clearSearch: 'Clear search',
       all: 'All'
     },
     badges: {

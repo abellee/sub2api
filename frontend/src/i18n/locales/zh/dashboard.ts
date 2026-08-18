@@ -548,11 +548,18 @@ export default {
     noSearchResult: '没有匹配的模型',
     anonymousHint: '登录后可查看你的专属分组与专属倍率',
     filters: {
-      platformLabel: '平台',
+      platformLabel: '模型厂商',
+      providerLabel: '模型厂商',
+      providerHint: '先选择厂商，再浏览对应分组',
       groupLabel: '分组',
+      allProviders: '全部厂商',
+      allGroups: '全部分组',
+      noGroupsForProvider: '该厂商暂无可展示的分组',
+      lowest: '最低',
       rateLabel: '倍率',
       modelLabel: '模型',
       searchPlaceholder: '搜索模型名称',
+      clearSearch: '清除搜索',
       all: '全部'
     },
     badges: {

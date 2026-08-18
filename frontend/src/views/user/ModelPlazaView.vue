@@ -1,6 +1,6 @@
 <template>
   <AppLayout>
-    <div class="mx-auto max-w-7xl">
+    <div class="w-full min-w-0">
       <ModelPlazaContent variant="console" />
     </div>
   </AppLayout>
