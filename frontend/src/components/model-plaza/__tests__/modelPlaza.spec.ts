@@ -64,12 +64,12 @@ describe('model plaza matching', () => {
     expect(entries[0]).toEqual(expect.objectContaining({ provider: 'gemini', input: '0.3', output: '2.5', cache: null }))
   })
 
-  it('extracts DeepSeek-prefixed OpenAI groups into the DeepSeek provider', () => {
+  it('uses the native DeepSeek platform for DeepSeek groups', () => {
     const deepSeekGroup: ModelPlazaGroup = {
       id: 18,
       name: 'DeepSeek 高速线路',
       description: '',
-      platform: 'openai',
+      platform: 'deepseek',
       subscription_type: 'standard',
       rate_multiplier: 0.35,
       peak_rate_enabled: false,
@@ -81,7 +81,7 @@ describe('model plaza matching', () => {
       image_rate_multiplier: 1,
       models: [{
         name: 'deepseek-v3.2',
-        platform: 'openai',
+        platform: 'deepseek',
         pricing: null,
         official_pricing: null,
       }],

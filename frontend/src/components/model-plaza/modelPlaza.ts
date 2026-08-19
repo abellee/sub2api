@@ -14,9 +14,8 @@ export interface ModelPlazaEntry {
 }
 
 export function modelPlazaProviderForGroup(
-  group: Pick<ModelPlazaGroup, 'name' | 'platform'>,
+  group: Pick<ModelPlazaGroup, 'platform'>,
 ): string {
-  if (/^deepseek/i.test(group.name.trim())) return 'deepseek'
   return normalizeProvider(group.platform)
 }
 
