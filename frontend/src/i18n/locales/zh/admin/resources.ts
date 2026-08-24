@@ -503,6 +503,19 @@ export default {
       failedToLoadUsages: '加载使用记录失败'
     },
 
+    ranking: {
+      title: '排行榜',
+      description: '查看所选时间范围内所有有消耗记录用户的排行',
+      metricLabel: '排行指标',
+      metrics: {
+        tokens: 'Token 消耗',
+        cost: '金额消耗'
+      },
+      tokenSubtitle: '按当前筛选与时间范围统计每个用户的 Token 用量',
+      costSubtitle: '按当前筛选与时间范围统计每个用户的金额消耗',
+      rangeHint: '点击用户可查看对应的用量明细'
+    },
+
     // Usage Records
     usage: {
       title: '使用记录',

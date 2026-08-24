@@ -170,6 +170,7 @@ export default {
     affiliateTransferRecords: 'Transfer Records',
     profile: 'Profile',
     users: 'Users',
+    ranking: 'Leaderboard',
     groups: 'Groups',
     channels: 'Channels',
     availableChannels: 'Available Channels',

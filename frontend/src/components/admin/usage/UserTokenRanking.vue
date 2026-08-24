@@ -3,12 +3,16 @@
   <div>
     <!-- Toolbar -->
     <div class="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 px-4 py-3 dark:border-dark-700/50 sm:px-6">
-      <p class="text-xs text-gray-400 dark:text-gray-500">{{ t('admin.usage.tokenRanking.subtitle') }}</p>
+      <p class="text-xs text-gray-400 dark:text-gray-500">
+        {{ metricOnly
+          ? t(props.metric === 'cost' ? 'admin.ranking.costSubtitle' : 'admin.ranking.tokenSubtitle')
+          : t('admin.usage.tokenRanking.subtitle') }}
+      </p>
       <div class="flex items-center gap-3">
         <span v-if="!loading && items.length > 0" class="text-xs text-gray-400 dark:text-gray-500">
           {{ t('admin.usage.tokenRanking.userCount', { count: items.length }) }}
         </span>
-        <div class="w-28">
+        <div v-if="showLimit" class="w-28">
           <Select v-model="limit" :options="limitOptions" @change="load" />
         </div>
       </div>
@@ -24,11 +28,14 @@
               {{ t('admin.usage.tokenRanking.columns.user') }}
             </th>
             <th
-              v-for="col in sortableColumns"
+              v-for="col in visibleColumns"
               :key="col.key"
-              class="cursor-pointer select-none whitespace-nowrap px-4 py-3 text-right text-xs font-medium uppercase tracking-wider transition-colors hover:bg-gray-100 dark:hover:bg-dark-700"
-              :class="sortBy === col.key ? 'text-primary-600 dark:text-primary-400' : 'text-gray-500 dark:text-dark-400'"
-              @click="setSort(col.key)"
+              class="select-none whitespace-nowrap px-4 py-3 text-right text-xs font-medium uppercase tracking-wider transition-colors"
+              :class="[
+                sortBy === col.key ? 'text-primary-600 dark:text-primary-400' : 'text-gray-500 dark:text-dark-400',
+                metricOnly ? '' : 'cursor-pointer hover:bg-gray-100 dark:hover:bg-dark-700',
+              ]"
+              @click="metricOnly ? undefined : setSort(col.key)"
             >
               {{ t(col.label) }}
               <span v-if="sortBy === col.key" aria-hidden="true">↓</span>
@@ -37,12 +44,12 @@
         </thead>
         <tbody class="divide-y divide-gray-200 bg-white dark:divide-dark-700 dark:bg-dark-900">
           <tr v-if="loading">
-            <td :colspan="sortableColumns.length + 2" class="py-12 text-center">
+            <td :colspan="visibleColumns.length + 2" class="py-12 text-center">
               <LoadingSpinner />
             </td>
           </tr>
           <tr v-else-if="items.length === 0">
-            <td :colspan="sortableColumns.length + 2" class="py-12 text-center text-sm text-gray-400">
+            <td :colspan="visibleColumns.length + 2" class="py-12 text-center text-sm text-gray-400">
               {{ t('admin.dashboard.noDataAvailable') }}
             </td>
           </tr>
@@ -66,12 +73,18 @@
               {{ item.email || `User #${item.user_id}` }}
               <span class="ml-1 font-normal text-gray-400 dark:text-gray-500">#{{ item.user_id }}</span>
             </td>
-            <td class="whitespace-nowrap px-4 py-3 text-right text-sm tabular-nums text-gray-500 dark:text-gray-400">{{ item.requests.toLocaleString() }}</td>
-            <td class="whitespace-nowrap px-4 py-3 text-right text-sm tabular-nums text-gray-500 dark:text-gray-400">{{ fmtTokens(item.input_tokens) }}</td>
-            <td class="whitespace-nowrap px-4 py-3 text-right text-sm tabular-nums text-gray-500 dark:text-gray-400">{{ fmtTokens(item.output_tokens) }}</td>
-            <td class="whitespace-nowrap px-4 py-3 text-right text-sm tabular-nums text-gray-500 dark:text-gray-400">{{ fmtTokens(item.cache_tokens) }}</td>
-            <td class="whitespace-nowrap px-4 py-3 text-right text-sm font-medium tabular-nums text-gray-900 dark:text-gray-100">{{ fmtTokens(item.total_tokens) }}</td>
-            <td class="whitespace-nowrap px-4 py-3 text-right text-sm font-medium tabular-nums text-green-600 dark:text-green-400">${{ fmtCost(item.actual_cost) }}</td>
+            <td
+              v-for="col in visibleColumns"
+              :key="col.key"
+              class="whitespace-nowrap px-4 py-3 text-right text-sm tabular-nums"
+              :class="col.key === 'actual_cost'
+                ? 'font-medium text-green-600 dark:text-green-400'
+                : col.key === 'total_tokens'
+                  ? 'font-medium text-gray-900 dark:text-gray-100'
+                  : 'text-gray-500 dark:text-gray-400'"
+            >
+              {{ formatColumnValue(item, col.key) }}
+            </td>
           </tr>
         </tbody>
       </table>
@@ -80,7 +93,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { getUserBreakdown, type UserBreakdownParams } from '@/api/admin/dashboard'
 import { formatCompactNumber, formatCostFixed } from '@/utils/format'
@@ -88,12 +101,23 @@ import type { UserBreakdownItem } from '@/types'
 import Select from '@/components/common/Select.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 
-const props = defineProps<{
+type RankingMetric = 'tokens' | 'cost'
+
+const props = withDefaults(defineProps<{
   startDate: string
   endDate: string
   filters: Record<string, unknown>
   model?: string
-}>()
+  metric?: RankingMetric
+  resultLimit?: number
+  showLimit?: boolean
+  metricOnly?: boolean
+}>(), {
+  metric: 'tokens',
+  resultLimit: 50,
+  showLimit: true,
+  metricOnly: false,
+})
 
 defineEmits<{ (e: 'select-user', userId: number, email: string): void }>()
 
@@ -108,6 +132,11 @@ const sortableColumns: { key: SortKey; label: string }[] = [
   { key: 'total_tokens', label: 'admin.usage.tokenRanking.columns.totalTokens' },
   { key: 'actual_cost', label: 'admin.usage.tokenRanking.columns.cost' },
 ]
+const visibleColumns = computed(() => {
+  if (!props.metricOnly) return sortableColumns
+  const key: SortKey = props.metric === 'cost' ? 'actual_cost' : 'total_tokens'
+  return sortableColumns.filter((column) => column.key === key)
+})
 
 const limitOptions = [
   { value: 20, label: 'Top 20' },
@@ -125,12 +154,17 @@ const RANK_BADGE_CLASSES = [
 
 const items = ref<UserBreakdownItem[]>([])
 const loading = ref(false)
-const sortBy = ref<SortKey>('total_tokens')
-const limit = ref(50)
+const sortBy = ref<SortKey>(props.metric === 'cost' ? 'actual_cost' : 'total_tokens')
+const limit = ref(props.resultLimit)
 let reqSeq = 0
 
 const fmtTokens = (v: number) => formatCompactNumber(v)
 const fmtCost = (v: number) => formatCostFixed(v, 4)
+const formatColumnValue = (item: UserBreakdownItem, key: SortKey): string => {
+  if (key === 'requests') return item.requests.toLocaleString()
+  if (key === 'actual_cost' || key === 'cost') return `$${fmtCost(item.actual_cost)}`
+  return fmtTokens(item[key])
+}
 
 const setSort = (key: SortKey) => {
   if (sortBy.value === key) return
@@ -166,6 +200,25 @@ watch(
   () => [props.startDate, props.endDate, props.model, JSON.stringify(props.filters)],
   () => load(),
   { immediate: true }
+)
+
+watch(
+  () => props.metric,
+  (metric) => {
+    const nextSort: SortKey = metric === 'cost' ? 'actual_cost' : 'total_tokens'
+    if (sortBy.value === nextSort) return
+    sortBy.value = nextSort
+    load()
+  }
+)
+
+watch(
+  () => props.resultLimit,
+  (nextLimit) => {
+    if (limit.value === nextLimit) return
+    limit.value = nextLimit
+    load()
+  }
 )
 
 defineExpose({ reload: load })

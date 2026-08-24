@@ -506,6 +506,19 @@ export default {
       failedToLoadUsages: 'Failed to load usage records'
     },
 
+    ranking: {
+      title: 'Leaderboard',
+      description: 'Rank every user with usage in the selected time range',
+      metricLabel: 'Ranking metric',
+      metrics: {
+        tokens: 'Token Usage',
+        cost: 'Amount Spent'
+      },
+      tokenSubtitle: 'Token usage per user for the selected time range',
+      costSubtitle: 'Amount spent per user for the selected time range',
+      rangeHint: 'Select a user to view their usage details'
+    },
+
     // Usage Records
     usage: {
       title: 'Usage Records',
