@@ -13,6 +13,9 @@ import (
 // stubMonitorSvc 实现 monitorRunnerSvc，用于隔离 runner 与真实 service/repo。
 type stubMonitorSvc struct {
 	enabled    []*ChannelMonitor
+	runResults []*CheckResult
+	history    []*ChannelMonitorHistoryEntry
+	historyErr error
 	runCount   atomic.Int64
 	runCalled  chan int64 // 每次 RunCheck 触发时 push 一次（缓冲足够大避免阻塞）
 	runErr     error
@@ -41,11 +44,65 @@ func (s *stubMonitorSvc) RunCheck(ctx context.Context, id int64) ([]*CheckResult
 		case <-ctx.Done():
 		}
 	}
-	return nil, s.runErr
+	return s.runResults, s.runErr
+}
+
+func (s *stubMonitorSvc) ListHistory(
+	_ context.Context,
+	_ int64,
+	_ string,
+	_ int,
+) ([]*ChannelMonitorHistoryEntry, error) {
+	return s.history, s.historyErr
 }
 
 func newRunnerForTest(svc monitorRunnerSvc) *ChannelMonitorRunner {
-	return newChannelMonitorRunner(svc, nil)
+	return newChannelMonitorRunner(svc, nil, nil)
+}
+
+type stubMonitorCompletionNotifier struct {
+	mu       sync.Mutex
+	calls    int
+	name     string
+	statuses []string
+	current  string
+	err      error
+	started  chan<- struct{}
+	release  <-chan struct{}
+}
+
+func (s *stubMonitorCompletionNotifier) NotifyChannelCheckCompleted(
+	ctx context.Context,
+	name string,
+	statuses []string,
+	current string,
+) error {
+	s.mu.Lock()
+	s.calls++
+	s.name = name
+	s.statuses = statuses
+	s.current = current
+	s.mu.Unlock()
+	if s.started != nil {
+		select {
+		case s.started <- struct{}{}:
+		default:
+		}
+	}
+	if s.release != nil {
+		select {
+		case <-s.release:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return s.err
+}
+
+func (s *stubMonitorCompletionNotifier) snapshot() (int, string, []string, string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.calls, s.name, s.statuses, s.current
 }
 
 // 等待 condition 在 timeout 内变 true，否则 t.Fatalf。轮询 5ms 一次。
@@ -221,6 +278,89 @@ func TestRunOne_DecryptFailureUnschedulesTask(t *testing.T) {
 	waitFor(t, time.Second, "decrypt-failed task unscheduled", func() bool { return runnerTaskCount(r) == 0 })
 
 	stoppedWithin(t, r, 3*time.Second)
+}
+
+func TestRunOne_ScheduledCheckNotifiesAfterSuccess(t *testing.T) {
+	results := []*CheckResult{{Model: "gpt-test", Status: "operational"}}
+	svc := &stubMonitorSvc{
+		runResults: results,
+		history: []*ChannelMonitorHistoryEntry{
+			{Status: MonitorStatusDegraded},
+			{Status: MonitorStatusOperational},
+		},
+	}
+	notifier := &stubMonitorCompletionNotifier{}
+	r := newChannelMonitorRunner(svc, nil, notifier)
+
+	r.runOne(&scheduledMonitor{
+		id:           21,
+		name:         "scheduled-channel",
+		groupName:    "CC-Kiro",
+		primaryModel: "gpt-test",
+	})
+
+	waitFor(t, time.Second, "completion notification", func() bool {
+		calls, _, _, _ := notifier.snapshot()
+		return calls == 1
+	})
+	calls, name, statuses, current := notifier.snapshot()
+	if calls != 1 {
+		t.Fatalf("expected one completion notification, got %d", calls)
+	}
+	if name != "CC-Kiro" {
+		t.Fatalf("expected group name CC-Kiro, got %q", name)
+	}
+	if len(statuses) != 2 || statuses[0] != MonitorStatusOperational || statuses[1] != MonitorStatusDegraded {
+		t.Fatalf("expected oldest-to-newest statuses, got %#v", statuses)
+	}
+	if current != MonitorStatusOperational {
+		t.Fatalf("expected current result status operational, got %q", current)
+	}
+	r.Stop()
+}
+
+func TestRunOne_CompletionNotificationDoesNotBlockMonitorWorker(t *testing.T) {
+	svc := &stubMonitorSvc{
+		runResults: []*CheckResult{{Model: "gpt-test", Status: MonitorStatusOperational}},
+		history:    []*ChannelMonitorHistoryEntry{{Status: MonitorStatusOperational}},
+	}
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+	notifier := &stubMonitorCompletionNotifier{started: started, release: release}
+	r := newChannelMonitorRunner(svc, nil, notifier)
+	defer r.Stop()
+	defer close(release)
+
+	returned := make(chan struct{})
+	go func() {
+		r.runOne(&scheduledMonitor{id: 23, name: "scheduled-channel", primaryModel: "gpt-test"})
+		close(returned)
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("notification did not start")
+	}
+	select {
+	case <-returned:
+	case <-time.After(250 * time.Millisecond):
+		t.Fatal("monitor worker waited for notification delivery")
+	}
+}
+
+func TestRunOne_FailedCheckDoesNotNotify(t *testing.T) {
+	svc := &stubMonitorSvc{runErr: context.DeadlineExceeded}
+	notifier := &stubMonitorCompletionNotifier{}
+	r := newChannelMonitorRunner(svc, nil, notifier)
+
+	r.runOne(&scheduledMonitor{id: 22, name: "failed-channel"})
+
+	calls, _, _, _ := notifier.snapshot()
+	if calls != 0 {
+		t.Fatalf("expected failed check not to notify, got %d calls", calls)
+	}
+	r.Stop()
 }
 
 // TestSchedule_InvalidIntervalSkipped 验证 IntervalSeconds<=0 不会注册任务（防御性检查）。

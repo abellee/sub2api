@@ -73,6 +73,31 @@ function validateBroadcast(payload) {
   return { title, body, url, image }
 }
 
+function validateChannelCheckCompletion(payload) {
+  const groupName = String(payload.groupName || '').trim()
+  if (!groupName || groupName.length > 100) {
+    return { error: 'groupName must contain 1 to 100 characters' }
+  }
+  const statusDisplay = {
+    operational: { emoji: '🟩', label: '正常' },
+    degraded: { emoji: '🟨', label: '降级' },
+    failed: { emoji: '🟥', label: '失败' },
+    error: { emoji: '🟥', label: '异常' },
+  }
+  const recentStatuses = Array.isArray(payload.recentStatuses) ? payload.recentStatuses : []
+  if (recentStatuses.length < 1 || recentStatuses.length > 5 || recentStatuses.some((status) => !Object.hasOwn(statusDisplay, status))) {
+    return { error: 'recentStatuses must contain 1 to 5 valid channel statuses' }
+  }
+  const currentStatus = String(payload.currentStatus || '')
+  if (!Object.hasOwn(statusDisplay, currentStatus)) return { error: 'currentStatus is invalid' }
+  const history = recentStatuses.map((status) => statusDisplay[status].emoji).join('')
+  return validateBroadcast({
+    title: '渠道检测完成',
+    body: `${groupName} ${history} ${statusDisplay[currentStatus].label}`,
+    url: '/admin/channels/monitor',
+  })
+}
+
 async function defaultSender(subscription, payload, options) {
   return webpush.sendNotification(subscription, payload, options)
 }
@@ -102,7 +127,48 @@ async function sendBroadcast({ subscriptions, payload, options, sender }) {
   return result
 }
 
-export function createServer({ store, authorizeAdmin, vapidSubject, sender = defaultSender, logger = console }) {
+async function deliverBroadcast({ store, validation, vapidSubject, sender }) {
+  const subscriptions = store.listSubscriptions()
+  const vapid = store.getVapidKeys()
+  const messageID = crypto.randomUUID()
+  const notification = JSON.stringify({
+    id: messageID,
+    title: validation.title,
+    body: validation.body,
+    url: validation.url,
+    image: validation.image,
+    tag: `sub2api-broadcast-${messageID}`,
+  })
+  const sent = await sendBroadcast({
+    subscriptions,
+    payload: notification,
+    options: {
+      TTL: 24 * 60 * 60,
+      vapidDetails: {
+        subject: vapidSubject,
+        publicKey: vapid.publicKey,
+        privateKey: vapid.privateKey,
+      },
+    },
+    sender,
+  })
+  const removed = await store.removeSubscriptionsByID(sent.expiredIDs)
+  return store.addMessage({
+    ...validation,
+    delivered: sent.delivered,
+    failed: sent.failed,
+    removed,
+  })
+}
+
+export function createServer({
+  store,
+  authorizeAdmin,
+  authorizeInternal = async () => false,
+  vapidSubject,
+  sender = defaultSender,
+  logger = console,
+}) {
   return http.createServer(async (request, response) => {
     const requestURL = new URL(request.url || '/', 'http://localhost')
     try {
@@ -124,6 +190,17 @@ export function createServer({ store, authorizeAdmin, vapidSubject, sender = def
         if (!payload.endpoint) return sendJSON(response, 400, { message: 'endpoint is required' })
         const removed = await store.removeSubscription(String(payload.endpoint))
         return sendJSON(response, 200, { removed })
+      }
+
+      if (requestURL.pathname === `${API_PREFIX}/internal/channel-check-completed`) {
+        if (!(await authorizeInternal(request))) {
+          return sendJSON(response, 403, { message: 'internal access required' })
+        }
+        if (request.method !== 'POST') return sendJSON(response, 405, { message: 'method not allowed' })
+        const validation = validateChannelCheckCompletion(await readJSON(request))
+        if (validation.error) return sendJSON(response, 400, { message: validation.error })
+        const message = await deliverBroadcast({ store, validation, vapidSubject, sender })
+        return sendJSON(response, 201, { message })
       }
 
       if (requestURL.pathname.startsWith(`${API_PREFIX}/admin/`)) {
@@ -149,38 +226,7 @@ export function createServer({ store, authorizeAdmin, vapidSubject, sender = def
         if (request.method === 'POST' && requestURL.pathname === `${API_PREFIX}/admin/broadcast`) {
           const validation = validateBroadcast(await readJSON(request))
           if (validation.error) return sendJSON(response, 400, { message: validation.error })
-
-          const subscriptions = store.listSubscriptions()
-          const vapid = store.getVapidKeys()
-          const messageID = crypto.randomUUID()
-          const notification = JSON.stringify({
-            id: messageID,
-            title: validation.title,
-            body: validation.body,
-            url: validation.url,
-            image: validation.image,
-            tag: `sub2api-broadcast-${messageID}`,
-          })
-          const sent = await sendBroadcast({
-            subscriptions,
-            payload: notification,
-            options: {
-              TTL: 24 * 60 * 60,
-              vapidDetails: {
-                subject: vapidSubject,
-                publicKey: vapid.publicKey,
-                privateKey: vapid.privateKey,
-              },
-            },
-            sender,
-          })
-          const removed = await store.removeSubscriptionsByID(sent.expiredIDs)
-          const message = await store.addMessage({
-            ...validation,
-            delivered: sent.delivered,
-            failed: sent.failed,
-            removed,
-          })
+          const message = await deliverBroadcast({ store, validation, vapidSubject, sender })
           return sendJSON(response, 201, { message })
         }
       }

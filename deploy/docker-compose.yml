@@ -110,6 +110,8 @@ services:
       # with 2FA).
       # Generate a secure key: openssl rand -hex 32
       - TOTP_ENCRYPTION_KEY=${TOTP_ENCRYPTION_KEY:-}
+      - PUSH_NOTIFIER_INTERNAL_URL=${PUSH_NOTIFIER_INTERNAL_URL:-}
+      - PUSH_NOTIFIER_INTERNAL_TOKEN=${PUSH_NOTIFIER_INTERNAL_TOKEN:-}
 
       # =======================================================================
       # Timezone Configuration

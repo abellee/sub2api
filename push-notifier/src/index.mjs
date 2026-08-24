@@ -1,4 +1,4 @@
-import { createAdminAuthorizer } from './auth.mjs'
+import { createAdminAuthorizer, createInternalAuthorizer } from './auth.mjs'
 import { loadConfig } from './config.mjs'
 import { createServer } from './server.mjs'
 import { PushStore } from './store.mjs'
@@ -6,7 +6,8 @@ import { PushStore } from './store.mjs'
 const config = loadConfig()
 const store = await new PushStore(config.dataFile).init()
 const authorizeAdmin = createAdminAuthorizer(config)
-const server = createServer({ store, authorizeAdmin, vapidSubject: config.vapidSubject })
+const authorizeInternal = createInternalAuthorizer(config)
+const server = createServer({ store, authorizeAdmin, authorizeInternal, vapidSubject: config.vapidSubject })
 
 server.listen(config.port, config.host, () => {
   console.log(`push notifier listening on http://${config.host}:${config.port}`)

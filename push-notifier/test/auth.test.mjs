@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { createAdminAuthorizer } from '../src/auth.mjs'
+import { createAdminAuthorizer, createInternalAuthorizer } from '../src/auth.mjs'
 
 function request(token) {
   return { headers: { authorization: token ? `Bearer ${token}` : '' } }
@@ -35,4 +35,11 @@ test('regular users cannot broadcast', async () => {
     fetchImpl: async () => ({ ok: true, json: async () => ({ code: 0, data: { role: 'user' } }) }),
   })
   assert.equal(await authorize(request('user-token')), false)
+})
+
+test('internal token only accepts the configured shared secret', async () => {
+  const authorize = createInternalAuthorizer({ internalToken: 'internal-secret' })
+  assert.equal(await authorize(request('internal-secret')), true)
+  assert.equal(await authorize(request('wrong-token')), false)
+  assert.equal(await authorize(request('')), false)
 })

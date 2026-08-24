@@ -1007,7 +1007,7 @@ func ProvideChannelMonitorRunner(
 	settingService *SettingService,
 	quotaFetcher *ChannelMonitorQuotaFetcher,
 ) *ChannelMonitorRunner {
-	r := NewChannelMonitorRunner(svc, settingService)
+	r := NewChannelMonitorRunner(svc, settingService, newChannelMonitorPushNotifierFromEnv())
 	if svc != nil {
 		// Ensure runtime reader is set even if ProvideChannelMonitorService
 		// was constructed without settings (tests / alternate providers).

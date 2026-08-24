@@ -13,6 +13,7 @@ async function withServer(run) {
   const server = createServer({
     store,
     authorizeAdmin: async (request) => request.headers.authorization === 'Bearer admin',
+    authorizeInternal: async (request) => request.headers.authorization === 'Bearer internal',
     vapidSubject: 'mailto:test@example.com',
     sender,
     logger: { error() {} },
@@ -109,5 +110,36 @@ test('rejects image URLs that cannot be displayed by a browser notification', as
     })
     assert.equal(response.status, 400)
     assert.match((await response.json()).message, /image url/)
+  })
+})
+
+test('scheduled channel completion uses internal auth and records the status timeline', async () => {
+  await withServer(async (baseURL) => {
+    const endpoint = `${baseURL}/push-api/v1/internal/channel-check-completed`
+    const forbidden = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        groupName: 'CC-Kiro',
+        recentStatuses: ['operational'],
+        currentStatus: 'operational',
+      }),
+    })
+    assert.equal(forbidden.status, 403)
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer internal' },
+      body: JSON.stringify({
+        groupName: 'CC-Kiro',
+        recentStatuses: ['operational', 'operational', 'degraded', 'operational', 'failed'],
+        currentStatus: 'degraded',
+      }),
+    })
+    const payload = await response.json()
+    assert.equal(response.status, 201)
+    assert.equal(payload.message.title, '渠道检测完成')
+    assert.equal(payload.message.body, 'CC-Kiro 🟩🟩🟨🟩🟥 降级')
+    assert.equal(payload.message.url, '/admin/channels/monitor')
   })
 })
