@@ -94,7 +94,7 @@ function validateChannelCheckCompletion(payload) {
   return validateBroadcast({
     title: '渠道检测完成',
     body: `${groupName} ${history} ${statusDisplay[currentStatus].label}`,
-    url: '/admin/channels/monitor',
+    url: '/monitor',
   })
 }
 
