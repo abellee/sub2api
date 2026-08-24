@@ -11,6 +11,14 @@ export interface ModelPlazaEntry {
   groupId: number
   groupName: string
   rateMultiplier: number
+  intervals: ModelPlazaPriceInterval[]
+}
+
+export interface ModelPlazaPriceInterval {
+  label: string
+  input: string | null
+  output: string | null
+  cache: string | null
 }
 
 export function modelPlazaProviderForGroup(
@@ -38,6 +46,20 @@ export function buildModelPlazaEntries(
         groupId: group.id,
         groupName: group.name,
         rateMultiplier: group.user_rate_multiplier ?? group.rate_multiplier,
+        intervals: (official?.intervals ?? [])
+          .filter((interval) => (
+            interval.input_price != null
+            || interval.output_price != null
+            || interval.cache_read_price != null
+            || interval.cache_write_price != null
+          ))
+          .sort((a, b) => a.min_tokens - b.min_tokens)
+          .map((interval) => ({
+            label: interval.tier_label || formatTokenInterval(interval.min_tokens, interval.max_tokens),
+            input: perMillion(interval.input_price),
+            output: perMillion(interval.output_price),
+            cache: perMillion(interval.cache_read_price ?? interval.cache_write_price),
+          })),
       }]
     })
   })
@@ -50,6 +72,22 @@ export function formatActualModelPrice(value: string | number | null, rateMultip
   } catch {
     return '-'
   }
+}
+
+function formatTokenInterval(min: number, max: number | null): string {
+  if (max == null) return `>${formatTokenCount(min)}`
+  if (min === 0) return `≤${formatTokenCount(max)}`
+  return `${formatTokenCount(min)}–${formatTokenCount(max)}`
+}
+
+function formatTokenCount(value: number): string {
+  if (value >= 1_000_000) return `${trimNumber(value / 1_000_000)}M`
+  if (value >= 1_000) return `${trimNumber(value / 1_000)}K`
+  return String(value)
+}
+
+function trimNumber(value: number): string {
+  return value.toFixed(2).replace(/\.0+$|(?<=\.[0-9])0+$/, '')
 }
 
 function perMillion(value: number | null | undefined): string | null {

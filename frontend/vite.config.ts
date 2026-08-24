@@ -94,15 +94,21 @@ export default defineConfig(({ mode }) => {
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),
+      'vue-demi': resolve(__dirname, 'src/shims/vue-demi.ts'),
       // 使用 vue-i18n 运行时版本，避免 CSP unsafe-eval 问题
       'vue-i18n': 'vue-i18n/dist/vue-i18n.runtime.esm-bundler.js'
     }
   },
-  define: {
+    define: {
     // 启用 vue-i18n JIT 编译，在 CSP 环境下处理消息插值
     // JIT 编译器生成 AST 对象而非 JS 代码，无需 unsafe-eval
-    __INTLIFY_JIT_COMPILATION__: true
-  },
+      __INTLIFY_JIT_COMPILATION__: true
+    },
+    optimizeDeps: {
+      // The dependency tree is already installed from the lockfile. Avoid a
+      // broad filesystem scan on Windows that can terminate the dev server.
+      noDiscovery: true
+    },
   build: {
     outDir: '../backend/internal/web/dist',
     emptyOutDir: true,

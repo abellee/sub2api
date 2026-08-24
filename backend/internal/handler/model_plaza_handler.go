@@ -42,6 +42,7 @@ type modelPlazaOfficialPricing struct {
 	CacheWritePrice   *float64 `json:"cache_write_price"`
 	CacheWrite1hPrice *float64 `json:"cache_write_1h_price,omitempty"`
 	CacheReadPrice    *float64 `json:"cache_read_price"`
+	Intervals         []userPricingIntervalDTO `json:"intervals,omitempty"`
 }
 
 // modelPlazaModel 广场模型条目：渠道定价（白名单形态）+ 官方参考价。
@@ -221,5 +222,26 @@ func toModelPlazaOfficialPricing(p *service.PlazaOfficialPricing) *modelPlazaOff
 		CacheWritePrice:   p.CacheWritePrice,
 		CacheWrite1hPrice: p.CacheWrite1hPrice,
 		CacheReadPrice:    p.CacheReadPrice,
+		Intervals:         toModelPlazaPricingIntervals(p.Intervals),
 	}
+}
+
+func toModelPlazaPricingIntervals(src []service.PricingInterval) []userPricingIntervalDTO {
+	if src == nil {
+		return nil
+	}
+	intervals := make([]userPricingIntervalDTO, 0, len(src))
+	for _, iv := range src {
+		intervals = append(intervals, userPricingIntervalDTO{
+			MinTokens:       iv.MinTokens,
+			MaxTokens:       iv.MaxTokens,
+			TierLabel:       iv.TierLabel,
+			InputPrice:      iv.InputPrice,
+			OutputPrice:     iv.OutputPrice,
+			CacheWritePrice: iv.CacheWritePrice,
+			CacheReadPrice:  iv.CacheReadPrice,
+			PerRequestPrice: iv.PerRequestPrice,
+		})
+	}
+	return intervals
 }

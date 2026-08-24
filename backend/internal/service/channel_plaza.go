@@ -15,6 +15,8 @@ type PlazaOfficialPricing struct {
 	CacheWritePrice   *float64 // 5m 缓存写入（= LiteLLM cache_creation）
 	CacheWrite1hPrice *float64 // 1h 缓存写入（LiteLLM cache_creation_above_1hr）
 	CacheReadPrice    *float64
+	// Intervals 仅包含价格目录明确提供的长上下文阶梯，不因分组开关自动生成。
+	Intervals         []PricingInterval
 }
 
 // PlazaModel 模型广场中单个模型条目：渠道定价 + 官方参考价。
@@ -311,8 +313,22 @@ func (s *ChannelService) lookupOfficialPricing(modelName string, memo map[string
 			CacheWrite1hPrice: nonZeroPtr(lp.CacheCreationInputTokenCostAbove1hr),
 			CacheReadPrice:    nonZeroPtr(lp.CacheReadInputTokenCost),
 		}
+		// 只有价格目录同时明确给出阈值和输入/输出倍率时才展示长上下文价格。
+		if lp.LongContextInputTokenThreshold > 0 &&
+			lp.LongContextInputCostMultiplier > 0 &&
+			lp.LongContextOutputCostMultiplier > 0 &&
+			(lp.InputCostPerToken > 0 || lp.OutputCostPerToken > 0) {
+			result.Intervals = []PricingInterval{{
+				MinTokens:       lp.LongContextInputTokenThreshold,
+				InputPrice:      nonZeroPtr(lp.InputCostPerToken * lp.LongContextInputCostMultiplier),
+				OutputPrice:     nonZeroPtr(lp.OutputCostPerToken * lp.LongContextOutputCostMultiplier),
+				CacheWritePrice: nonZeroPtr(lp.CacheCreationInputTokenCost * lp.LongContextInputCostMultiplier),
+				CacheReadPrice:  nonZeroPtr(lp.CacheReadInputTokenCost * lp.LongContextInputCostMultiplier),
+			}}
+		}
 		if result.InputPrice == nil && result.OutputPrice == nil &&
-			result.CacheWritePrice == nil && result.CacheWrite1hPrice == nil && result.CacheReadPrice == nil {
+			result.CacheWritePrice == nil && result.CacheWrite1hPrice == nil && result.CacheReadPrice == nil &&
+			len(result.Intervals) == 0 {
 			result = nil
 		}
 	}

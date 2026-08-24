@@ -63,6 +63,30 @@ describe('PlazaModelPricingTable', () => {
     expect(text).toContain('1x')
   })
 
+  it('仅有明确官方长上下文阶梯时展示额外档位', () => {
+    const model = tokenModel({
+      official_pricing: {
+        input_price: 3e-6,
+        output_price: 1.5e-5,
+        cache_write_price: null,
+        cache_read_price: null,
+        intervals: [{
+          min_tokens: 272000,
+          max_tokens: null,
+          input_price: 6e-6,
+          output_price: 2.25e-5,
+          cache_write_price: null,
+          cache_read_price: null,
+          per_request_price: null
+        }]
+      }
+    })
+    const text = mountTable([model], 1).text()
+    expect(text).toContain('>272K')
+    expect(text).toContain('$6.00')
+    expect(text).toContain('$22.50')
+  })
+
   it('倍率 ≠ 1 时价格列为折后实付价,官方价列保持原价', () => {
     const wrapper = mountTable([tokenModel()], 0.5)
     const text = wrapper.text()

@@ -1,5 +1,5 @@
 import { apiClient } from './client'
-import type { UserSupportedModelPricing } from './channels'
+import type { UserPricingInterval, UserSupportedModelPricing } from './channels'
 
 /** Official reference pricing used by the built-in model plaza. */
 export interface PlazaOfficialPricing {
@@ -8,6 +8,8 @@ export interface PlazaOfficialPricing {
   cache_write_price: number | null
   cache_write_1h_price?: number | null
   cache_read_price: number | null
+  /** Only present when the official pricing catalog defines a long-context tier. */
+  intervals?: UserPricingInterval[]
 }
 
 export interface PlazaModel {
