@@ -126,7 +126,7 @@ func TestListConfiguredPlazaGroups_UsesChannelContextPricing(t *testing.T) {
 	groups := []Group{{
 		ID: 12, Name: "configured", Platform: PlatformOpenAI, RateMultiplier: 1,
 		LongContextPricingEnabled: true,
-		ModelsListConfig: GroupModelsListConfig{Models: []string{"gpt-5.4", "unknown-model"}},
+		ModelsListConfig:          GroupModelsListConfig{Models: []string{"gpt-5.4", "unknown-model"}},
 	}}
 
 	svc := newPlazaServiceWithBilling(channels, groups, map[int64]string{12: PlatformOpenAI}, nil)

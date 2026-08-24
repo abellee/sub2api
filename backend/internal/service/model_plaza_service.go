@@ -263,8 +263,8 @@ func (s *ModelPlazaService) ListConfiguredGroups(ctx context.Context) ([]PlazaGr
 			}
 			seen[name] = struct{}{}
 			model := PlazaModel{
-				Name:            name,
-				Platform:        g.Platform,
+				Name:     name,
+				Platform: g.Platform,
 			}
 			// Configured models are intentionally kept even without an active
 			// channel, but when a channel exists use the same billing resolver as
