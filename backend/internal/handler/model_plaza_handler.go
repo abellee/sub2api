@@ -42,8 +42,6 @@ type modelPlazaOfficialPricing struct {
 	CacheWritePrice   *float64 `json:"cache_write_price"`
 	CacheWrite1hPrice *float64 `json:"cache_write_1h_price,omitempty"`
 	CacheReadPrice    *float64 `json:"cache_read_price"`
-	// Intervals 官方长上下文阶梯，仅多档模型给出。
-	Intervals []userPricingIntervalDTO `json:"intervals,omitempty"`
 }
 
 // modelPlazaTimePricingPeriod 分时倍率时段（配置时区当天 [start, end)）。
@@ -67,8 +65,6 @@ type modelPlazaModel struct {
 	Platform        string                     `json:"platform"`
 	Pricing         *userSupportedModelPricing `json:"pricing"`
 	OfficialPricing *modelPlazaOfficialPricing `json:"official_pricing"`
-	// LongContextBasis 多档时的计价基准："whole_request"（整单按档）| "marginal"（仅超出部分）。
-	LongContextBasis string `json:"long_context_basis,omitempty"`
 	// TimePricing 分时倍率时段，落在时段内的请求整单乘倍率；无分时省略。
 	TimePricing *modelPlazaTimePricing `json:"time_pricing,omitempty"`
 }
@@ -89,11 +85,9 @@ type modelPlazaGroup struct {
 	IsExclusive        bool     `json:"is_exclusive"`
 	// 生图独立倍率：为 true 时图片计费模型的实付倍率取 ImageRateMultiplier，
 	// 不取分组/用户专属倍率。
-	ImageRateIndependent bool    `json:"image_rate_independent"`
-	ImageRateMultiplier  float64 `json:"image_rate_multiplier"`
-	// 分组是否启用长上下文阶梯计费；关闭时模型实付列只展示最低档/基础价。
-	LongContextPricingEnabled bool              `json:"long_context_pricing_enabled"`
-	Models                    []modelPlazaModel `json:"models"`
+	ImageRateIndependent bool              `json:"image_rate_independent"`
+	ImageRateMultiplier  float64           `json:"image_rate_multiplier"`
+	Models               []modelPlazaModel `json:"models"`
 }
 
 // modelPlazaResponse 广场页响应。
@@ -205,30 +199,28 @@ func toModelPlazaGroupDTO(g *service.PlazaGroup, userRates map[int64]float64) mo
 	for i := range g.Models {
 		m := &g.Models[i]
 		models = append(models, modelPlazaModel{
-			Name:             m.Name,
-			Platform:         m.Platform,
-			Pricing:          toUserPricing(m.Pricing),
-			OfficialPricing:  toModelPlazaOfficialPricing(m.OfficialPricing),
-			LongContextBasis: string(m.LongContextBasis),
-			TimePricing:      toModelPlazaTimePricing(m.TimePricing),
+			Name:            m.Name,
+			Platform:        m.Platform,
+			Pricing:         toModelPlazaPricing(m.Pricing),
+			OfficialPricing: toModelPlazaOfficialPricing(m.OfficialPricing),
+			TimePricing:     toModelPlazaTimePricing(m.TimePricing),
 		})
 	}
 	dto := modelPlazaGroup{
-		ID:                        g.ID,
-		Name:                      g.Name,
-		Description:               g.Description,
-		Platform:                  g.Platform,
-		SubscriptionType:          g.SubscriptionType,
-		RateMultiplier:            g.RateMultiplier,
-		PeakRateEnabled:           g.PeakRateEnabled,
-		PeakStart:                 g.PeakStart,
-		PeakEnd:                   g.PeakEnd,
-		PeakRateMultiplier:        g.PeakRateMultiplier,
-		IsExclusive:               g.IsExclusive,
-		ImageRateIndependent:      g.ImageRateIndependent,
-		ImageRateMultiplier:       g.ImageRateMultiplier,
-		LongContextPricingEnabled: g.LongContextPricingEnabled,
-		Models:                    models,
+		ID:                   g.ID,
+		Name:                 g.Name,
+		Description:          g.Description,
+		Platform:             g.Platform,
+		SubscriptionType:     g.SubscriptionType,
+		RateMultiplier:       g.RateMultiplier,
+		PeakRateEnabled:      g.PeakRateEnabled,
+		PeakStart:            g.PeakStart,
+		PeakEnd:              g.PeakEnd,
+		PeakRateMultiplier:   g.PeakRateMultiplier,
+		IsExclusive:          g.IsExclusive,
+		ImageRateIndependent: g.ImageRateIndependent,
+		ImageRateMultiplier:  g.ImageRateMultiplier,
+		Models:               models,
 	}
 	if rate, ok := userRates[g.ID]; ok {
 		dto.UserRateMultiplier = &rate
@@ -263,6 +255,15 @@ func toModelPlazaOfficialPricing(p *service.PlazaOfficialPricing) *modelPlazaOff
 		CacheWritePrice:   p.CacheWritePrice,
 		CacheWrite1hPrice: p.CacheWrite1hPrice,
 		CacheReadPrice:    p.CacheReadPrice,
-		Intervals:         toUserPricingIntervals(p.Intervals),
 	}
+}
+
+// toModelPlazaPricing keeps image/per-request tiers but hides token context
+// intervals from the model plaza display contract.
+func toModelPlazaPricing(p *service.ChannelModelPricing) *userSupportedModelPricing {
+	pricing := toUserPricing(p)
+	if pricing != nil && p != nil && p.BillingMode == service.BillingModeToken {
+		pricing.Intervals = []userPricingIntervalDTO{}
+	}
+	return pricing
 }

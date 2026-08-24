@@ -597,7 +597,6 @@ export default {
       noModels: 'No models configured for this group',
       noPricing: 'Pricing not configured',
       peakNote: 'Peak hours {window}: billing rate ×{multiplier}',
-      longContextDisabledNote: 'Long-context tier pricing is disabled for this group: requests above the threshold are billed at the base tier; official tiers are for reference only'
     },
     table: {
       model: 'Model',
@@ -608,9 +607,6 @@ export default {
       cacheRead: 'Read',
       cacheWriteShort: 'W',
       cacheReadShort: 'R',
-      tierHint: 'The whole request is billed at the tier matching its total context (input + cache write + cache read)',
-      tierHintMarginal: 'Only the portion above the threshold is billed at this tier; output is unaffected',
-      marginalBadge: 'excess-only tiers',
       timePricingRowHint: 'Requests made within this period ({timezone} time) are billed at the prices in this row',
       timePricingRowHintWeekdays:
         'On weekdays (Mon–Fri) only, requests made within this period ({timezone} time) are billed at the prices in this row; weekends use the standard prices',

@@ -18,17 +18,7 @@ vi.mock('@/stores/app', () => ({
   useAppStore: () => ({ cachedPublicSettings: null })
 }))
 
-function ladderModel(tiers: number): PlazaModel {
-  const intervals = Array.from({ length: tiers }, (_, i) => ({
-    min_tokens: i * 272000,
-    max_tokens: i === tiers - 1 ? null : (i + 1) * 272000,
-    tier_label: '',
-    input_price: 5e-6,
-    output_price: 3e-5,
-    cache_write_price: null,
-    cache_read_price: null,
-    per_request_price: null
-  }))
+function ladderModel(): PlazaModel {
   return {
     name: 'gpt-5.6-sol',
     platform: 'openai',
@@ -48,7 +38,6 @@ function ladderModel(tiers: number): PlazaModel {
       output_price: 3e-5,
       cache_write_price: null,
       cache_read_price: null,
-      intervals
     }
   }
 }
@@ -68,8 +57,7 @@ function group(overrides: Partial<ModelPlazaGroup> = {}): ModelPlazaGroup {
     is_exclusive: false,
     image_rate_independent: false,
     image_rate_multiplier: 1,
-    long_context_pricing_enabled: true,
-    models: [ladderModel(2)],
+    models: [ladderModel()],
     ...overrides
   }
 }
@@ -86,34 +74,6 @@ function mountSection(g: ModelPlazaGroup) {
     }
   })
 }
-
-const NOTE = 'modelPlaza.detail.longContextDisabledNote'
-
-describe('PlazaGroupSection 长上下文说明', () => {
-  it('分组关闭阶梯且组内有官方阶梯模型时显示说明', () => {
-    const wrapper = mountSection(group({ long_context_pricing_enabled: false }))
-    expect(wrapper.text()).toContain(NOTE)
-  })
-
-  it('分组开启阶梯时不显示', () => {
-    const wrapper = mountSection(group({ long_context_pricing_enabled: true }))
-    expect(wrapper.text()).not.toContain(NOTE)
-  })
-
-  it('分组关闭但没有官方阶梯模型时不显示', () => {
-    const wrapper = mountSection(
-      group({ long_context_pricing_enabled: false, models: [ladderModel(1)] })
-    )
-    expect(wrapper.text()).not.toContain(NOTE)
-  })
-
-  it('旧后端缺少开关字段时不显示', () => {
-    const g = group()
-    delete (g as Partial<ModelPlazaGroup>).long_context_pricing_enabled
-    const wrapper = mountSection(g)
-    expect(wrapper.text()).not.toContain(NOTE)
-  })
-})
 
 describe('PlazaGroupSection 高峰配置传递', () => {
   it('分组启用高峰时把窗口描述与倍率传给价格表', () => {
