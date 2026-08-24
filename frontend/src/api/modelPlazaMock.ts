@@ -59,7 +59,6 @@ function group(
     is_exclusive: false,
     image_rate_independent: false,
     image_rate_multiplier: 1,
-    long_context_pricing_enabled: false,
     models,
     ...options
   }
@@ -76,20 +75,6 @@ export function createDevModelPlazaResponse(): ModelPlazaResponse {
     tokenModel('claude-sonnet-4-6', 'anthropic', { input: 3e-6, output: 1.5e-5 }),
     tokenModel('claude-haiku-4-5', 'anthropic', { input: 1e-6, output: 5e-6 })
   ]
-  claudeModels[1].official_pricing = {
-    ...claudeModels[1].official_pricing!,
-    intervals: [
-      {
-        min_tokens: 272000,
-        max_tokens: null,
-        input_price: 6e-6,
-        output_price: 2.25e-5,
-        cache_write_price: null,
-        cache_read_price: null,
-        per_request_price: null
-      }
-    ]
-  }
   const deepSeekModels = [
     tokenModel('deepseek-v3.2', 'openai', { input: 2.8e-7, output: 4.2e-7 }),
     tokenModel('deepseek-r1', 'openai', { input: 5.5e-7, output: 2.19e-6 })
@@ -115,9 +100,8 @@ export function createDevModelPlazaResponse(): ModelPlazaResponse {
       group(152, 'DeepSeek 稳定线路', 'openai', 0.56, deepSeekModels),
       group(201, 'Claude 日常开发', 'anthropic', 0.72, claudeModels.slice(1)),
       group(202, 'Claude 稳定线路', 'anthropic', 0.9, claudeModels),
-      group(203, 'Claude 长上下文', 'anthropic', 1.15, claudeModels.slice(0, 2), {
-        subscription_type: 'subscription',
-        long_context_pricing_enabled: true
+      group(203, 'Claude 企业线路', 'anthropic', 1.15, claudeModels.slice(0, 2), {
+        subscription_type: 'subscription'
       }),
       group(301, 'Gemini Flash 特惠', 'gemini', 0.42, geminiModels.slice(0, 2)),
       group(302, 'Gemini 通用线路', 'gemini', 0.68, geminiModels),

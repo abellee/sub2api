@@ -72,14 +72,14 @@ func TestToModelPlazaGroupDTO_UserRateAndFieldWhitelist(t *testing.T) {
 			Pricing: &service.ChannelModelPricing{
 				BillingMode: service.BillingModeToken,
 				InputPrice:  testPtr(3e-6),
+				Intervals: []service.PricingInterval{{
+					MinTokens: 200000,
+					InputPrice: testPtr(6e-6),
+				}},
 			},
 			OfficialPricing: &service.PlazaOfficialPricing{
 				InputPrice:     testPtr(3e-6),
 				CacheReadPrice: testPtr(3e-7),
-				Intervals: []service.PricingInterval{{
-					MinTokens:  200000,
-					InputPrice: testPtr(6e-6),
-				}},
 			},
 		}},
 	}
@@ -95,7 +95,7 @@ func TestToModelPlazaGroupDTO_UserRateAndFieldWhitelist(t *testing.T) {
 		"id", "name", "description", "platform", "subscription_type",
 		"rate_multiplier", "user_rate_multiplier", "is_exclusive", "models",
 		"peak_rate_enabled", "peak_start", "peak_end", "peak_rate_multiplier",
-		"image_rate_independent", "image_rate_multiplier", "long_context_pricing_enabled",
+		"image_rate_independent", "image_rate_multiplier",
 	} {
 		_, exists := decoded[key]
 		require.Truef(t, exists, "plaza group DTO must expose %q", key)
@@ -108,14 +108,13 @@ func TestToModelPlazaGroupDTO_UserRateAndFieldWhitelist(t *testing.T) {
 	model := models[0].(map[string]any)
 	require.Contains(t, model, "pricing")
 	require.Contains(t, model, "official_pricing")
+	pricing := model["pricing"].(map[string]any)
+	require.Empty(t, pricing["intervals"], "模型广场不得输出 token 长上下文阶梯")
 	official := model["official_pricing"].(map[string]any)
 	require.Contains(t, official, "input_price")
 	require.Contains(t, official, "cache_read_price")
-	require.Len(t, official["intervals"], 1)
 	_, has1h := official["cache_write_1h_price"]
 	require.False(t, has1h, "1h 缓存写价为 nil 时应 omitempty")
-	_, hasBasis := model["long_context_basis"]
-	require.False(t, hasBasis, "单档模型不输出 long_context_basis")
 	_, hasTimePricing := model["time_pricing"]
 	require.False(t, hasTimePricing, "无分时时不输出 time_pricing")
 
@@ -131,56 +130,6 @@ func TestToModelPlazaGroupDTO_UserRateAndFieldWhitelist(t *testing.T) {
 
 func TestToModelPlazaOfficialPricing_NilPassthrough(t *testing.T) {
 	require.Nil(t, toModelPlazaOfficialPricing(nil))
-}
-
-func TestToModelPlazaGroupDTO_LongContextTiersAndBasis(t *testing.T) {
-	maxTokens := 272000
-	g := service.PlazaGroup{
-		ID: 3, Name: "ladder", Platform: "openai", SubscriptionType: "standard", RateMultiplier: 1,
-		LongContextPricingEnabled: true,
-		Models: []service.PlazaModel{{
-			Name:     "gpt-5.4",
-			Platform: "openai",
-			Pricing: &service.ChannelModelPricing{
-				BillingMode: service.BillingModeToken,
-				InputPrice:  testPtr(2.5e-6),
-				Intervals: []service.PricingInterval{
-					{MinTokens: 0, MaxTokens: &maxTokens, TierLabel: "≤272K", InputPrice: testPtr(2.5e-6)},
-					{MinTokens: 272000, TierLabel: ">272K", InputPrice: testPtr(5e-6)},
-				},
-			},
-			OfficialPricing: &service.PlazaOfficialPricing{
-				InputPrice: testPtr(2.5e-6),
-				Intervals: []service.PricingInterval{
-					{MinTokens: 0, MaxTokens: &maxTokens, TierLabel: "≤272K", InputPrice: testPtr(2.5e-6)},
-					{MinTokens: 272000, TierLabel: ">272K", InputPrice: testPtr(5e-6)},
-				},
-			},
-			LongContextBasis: service.ContextPricingBasisWholeRequest,
-		}},
-	}
-
-	raw, err := json.Marshal(toModelPlazaGroupDTO(&g, nil))
-	require.NoError(t, err)
-	var decoded map[string]any
-	require.NoError(t, json.Unmarshal(raw, &decoded))
-	require.Equal(t, true, decoded["long_context_pricing_enabled"])
-
-	model := decoded["models"].([]any)[0].(map[string]any)
-	require.Equal(t, "whole_request", model["long_context_basis"])
-
-	pricing := model["pricing"].(map[string]any)
-	paidTiers := pricing["intervals"].([]any)
-	require.Len(t, paidTiers, 2)
-	require.Equal(t, ">272K", paidTiers[1].(map[string]any)["tier_label"])
-
-	official := model["official_pricing"].(map[string]any)
-	officialTiers := official["intervals"].([]any)
-	require.Len(t, officialTiers, 2)
-	first := officialTiers[0].(map[string]any)
-	require.Equal(t, "≤272K", first["tier_label"])
-	require.InDelta(t, 272000, first["max_tokens"].(float64), 0)
-	require.Contains(t, first, "cache_write_price", "区间 DTO 字段齐全（nil 输出 null）")
 }
 
 func testPtr(v float64) *float64 { return &v }

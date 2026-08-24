@@ -128,21 +128,6 @@ describe('model plaza matching', () => {
     expect(formatActualModelPrice(entries[0].output, entries[0].rateMultiplier)).toBe('0.096')
   })
 
-  it('maps only explicit official context intervals into display prices', () => {
-    const entries = buildModelPlazaEntries(createDevModelPlazaResponse().groups)
-    const sonnet = entries.find((entry) => (
-      entry.id === 'claude-sonnet-4-6' && entry.groupName === 'Claude 长上下文'
-    ))
-    const opus = entries.find((entry) => (
-      entry.id === 'claude-opus-4-6' && entry.groupName === 'Claude 长上下文'
-    ))
-
-    expect(sonnet?.intervals).toEqual([{
-      label: '>272K', input: '6', cache: null, output: '22.5',
-    }])
-    expect(opus?.intervals).toEqual([])
-  })
-
   it('keeps configured models even when Sub2API has no official price', () => {
     const entries = buildModelPlazaEntries([{
       id: 12,

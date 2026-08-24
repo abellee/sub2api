@@ -15,8 +15,6 @@ type PlazaOfficialPricing struct {
 	CacheWritePrice   *float64 // 5m 缓存写入（= LiteLLM cache_creation）
 	CacheWrite1hPrice *float64 // 1h 缓存写入，仅计费会区分 5m/1h 时给出
 	CacheReadPrice    *float64
-	// Intervals 官方长上下文阶梯（多档时给出），不受分组开关影响。
-	Intervals []PricingInterval
 }
 
 // PlazaModel 模型广场中单个模型条目：按实收口径合成的展示定价 + 官方参考价。
@@ -25,8 +23,6 @@ type PlazaModel struct {
 	Platform        string
 	Pricing         *ChannelModelPricing
 	OfficialPricing *PlazaOfficialPricing
-	// LongContextBasis 多档时的计价基准（整单 / 仅超出部分），单档为空。
-	LongContextBasis ContextPricingBasis
 	// TimePricing 计费会生效的分时倍率时段；无分时为 nil。
 	TimePricing *TimePricingSchedule
 }
@@ -52,9 +48,7 @@ type PlazaGroup struct {
 	// = 档位价 × ImageRateMultiplier，不乘分组/用户专属倍率（与计费口径一致）。
 	ImageRateIndependent bool
 	ImageRateMultiplier  float64
-	// LongContextPricingEnabled 分组是否按上下文长度应用阶梯价；关闭时模型展示的是最低档。
-	LongContextPricingEnabled bool
-	Models                    []PlazaModel
+	Models               []PlazaModel
 }
 
 // ModelPlazaService 聚合模型广场数据。
@@ -119,20 +113,19 @@ func (s *ModelPlazaService) ListGroups(ctx context.Context) ([]PlazaGroup, error
 	for i := range groups {
 		g := &groups[i]
 		byGroup[g.ID] = &PlazaGroup{
-			ID:                        g.ID,
-			Name:                      g.Name,
-			Description:               g.Description,
-			Platform:                  g.Platform,
-			SubscriptionType:          g.SubscriptionType,
-			RateMultiplier:            g.RateMultiplier,
-			PeakRateEnabled:           g.PeakRateEnabled,
-			PeakStart:                 g.PeakStart,
-			PeakEnd:                   g.PeakEnd,
-			PeakRateMultiplier:        g.PeakRateMultiplier,
-			IsExclusive:               g.IsExclusive,
-			ImageRateIndependent:      g.ImageRateIndependent,
-			ImageRateMultiplier:       g.ImageRateMultiplier,
-			LongContextPricingEnabled: g.LongContextPricingEnabled,
+			ID:                   g.ID,
+			Name:                 g.Name,
+			Description:          g.Description,
+			Platform:             g.Platform,
+			SubscriptionType:     g.SubscriptionType,
+			RateMultiplier:       g.RateMultiplier,
+			PeakRateEnabled:      g.PeakRateEnabled,
+			PeakStart:            g.PeakStart,
+			PeakEnd:              g.PeakEnd,
+			PeakRateMultiplier:   g.PeakRateMultiplier,
+			IsExclusive:          g.IsExclusive,
+			ImageRateIndependent: g.ImageRateIndependent,
+			ImageRateMultiplier:  g.ImageRateMultiplier,
 		}
 		groupEnt[g.ID] = g
 		order = append(order, g.ID)
@@ -237,20 +230,19 @@ func (s *ModelPlazaService) ListConfiguredGroups(ctx context.Context) ([]PlazaGr
 			continue
 		}
 		pg := PlazaGroup{
-			ID:                        g.ID,
-			Name:                      g.Name,
-			Description:               g.Description,
-			Platform:                  g.Platform,
-			SubscriptionType:          g.SubscriptionType,
-			RateMultiplier:            g.RateMultiplier,
-			PeakRateEnabled:           g.PeakRateEnabled,
-			PeakStart:                 g.PeakStart,
-			PeakEnd:                   g.PeakEnd,
-			PeakRateMultiplier:        g.PeakRateMultiplier,
-			IsExclusive:               g.IsExclusive,
-			ImageRateIndependent:      g.ImageRateIndependent,
-			ImageRateMultiplier:       g.ImageRateMultiplier,
-			LongContextPricingEnabled: g.LongContextPricingEnabled,
+			ID:                   g.ID,
+			Name:                 g.Name,
+			Description:          g.Description,
+			Platform:             g.Platform,
+			SubscriptionType:     g.SubscriptionType,
+			RateMultiplier:       g.RateMultiplier,
+			PeakRateEnabled:      g.PeakRateEnabled,
+			PeakStart:            g.PeakStart,
+			PeakEnd:              g.PeakEnd,
+			PeakRateMultiplier:   g.PeakRateMultiplier,
+			IsExclusive:          g.IsExclusive,
+			ImageRateIndependent: g.ImageRateIndependent,
+			ImageRateMultiplier:  g.ImageRateMultiplier,
 		}
 		seen := make(map[string]struct{}, len(g.ModelsListConfig.Models))
 		for _, configuredName := range g.ModelsListConfig.Models {
@@ -303,9 +295,6 @@ func (s *ModelPlazaService) fillDisplayPricing(ctx context.Context, m *PlazaMode
 		})
 		if err == nil && sched != nil && len(sched.Tiers) > 0 {
 			m.Pricing = plazaPricingFromSchedule(m.Pricing, sched)
-			if len(sched.Tiers) > 1 {
-				m.LongContextBasis = sched.Basis
-			}
 			m.TimePricing = sched.TimePricing
 			return
 		}
@@ -313,8 +302,8 @@ func (s *ModelPlazaService) fillDisplayPricing(ctx context.Context, m *PlazaMode
 	m.Pricing = plazaImageDisplayPricing(m.Pricing, g)
 }
 
-// plazaPricingFromSchedule 把阶梯表压成展示用的 ChannelModelPricing：
-// 平价取首档单价，多档时 Intervals 逐档给出绝对单价；图片/按次字段沿用原始定价。
+// plazaPricingFromSchedule 把阶梯表压成展示用的 ChannelModelPricing。
+// 模型广场只展示基础档单价；上下文阶梯仍由后台计费服务使用。
 func plazaPricingFromSchedule(raw *ChannelModelPricing, sched *ContextPricingSchedule) *ChannelModelPricing {
 	out := &ChannelModelPricing{BillingMode: BillingModeToken}
 	if raw != nil {
@@ -327,27 +316,7 @@ func plazaPricingFromSchedule(raw *ChannelModelPricing, sched *ContextPricingSch
 	out.OutputPrice = first.Output
 	out.CacheWritePrice = first.CacheWrite
 	out.CacheReadPrice = first.CacheRead
-	if len(sched.Tiers) > 1 {
-		out.Intervals = plazaIntervalsFromTiers(sched.Tiers)
-	}
 	return out
-}
-
-func plazaIntervalsFromTiers(tiers []ContextPricingTier) []PricingInterval {
-	intervals := make([]PricingInterval, 0, len(tiers))
-	for i, t := range tiers {
-		intervals = append(intervals, PricingInterval{
-			MinTokens:       t.MinTokens,
-			MaxTokens:       t.MaxTokens,
-			TierLabel:       t.Label,
-			InputPrice:      t.Input,
-			OutputPrice:     t.Output,
-			CacheWritePrice: t.CacheWrite,
-			CacheReadPrice:  t.CacheRead,
-			SortOrder:       i,
-		})
-	}
-	return intervals
 }
 
 // plazaImageDisplayPricing 为图片计费模型合成展示定价，使档位价与实收口径一致：
@@ -419,14 +388,8 @@ func (s *ModelPlazaService) lookupOfficialPricing(ctx context.Context, modelName
 		if mp.SupportsCacheBreakdown {
 			result.CacheWrite1hPrice = nonZeroPtr(mp.CacheCreation1hPrice)
 		}
-		if s.resolver != nil {
-			sched, schedErr := s.billingService.ResolveContextPricingSchedule(ctx, s.resolver, ContextPricingScheduleInput{Model: modelName})
-			if schedErr == nil && sched != nil && len(sched.Tiers) > 1 {
-				result.Intervals = plazaIntervalsFromTiers(sched.Tiers)
-			}
-		}
 		if result.InputPrice == nil && result.OutputPrice == nil && result.CacheWritePrice == nil &&
-			result.CacheWrite1hPrice == nil && result.CacheReadPrice == nil && len(result.Intervals) == 0 {
+			result.CacheWrite1hPrice == nil && result.CacheReadPrice == nil {
 			result = nil
 		}
 	}

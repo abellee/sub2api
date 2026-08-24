@@ -115,37 +115,6 @@ func TestListConfiguredPlazaGroups_UsesGroupModelListWithoutChannelIntersection(
 	require.Nil(t, out[0].Models[5].OfficialPricing, "missing price must not remove a configured model")
 }
 
-func TestListConfiguredPlazaGroups_UsesChannelContextPricing(t *testing.T) {
-	channels := []Channel{{
-		ID: 1, Name: "channel", Status: StatusActive, GroupIDs: []int64{12},
-		ModelPricing: []ChannelModelPricing{{
-			Platform: PlatformOpenAI, Models: []string{"gpt-5.4"}, BillingMode: BillingModeToken,
-			InputPrice: testPtrFloat64(2.5e-6), OutputPrice: testPtrFloat64(15e-6),
-		}},
-	}}
-	groups := []Group{{
-		ID: 12, Name: "configured", Platform: PlatformOpenAI, RateMultiplier: 1,
-		LongContextPricingEnabled: true,
-		ModelsListConfig:          GroupModelsListConfig{Models: []string{"gpt-5.4", "unknown-model"}},
-	}}
-
-	svc := newPlazaServiceWithBilling(channels, groups, map[int64]string{12: PlatformOpenAI}, nil)
-	out, err := svc.ListConfiguredGroups(context.Background())
-
-	require.NoError(t, err)
-	require.Len(t, out, 1)
-	require.Len(t, out[0].Models, 2)
-	models := plazaModelsByName(out[0].Models)
-	priced := models["gpt-5.4"]
-	require.NotNil(t, priced.Pricing)
-	require.Len(t, priced.Pricing.Intervals, 2)
-	require.Equal(t, "≤272K", priced.Pricing.Intervals[0].TierLabel)
-	require.Equal(t, ">272K", priced.Pricing.Intervals[1].TierLabel)
-	require.InDelta(t, 5e-6, *priced.Pricing.Intervals[1].InputPrice, 1e-15)
-	require.Equal(t, ContextPricingBasisWholeRequest, priced.LongContextBasis)
-	require.Nil(t, models["unknown-model"].Pricing, "unpriced configured models remain visible")
-}
-
 func TestListPlazaGroups_DedupFirstWinsWithPricingUpgrade(t *testing.T) {
 	// 同名模型:先见者胜;仅当已存条目无定价而新条目有定价时升级替换。
 	unpriced := Channel{
@@ -441,75 +410,26 @@ func plazaModelsByName(models []PlazaModel) map[string]PlazaModel {
 	return out
 }
 
-func TestListGroups_TokenLadderFollowsGroupToggle(t *testing.T) {
-	// 同一渠道挂开启/关闭阶梯的两个分组：实付档位随分组开关，官方阶梯不受影响。
-	channels := []Channel{{
-		ID: 1, Name: "ch", Status: StatusActive, GroupIDs: []int64{10, 20},
-		ModelPricing: []ChannelModelPricing{{Platform: PlatformOpenAI, Models: []string{"gpt-5.4"}, BillingMode: BillingModeToken}},
-	}}
-	groups := []Group{
-		{ID: 10, Name: "on", Platform: PlatformOpenAI, RateMultiplier: 1, LongContextPricingEnabled: true},
-		{ID: 20, Name: "off", Platform: PlatformOpenAI, RateMultiplier: 2, LongContextPricingEnabled: false},
-	}
-	svc := newPlazaServiceWithBilling(channels, groups, map[int64]string{10: PlatformOpenAI, 20: PlatformOpenAI}, nil)
-	out, err := svc.ListGroups(context.Background())
-	require.NoError(t, err)
-	require.Len(t, out, 2)
-
-	on, off := out[0], out[1]
-	require.True(t, on.LongContextPricingEnabled)
-	require.False(t, off.LongContextPricingEnabled)
-
-	onModel := on.Models[0]
-	require.Equal(t, ContextPricingBasisWholeRequest, onModel.LongContextBasis)
-	require.Len(t, onModel.Pricing.Intervals, 2)
-	require.Equal(t, "≤272K", onModel.Pricing.Intervals[0].TierLabel)
-	require.Equal(t, ">272K", onModel.Pricing.Intervals[1].TierLabel)
-	require.InDelta(t, 2.5e-6, *onModel.Pricing.InputPrice, 1e-15)
-	require.InDelta(t, 5e-6, *onModel.Pricing.Intervals[1].InputPrice, 1e-15)
-	require.InDelta(t, 22.5e-6, *onModel.Pricing.Intervals[1].OutputPrice, 1e-15)
-	require.InDelta(t, 5e-6, *onModel.Pricing.Intervals[1].CacheWritePrice, 1e-15)
-	require.InDelta(t, 0.5e-6, *onModel.Pricing.Intervals[1].CacheReadPrice, 1e-15)
-
-	offModel := off.Models[0]
-	require.Empty(t, offModel.LongContextBasis)
-	require.Empty(t, offModel.Pricing.Intervals)
-	require.InDelta(t, 2.5e-6, *offModel.Pricing.InputPrice, 1e-15)
-
-	for _, m := range []PlazaModel{onModel, offModel} {
-		require.NotNil(t, m.OfficialPricing)
-		require.Len(t, m.OfficialPricing.Intervals, 2, "官方阶梯不受分组开关影响")
-		require.InDelta(t, 5e-6, *m.OfficialPricing.Intervals[1].InputPrice, 1e-15)
-		require.InDelta(t, 2.5e-6, *m.OfficialPricing.InputPrice, 1e-15)
-	}
-}
-
 func TestListGroups_GeminiLegacyRuleShownAsMarginal(t *testing.T) {
 	channels := []Channel{{
 		ID: 1, Name: "ch", Status: StatusActive, GroupIDs: []int64{10},
 		ModelMapping: map[string]map[string]string{PlatformGemini: {"gemini-2.5-pro": "gemini-2.5-pro"}},
 	}}
-	groups := []Group{{ID: 10, Name: "g", Platform: PlatformGemini, RateMultiplier: 1, LongContextPricingEnabled: true}}
+	groups := []Group{{ID: 10, Name: "g", Platform: PlatformGemini, RateMultiplier: 1}}
 	svc := newPlazaServiceWithBilling(channels, groups, map[int64]string{10: PlatformGemini}, geminiCatalogStub())
 	out, err := svc.ListGroups(context.Background())
 	require.NoError(t, err)
 	require.Len(t, out, 1)
 	m := out[0].Models[0]
-	require.Equal(t, ContextPricingBasisMarginal, m.LongContextBasis)
-	require.Len(t, m.Pricing.Intervals, 2)
-	require.Equal(t, "≤200K", m.Pricing.Intervals[0].TierLabel)
-	require.Equal(t, ">200K", m.Pricing.Intervals[1].TierLabel)
-	require.InDelta(t, 2.5e-6, *m.Pricing.Intervals[1].InputPrice, 1e-15)
-	require.InDelta(t, 10e-6, *m.Pricing.Intervals[1].OutputPrice, 1e-15)
+	require.Empty(t, m.Pricing.Intervals)
 	// 官方参考不套用站内旧规则
 	require.NotNil(t, m.OfficialPricing)
-	require.Empty(t, m.OfficialPricing.Intervals)
 }
 
 func TestListGroups_GroupTokenCardOverridesChannelPricing(t *testing.T) {
 	channels := []Channel{plazaPricedChannel(1, "ch", []int64{10}, PlatformAnthropic, "claude-sonnet-4")}
 	groups := []Group{{
-		ID: 10, Name: "g", Platform: PlatformAnthropic, RateMultiplier: 1, LongContextPricingEnabled: true,
+		ID: 10, Name: "g", Platform: PlatformAnthropic, RateMultiplier: 1,
 		ModelPricing: []ChannelModelPricing{{Models: []string{"claude-sonnet-*"}, BillingMode: BillingModeToken, InputPrice: testPtrFloat64(1e-6)}},
 	}}
 	svc := newPlazaServiceWithBilling(channels, groups, map[int64]string{10: PlatformAnthropic}, nil)
@@ -530,7 +450,7 @@ func TestListGroups_ImageModelKeepsTierSynthesisWithBilling(t *testing.T) {
 		}},
 	}}
 	groups := []Group{{
-		ID: 10, Name: "g", Platform: PlatformOpenAI, RateMultiplier: 1, LongContextPricingEnabled: true,
+		ID: 10, Name: "g", Platform: PlatformOpenAI, RateMultiplier: 1,
 		ImagePrice1K: testPtrFloat64(0.02),
 	}}
 	svc := newPlazaServiceWithBilling(channels, groups, map[int64]string{10: PlatformOpenAI}, nil)
@@ -538,7 +458,6 @@ func TestListGroups_ImageModelKeepsTierSynthesisWithBilling(t *testing.T) {
 	require.NoError(t, err)
 	m := out[0].Models[0]
 	require.Equal(t, BillingModeImage, m.Pricing.BillingMode)
-	require.Empty(t, m.LongContextBasis)
 	require.Len(t, m.Pricing.Intervals, 3)
 	require.InDelta(t, 0.02, *m.Pricing.Intervals[0].PerRequestPrice, 1e-12)
 	require.InDelta(t, 0.04, *m.Pricing.Intervals[1].PerRequestPrice, 1e-12)
@@ -547,7 +466,7 @@ func TestListGroups_ImageModelKeepsTierSynthesisWithBilling(t *testing.T) {
 func TestListGroups_CatalogMissingStillShowsChannelFlatPricing(t *testing.T) {
 	// 目录查不到的模型：计费按渠道平价（未配置项 $0），广场单档展示渠道平价，官方价为空。
 	channels := []Channel{plazaPricedChannel(1, "ch", []int64{10}, PlatformAnthropic, "unknown-model-xyz")}
-	groups := []Group{{ID: 10, Name: "g", Platform: PlatformAnthropic, RateMultiplier: 1, LongContextPricingEnabled: true}}
+	groups := []Group{{ID: 10, Name: "g", Platform: PlatformAnthropic, RateMultiplier: 1}}
 	svc := newPlazaServiceWithBilling(channels, groups, map[int64]string{10: PlatformAnthropic}, nil)
 	out, err := svc.ListGroups(context.Background())
 	require.NoError(t, err)
@@ -570,7 +489,7 @@ func TestListGroups_TimePricingPassthrough(t *testing.T) {
 			}},
 		}},
 	}}
-	groups := []Group{{ID: 10, Name: "cn", Platform: PlatformDeepseek, RateMultiplier: 1, LongContextPricingEnabled: true}}
+	groups := []Group{{ID: 10, Name: "cn", Platform: PlatformDeepseek, RateMultiplier: 1}}
 	svc := newPlazaServiceWithBilling(channels, groups, map[int64]string{10: PlatformDeepseek}, nil)
 	out, err := svc.ListGroups(context.Background())
 	require.NoError(t, err)
