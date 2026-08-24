@@ -78,4 +78,23 @@ describe('UserTokenRanking', () => {
     expect(getUserBreakdown).toHaveBeenCalledTimes(2)
     expect(getUserBreakdown).toHaveBeenLastCalledWith(expect.objectContaining({ user_id: 9 }))
   })
+
+  it('supports all-user results and switches the server-side ranking metric', async () => {
+    const wrapper = mountRanking({ resultLimit: 0, showLimit: false })
+    await flushPromises()
+
+    expect(getUserBreakdown).toHaveBeenLastCalledWith(expect.objectContaining({
+      sort_by: 'total_tokens',
+      limit: 0,
+    }))
+
+    await wrapper.setProps({ metric: 'cost' })
+    await flushPromises()
+
+    expect(getUserBreakdown).toHaveBeenLastCalledWith(expect.objectContaining({
+      sort_by: 'actual_cost',
+      limit: 0,
+    }))
+    expect(wrapper.findComponent({ name: 'Select' }).exists()).toBe(false)
+  })
 })

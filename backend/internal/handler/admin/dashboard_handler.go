@@ -652,6 +652,7 @@ func (h *DashboardHandler) GetBatchAPIKeysUsage(c *gin.Context) {
 // GetUserBreakdown handles getting per-user usage breakdown within a dimension.
 // GET /api/v1/admin/dashboard/user-breakdown
 // Query params: start_date, end_date, group_id, model, endpoint, endpoint_type, limit
+// A limit of 0 returns every matching user; positive limits are capped at 200.
 func (h *DashboardHandler) GetUserBreakdown(c *gin.Context) {
 	startTime, endTime := parseTimeRange(c)
 
@@ -713,7 +714,7 @@ func (h *DashboardHandler) GetUserBreakdown(c *gin.Context) {
 
 	limit := 50
 	if v := c.Query("limit"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 200 {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 && n <= 200 {
 			limit = n
 		}
 	}
