@@ -79,6 +79,21 @@ describe('UserTokenRanking', () => {
     expect(getUserBreakdown).toHaveBeenLastCalledWith(expect.objectContaining({ user_id: 9 }))
   })
 
+  it('reloads when the selected date range changes', async () => {
+    const wrapper = mountRanking()
+    await flushPromises()
+    expect(getUserBreakdown).toHaveBeenCalledTimes(1)
+
+    await wrapper.setProps({ startDate: '2026-07-10', endDate: '2026-07-17' })
+    await flushPromises()
+
+    expect(getUserBreakdown).toHaveBeenCalledTimes(2)
+    expect(getUserBreakdown).toHaveBeenLastCalledWith(expect.objectContaining({
+      start_date: '2026-07-10',
+      end_date: '2026-07-17',
+    }))
+  })
+
   it('supports all-user results and switches the server-side ranking metric', async () => {
     const wrapper = mountRanking({ resultLimit: 0, showLimit: false })
     await flushPromises()

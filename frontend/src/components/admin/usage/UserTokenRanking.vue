@@ -98,6 +98,7 @@ import { useI18n } from 'vue-i18n'
 import { getUserBreakdown, type UserBreakdownParams } from '@/api/admin/dashboard'
 import { formatCompactNumber, formatCostFixed } from '@/utils/format'
 import type { UserBreakdownItem } from '@/types'
+import { getMockUserBreakdown, isAdminRankingMockEnabled } from '@/mocks/adminRanking'
 import Select from '@/components/common/Select.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 
@@ -184,7 +185,9 @@ const load = async () => {
       limit: limit.value,
     }
     if (props.model) params.model = props.model
-    const res = await getUserBreakdown(params)
+    const res = isAdminRankingMockEnabled
+      ? getMockUserBreakdown(params)
+      : await getUserBreakdown(params)
     if (seq !== reqSeq) return
     items.value = res.users || []
   } catch {

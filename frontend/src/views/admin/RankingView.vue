@@ -30,6 +30,7 @@
             <DateRangePicker
               v-model:start-date="startDate"
               v-model:end-date="endDate"
+              @preset-change="onDateRangeChange"
               @change="onDateRangeChange"
             />
           </div>
