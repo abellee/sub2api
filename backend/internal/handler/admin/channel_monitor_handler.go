@@ -477,6 +477,8 @@ func (h *ChannelMonitorHandler) Run(c *gin.Context) {
 	if !ok {
 		return
 	}
+	// Completion pushes are emitted only by ChannelMonitorRunner. This manual
+	// path intentionally calls the service directly and never broadcasts.
 	results, err := h.monitorService.RunCheck(c.Request.Context(), id)
 	if err != nil {
 		response.ErrorFrom(c, err)

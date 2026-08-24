@@ -22,5 +22,6 @@ export function loadConfig(environment = process.env) {
       environment.SUB2API_AUTH_URL || 'http://127.0.0.1:8080/api/v1/auth/me',
     ).trim(),
     devAdminToken: String(environment.PUSH_DEV_ADMIN_TOKEN || '').trim(),
+    internalToken: String(environment.PUSH_INTERNAL_TOKEN || '').trim(),
   }
 }

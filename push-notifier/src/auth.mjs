@@ -36,3 +36,10 @@ export function createAdminAuthorizer({ devAdminToken, sub2apiAuthURL, fetchImpl
     }
   }
 }
+
+export function createInternalAuthorizer({ internalToken }) {
+  return async function authorizeInternal(request) {
+    const token = bearerToken(request)
+    return Boolean(internalToken && token && constantTimeEqual(token, internalToken))
+  }
+}
