@@ -140,6 +140,6 @@ test('scheduled channel completion uses internal auth and records the status tim
     assert.equal(response.status, 201)
     assert.equal(payload.message.title, '渠道检测完成')
     assert.equal(payload.message.body, 'CC-Kiro 🟩🟩🟨🟩🟥 降级')
-    assert.equal(payload.message.url, '/admin/channels/monitor')
+    assert.equal(payload.message.url, '/monitor')
   })
 })
