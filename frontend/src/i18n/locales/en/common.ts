@@ -177,6 +177,7 @@ export default {
     downgradeRadar: 'Downgrade Radar',
     subscriptions: 'Subscriptions',
     accounts: 'Accounts',
+    plugins: 'Plugins',
     proxies: 'Proxies',
     redeemCodes: 'Redeem Codes',
     ops: 'Ops',

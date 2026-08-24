@@ -59,6 +59,7 @@ function group(
     is_exclusive: false,
     image_rate_independent: false,
     image_rate_multiplier: 1,
+    long_context_pricing_enabled: false,
     models,
     ...options
   }
@@ -114,7 +115,10 @@ export function createDevModelPlazaResponse(): ModelPlazaResponse {
       group(152, 'DeepSeek 稳定线路', 'openai', 0.56, deepSeekModels),
       group(201, 'Claude 日常开发', 'anthropic', 0.72, claudeModels.slice(1)),
       group(202, 'Claude 稳定线路', 'anthropic', 0.9, claudeModels),
-      group(203, 'Claude 长上下文', 'anthropic', 1.15, claudeModels.slice(0, 2), { subscription_type: 'subscription' }),
+      group(203, 'Claude 长上下文', 'anthropic', 1.15, claudeModels.slice(0, 2), {
+        subscription_type: 'subscription',
+        long_context_pricing_enabled: true
+      }),
       group(301, 'Gemini Flash 特惠', 'gemini', 0.42, geminiModels.slice(0, 2)),
       group(302, 'Gemini 通用线路', 'gemini', 0.68, geminiModels),
       group(303, 'Gemini Pro 专线', 'gemini', 0.88, geminiModels.slice(2), { is_exclusive: true }),

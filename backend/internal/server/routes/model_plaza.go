@@ -41,11 +41,11 @@ func RegisterModelPlazaRoutes(
 func proxyDowngradeRadarResource(c *gin.Context) {
 	resource := strings.TrimSpace(c.Param("resource"))
 	allowed := map[string]bool{
-		"radar-insights":                 true,
-		"intelligence-efficiency-metrics": true,
-		"visual-spatial-reasoning":       true,
+		"radar-insights":                   true,
+		"intelligence-efficiency-metrics":  true,
+		"visual-spatial-reasoning":         true,
 		"visual-spatial-reasoning-history": true,
-		"model-ratings":                  true,
+		"model-ratings":                    true,
 	}
 	if !allowed[resource] {
 		c.JSON(http.StatusNotFound, gin.H{"error": "radar resource not found"})
