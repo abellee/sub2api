@@ -75,7 +75,7 @@ func proxyDowngradeRadarResource(c *gin.Context) {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "codexradar is unavailable"})
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	c.Status(resp.StatusCode)
 	if contentType := resp.Header.Get("Content-Type"); contentType != "" {
