@@ -90,7 +90,10 @@ func TestListConfiguredPlazaGroups_UsesGroupModelListWithoutChannelIntersection(
 		{ID: 13, Name: "empty", Platform: PlatformOpenAI, RateMultiplier: 1},
 	}
 
-	out, err := newPlazaChannelService(nil, groups, pricingSvc).ListConfiguredPlazaGroups(context.Background())
+	svc := newPlazaService(nil, groups, pricingSvc)
+	svc.billingService = NewBillingService(&config.Config{}, pricingSvc)
+	svc.resolver = NewModelPricingResolver(nil, svc.billingService)
+	out, err := svc.ListConfiguredGroups(context.Background())
 
 	require.NoError(t, err)
 	require.Len(t, out, 1)

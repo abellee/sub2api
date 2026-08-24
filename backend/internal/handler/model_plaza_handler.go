@@ -136,7 +136,13 @@ func (h *ModelPlazaHandler) get(c *gin.Context, enforceFeature bool) {
 		return
 	}
 
-	groups, err := h.plazaService.ListGroups(c.Request.Context())
+	var groups []service.PlazaGroup
+	var err error
+	if enforceFeature {
+		groups, err = h.plazaService.ListGroups(c.Request.Context())
+	} else {
+		groups, err = h.plazaService.ListConfiguredGroups(c.Request.Context())
+	}
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return

@@ -114,8 +114,6 @@ func TestToModelPlazaGroupDTO_UserRateAndFieldWhitelist(t *testing.T) {
 	require.Len(t, official["intervals"], 1)
 	_, has1h := official["cache_write_1h_price"]
 	require.False(t, has1h, "1h 缓存写价为 nil 时应 omitempty")
-	_, hasOfficialIntervals := official["intervals"]
-	require.False(t, hasOfficialIntervals, "官方无阶梯时 intervals 应 omitempty")
 	_, hasBasis := model["long_context_basis"]
 	require.False(t, hasBasis, "单档模型不输出 long_context_basis")
 	_, hasTimePricing := model["time_pricing"]
