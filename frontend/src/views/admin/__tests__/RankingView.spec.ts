@@ -53,4 +53,33 @@ describe('RankingView', () => {
       query: expect.objectContaining({ user_id: '17' }),
     }))
   })
+
+  it('updates the ranking range immediately when a preset changes', async () => {
+    const wrapper = mount(RankingView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          DateRangePicker: {
+            name: 'DateRangePicker',
+            emits: ['preset-change', 'change'],
+            template: '<button data-testid="preset" @click="$emit(\'preset-change\', { startDate: \'2026-07-01\', endDate: \'2026-07-07\', preset: \'7days\' })">preset</button>',
+          },
+          UserTokenRanking: {
+            name: 'UserTokenRanking',
+            props: {
+              startDate: String,
+              endDate: String,
+            },
+            template: '<div />',
+          },
+        },
+      },
+    })
+
+    const ranking = wrapper.findComponent({ name: 'UserTokenRanking' })
+    await wrapper.get('[data-testid="preset"]').trigger('click')
+
+    expect(ranking.props('startDate')).toBe('2026-07-01')
+    expect(ranking.props('endDate')).toBe('2026-07-07')
+  })
 })

@@ -76,6 +76,15 @@ describe('DateRangePicker', () => {
     expect(presetButton).toBeDefined()
 
     await presetButton!.trigger('click')
+
+    expect(wrapper.emitted('preset-change')?.[0]).toEqual([
+      expect.objectContaining({
+        startDate: expect.any(String),
+        endDate: expect.any(String),
+        preset: 'last24Hours'
+      })
+    ])
+
     await wrapper.find('.date-picker-apply').trigger('click')
 
     const nowAfterClick = new Date()
@@ -93,4 +102,5 @@ describe('DateRangePicker', () => {
       }
     ])
   })
+
 })

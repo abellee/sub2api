@@ -94,6 +94,7 @@ interface Props {
 interface Emits {
   (e: 'update:startDate', value: string): void
   (e: 'update:endDate', value: string): void
+  (e: 'preset-change', range: { startDate: string; endDate: string; preset: string }): void
   (e: 'change', range: { startDate: string; endDate: string; preset: string | null }): void
 }
 
@@ -249,6 +250,11 @@ const selectPreset = (preset: DatePreset) => {
   localStartDate.value = range.start
   localEndDate.value = range.end
   activePreset.value = preset.value
+  emit('preset-change', {
+    startDate: range.start,
+    endDate: range.end,
+    preset: preset.value,
+  })
 }
 
 const onDateChange = () => {
@@ -350,13 +356,14 @@ onUnmounted(() => {
 }
 
 .date-picker-dropdown {
-  @apply absolute left-0 z-[100] mt-2;
+  @apply absolute right-0 z-[100] mt-2;
   @apply bg-white dark:bg-dark-800;
   @apply rounded-xl;
   @apply border border-gray-200 dark:border-dark-700;
   @apply shadow-lg shadow-black/10 dark:shadow-black/30;
   @apply overflow-hidden;
-  @apply min-w-[320px];
+  width: min(320px, calc(100vw - 1rem));
+  max-width: calc(100vw - 1rem);
 }
 
 .date-picker-presets {
