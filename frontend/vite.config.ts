@@ -81,6 +81,7 @@ export default defineConfig(({ mode }) => {
   // 加载环境变量
   const env = loadEnv(mode, process.cwd(), '')
   const backendUrl = env.VITE_DEV_PROXY_TARGET || 'http://localhost:8080'
+  const pushNotifierUrl = env.VITE_PUSH_PROXY_TARGET || 'http://127.0.0.1:8091'
   const devPort = Number(env.VITE_DEV_PORT || 3000)
 
   return {
@@ -164,6 +165,10 @@ export default defineConfig(({ mode }) => {
       host: '0.0.0.0',
       port: devPort,
       proxy: {
+        '/push-api': {
+          target: pushNotifierUrl,
+          changeOrigin: true
+        },
         '/api': {
           target: backendUrl,
           changeOrigin: true

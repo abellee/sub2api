@@ -582,6 +582,18 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/push-notifications',
+    name: 'AdminPushNotifications',
+    component: () => import('@/views/admin/PushNotificationsView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Push Notifications',
+      titleKey: 'admin.pushNotifications.title',
+      descriptionKey: 'admin.pushNotifications.description'
+    }
+  },
+  {
     path: '/admin/proxies',
     name: 'AdminProxies',
     component: () => import('@/views/admin/ProxiesView.vue'),
