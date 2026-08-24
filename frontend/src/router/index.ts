@@ -287,6 +287,17 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/downgrade-radar',
+    name: 'DowngradeRadar',
+    component: () => import('@/views/user/DowngradeRadarView.vue'),
+    meta: {
+      requiresAuth: false,
+      requiresAdmin: false,
+      title: '降智雷达',
+      titleKey: 'nav.downgradeRadar'
+    }
+  },
+  {
     path: '/profile',
     name: 'Profile',
     component: () => import('@/views/user/ProfileView.vue'),
@@ -828,7 +839,7 @@ router.beforeEach(async (to, _from, next) => {
       return
     }
     // Model Plaza:公开路由但受「启用开关 + 可选强制登录」双重控制(后端同口径 fail-closed)
-    if (to.path === '/model-plaza') {
+    if (to.path === '/model-plaza' || to.path === '/downgrade-radar') {
       if (!appStore.publicSettingsLoaded) {
         try {
           await appStore.fetchPublicSettings()

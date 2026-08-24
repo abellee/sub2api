@@ -1,6 +1,11 @@
 package routes
 
 import (
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+
 	"github.com/Wei-Shaw/sub2api/internal/handler"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -26,5 +31,60 @@ func RegisterModelPlazaRoutes(
 	plaza.Use(middleware.BackendModeUserGuard(settingService))
 	{
 		plaza.GET("", h.ModelPlaza.Get)
+		plaza.Any("/downgrade-radar/:resource", proxyDowngradeRadarResource)
+	}
+}
+
+// proxyDowngradeRadarResource exposes only the read-only codexradar datasets
+// needed by the public radar page. codexradar does not send CORS headers, so
+// keeping this proxy same-origin also makes the feature work in production.
+func proxyDowngradeRadarResource(c *gin.Context) {
+	resource := strings.TrimSpace(c.Param("resource"))
+	allowed := map[string]bool{
+		"radar-insights":                 true,
+		"intelligence-efficiency-metrics": true,
+		"visual-spatial-reasoning":       true,
+		"visual-spatial-reasoning-history": true,
+		"model-ratings":                  true,
+	}
+	if !allowed[resource] {
+		c.JSON(http.StatusNotFound, gin.H{"error": "radar resource not found"})
+		return
+	}
+
+	target := "https://codexradar.com/api/" + resource
+	if query := c.Request.URL.RawQuery; query != "" {
+		target += "?" + query
+	}
+	method := c.Request.Method
+	if method != http.MethodGet && method != http.MethodPost {
+		c.JSON(http.StatusMethodNotAllowed, gin.H{"error": "method not allowed"})
+		return
+	}
+	req, err := http.NewRequestWithContext(c.Request.Context(), method, target, c.Request.Body)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("create radar request: %v", err)})
+		return
+	}
+	req.Header.Set("Accept", "application/json")
+	if contentType := c.GetHeader("Content-Type"); contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "codexradar is unavailable"})
+		return
+	}
+	defer resp.Body.Close()
+
+	c.Status(resp.StatusCode)
+	if contentType := resp.Header.Get("Content-Type"); contentType != "" {
+		c.Header("Content-Type", contentType)
+	}
+	if cacheControl := resp.Header.Get("Cache-Control"); cacheControl != "" {
+		c.Header("Cache-Control", cacheControl)
+	}
+	if _, err := io.Copy(c.Writer, resp.Body); err != nil {
+		return
 	}
 }
