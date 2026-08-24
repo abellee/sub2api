@@ -115,6 +115,37 @@ func TestListConfiguredPlazaGroups_UsesGroupModelListWithoutChannelIntersection(
 	require.Nil(t, out[0].Models[5].OfficialPricing, "missing price must not remove a configured model")
 }
 
+func TestListConfiguredPlazaGroups_UsesChannelContextPricing(t *testing.T) {
+	channels := []Channel{{
+		ID: 1, Name: "channel", Status: StatusActive, GroupIDs: []int64{12},
+		ModelPricing: []ChannelModelPricing{{
+			Platform: PlatformOpenAI, Models: []string{"gpt-5.4"}, BillingMode: BillingModeToken,
+			InputPrice: testPtrFloat64(2.5e-6), OutputPrice: testPtrFloat64(15e-6),
+		}},
+	}}
+	groups := []Group{{
+		ID: 12, Name: "configured", Platform: PlatformOpenAI, RateMultiplier: 1,
+		LongContextPricingEnabled: true,
+		ModelsListConfig: GroupModelsListConfig{Models: []string{"gpt-5.4", "unknown-model"}},
+	}}
+
+	svc := newPlazaServiceWithBilling(channels, groups, map[int64]string{12: PlatformOpenAI}, nil)
+	out, err := svc.ListConfiguredGroups(context.Background())
+
+	require.NoError(t, err)
+	require.Len(t, out, 1)
+	require.Len(t, out[0].Models, 2)
+	models := plazaModelsByName(out[0].Models)
+	priced := models["gpt-5.4"]
+	require.NotNil(t, priced.Pricing)
+	require.Len(t, priced.Pricing.Intervals, 2)
+	require.Equal(t, "≤272K", priced.Pricing.Intervals[0].TierLabel)
+	require.Equal(t, ">272K", priced.Pricing.Intervals[1].TierLabel)
+	require.InDelta(t, 5e-6, *priced.Pricing.Intervals[1].InputPrice, 1e-15)
+	require.Equal(t, ContextPricingBasisWholeRequest, priced.LongContextBasis)
+	require.Nil(t, models["unknown-model"].Pricing, "unpriced configured models remain visible")
+}
+
 func TestListPlazaGroups_DedupFirstWinsWithPricingUpgrade(t *testing.T) {
 	// 同名模型:先见者胜;仅当已存条目无定价而新条目有定价时升级替换。
 	unpriced := Channel{

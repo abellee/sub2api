@@ -262,11 +262,16 @@ func (s *ModelPlazaService) ListConfiguredGroups(ctx context.Context) ([]PlazaGr
 				continue
 			}
 			seen[name] = struct{}{}
-			pg.Models = append(pg.Models, PlazaModel{
+			model := PlazaModel{
 				Name:            name,
 				Platform:        g.Platform,
-				OfficialPricing: s.lookupOfficialPricing(ctx, name, officialMemo),
-			})
+			}
+			// Configured models are intentionally kept even without an active
+			// channel, but when a channel exists use the same billing resolver as
+			// ListGroups so channel interval pricing is visible on the public page.
+			s.fillDisplayPricing(ctx, &model, g)
+			model.OfficialPricing = s.lookupOfficialPricing(ctx, name, officialMemo)
+			pg.Models = append(pg.Models, model)
 		}
 		if len(pg.Models) == 0 {
 			continue
