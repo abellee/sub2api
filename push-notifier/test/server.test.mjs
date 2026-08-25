@@ -225,3 +225,40 @@ test('channel-monitor delivery respects per-device monitor selection and mute pe
     return { statusCode: 201, resume() {} }
   })
 })
+
+test('channel-monitor delivery can be limited to status changes per subscription', async () => {
+  const sentEndpoints = []
+  await withServer(async (baseURL) => {
+    const endpoint = 'https://push.example.test/subscription/change-only'
+    await fetch(`${baseURL}/push-api/v1/subscriptions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ endpoint, keys: { p256dh: 'public-key', auth: 'auth-key' } }),
+    })
+    const update = (notifyOnlyOnChange) => fetch(`${baseURL}/push-api/v1/subscriptions/preferences`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ endpoint, monitorIDs: [7], notifyOnlyOnChange }),
+    })
+    await update(true)
+
+    const check = (status) => fetch(`${baseURL}/push-api/v1/internal/channel-check-completed`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer internal' },
+      body: JSON.stringify({ monitorID: 7, groupName: 'CC-Kiro', recentStatuses: [status], currentStatus: status }),
+    })
+
+    await check('operational')
+    assert.deepEqual(sentEndpoints, [endpoint])
+    sentEndpoints.length = 0
+
+    await check('operational')
+    assert.deepEqual(sentEndpoints, [])
+
+    await check('degraded')
+    assert.deepEqual(sentEndpoints, [endpoint])
+  }, async (subscription) => {
+    sentEndpoints.push(subscription.endpoint)
+    return { statusCode: 201, resume() {} }
+  })
+})

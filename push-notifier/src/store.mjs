@@ -24,6 +24,15 @@ function normalizeMonitorIDs(value) {
   return [...new Set(value.map((id) => Number(id)).filter((id) => Number.isSafeInteger(id) && id > 0))]
 }
 
+function normalizeMonitorStatuses(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([monitorID, status]) => /^\d+$/.test(monitorID) && typeof status === 'string' && status.length > 0)
+      .map(([monitorID, status]) => [monitorID, status]),
+  )
+}
+
 function normalizeMuteUntil(value) {
   if (!value) return null
   const parsed = new Date(value)
@@ -113,6 +122,10 @@ export class PushStore {
         expirationTime: subscription.expirationTime ?? null,
         keys: { p256dh: subscription.keys.p256dh, auth: subscription.keys.auth },
         monitorIDs: normalizeMonitorIDs(index >= 0 ? this.state.subscriptions[index].monitorIDs : subscription.monitorIDs),
+        notifyOnlyOnChange: index >= 0
+          ? this.state.subscriptions[index].notifyOnlyOnChange !== false
+          : subscription.notifyOnlyOnChange !== false,
+        lastMonitorStatuses: normalizeMonitorStatuses(index >= 0 ? this.state.subscriptions[index].lastMonitorStatuses : subscription.lastMonitorStatuses),
         muteUntil: normalizeMuteUntil(index >= 0 ? this.state.subscriptions[index].muteUntil : subscription.muteUntil),
         muteStart: muteDaily ? normalizeMuteTime(existing.muteStart) : normalizeMuteDate(existing.muteStart),
         muteEnd: muteDaily ? normalizeMuteTime(existing.muteEnd) : normalizeMuteDate(existing.muteEnd),
@@ -133,6 +146,7 @@ export class PushStore {
     if (!subscription) return null
     return {
       monitorIDs: normalizeMonitorIDs(subscription.monitorIDs),
+      notifyOnlyOnChange: subscription.notifyOnlyOnChange !== false,
       muteUntil: normalizeMuteUntil(subscription.muteUntil),
       muteStart: subscription.muteStart || null,
       muteEnd: subscription.muteEnd || null,
@@ -147,6 +161,7 @@ export class PushStore {
       const subscription = this.state.subscriptions.find((item) => item.id === id)
       if (!subscription) return null
       subscription.monitorIDs = normalizeMonitorIDs(preferences.monitorIDs)
+      subscription.notifyOnlyOnChange = preferences.notifyOnlyOnChange !== false
       subscription.muteUntil = normalizeMuteUntil(preferences.muteUntil)
       subscription.muteStart = preferences.muteDaily ? normalizeMuteTime(preferences.muteStart) : normalizeMuteDate(preferences.muteStart)
       subscription.muteEnd = preferences.muteDaily ? normalizeMuteTime(preferences.muteEnd) : normalizeMuteDate(preferences.muteEnd)
@@ -155,12 +170,31 @@ export class PushStore {
       subscription.updatedAt = new Date().toISOString()
       return {
         monitorIDs: subscription.monitorIDs,
+        notifyOnlyOnChange: subscription.notifyOnlyOnChange,
         muteUntil: subscription.muteUntil,
         muteStart: subscription.muteStart,
         muteEnd: subscription.muteEnd,
         muteDaily: subscription.muteDaily,
         muteTimezone: subscription.muteTimezone,
       }
+    })
+  }
+
+  async listChannelMonitorSubscriptions(monitorID, currentStatus) {
+    const key = String(monitorID)
+    return this.mutate(() => {
+      const subscriptions = []
+      for (const subscription of this.state.subscriptions) {
+        const statuses = normalizeMonitorStatuses(subscription.lastMonitorStatuses)
+        const previousStatus = statuses[key]
+        const changed = previousStatus === undefined || previousStatus !== currentStatus
+        statuses[key] = currentStatus
+        subscription.lastMonitorStatuses = statuses
+        if (!subscription.notifyOnlyOnChange || changed) {
+          subscriptions.push({ ...subscription, keys: { ...subscription.keys }, lastMonitorStatuses: { ...statuses } })
+        }
+      }
+      return subscriptions
     })
   }
 
