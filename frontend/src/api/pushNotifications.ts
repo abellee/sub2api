@@ -9,6 +9,18 @@ export interface PushSubscriptionPayload {
   }
 }
 
+export interface PushSubscriptionPreferences {
+  /** null means the subscription has not been configured and receives all monitors. */
+  monitorIDs: number[] | null
+  /** One-time ISO range, or HH:mm values when muteDaily is true. */
+  muteStart: string | null
+  muteEnd: string | null
+  muteDaily: boolean
+  muteTimezone: string | null
+  /** Legacy one-ended mute value retained for old stored subscriptions. */
+  muteUntil: string | null
+}
+
 export interface PushOverview {
   activeSubscriptions: number
   messageCount: number
@@ -63,6 +75,20 @@ export function removePushSubscription(endpoint: string): Promise<{ removed: boo
   return request('/subscriptions', { method: 'DELETE', body: JSON.stringify({ endpoint }) })
 }
 
+export function getPushSubscriptionPreferences(endpoint: string): Promise<PushSubscriptionPreferences> {
+  return request(`/subscriptions/preferences?endpoint=${encodeURIComponent(endpoint)}`)
+}
+
+export function savePushSubscriptionPreferences(
+  endpoint: string,
+  preferences: PushSubscriptionPreferences,
+): Promise<PushSubscriptionPreferences> {
+  return request('/subscriptions/preferences', {
+    method: 'PUT',
+    body: JSON.stringify({ endpoint, ...preferences }),
+  })
+}
+
 export function getPushOverview(): Promise<PushOverview> {
   return request('/admin/overview', {}, true)
 }
@@ -74,6 +100,10 @@ export async function listPushMessages(limit = 20): Promise<PushMessage[]> {
 
 export function deletePushMessage(id: string): Promise<{ removed: boolean; overview: PushOverview }> {
   return request(`/admin/messages/${encodeURIComponent(id)}`, { method: 'DELETE' }, true)
+}
+
+export function clearPushMessages(): Promise<{ removed: number; overview: PushOverview }> {
+  return request('/admin/messages', { method: 'DELETE' }, true)
 }
 
 export async function broadcastPush(input: BroadcastPushRequest): Promise<PushMessage> {

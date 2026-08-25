@@ -160,6 +160,7 @@ export default {
     dashboard: 'Dashboard',
     announcements: 'Announcements',
     pushNotifications: 'Push Notifications',
+    wechatGroupQR: 'WeChat Group QR',
     apiKeys: 'API Keys',
     batchImage: 'Batch Images',
     usage: 'Usage',

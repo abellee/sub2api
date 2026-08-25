@@ -6,10 +6,9 @@ import test from 'node:test'
 import { createServer } from '../src/server.mjs'
 import { PushStore } from '../src/store.mjs'
 
-async function withServer(run) {
+async function withServer(run, sender = async () => ({ statusCode: 201, resume() {} })) {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'push-notifier-'))
   const store = await new PushStore(path.join(directory, 'store.json')).init()
-  const sender = async () => ({ statusCode: 201, resume() {} })
   const server = createServer({
     store,
     authorizeAdmin: async (request) => request.headers.authorization === 'Bearer admin',
@@ -101,6 +100,43 @@ test('broadcast requires an administrator and records delivery totals', async ()
   })
 })
 
+test('channel-monitor delivery is not added to manual history and history can be cleared', async () => {
+  await withServer(async (baseURL) => {
+    const manualResponse = await fetch(`${baseURL}/push-api/v1/admin/broadcast`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer admin' },
+      body: JSON.stringify({ title: 'Manual', body: 'Message', url: '/' }),
+    })
+    assert.equal(manualResponse.status, 201)
+
+    const channelResponse = await fetch(`${baseURL}/push-api/v1/internal/channel-check-completed`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer internal' },
+      body: JSON.stringify({
+        groupName: 'CC-Kiro',
+        recentStatuses: ['operational'],
+        currentStatus: 'operational',
+      }),
+    })
+    assert.equal(channelResponse.status, 201)
+
+    const beforeClear = await fetch(`${baseURL}/push-api/v1/admin/messages`, {
+      headers: { Authorization: 'Bearer admin' },
+    }).then((result) => result.json())
+    assert.equal(beforeClear.messages.length, 1)
+    assert.equal(beforeClear.messages[0].title, 'Manual')
+
+    const clearResponse = await fetch(`${baseURL}/push-api/v1/admin/messages`, {
+      method: 'DELETE',
+      headers: { Authorization: 'Bearer admin' },
+    })
+    const clearResult = await clearResponse.json()
+    assert.equal(clearResponse.status, 200)
+    assert.equal(clearResult.removed, 1)
+    assert.equal(clearResult.overview.messageCount, 0)
+  })
+})
+
 test('rejects image URLs that cannot be displayed by a browser notification', async () => {
   await withServer(async (baseURL) => {
     const response = await fetch(`${baseURL}/push-api/v1/admin/broadcast`, {
@@ -141,5 +177,51 @@ test('scheduled channel completion uses internal auth and records the status tim
     assert.equal(payload.message.title, '渠道检测完成')
     assert.equal(payload.message.body, 'CC-Kiro 🟩🟩🟨🟩🟥 降级')
     assert.equal(payload.message.url, '/monitor')
+  })
+})
+
+test('channel-monitor delivery respects per-device monitor selection and mute period', async () => {
+  const sentEndpoints = []
+  await withServer(async (baseURL) => {
+    const subscribe = async (suffix) => fetch(`${baseURL}/push-api/v1/subscriptions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ endpoint: `https://push.example.test/subscription/${suffix}`, keys: { p256dh: 'public-key', auth: 'auth-key' } }),
+    })
+    await subscribe('one')
+    await subscribe('two')
+
+    const updatePreferences = (endpoint, monitorIDs, muteUntil = null, range = {}) => fetch(`${baseURL}/push-api/v1/subscriptions/preferences`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ endpoint, monitorIDs, muteUntil, ...range }),
+    })
+    await updatePreferences('https://push.example.test/subscription/one', [1])
+    await updatePreferences('https://push.example.test/subscription/two', [2])
+
+    const response = await fetch(`${baseURL}/push-api/v1/internal/channel-check-completed`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer internal' },
+      body: JSON.stringify({ monitorID: 1, groupName: 'CC-Kiro', recentStatuses: ['operational'], currentStatus: 'operational' }),
+    })
+    assert.equal(response.status, 201)
+    assert.deepEqual(sentEndpoints, ['https://push.example.test/subscription/one'])
+
+    await updatePreferences('https://push.example.test/subscription/one', [1], null, {
+      muteStart: new Date(Date.now() - 60_000).toISOString(),
+      muteEnd: new Date(Date.now() + 60_000).toISOString(),
+      muteDaily: false,
+    })
+    sentEndpoints.length = 0
+    const mutedResponse = await fetch(`${baseURL}/push-api/v1/internal/channel-check-completed`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer internal' },
+      body: JSON.stringify({ monitorID: 1, groupName: 'CC-Kiro', recentStatuses: ['degraded'], currentStatus: 'degraded' }),
+    })
+    assert.equal(mutedResponse.status, 201)
+    assert.deepEqual(sentEndpoints, [])
+  }, async (subscription) => {
+    sentEndpoints.push(subscription.endpoint)
+    return { statusCode: 201, resume() {} }
   })
 })

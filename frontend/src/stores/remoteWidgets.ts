@@ -18,32 +18,13 @@ export interface HeaderWidgetConfig {
   refreshInterval: number
 }
 
-export interface HeaderWidgetStatus {
-  id: string
-  name: string
-  indicator: string
-  description: string
-  checkedAt: string
-}
-
 export const useRemoteWidgetsStore = defineStore('remoteWidgets', () => {
   const headerConfig = ref<HeaderWidgetConfig | null>(null)
-  const headerStatuses = ref<HeaderWidgetStatus[]>([])
-  const headerCountdown = ref(0)
   const sideVisible = ref(false)
   const sideHasIcon = ref(false)
 
-  function setHeaderData(
-    config: HeaderWidgetConfig,
-    statuses: HeaderWidgetStatus[]
-  ): void {
+  function setHeaderData(config: HeaderWidgetConfig): void {
     headerConfig.value = config
-    headerStatuses.value = statuses
-    headerCountdown.value = Math.max(1, Math.ceil(config.refreshInterval / 1000))
-  }
-
-  function tickHeaderCountdown(): void {
-    if (headerCountdown.value > 0) headerCountdown.value -= 1
   }
 
   function setSideState(visible: boolean, hasIcon: boolean): void {
@@ -53,12 +34,9 @@ export const useRemoteWidgetsStore = defineStore('remoteWidgets', () => {
 
   return {
     headerConfig,
-    headerStatuses,
-    headerCountdown,
     sideVisible,
     sideHasIcon,
     setHeaderData,
-    tickHeaderCountdown,
     setSideState
   }
 })

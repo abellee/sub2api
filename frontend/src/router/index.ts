@@ -594,6 +594,18 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/wechat-group-qr',
+    name: 'AdminWechatGroupQR',
+    component: () => import('@/views/admin/WechatGroupQRView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'WeChat Group QR',
+      titleKey: 'admin.wechatGroupQR.title',
+      descriptionKey: 'admin.wechatGroupQR.description'
+    }
+  },
+  {
     path: '/admin/proxies',
     name: 'AdminProxies',
     component: () => import('@/views/admin/ProxiesView.vue'),

@@ -73,6 +73,7 @@ type stubMonitorCompletionNotifier struct {
 
 func (s *stubMonitorCompletionNotifier) NotifyChannelCheckCompleted(
 	ctx context.Context,
+	_ int64,
 	name string,
 	statuses []string,
 	current string,

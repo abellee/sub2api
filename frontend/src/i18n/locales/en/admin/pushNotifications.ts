@@ -41,6 +41,13 @@ export default {
       success: 'Notification record deleted',
       failed: 'Failed to delete the notification record',
     },
+    clear: {
+      action: 'Clear history',
+      title: 'Clear notification history',
+      message: 'Clear all {count} manually sent records? Notifications already delivered cannot be recalled. Channel-monitor notifications are not recorded here.',
+      success: 'Notification history cleared',
+      failed: 'Failed to clear notification history',
+    },
     confirmTitle: 'Confirm Broadcast',
     confirmMessage: 'Send this notification to {count} active subscribed devices?',
     sentResult: 'Notification finished: {delivered} delivered, {failed} failed',

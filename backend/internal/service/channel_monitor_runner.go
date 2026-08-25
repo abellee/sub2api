@@ -382,6 +382,7 @@ func (r *ChannelMonitorRunner) notifyCheckCompletedAsync(
 		recentStatuses, resolvedStatus := r.recentCheckStatuses(notifyCtx, id, model, currentStatus)
 		if err := notifier.NotifyChannelCheckCompleted(
 			notifyCtx,
+			id,
 			groupName,
 			recentStatuses,
 			resolvedStatus,

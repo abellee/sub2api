@@ -49,6 +49,9 @@ func RegisterAdminRoutes(
 		// 公告管理
 		registerAnnouncementRoutes(admin, h)
 
+		// 微信群二维码管理
+		registerWechatGroupQRRoutes(admin, h)
+
 		// OpenAI OAuth
 		registerOpenAIOAuthRoutes(admin, h)
 
@@ -130,6 +133,14 @@ func RegisterAdminRoutes(
 
 		// 操作审计日志
 		registerAuditLogRoutes(admin, h, stepUpAuth)
+	}
+}
+
+func registerWechatGroupQRRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	wechatQR := admin.Group("/wechat-group-qr")
+	{
+		wechatQR.GET("", h.Admin.WechatGroupQR.Get)
+		wechatQR.POST("", h.Admin.WechatGroupQR.Upload)
 	}
 }
 
