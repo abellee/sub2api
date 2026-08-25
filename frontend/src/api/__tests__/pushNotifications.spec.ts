@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   broadcastPush,
+  clearPushMessages,
   deletePushMessage,
   getPushOverview,
   savePushSubscription,
@@ -80,5 +81,19 @@ describe('push notification API', () => {
     )
     const headers = fetchMock.mock.calls[0][1]?.headers as Headers
     expect(headers.get('Authorization')).toBe('Bearer admin-token')
+  })
+
+  it('clears all recorded notifications with administrator authorization', async () => {
+    localStorage.setItem('auth_token', 'admin-token')
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      removed: 3,
+      overview: { activeSubscriptions: 2, messageCount: 0, lastSentAt: null },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+
+    await expect(clearPushMessages()).resolves.toMatchObject({ removed: 3 })
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/push-api/v1/admin/messages',
+      expect.objectContaining({ method: 'DELETE' }),
+    )
   })
 })

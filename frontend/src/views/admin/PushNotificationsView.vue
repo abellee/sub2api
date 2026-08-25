@@ -105,9 +105,31 @@
       <div class="card overflow-hidden">
         <div class="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-dark-700">
           <h2 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.pushNotifications.history') }}</h2>
-          <button type="button" class="btn btn-secondary btn-icon" :title="t('common.refresh')" :disabled="loading" @click="loadData">
-            <Icon name="refresh" size="sm" :class="loading ? 'animate-spin' : ''" />
-          </button>
+          <div class="flex items-center gap-2">
+            <button
+              type="button"
+              class="btn btn-ghost btn-icon text-red-600 hover:bg-red-50 disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-900/20"
+              :title="t('admin.pushNotifications.clear.action')"
+              :aria-label="t('admin.pushNotifications.clear.action')"
+              :disabled="loading || clearingMessages || !messages.length"
+              @click="clearConfirmation = true"
+            >
+              <Icon
+                :name="clearingMessages ? 'refresh' : 'trash'"
+                size="sm"
+                :class="clearingMessages ? 'animate-spin' : ''"
+              />
+            </button>
+            <button
+              type="button"
+              class="btn btn-secondary btn-icon"
+              :title="t('common.refresh')"
+              :disabled="loading"
+              @click="loadData"
+            >
+              <Icon name="refresh" size="sm" :class="loading ? 'animate-spin' : ''" />
+            </button>
+          </div>
         </div>
         <div class="overflow-x-auto">
           <table class="min-w-full divide-y divide-gray-200 dark:divide-dark-700">
@@ -170,6 +192,15 @@
       @confirm="confirmDeleteMessage"
       @cancel="deletingMessage = null"
     />
+    <ConfirmDialog
+      :show="clearConfirmation"
+      :title="t('admin.pushNotifications.clear.title')"
+      :message="t('admin.pushNotifications.clear.message', { count: messages.length })"
+      :confirm-text="clearingMessages ? t('common.processing') : t('admin.pushNotifications.clear.action')"
+      :danger="true"
+      @confirm="confirmClearMessages"
+      @cancel="clearConfirmation = false"
+    />
   </AppLayout>
 </template>
 
@@ -182,6 +213,7 @@ import Icon from '@/components/icons/Icon.vue'
 import { useAppStore } from '@/stores/app'
 import {
   broadcastPush,
+  clearPushMessages,
   deletePushMessage,
   getPushOverview,
   listPushMessages,
@@ -197,6 +229,8 @@ const sending = ref(false)
 const showConfirm = ref(false)
 const deletingMessage = ref<PushMessage | null>(null)
 const deletingMessageId = ref('')
+const clearConfirmation = ref(false)
+const clearingMessages = ref(false)
 const imagePreviewFailed = ref(false)
 const overview = reactive<PushOverview>({ activeSubscriptions: 0, messageCount: 0, lastSentAt: null })
 const messages = ref<PushMessage[]>([])
@@ -278,6 +312,22 @@ async function confirmDeleteMessage() {
     appStore.showError(error?.message || t('admin.pushNotifications.delete.failed'))
   } finally {
     deletingMessageId.value = ''
+  }
+}
+
+async function confirmClearMessages() {
+  if (clearingMessages.value || !messages.value.length) return
+  clearingMessages.value = true
+  try {
+    const result = await clearPushMessages()
+    messages.value = []
+    Object.assign(overview, result.overview)
+    clearConfirmation.value = false
+    appStore.showSuccess(t('admin.pushNotifications.clear.success'))
+  } catch (error: any) {
+    appStore.showError(error?.message || t('admin.pushNotifications.clear.failed'))
+  } finally {
+    clearingMessages.value = false
   }
 }
 

@@ -20,6 +20,7 @@ const (
 type channelMonitorCompletionNotifier interface {
 	NotifyChannelCheckCompleted(
 		ctx context.Context,
+		monitorID int64,
 		groupName string,
 		recentStatuses []string,
 		currentStatus string,
@@ -33,6 +34,7 @@ type channelMonitorPushNotifier struct {
 }
 
 type channelMonitorPushPayload struct {
+	MonitorID      int64    `json:"monitorID"`
 	GroupName      string   `json:"groupName"`
 	RecentStatuses []string `json:"recentStatuses"`
 	CurrentStatus  string   `json:"currentStatus"`
@@ -63,6 +65,7 @@ func newChannelMonitorPushNotifier(endpoint, token string, client *http.Client) 
 
 func (n *channelMonitorPushNotifier) NotifyChannelCheckCompleted(
 	ctx context.Context,
+	monitorID int64,
 	groupName string,
 	recentStatuses []string,
 	currentStatus string,
@@ -71,6 +74,7 @@ func (n *channelMonitorPushNotifier) NotifyChannelCheckCompleted(
 		return nil
 	}
 	payload := channelMonitorPushPayload{
+		MonitorID:      monitorID,
 		GroupName:      strings.TrimSpace(groupName),
 		RecentStatuses: recentStatuses,
 		CurrentStatus:  currentStatus,

@@ -254,6 +254,12 @@ func RegisterAuthRoutes(
 	if h.ModelPlaza != nil {
 		v1.GET("/model-plaza/public", panelRateLimiter.PublicIP(), h.ModelPlaza.GetPublic)
 	}
+	if h.Admin != nil && h.Admin.WechatGroupQR != nil {
+		community := v1.Group("/community/wechat-group-qr")
+		community.Use(panelRateLimiter.PublicIP())
+		community.GET("", h.Admin.WechatGroupQR.Get)
+		community.GET("/image", h.Admin.WechatGroupQR.ServeImage)
+	}
 
 	// 需要认证的当前用户信息
 	authenticated := v1.Group("")

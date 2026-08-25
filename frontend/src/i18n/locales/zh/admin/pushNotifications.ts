@@ -41,6 +41,13 @@ export default {
       success: '通知记录已删除',
       failed: '删除通知记录失败',
     },
+    clear: {
+      action: '清空记录',
+      title: '清空通知记录',
+      message: '确定清空全部 {count} 条手动发送记录吗？已经送达的系统通知不会被撤回。渠道监测通知不会记录在此处。',
+      success: '通知记录已清空',
+      failed: '清空通知记录失败',
+    },
     confirmTitle: '确认广播通知',
     confirmMessage: '将向 {count} 个有效订阅设备发送这条通知，是否继续？',
     sentResult: '通知发送完成：成功 {delivered}，失败 {failed}',

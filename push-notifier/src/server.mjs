@@ -43,6 +43,98 @@ function validateSubscription(subscription) {
   return null
 }
 
+function validateEndpoint(endpoint) {
+  try {
+    const parsed = new URL(String(endpoint || ''))
+    if (parsed.protocol !== 'https:') return 'subscription endpoint must use HTTPS'
+  } catch {
+    return 'invalid subscription endpoint'
+  }
+  if (String(endpoint).length > 4096) return 'subscription endpoint is too long'
+  return null
+}
+
+function validatePreferences(payload) {
+  const endpointError = validateEndpoint(payload.endpoint)
+  if (endpointError) return { error: endpointError }
+  if (payload.monitorIDs !== null && payload.monitorIDs !== undefined) {
+    if (!Array.isArray(payload.monitorIDs) || payload.monitorIDs.some((id) => !Number.isSafeInteger(Number(id)) || Number(id) <= 0)) {
+      return { error: 'monitorIDs must be an array of positive integers' }
+    }
+  }
+  const muteDaily = Boolean(payload.muteDaily)
+  const muteStart = payload.muteStart === null || payload.muteStart === undefined || payload.muteStart === '' ? null : String(payload.muteStart)
+  const muteEnd = payload.muteEnd === null || payload.muteEnd === undefined || payload.muteEnd === '' ? null : String(payload.muteEnd)
+  if ((muteStart && !muteEnd) || (!muteStart && muteEnd)) return { error: 'muteStart and muteEnd must be provided together' }
+  if (muteStart && muteEnd) {
+    if (muteDaily) {
+      if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(muteStart) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(muteEnd) || muteStart === muteEnd) {
+        return { error: 'daily mute times must be valid and different' }
+      }
+    } else {
+      const start = new Date(muteStart)
+      const end = new Date(muteEnd)
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
+        return { error: 'mute end must be later than mute start' }
+      }
+    }
+  }
+  const muteUntil = payload.muteUntil === null || payload.muteUntil === undefined || payload.muteUntil === '' ? null : String(payload.muteUntil)
+  if (muteUntil && Number.isNaN(new Date(muteUntil).getTime())) return { error: 'muteUntil must be a valid date' }
+  let muteTimezone = payload.muteTimezone === null || payload.muteTimezone === undefined || payload.muteTimezone === '' ? null : String(payload.muteTimezone)
+  if (muteTimezone) {
+    try {
+      new Intl.DateTimeFormat('en-US', { timeZone: muteTimezone }).format()
+    } catch {
+      return { error: 'muteTimezone must be a valid IANA timezone' }
+    }
+  }
+  return {
+    endpoint: String(payload.endpoint),
+    monitorIDs: payload.monitorIDs === null || payload.monitorIDs === undefined
+      ? null
+      : [...new Set(payload.monitorIDs.map((id) => Number(id)))],
+    muteUntil,
+    muteStart,
+    muteEnd,
+    muteDaily,
+    muteTimezone,
+  }
+}
+
+function isMutedAt(subscription, now = new Date()) {
+  if (subscription.muteStart && subscription.muteEnd) {
+    if (subscription.muteDaily) {
+      try {
+        const parts = new Intl.DateTimeFormat('en-US', {
+          timeZone: subscription.muteTimezone || 'UTC',
+          hour: '2-digit',
+          minute: '2-digit',
+          hourCycle: 'h23',
+        }).formatToParts(now)
+        const hour = Number(parts.find((part) => part.type === 'hour')?.value || 0)
+        const minute = Number(parts.find((part) => part.type === 'minute')?.value || 0)
+        const currentMinutes = hour * 60 + minute
+        const [startHour, startMinute] = subscription.muteStart.split(':').map(Number)
+        const [endHour, endMinute] = subscription.muteEnd.split(':').map(Number)
+        const startMinutes = startHour * 60 + startMinute
+        const endMinutes = endHour * 60 + endMinute
+        return startMinutes < endMinutes
+          ? currentMinutes >= startMinutes && currentMinutes < endMinutes
+          : currentMinutes >= startMinutes || currentMinutes < endMinutes
+      } catch {
+        // Fall through to the legacy muteUntil check for malformed old data.
+      }
+    } else {
+      const start = new Date(subscription.muteStart).getTime()
+      const end = new Date(subscription.muteEnd).getTime()
+      if (Number.isFinite(start) && Number.isFinite(end)) return now.getTime() >= start && now.getTime() < end
+    }
+  }
+  // Legacy one-ended mute values remain supported for existing subscriptions.
+  return Boolean(subscription.muteUntil && new Date(subscription.muteUntil).getTime() > now.getTime())
+}
+
 function validateBroadcast(payload) {
   const title = String(payload.title || '').trim()
   const body = String(payload.body || '').trim()
@@ -90,12 +182,20 @@ function validateChannelCheckCompletion(payload) {
   }
   const currentStatus = String(payload.currentStatus || '')
   if (!Object.hasOwn(statusDisplay, currentStatus)) return { error: 'currentStatus is invalid' }
+  const monitorID = payload.monitorID === undefined || payload.monitorID === null ? null : Number(payload.monitorID)
+  if (monitorID !== null && (!Number.isSafeInteger(monitorID) || monitorID <= 0)) {
+    return { error: 'monitorID must be a positive integer' }
+  }
   const history = recentStatuses.map((status) => statusDisplay[status].emoji).join('')
-  return validateBroadcast({
+  return {
+    ...validateBroadcast({
     title: '渠道检测完成',
     body: `${groupName} ${history} ${statusDisplay[currentStatus].label}`,
     url: '/monitor',
-  })
+    }),
+    monitorID,
+    channelMonitor: true,
+  }
 }
 
 async function defaultSender(subscription, payload, options) {
@@ -127,8 +227,19 @@ async function sendBroadcast({ subscriptions, payload, options, sender }) {
   return result
 }
 
-async function deliverBroadcast({ store, validation, vapidSubject, sender }) {
-  const subscriptions = store.listSubscriptions()
+async function deliverBroadcast({ store, validation, vapidSubject, sender, record = true }) {
+  let subscriptions = store.listSubscriptions()
+  if (validation.channelMonitor) {
+    const now = new Date()
+    subscriptions = subscriptions.filter((subscription) => {
+      if (isMutedAt(subscription, now)) return false
+      // Older Sub2API binaries did not include monitorID; preserve their
+      // broadcast behavior until the backend and notifier are upgraded together.
+      if (validation.monitorID === null) return true
+      if (subscription.monitorIDs === null || subscription.monitorIDs === undefined) return true
+      return subscription.monitorIDs.includes(validation.monitorID)
+    })
+  }
   const vapid = store.getVapidKeys()
   const messageID = crypto.randomUUID()
   const notification = JSON.stringify({
@@ -153,6 +264,14 @@ async function deliverBroadcast({ store, validation, vapidSubject, sender }) {
     sender,
   })
   const removed = await store.removeSubscriptionsByID(sent.expiredIDs)
+  if (!record) {
+    return {
+      ...validation,
+      delivered: sent.delivered,
+      failed: sent.failed,
+      removed,
+    }
+  }
   return store.addMessage({
     ...validation,
     delivered: sent.delivered,
@@ -185,6 +304,21 @@ export function createServer({
         const subscription = await store.upsertSubscription(payload)
         return sendJSON(response, 201, { subscription })
       }
+      if (request.method === 'GET' && requestURL.pathname === `${API_PREFIX}/subscriptions/preferences`) {
+        const endpoint = requestURL.searchParams.get('endpoint')
+        const endpointError = validateEndpoint(endpoint)
+        if (endpointError) return sendJSON(response, 400, { message: endpointError })
+        const preferences = store.getSubscriptionPreferences(endpoint)
+        if (!preferences) return sendJSON(response, 404, { message: 'subscription not found' })
+        return sendJSON(response, 200, preferences)
+      }
+      if (request.method === 'PUT' && requestURL.pathname === `${API_PREFIX}/subscriptions/preferences`) {
+        const validation = validatePreferences(await readJSON(request))
+        if (validation.error) return sendJSON(response, 400, { message: validation.error })
+        const preferences = await store.updateSubscriptionPreferences(validation.endpoint, validation)
+        if (!preferences) return sendJSON(response, 404, { message: 'subscription not found' })
+        return sendJSON(response, 200, preferences)
+      }
       if (request.method === 'DELETE' && requestURL.pathname === `${API_PREFIX}/subscriptions`) {
         const payload = await readJSON(request)
         if (!payload.endpoint) return sendJSON(response, 400, { message: 'endpoint is required' })
@@ -199,7 +333,7 @@ export function createServer({
         if (request.method !== 'POST') return sendJSON(response, 405, { message: 'method not allowed' })
         const validation = validateChannelCheckCompletion(await readJSON(request))
         if (validation.error) return sendJSON(response, 400, { message: validation.error })
-        const message = await deliverBroadcast({ store, validation, vapidSubject, sender })
+        const message = await deliverBroadcast({ store, validation, vapidSubject, sender, record: false })
         return sendJSON(response, 201, { message })
       }
 
@@ -214,6 +348,10 @@ export function createServer({
           return sendJSON(response, 200, { messages: store.listMessages(limit) })
         }
         const messagePathPrefix = `${API_PREFIX}/admin/messages/`
+        if (request.method === 'DELETE' && requestURL.pathname === `${API_PREFIX}/admin/messages`) {
+          const removed = await store.clearMessages()
+          return sendJSON(response, 200, { removed, overview: store.overview() })
+        }
         if (request.method === 'DELETE' && requestURL.pathname.startsWith(messagePathPrefix)) {
           const messageID = requestURL.pathname.slice(messagePathPrefix.length)
           if (!messageID || messageID.includes('/')) {

@@ -29,6 +29,7 @@ func TestChannelMonitorPushNotifierSendsCompletionSummary(t *testing.T) {
 	notifier := newChannelMonitorPushNotifier(server.URL, "shared-secret", server.Client())
 	err := notifier.NotifyChannelCheckCompleted(
 		context.Background(),
+		42,
 		"CC-Kiro",
 		[]string{"operational", "operational", "degraded", "operational", "failed"},
 		"degraded",
@@ -36,7 +37,7 @@ func TestChannelMonitorPushNotifierSendsCompletionSummary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("notify completion: %v", err)
 	}
-	if received.GroupName != "CC-Kiro" || len(received.RecentStatuses) != 5 || received.CurrentStatus != "degraded" {
+	if received.MonitorID != 42 || received.GroupName != "CC-Kiro" || len(received.RecentStatuses) != 5 || received.CurrentStatus != "degraded" {
 		t.Fatalf("unexpected completion summary: %+v", received)
 	}
 }
@@ -49,7 +50,7 @@ func TestChannelMonitorPushNotifierReturnsNonSuccessResponse(t *testing.T) {
 
 	notifier := newChannelMonitorPushNotifier(server.URL, "wrong-secret", server.Client())
 	if err := notifier.NotifyChannelCheckCompleted(
-		context.Background(), "channel-a", []string{"failed"}, "failed",
+		context.Background(), 1, "channel-a", []string{"failed"}, "failed",
 	); err == nil {
 		t.Fatal("expected non-success response to return an error")
 	}

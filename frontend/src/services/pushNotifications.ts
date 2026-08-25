@@ -34,6 +34,12 @@ async function registration(): Promise<ServiceWorkerRegistration> {
   return navigator.serviceWorker.register('/push-worker.js', { scope: '/' })
 }
 
+export async function getCurrentPushSubscription(): Promise<PushSubscription | null> {
+  if (!isPushSupported()) return null
+  const worker = await registration()
+  return worker.pushManager.getSubscription()
+}
+
 export async function getPushPermissionState(sync = false): Promise<PushPermissionState> {
   if (!isPushSupported()) return 'unsupported'
   if (Notification.permission === 'denied') return 'denied'
