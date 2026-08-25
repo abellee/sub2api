@@ -12,6 +12,7 @@ export interface PushSubscriptionPayload {
 export interface PushSubscriptionPreferences {
   /** null means the subscription has not been configured and receives all monitors. */
   monitorIDs: number[] | null
+  notifyOnlyOnChange: boolean
   /** One-time ISO range, or HH:mm values when muteDaily is true. */
   muteStart: string | null
   muteEnd: string | null

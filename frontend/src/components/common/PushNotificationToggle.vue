@@ -71,6 +71,14 @@
           </div>
         </div>
 
+        <label class="flex cursor-pointer items-start gap-3 rounded-lg border border-gray-200 p-3 dark:border-dark-600">
+          <input v-model="notifyOnlyOnChange" type="checkbox" class="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-500">
+          <span>
+            <span class="block text-sm font-semibold text-gray-900 dark:text-white">{{ t('pushNotifications.subscription.onlyOnChange.title') }}</span>
+            <span class="mt-1 block text-xs leading-5 text-gray-500 dark:text-dark-300">{{ t('pushNotifications.subscription.onlyOnChange.hint') }}</span>
+          </span>
+        </label>
+
         <div>
           <div class="mb-2 flex items-center justify-between gap-3">
             <label class="block text-sm font-semibold text-gray-900 dark:text-white">{{ t('pushNotifications.subscription.muteTitle') }}</label>
@@ -130,6 +138,7 @@ const selectedMonitorIDs = ref<number[]>([])
 const muteStart = ref('')
 const muteEnd = ref('')
 const muteDaily = ref(false)
+const notifyOnlyOnChange = ref(true)
 
 const statusLabel = computed(() => t(`pushNotifications.subscription.status.${state.value}`))
 const statusDotClass = computed(() => state.value === 'enabled' ? 'bg-emerald-500' : 'bg-red-500')
@@ -186,10 +195,18 @@ async function loadPreferences() {
   try {
     const preferences = await getPushSubscriptionPreferences(endpoint)
     selectedMonitorIDs.value = preferences.monitorIDs === null ? monitors.value.map((monitor) => monitor.id) : preferences.monitorIDs.filter((id) => monitors.value.some((monitor) => monitor.id === id))
+    notifyOnlyOnChange.value = preferences.notifyOnlyOnChange !== false
     fromStoredMute(preferences)
   } catch (error: any) {
-    if (!String(error?.message || '').includes('404')) throw error
+    // A newly registered subscription has no preferences yet. The notifier
+    // reports that state as 404, which should keep the default selections
+    // rather than make the monitor list appear to have failed.
+    const status = error?.status ?? error?.response?.status
+    const message = String(error?.message || '').toLowerCase()
+    const isMissingPreferences = status === 404 || message.includes('subscription not found')
+    if (!isMissingPreferences) throw error
     selectedMonitorIDs.value = monitors.value.map((monitor) => monitor.id)
+    notifyOnlyOnChange.value = true
   }
 }
 async function openPreferences() {
@@ -253,7 +270,7 @@ async function savePreferences() {
     const subscription = await getCurrentPushSubscription()
     const endpoint = subscription?.toJSON().endpoint
     if (!endpoint) throw new Error(t('pushNotifications.subscription.failed'))
-    await savePushSubscriptionPreferences(endpoint, { monitorIDs: [...new Set(selectedMonitorIDs.value)], ...muteRangeValue() })
+    await savePushSubscriptionPreferences(endpoint, { monitorIDs: [...new Set(selectedMonitorIDs.value)], notifyOnlyOnChange: notifyOnlyOnChange.value, ...muteRangeValue() })
     appStore.showSuccess(t('pushNotifications.subscription.saved'))
     modalOpen.value = false
   } catch (error: any) {

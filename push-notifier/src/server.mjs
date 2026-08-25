@@ -94,6 +94,7 @@ function validatePreferences(payload) {
     monitorIDs: payload.monitorIDs === null || payload.monitorIDs === undefined
       ? null
       : [...new Set(payload.monitorIDs.map((id) => Number(id)))],
+    notifyOnlyOnChange: payload.notifyOnlyOnChange !== false,
     muteUntil,
     muteStart,
     muteEnd,
@@ -194,6 +195,7 @@ function validateChannelCheckCompletion(payload) {
     url: '/monitor',
     }),
     monitorID,
+    currentStatus,
     channelMonitor: true,
   }
 }
@@ -228,7 +230,9 @@ async function sendBroadcast({ subscriptions, payload, options, sender }) {
 }
 
 async function deliverBroadcast({ store, validation, vapidSubject, sender, record = true }) {
-  let subscriptions = store.listSubscriptions()
+  let subscriptions = validation.channelMonitor && validation.monitorID !== null
+    ? await store.listChannelMonitorSubscriptions(validation.monitorID, validation.currentStatus)
+    : store.listSubscriptions()
   if (validation.channelMonitor) {
     const now = new Date()
     subscriptions = subscriptions.filter((subscription) => {
