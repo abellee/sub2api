@@ -21,6 +21,31 @@ export interface LiveCapability {
   reason?: string
 }
 
+export interface GroupRecommendation {
+  group_id: number
+  name: string
+  platform: GroupPlatform
+  rate_multiplier: number
+  reason: string
+  rating: number
+}
+
+export async function getRecommendations(): Promise<GroupRecommendation[]> {
+  const { data } = await apiClient.get<GroupRecommendation[]>('/admin/groups/recommendations')
+  return data
+}
+
+export async function setRecommendation(
+  id: number,
+  payload: { reason: string; rating: number }
+): Promise<void> {
+  await apiClient.put(`/admin/groups/${id}/recommendation`, payload)
+}
+
+export async function deleteRecommendation(id: number): Promise<void> {
+  await apiClient.delete(`/admin/groups/${id}/recommendation`)
+}
+
 /**
  * List all groups with pagination
  * @param page - Page number (default: 1)
@@ -476,6 +501,9 @@ export const groupsAPI = {
   getByPlatform,
   getAllIncludingInactive,
   getLiveCapability,
+  getRecommendations,
+  setRecommendation,
+  deleteRecommendation,
   getById,
   getModelsListCandidates,
   create,

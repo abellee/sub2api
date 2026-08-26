@@ -43,3 +43,30 @@ export function createInternalAuthorizer({ internalToken }) {
     return Boolean(internalToken && token && constantTimeEqual(token, internalToken))
   }
 }
+
+export function createSubscriberUserResolver({ sub2apiAuthURL, fetchImpl = fetch }) {
+  return async function resolveSubscriberUser(request) {
+    const token = bearerToken(request)
+    if (!token) return null
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 5000)
+    try {
+      const response = await fetchImpl(sub2apiAuthURL, {
+        headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+        signal: controller.signal,
+      })
+      if (!response.ok) return null
+      const payload = await response.json()
+      const user = payload?.data || payload
+      const id = Number(user?.id)
+      const username = String(user?.username || '').trim()
+      const email = String(user?.email || '').trim()
+      if (!Number.isSafeInteger(id) || id <= 0 || (!username && !email)) return null
+      return { id, username, email }
+    } catch {
+      return null
+    } finally {
+      clearTimeout(timeout)
+    }
+  }
+}

@@ -8,6 +8,7 @@ const EMPTY_STATE = Object.freeze({
   vapid: null,
   subscriptions: [],
   messages: [],
+  schedules: [],
 })
 
 function cloneEmptyState() {
@@ -61,6 +62,15 @@ function normalizeMuteTimezone(value) {
   }
 }
 
+function normalizeUser(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const id = Number(value.id)
+  const username = String(value.username || '').trim()
+  const email = String(value.email || '').trim()
+  if (!Number.isSafeInteger(id) || id <= 0 || (!username && !email)) return null
+  return { id, username, email }
+}
+
 export class PushStore {
   constructor(filePath) {
     this.filePath = filePath
@@ -77,6 +87,7 @@ export class PushStore {
         vapid: parsed.vapid || null,
         subscriptions: Array.isArray(parsed.subscriptions) ? parsed.subscriptions : [],
         messages: Array.isArray(parsed.messages) ? parsed.messages : [],
+        schedules: Array.isArray(parsed.schedules) ? parsed.schedules : [],
       }
     } catch (error) {
       if (error?.code !== 'ENOENT') throw error
@@ -97,8 +108,22 @@ export class PushStore {
     return this.state.subscriptions.map((subscription) => ({ ...subscription, keys: { ...subscription.keys } }))
   }
 
+  listSubscriptionSummaries() {
+    return this.state.subscriptions.map((subscription) => ({
+      id: subscription.id,
+      user: normalizeUser(subscription.user),
+      createdAt: subscription.createdAt,
+      lastSeenAt: subscription.lastSeenAt,
+      monitorIDs: normalizeMonitorIDs(subscription.monitorIDs),
+    }))
+  }
+
   listMessages(limit = 20) {
     return this.state.messages.slice(0, limit).map((message) => ({ ...message }))
+  }
+
+  listSchedules() {
+    return this.state.schedules.map((schedule) => ({ ...schedule }))
   }
 
   overview() {
@@ -121,6 +146,7 @@ export class PushStore {
         endpoint: subscription.endpoint,
         expirationTime: subscription.expirationTime ?? null,
         keys: { p256dh: subscription.keys.p256dh, auth: subscription.keys.auth },
+        user: normalizeUser(subscription.user) || normalizeUser(index >= 0 ? this.state.subscriptions[index].user : null),
         monitorIDs: normalizeMonitorIDs(index >= 0 ? this.state.subscriptions[index].monitorIDs : subscription.monitorIDs),
         notifyOnlyOnChange: index >= 0
           ? this.state.subscriptions[index].notifyOnlyOnChange !== false
@@ -249,6 +275,64 @@ export class PushStore {
       const removed = this.state.messages.length
       this.state.messages = []
       return removed
+    })
+  }
+
+  async addSchedule(schedule) {
+    return this.mutate(() => {
+      const record = {
+        id: crypto.randomUUID(),
+        title: schedule.title,
+        body: schedule.body,
+        url: schedule.url,
+        image: schedule.image || '',
+        scheduledAt: new Date(schedule.scheduledAt).toISOString(),
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+      }
+      this.state.schedules.push(record)
+      this.state.schedules.sort((left, right) => new Date(left.scheduledAt).getTime() - new Date(right.scheduledAt).getTime())
+      return { ...record }
+    })
+  }
+
+  async claimDueSchedules(now = new Date()) {
+    return this.mutate(() => {
+      const timestamp = now.getTime()
+      const due = []
+      for (const schedule of this.state.schedules) {
+        if (schedule.status !== 'pending' || new Date(schedule.scheduledAt).getTime() > timestamp) continue
+        schedule.status = 'processing'
+        due.push({ ...schedule })
+      }
+      return due
+    })
+  }
+
+  async completeSchedule(id) {
+    return this.mutate(() => {
+      const previousLength = this.state.schedules.length
+      this.state.schedules = this.state.schedules.filter((schedule) => schedule.id !== id)
+      return previousLength !== this.state.schedules.length
+    })
+  }
+
+  async failSchedule(id, error) {
+    return this.mutate(() => {
+      const schedule = this.state.schedules.find((item) => item.id === id)
+      if (!schedule) return false
+      schedule.status = 'failed'
+      schedule.error = String(error || 'delivery failed').slice(0, 500)
+      schedule.failedAt = new Date().toISOString()
+      return true
+    })
+  }
+
+  async removeSchedule(id) {
+    return this.mutate(() => {
+      const previousLength = this.state.schedules.length
+      this.state.schedules = this.state.schedules.filter((schedule) => schedule.id !== id)
+      return previousLength !== this.state.schedules.length
     })
   }
 

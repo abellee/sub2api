@@ -776,6 +776,17 @@ export default {
     groups: {
       title: 'Group Management',
       description: 'Manage API key groups and rate multipliers',
+      recommendation: {
+        action: 'Recommend',
+        title: 'Recommend Group',
+        reason: 'Reason',
+        reasonPlaceholder: 'Optional reason shown to users',
+        rating: 'Rating',
+        saved: 'Group recommendation saved',
+        removed: 'Recommendation removed',
+        remove: 'Remove recommendation',
+        saveFailed: 'Failed to save group recommendation'
+      },
       searchGroups: 'Search groups...',
       createGroup: 'Create Group',
       editGroup: 'Edit Group',

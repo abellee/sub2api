@@ -431,6 +431,13 @@
                 }}</span>
               </button>
               <button
+                @click="openRecommendationModal(row)"
+                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-amber-50 hover:text-amber-600 dark:hover:bg-amber-900/20 dark:hover:text-amber-400"
+              >
+                <Icon name="badge" size="sm" :class="recommendationMap.has(row.id) ? 'text-amber-500' : ''" />
+                <span class="text-xs">{{ t('admin.groups.recommendation.action') }}</span>
+              </button>
+              <button
                 @click="handleDelete(row)"
                 class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400"
               >
@@ -4399,6 +4406,51 @@
       </template>
     </BaseDialog>
 
+    <!-- Group Recommendation Modal -->
+    <BaseDialog
+      :show="showRecommendationModal"
+      :title="t('admin.groups.recommendation.title')"
+      width="narrow"
+      @close="closeRecommendationModal"
+    >
+      <div v-if="recommendationGroup" class="space-y-4">
+        <div class="rounded-lg bg-gray-50 p-3 dark:bg-dark-800">
+          <div class="font-medium text-gray-900 dark:text-white">{{ recommendationGroup.name }}</div>
+          <div class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ recommendationGroup.rate_multiplier }}x</div>
+        </div>
+        <div>
+          <label class="input-label">{{ t('admin.groups.recommendation.reason') }}</label>
+          <textarea v-model="recommendationForm.reason" class="input min-h-24" maxlength="500" :placeholder="t('admin.groups.recommendation.reasonPlaceholder')" />
+        </div>
+        <div>
+          <label class="input-label">{{ t('admin.groups.recommendation.rating') }}</label>
+          <div class="flex items-center gap-0.5" role="radiogroup" :aria-label="t('admin.groups.recommendation.rating')">
+            <button
+              v-for="index in 5"
+              :key="index"
+              type="button"
+              class="h-8 w-6 text-2xl leading-8"
+              :title="`${index - 0.5} - ${index}`"
+              @click="setRecommendationRating(index, $event)"
+            >
+              <span class="bg-clip-text text-transparent" :style="starStyle(index)">★</span>
+            </button>
+            <span class="ml-2 text-sm text-gray-600 dark:text-gray-300">{{ recommendationForm.rating.toFixed(1) }}</span>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <div class="flex justify-between gap-3">
+          <button v-if="recommendationExists" type="button" class="btn btn-secondary text-red-600" @click="removeRecommendation">{{ t('admin.groups.recommendation.remove') }}</button>
+          <span v-else />
+          <div class="flex gap-3">
+            <button type="button" class="btn btn-secondary" @click="closeRecommendationModal">{{ t('common.cancel') }}</button>
+            <button type="button" class="btn btn-primary" :disabled="recommendationSaving" @click="saveRecommendation">{{ t('common.save') }}</button>
+          </div>
+        </div>
+      </template>
+    </BaseDialog>
+
     <!-- Group Rate Multipliers Modal -->
     <GroupRateMultipliersModal
       :show="showRateMultipliersModal"
@@ -4433,6 +4485,7 @@ import type {
   GroupPlatform,
   SubscriptionType,
 } from "@/types";
+import type { GroupRecommendation } from "@/api/admin/groups";
 import {
   CONCRETE_PLATFORM_OPTIONS,
   GROUP_PLATFORM_OPTIONS,
@@ -4921,6 +4974,66 @@ const copyAccountsGroupOptionsForEdit = computed(() => {
 
 const groups = ref<AdminGroup[]>([]);
 const loading = ref(false);
+
+// Development fixtures make the recommendation workflow testable before a local
+// backend is connected. They are only used when the explicit admin mock flag is on.
+const devGroupFixtures: AdminGroup[] = [
+  {
+    id: 1001, name: 'GPT 标准池', description: 'OpenAI 通用模型，适合日常对话与代码任务', platform: 'openai', rate_multiplier: 0.06,
+    is_exclusive: false, status: 'active', subscription_type: 'standard', daily_limit_usd: null, weekly_limit_usd: null, monthly_limit_usd: null,
+    long_context_pricing_enabled: true, allow_image_generation: false, allow_batch_image_generation: false, image_rate_independent: false, image_rate_multiplier: 1,
+    batch_image_discount_multiplier: 0.5, batch_image_hold_multiplier: 0.6, image_price_1k: null, image_price_2k: null, image_price_4k: null,
+    video_rate_independent: false, video_rate_multiplier: 1, video_price_480p: null, video_price_720p: null, video_price_1080p: null,
+    web_search_price_per_call: null, search_price_per_1k: null, audio_realtime_price_per_min: null, audio_tts_price_per_million_chars: null, audio_stt_price_per_hour: null,
+    peak_rate_enabled: false, peak_start: '', peak_end: '', peak_rate_multiplier: 0.06, claude_code_only: false, fallback_group_id: null, fallback_group_id_on_invalid_request: null,
+    allow_live: false, require_oauth_only: false, require_privacy_set: false, created_at: '', updated_at: '', model_pricing: [], profit_control_enabled: false,
+    profit_min_margin: 0, profit_safety_buffer: 0, model_routing: null, model_routing_enabled: false, mcp_xml_inject: true, sort_order: 10, account_count: 8, active_account_count: 7, rate_limited_account_count: 1
+  },
+  {
+    id: 1002, name: 'GPT 高峰池', description: 'OpenAI 高峰时段线路，适合高并发请求', platform: 'openai', rate_multiplier: 0.08,
+    is_exclusive: false, status: 'active', subscription_type: 'standard', daily_limit_usd: null, weekly_limit_usd: null, monthly_limit_usd: null,
+    long_context_pricing_enabled: true, allow_image_generation: false, allow_batch_image_generation: false, image_rate_independent: false, image_rate_multiplier: 1,
+    batch_image_discount_multiplier: 0.5, batch_image_hold_multiplier: 0.6, image_price_1k: null, image_price_2k: null, image_price_4k: null,
+    video_rate_independent: false, video_rate_multiplier: 1, video_price_480p: null, video_price_720p: null, video_price_1080p: null,
+    web_search_price_per_call: null, search_price_per_1k: null, audio_realtime_price_per_min: null, audio_tts_price_per_million_chars: null, audio_stt_price_per_hour: null,
+    peak_rate_enabled: true, peak_start: '18:00', peak_end: '23:00', peak_rate_multiplier: 0.1, claude_code_only: false, fallback_group_id: null, fallback_group_id_on_invalid_request: null,
+    allow_live: false, require_oauth_only: false, require_privacy_set: false, created_at: '', updated_at: '', model_pricing: [], profit_control_enabled: false,
+    profit_min_margin: 0, profit_safety_buffer: 0, model_routing: null, model_routing_enabled: false, mcp_xml_inject: true, sort_order: 20, account_count: 5, active_account_count: 5, rate_limited_account_count: 0
+  },
+  {
+    id: 1003, name: 'Claude 稳定池', description: 'Anthropic 长文本与复杂分析线路', platform: 'anthropic', rate_multiplier: 0.12,
+    is_exclusive: false, status: 'active', subscription_type: 'standard', daily_limit_usd: null, weekly_limit_usd: null, monthly_limit_usd: null,
+    long_context_pricing_enabled: true, allow_image_generation: false, allow_batch_image_generation: false, image_rate_independent: false, image_rate_multiplier: 1,
+    batch_image_discount_multiplier: 0.5, batch_image_hold_multiplier: 0.6, image_price_1k: null, image_price_2k: null, image_price_4k: null,
+    video_rate_independent: false, video_rate_multiplier: 1, video_price_480p: null, video_price_720p: null, video_price_1080p: null,
+    web_search_price_per_call: null, search_price_per_1k: null, audio_realtime_price_per_min: null, audio_tts_price_per_million_chars: null, audio_stt_price_per_hour: null,
+    peak_rate_enabled: false, peak_start: '', peak_end: '', peak_rate_multiplier: 0.12, claude_code_only: false, fallback_group_id: null, fallback_group_id_on_invalid_request: null,
+    allow_live: false, require_oauth_only: false, require_privacy_set: false, created_at: '', updated_at: '', model_pricing: [], profit_control_enabled: false,
+    profit_min_margin: 0, profit_safety_buffer: 0, model_routing: null, model_routing_enabled: false, mcp_xml_inject: true, sort_order: 30, account_count: 4, active_account_count: 4, rate_limited_account_count: 0
+  },
+  {
+    id: 1004, name: 'Gemini 多模态池', description: 'Gemini 文本与图片请求线路', platform: 'gemini', rate_multiplier: 0.08,
+    is_exclusive: false, status: 'active', subscription_type: 'standard', daily_limit_usd: null, weekly_limit_usd: null, monthly_limit_usd: null,
+    long_context_pricing_enabled: true, allow_image_generation: true, allow_batch_image_generation: false, image_rate_independent: false, image_rate_multiplier: 1,
+    batch_image_discount_multiplier: 0.5, batch_image_hold_multiplier: 0.6, image_price_1k: null, image_price_2k: null, image_price_4k: null,
+    video_rate_independent: false, video_rate_multiplier: 1, video_price_480p: null, video_price_720p: null, video_price_1080p: null,
+    web_search_price_per_call: null, search_price_per_1k: null, audio_realtime_price_per_min: null, audio_tts_price_per_million_chars: null, audio_stt_price_per_hour: null,
+    peak_rate_enabled: false, peak_start: '', peak_end: '', peak_rate_multiplier: 0.08, claude_code_only: false, fallback_group_id: null, fallback_group_id_on_invalid_request: null,
+    allow_live: false, require_oauth_only: false, require_privacy_set: false, created_at: '', updated_at: '', model_pricing: [], profit_control_enabled: false,
+    profit_min_margin: 0, profit_safety_buffer: 0, model_routing: null, model_routing_enabled: false, mcp_xml_inject: true, sort_order: 40, account_count: 3, active_account_count: 3, rate_limited_account_count: 0
+  },
+  {
+    id: 1005, name: 'DeepSeek 性价比池', description: 'DeepSeek 高性价比代码线路', platform: 'deepseek', rate_multiplier: 0.03,
+    is_exclusive: false, status: 'active', subscription_type: 'standard', daily_limit_usd: null, weekly_limit_usd: null, monthly_limit_usd: null,
+    long_context_pricing_enabled: false, allow_image_generation: false, allow_batch_image_generation: false, image_rate_independent: false, image_rate_multiplier: 1,
+    batch_image_discount_multiplier: 0.5, batch_image_hold_multiplier: 0.6, image_price_1k: null, image_price_2k: null, image_price_4k: null,
+    video_rate_independent: false, video_rate_multiplier: 1, video_price_480p: null, video_price_720p: null, video_price_1080p: null,
+    web_search_price_per_call: null, search_price_per_1k: null, audio_realtime_price_per_min: null, audio_tts_price_per_million_chars: null, audio_stt_price_per_hour: null,
+    peak_rate_enabled: false, peak_start: '', peak_end: '', peak_rate_multiplier: 0.03, claude_code_only: false, fallback_group_id: null, fallback_group_id_on_invalid_request: null,
+    allow_live: false, require_oauth_only: false, require_privacy_set: false, created_at: '', updated_at: '', model_pricing: [], profit_control_enabled: false,
+    profit_min_margin: 0, profit_safety_buffer: 0, model_routing: null, model_routing_enabled: false, mcp_xml_inject: true, sort_order: 50, account_count: 6, active_account_count: 6, rate_limited_account_count: 0
+  }
+];
 type GroupUsageSummary = {
   today_cost: number;
   yesterday_cost: number;
@@ -4983,6 +5096,23 @@ const showRateMultipliersModal = ref(false);
 const rateMultipliersGroup = ref<AdminGroup | null>(null);
 const showRPMOverridesModal = ref(false);
 const rpmOverridesGroup = ref<AdminGroup | null>(null);
+const showRecommendationModal = ref(false);
+const recommendationGroup = ref<AdminGroup | null>(null);
+const recommendationSaving = ref(false);
+const recommendationForm = reactive({ reason: '', rating: 5 });
+const recommendationMap = ref<Map<number, GroupRecommendation>>(new Map());
+const recommendationExists = computed(() => recommendationGroup.value ? recommendationMap.value.has(recommendationGroup.value.id) : false);
+const starStyle = (index: number) => {
+  const rating = recommendationForm.rating;
+  if (rating >= index) return { backgroundImage: 'linear-gradient(90deg, #facc15, #facc15)' };
+  if (rating >= index - 0.5) return { backgroundImage: 'linear-gradient(90deg, #facc15 50%, #d1d5db 50%)' };
+  return { backgroundImage: 'linear-gradient(90deg, #d1d5db, #d1d5db)' };
+};
+const setRecommendationRating = (index: number, event: MouseEvent) => {
+  const target = event.currentTarget as HTMLElement;
+  const rect = target.getBoundingClientRect();
+  recommendationForm.rating = index - (event.clientX - rect.left < rect.width / 2 ? 0.5 : 0);
+};
 const sortableGroups = ref<AdminGroup[]>([]);
 type ConcreteGroupPlatform = Exclude<GroupPlatform, "composite">;
 type CompositeRouteFormState = {
@@ -5729,10 +5859,85 @@ const loadGroups = async () => {
     }
     appStore.showError(t("admin.groups.failedToLoad"));
     console.error("Error loading groups:", error);
+    if (import.meta.env.DEV && import.meta.env.VITE_ENABLE_ADMIN_MOCK === "true") {
+      const query = searchQuery.value.trim().toLowerCase();
+      const filtered = devGroupFixtures.filter((group) => {
+        const matchesSearch = !query || group.name.toLowerCase().includes(query) || (group.description || '').toLowerCase().includes(query);
+        const matchesPlatform = !filters.platform || group.platform === filters.platform;
+        const matchesStatus = !filters.status || group.status === filters.status;
+        return matchesSearch && matchesPlatform && matchesStatus;
+      });
+      groups.value = filtered;
+      pagination.total = filtered.length;
+      pagination.pages = filtered.length ? 1 : 0;
+    }
   } finally {
     if (abortController === currentController && !signal.aborted) {
       loading.value = false;
     }
+  }
+};
+
+const loadRecommendations = async () => {
+  try {
+    const records = await adminAPI.groups.getRecommendations();
+    recommendationMap.value = new Map(records.map((record) => [record.group_id, record]));
+  } catch (error) {
+    console.error('Error loading group recommendations:', error);
+    if (import.meta.env.DEV && import.meta.env.VITE_ENABLE_ADMIN_MOCK === "true") {
+      recommendationMap.value = new Map([
+        [1001, { group_id: 1001, name: 'GPT 标准池', platform: 'openai', rate_multiplier: 0.06, reason: '日常使用稳定，适合大多数请求', rating: 4.5 }],
+        [1003, { group_id: 1003, name: 'Claude 稳定池', platform: 'anthropic', rate_multiplier: 0.12, reason: '长文本表现稳定', rating: 4 }]
+      ]);
+    }
+  }
+};
+
+const openRecommendationModal = async (group: AdminGroup) => {
+  // Re-read on every click so deleted groups are removed from the standalone file.
+  await loadRecommendations();
+  recommendationGroup.value = group;
+  const existing = recommendationMap.value.get(group.id);
+  recommendationForm.reason = existing?.reason ?? '';
+  recommendationForm.rating = existing?.rating ?? 5;
+  showRecommendationModal.value = true;
+};
+
+const closeRecommendationModal = () => {
+  showRecommendationModal.value = false;
+  recommendationGroup.value = null;
+};
+
+const saveRecommendation = async () => {
+  if (!recommendationGroup.value) return;
+  recommendationSaving.value = true;
+  try {
+    await adminAPI.groups.setRecommendation(recommendationGroup.value.id, {
+      reason: recommendationForm.reason,
+      rating: recommendationForm.rating,
+    });
+    appStore.showSuccess(t('admin.groups.recommendation.saved'));
+    closeRecommendationModal();
+    await loadRecommendations();
+  } catch (error: any) {
+    appStore.showError(error.response?.data?.detail || t('admin.groups.recommendation.saveFailed'));
+  } finally {
+    recommendationSaving.value = false;
+  }
+};
+
+const removeRecommendation = async () => {
+  if (!recommendationGroup.value) return;
+  recommendationSaving.value = true;
+  try {
+    await adminAPI.groups.deleteRecommendation(recommendationGroup.value.id);
+    appStore.showSuccess(t('admin.groups.recommendation.removed'));
+    closeRecommendationModal();
+    await loadRecommendations();
+  } catch (error: any) {
+    appStore.showError(error.response?.data?.detail || t('admin.groups.recommendation.saveFailed'));
+  } finally {
+    recommendationSaving.value = false;
   }
 };
 
@@ -6830,6 +7035,7 @@ const saveSortOrder = async () => {
 
 onMounted(() => {
   loadGroups();
+  loadRecommendations();
   void loadLiveCapability();
   loadModelsListCandidates("create", 0, createForm.platform);
   document.addEventListener("click", handleClickOutside);

@@ -94,6 +94,18 @@ func ProvideAdminHandlers(
 	}
 }
 
+func ProvideAPIKeyHandler(apiKeyService *service.APIKeyService, recommendationStore *service.GroupRecommendationStore) *APIKeyHandler {
+	h := NewAPIKeyHandler(apiKeyService)
+	h.SetGroupRecommendationStore(recommendationStore)
+	return h
+}
+
+func ProvideAdminGroupHandler(adminService service.AdminService, dashboardService *service.DashboardService, groupCapacityService *service.GroupCapacityService, recommendationStore *service.GroupRecommendationStore) *admin.GroupHandler {
+	h := admin.NewGroupHandler(adminService, dashboardService, groupCapacityService)
+	h.SetRecommendationStore(recommendationStore)
+	return h
+}
+
 func ProvideGatewayHandler(
 	gatewayService *service.GatewayService,
 	openAIGatewayService *service.OpenAIGatewayService,
@@ -230,7 +242,7 @@ var ProviderSet = wire.NewSet(
 	// Top-level handlers
 	NewAuthHandler,
 	NewUserHandler,
-	NewAPIKeyHandler,
+	ProvideAPIKeyHandler,
 	NewUsageHandler,
 	NewRedeemHandler,
 	NewSubscriptionHandler,
@@ -252,7 +264,7 @@ var ProviderSet = wire.NewSet(
 	// Admin handlers
 	admin.NewDashboardHandler,
 	admin.NewUserHandler,
-	admin.NewGroupHandler,
+	ProvideAdminGroupHandler,
 	admin.ProvideAccountHandler,
 	admin.NewAnnouncementHandler,
 	admin.NewDataManagementHandler,
