@@ -23,10 +23,24 @@ function serializeSubscription(subscription: PushSubscription): PushSubscription
   if (!value.endpoint || !value.keys?.p256dh || !value.keys?.auth) {
     throw new Error('Browser returned an incomplete push subscription')
   }
+  let user: PushSubscriptionPayload['user']
+  try {
+    const savedUser = localStorage.getItem('auth_user')
+    if (savedUser) {
+      const parsed = JSON.parse(savedUser)
+      const id = Number(parsed?.id)
+      if (Number.isSafeInteger(id) && id > 0) {
+        user = { id, username: String(parsed?.username || ''), email: String(parsed?.email || '') }
+      }
+    }
+  } catch {
+    // User metadata is only a display fallback; subscription delivery must continue.
+  }
   return {
     endpoint: value.endpoint,
     expirationTime: value.expirationTime,
     keys: { p256dh: value.keys.p256dh, auth: value.keys.auth },
+    user,
   }
 }
 

@@ -7,6 +7,7 @@ export interface PushSubscriptionPayload {
     p256dh: string
     auth: string
   }
+  user?: { id: number; username?: string; email?: string }
 }
 
 export interface PushSubscriptionPreferences {
@@ -28,6 +29,27 @@ export interface PushOverview {
   lastSentAt: string | null
 }
 
+export interface PushSubscriptionSummary {
+  id: string
+  user: { id: number; username: string; email: string } | null
+  createdAt: string
+  lastSeenAt: string
+  monitorIDs: number[] | null
+}
+
+export interface PushSchedule {
+  id: string
+  title: string
+  body: string
+  url: string
+  image?: string
+  scheduledAt: string
+  status: 'pending' | 'processing' | 'failed'
+  createdAt: string
+  error?: string
+  failedAt?: string
+}
+
 export interface PushMessage {
   id: string
   title: string
@@ -47,11 +69,11 @@ export interface BroadcastPushRequest {
   image?: string
 }
 
-async function request<T>(path: string, options: RequestInit = {}, admin = false): Promise<T> {
+async function request<T>(path: string, options: RequestInit = {}, admin = false, attachAuth = false): Promise<T> {
   const headers = new Headers(options.headers)
   headers.set('Accept', 'application/json')
   if (options.body) headers.set('Content-Type', 'application/json')
-  if (admin) {
+  if (admin || attachAuth) {
     const token = localStorage.getItem('auth_token')
     if (token) headers.set('Authorization', `Bearer ${token}`)
   }
@@ -69,15 +91,15 @@ export function getPushConfig(): Promise<{ publicKey: string }> {
 }
 
 export function savePushSubscription(subscription: PushSubscriptionPayload): Promise<void> {
-  return request('/subscriptions', { method: 'POST', body: JSON.stringify(subscription) })
+  return request('/subscriptions', { method: 'POST', body: JSON.stringify(subscription) }, false, true)
 }
 
 export function removePushSubscription(endpoint: string): Promise<{ removed: boolean }> {
-  return request('/subscriptions', { method: 'DELETE', body: JSON.stringify({ endpoint }) })
+  return request('/subscriptions', { method: 'DELETE', body: JSON.stringify({ endpoint }) }, false, true)
 }
 
 export function getPushSubscriptionPreferences(endpoint: string): Promise<PushSubscriptionPreferences> {
-  return request(`/subscriptions/preferences?endpoint=${encodeURIComponent(endpoint)}`)
+  return request(`/subscriptions/preferences?endpoint=${encodeURIComponent(endpoint)}`, {}, false, true)
 }
 
 export function savePushSubscriptionPreferences(
@@ -87,11 +109,38 @@ export function savePushSubscriptionPreferences(
   return request('/subscriptions/preferences', {
     method: 'PUT',
     body: JSON.stringify({ endpoint, ...preferences }),
-  })
+  }, false, true)
 }
 
 export function getPushOverview(): Promise<PushOverview> {
   return request('/admin/overview', {}, true)
+}
+
+export async function listPushSubscriptions(): Promise<PushSubscriptionSummary[]> {
+  const response = await request<{ subscriptions: PushSubscriptionSummary[] }>('/admin/subscriptions', {}, true)
+  return response.subscriptions
+}
+
+export async function listPushSchedules(): Promise<PushSchedule[]> {
+  const response = await request<{ schedules: PushSchedule[] }>('/admin/schedules', {}, true)
+  return response.schedules
+}
+
+export function createPushSchedule(input: {
+  title: string
+  body: string
+  url: string
+  image?: string
+  scheduledAt: string
+}): Promise<PushSchedule> {
+  return request<{ schedule: PushSchedule }>('/admin/schedules', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }, true).then((response) => response.schedule)
+}
+
+export function deletePushSchedule(id: string): Promise<{ removed: boolean }> {
+  return request(`/admin/schedules/${encodeURIComponent(id)}`, { method: 'DELETE' }, true)
 }
 
 export async function listPushMessages(limit = 20): Promise<PushMessage[]> {

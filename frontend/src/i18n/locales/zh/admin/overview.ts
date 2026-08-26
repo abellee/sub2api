@@ -773,6 +773,17 @@ export default {
     groups: {
       title: '分组管理',
       description: '管理 API 密钥分组和费率配置',
+      recommendation: {
+        action: '推荐',
+        title: '推荐分组',
+        reason: '推荐理由',
+        reasonPlaceholder: '填写给用户看的推荐理由（可选）',
+        rating: '推荐等级',
+        saved: '推荐分组已保存',
+        removed: '已取消推荐',
+        remove: '取消推荐',
+        saveFailed: '保存推荐分组失败'
+      },
       searchGroups: '搜索分组...',
       createGroup: '创建分组',
       editGroup: '编辑分组',

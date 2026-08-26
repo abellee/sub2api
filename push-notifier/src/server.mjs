@@ -166,6 +166,15 @@ function validateBroadcast(payload) {
   return { title, body, url, image }
 }
 
+function validateSchedule(payload) {
+  const broadcast = validateBroadcast(payload)
+  if (broadcast.error) return broadcast
+  const scheduledAt = new Date(String(payload.scheduledAt || ''))
+  if (Number.isNaN(scheduledAt.getTime())) return { error: 'scheduledAt must be a valid date' }
+  if (scheduledAt.getTime() <= Date.now()) return { error: 'scheduledAt must be in the future' }
+  return { ...broadcast, scheduledAt: scheduledAt.toISOString() }
+}
+
 function validateChannelCheckCompletion(payload) {
   const groupName = String(payload.groupName || '').trim()
   if (!groupName || groupName.length > 100) {
@@ -229,7 +238,7 @@ async function sendBroadcast({ subscriptions, payload, options, sender }) {
   return result
 }
 
-async function deliverBroadcast({ store, validation, vapidSubject, sender, record = true }) {
+export async function deliverBroadcast({ store, validation, vapidSubject, sender = defaultSender, record = true }) {
   let subscriptions = validation.channelMonitor && validation.monitorID !== null
     ? await store.listChannelMonitorSubscriptions(validation.monitorID, validation.currentStatus)
     : store.listSubscriptions()
@@ -288,6 +297,7 @@ export function createServer({
   store,
   authorizeAdmin,
   authorizeInternal = async () => false,
+  resolveSubscriberUser = async () => null,
   vapidSubject,
   sender = defaultSender,
   logger = console,
@@ -305,7 +315,8 @@ export function createServer({
         const payload = await readJSON(request)
         const validationError = validateSubscription(payload)
         if (validationError) return sendJSON(response, 400, { message: validationError })
-        const subscription = await store.upsertSubscription(payload)
+        const user = payload.user || await resolveSubscriberUser(request)
+        const subscription = await store.upsertSubscription({ ...payload, user: user || payload.user })
         return sendJSON(response, 201, { subscription })
       }
       if (request.method === 'GET' && requestURL.pathname === `${API_PREFIX}/subscriptions/preferences`) {
@@ -347,6 +358,12 @@ export function createServer({
         if (request.method === 'GET' && requestURL.pathname === `${API_PREFIX}/admin/overview`) {
           return sendJSON(response, 200, store.overview())
         }
+        if (request.method === 'GET' && requestURL.pathname === `${API_PREFIX}/admin/subscriptions`) {
+          return sendJSON(response, 200, { subscriptions: store.listSubscriptionSummaries() })
+        }
+        if (request.method === 'GET' && requestURL.pathname === `${API_PREFIX}/admin/schedules`) {
+          return sendJSON(response, 200, { schedules: store.listSchedules() })
+        }
         if (request.method === 'GET' && requestURL.pathname === `${API_PREFIX}/admin/messages`) {
           const limit = Math.min(Math.max(Number(requestURL.searchParams.get('limit')) || 20, 1), 100)
           return sendJSON(response, 200, { messages: store.listMessages(limit) })
@@ -370,6 +387,20 @@ export function createServer({
           if (validation.error) return sendJSON(response, 400, { message: validation.error })
           const message = await deliverBroadcast({ store, validation, vapidSubject, sender })
           return sendJSON(response, 201, { message })
+        }
+        if (request.method === 'POST' && requestURL.pathname === `${API_PREFIX}/admin/schedules`) {
+          const validation = validateSchedule(await readJSON(request))
+          if (validation.error) return sendJSON(response, 400, { message: validation.error })
+          const schedule = await store.addSchedule(validation)
+          return sendJSON(response, 201, { schedule })
+        }
+        const schedulePathPrefix = `${API_PREFIX}/admin/schedules/`
+        if (request.method === 'DELETE' && requestURL.pathname.startsWith(schedulePathPrefix)) {
+          const scheduleID = requestURL.pathname.slice(schedulePathPrefix.length)
+          if (!scheduleID || scheduleID.includes('/')) return sendJSON(response, 400, { message: 'invalid schedule id' })
+          const removed = await store.removeSchedule(scheduleID)
+          if (!removed) return sendJSON(response, 404, { message: 'schedule not found' })
+          return sendJSON(response, 200, { removed })
         }
       }
 

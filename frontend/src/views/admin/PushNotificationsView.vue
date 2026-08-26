@@ -57,12 +57,23 @@
               <p v-if="imageError" class="input-hint text-red-600 dark:text-red-400">{{ imageError }}</p>
               <p v-else class="input-hint">{{ t('admin.pushNotifications.form.imageHint') }}</p>
             </div>
+            <div>
+              <label class="input-label" for="push-scheduled-at">{{ t('admin.pushNotifications.form.scheduledAt') }}</label>
+              <input
+                id="push-scheduled-at"
+                v-model="form.scheduledAt"
+                type="datetime-local"
+                class="input"
+                :min="minimumScheduleDateTime"
+              />
+              <p class="input-hint">{{ t('admin.pushNotifications.form.scheduledAtHint') }}</p>
+            </div>
           </div>
 
           <div class="mt-5 flex justify-end">
             <button type="submit" class="btn btn-primary" :disabled="sending || !form.title || !form.body || !!imageError">
               <Icon name="bell" size="sm" class="mr-1.5" />
-              {{ sending ? t('admin.pushNotifications.sending') : t('admin.pushNotifications.send') }}
+              {{ sending ? t('admin.pushNotifications.sending') : form.scheduledAt ? t('admin.pushNotifications.schedule') : t('admin.pushNotifications.send') }}
             </button>
           </div>
         </form>
@@ -99,6 +110,71 @@
           <p class="mt-3 text-xs leading-5 text-gray-500 dark:text-dark-300">
             {{ t('admin.pushNotifications.previewHint') }}
           </p>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 gap-5 xl:grid-cols-2">
+        <div class="card overflow-hidden">
+          <div class="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-dark-700">
+            <div>
+              <h2 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.pushNotifications.subscribers.title') }}</h2>
+              <p class="mt-1 text-xs text-gray-500 dark:text-dark-300">{{ t('admin.pushNotifications.subscribers.description') }}</p>
+            </div>
+            <button
+              type="button"
+              class="btn btn-secondary btn-icon"
+              :title="t('common.refresh')"
+              :disabled="loadingSubscribers"
+              @click="loadSubscribers"
+            >
+              <Icon name="refresh" size="sm" :class="loadingSubscribers ? 'animate-spin' : ''" />
+            </button>
+          </div>
+          <div class="max-h-72 overflow-y-auto">
+            <div v-if="!subscribers.length && !loadingSubscribers" class="px-5 py-8 text-center text-sm text-gray-500">
+              {{ t('admin.pushNotifications.subscribers.empty') }}
+            </div>
+            <div v-for="subscriber in subscribers" :key="subscriber.id" class="flex items-center justify-between gap-3 border-b border-gray-100 px-5 py-3 last:border-b-0 dark:border-dark-700">
+              <div class="min-w-0">
+                <p class="truncate text-sm font-medium text-gray-900 dark:text-white">{{ subscriber.user?.username || subscriber.user?.email || t('admin.pushNotifications.subscribers.unknown') }}</p>
+                <p v-if="subscriber.user?.username && subscriber.user?.email" class="truncate text-xs text-gray-500 dark:text-dark-300">{{ subscriber.user.email }}</p>
+              </div>
+              <span class="shrink-0 text-xs text-gray-400 dark:text-dark-400">{{ formatDateTime(subscriber.lastSeenAt) }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card overflow-hidden">
+          <div class="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-dark-700">
+            <div>
+              <h2 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.pushNotifications.schedules.title') }}</h2>
+              <p class="mt-1 text-xs text-gray-500 dark:text-dark-300">{{ t('admin.pushNotifications.schedules.description') }}</p>
+            </div>
+            <button type="button" class="btn btn-secondary btn-icon" :title="t('common.refresh')" :disabled="loadingSchedules" @click="loadSchedules">
+              <Icon name="refresh" size="sm" :class="loadingSchedules ? 'animate-spin' : ''" />
+            </button>
+          </div>
+          <div class="max-h-72 overflow-y-auto">
+            <div v-if="!schedules.length && !loadingSchedules" class="px-5 py-8 text-center text-sm text-gray-500">
+              {{ t('admin.pushNotifications.schedules.empty') }}
+            </div>
+            <div v-for="schedule in schedules" :key="schedule.id" class="flex items-start justify-between gap-3 border-b border-gray-100 px-5 py-3 last:border-b-0 dark:border-dark-700">
+              <div class="min-w-0">
+                <p class="truncate text-sm font-medium text-gray-900 dark:text-white">{{ schedule.title }}</p>
+                <p class="mt-1 truncate text-xs text-gray-500 dark:text-dark-300">{{ formatDateTime(schedule.scheduledAt) }} · {{ scheduleStatusLabel(schedule.status) }}</p>
+              </div>
+              <button
+                type="button"
+                class="btn btn-ghost btn-icon text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"
+                :title="t('admin.pushNotifications.schedules.cancel')"
+                :aria-label="t('admin.pushNotifications.schedules.cancel')"
+                :disabled="deletingScheduleId === schedule.id"
+                @click="cancelSchedule(schedule)"
+              >
+                <Icon name="trash" size="sm" :class="deletingScheduleId === schedule.id ? 'animate-pulse' : ''" />
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -177,9 +253,9 @@
 
     <ConfirmDialog
       :show="showConfirm"
-      :title="t('admin.pushNotifications.confirmTitle')"
-      :message="t('admin.pushNotifications.confirmMessage', { count: overview.activeSubscriptions })"
-      :confirm-text="t('admin.pushNotifications.send')"
+      :title="form.scheduledAt ? t('admin.pushNotifications.scheduleConfirmTitle') : t('admin.pushNotifications.confirmTitle')"
+      :message="form.scheduledAt ? t('admin.pushNotifications.scheduleConfirmMessage', { time: formatDateTime(new Date(form.scheduledAt).toISOString()) }) : t('admin.pushNotifications.confirmMessage', { count: overview.activeSubscriptions })"
+      :confirm-text="form.scheduledAt ? t('admin.pushNotifications.schedule') : t('admin.pushNotifications.send')"
       @confirm="sendNotification"
       @cancel="showConfirm = false"
     />
@@ -216,9 +292,15 @@ import {
   clearPushMessages,
   deletePushMessage,
   getPushOverview,
+  listPushSchedules,
   listPushMessages,
+  listPushSubscriptions,
+  createPushSchedule,
+  deletePushSchedule,
   type PushMessage,
   type PushOverview,
+  type PushSchedule,
+  type PushSubscriptionSummary,
 } from '@/api/pushNotifications'
 import { formatDateTime } from '@/utils/format'
 
@@ -231,10 +313,22 @@ const deletingMessage = ref<PushMessage | null>(null)
 const deletingMessageId = ref('')
 const clearConfirmation = ref(false)
 const clearingMessages = ref(false)
+const loadingSubscribers = ref(false)
+const loadingSchedules = ref(false)
+const deletingScheduleId = ref('')
 const imagePreviewFailed = ref(false)
 const overview = reactive<PushOverview>({ activeSubscriptions: 0, messageCount: 0, lastSentAt: null })
 const messages = ref<PushMessage[]>([])
-const form = reactive({ title: '', body: '', url: '/', image: '' })
+const subscribers = ref<PushSubscriptionSummary[]>([])
+const schedules = ref<PushSchedule[]>([])
+const form = reactive({ title: '', body: '', url: '/', image: '', scheduledAt: '' })
+
+const minimumScheduleDateTime = computed(() => {
+  const now = new Date()
+  now.setMinutes(now.getMinutes() + 1)
+  const pad = (value: number) => String(value).padStart(2, '0')
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`
+})
 
 const imageError = computed(() => {
   if (!form.image) return ''
@@ -270,31 +364,85 @@ async function loadData() {
   }
 }
 
+async function loadSubscribers() {
+  loadingSubscribers.value = true
+  try {
+    subscribers.value = await listPushSubscriptions()
+  } catch (error: any) {
+    appStore.showError(error?.message || t('admin.pushNotifications.loadFailed'))
+  } finally {
+    loadingSubscribers.value = false
+  }
+}
+
+async function loadSchedules() {
+  loadingSchedules.value = true
+  try {
+    schedules.value = await listPushSchedules()
+  } catch (error: any) {
+    appStore.showError(error?.message || t('admin.pushNotifications.loadFailed'))
+  } finally {
+    loadingSchedules.value = false
+  }
+}
+
+function scheduleStatusLabel(status: PushSchedule['status']) {
+  return t(`admin.pushNotifications.schedules.status.${status}`)
+}
+
 async function sendNotification() {
   showConfirm.value = false
   sending.value = true
   try {
-    const message = await broadcastPush({
-      title: form.title,
-      body: form.body,
-      url: form.url || '/',
-      image: form.image,
-    })
-    messages.value.unshift(message)
-    overview.messageCount += 1
-    overview.lastSentAt = message.createdAt
+    if (form.scheduledAt) {
+      const schedule = await createPushSchedule({
+        title: form.title,
+        body: form.body,
+        url: form.url || '/',
+        image: form.image,
+        scheduledAt: new Date(form.scheduledAt).toISOString(),
+      })
+      schedules.value.push(schedule)
+      schedules.value.sort((left, right) => new Date(left.scheduledAt).getTime() - new Date(right.scheduledAt).getTime())
+      appStore.showSuccess(t('admin.pushNotifications.scheduleCreated'))
+    } else {
+      const message = await broadcastPush({
+        title: form.title,
+        body: form.body,
+        url: form.url || '/',
+        image: form.image,
+      })
+      messages.value.unshift(message)
+      overview.messageCount += 1
+      overview.lastSentAt = message.createdAt
+      appStore.showSuccess(t('admin.pushNotifications.sentResult', {
+        delivered: message.delivered,
+        failed: message.failed,
+      }))
+    }
     form.title = ''
     form.body = ''
     form.url = '/'
     form.image = ''
-    appStore.showSuccess(t('admin.pushNotifications.sentResult', {
-      delivered: message.delivered,
-      failed: message.failed,
-    }))
+    form.scheduledAt = ''
   } catch (error: any) {
     appStore.showError(error?.message || t('admin.pushNotifications.sendFailed'))
   } finally {
     sending.value = false
+  }
+}
+
+async function cancelSchedule(schedule: PushSchedule) {
+  if (deletingScheduleId.value) return
+  deletingScheduleId.value = schedule.id
+  try {
+    await deletePushSchedule(schedule.id)
+    schedules.value = schedules.value.filter((item) => item.id !== schedule.id)
+    appStore.showSuccess(t('admin.pushNotifications.schedules.cancelled'))
+  } catch (error: any) {
+    appStore.showError(error?.message || t('admin.pushNotifications.schedules.cancelFailed'))
+  } finally {
+    deletingScheduleId.value = ''
   }
 }
 
@@ -331,5 +479,9 @@ async function confirmClearMessages() {
   }
 }
 
-onMounted(loadData)
+onMounted(() => {
+  void loadData()
+  void loadSubscribers()
+  void loadSchedules()
+})
 </script>
