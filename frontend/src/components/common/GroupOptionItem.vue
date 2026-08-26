@@ -1,11 +1,7 @@
 <template>
-  <div class="flex min-w-0 flex-1 items-start justify-between gap-3">
-    <!-- Left: name + description -->
-    <div
-      class="flex min-w-0 flex-1 flex-col items-start"
-      :title="description || undefined"
-    >
-      <!-- Row 1: platform badge (name bold) -->
+  <div class="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3">
+    <!-- Top row: platform badge (name bold) -->
+    <div class="min-w-0">
       <GroupBadge
         :name="name"
         :platform="platform"
@@ -13,17 +9,13 @@
         :show-rate="false"
         class="groupOptionItemBadge"
       />
-      <!-- Row 2: description with top spacing -->
-      <span
-        v-if="description"
-        class="mt-1.5 w-full whitespace-pre-line [overflow-wrap:anywhere] text-left text-xs leading-relaxed text-gray-500 dark:text-gray-400 line-clamp-3"
-      >
-        {{ description }}
-      </span>
     </div>
 
-    <!-- Right: rate pill + checkmark (vertically centered to first row) -->
-    <div class="flex shrink-0 items-center gap-2 pt-0.5">
+    <!-- Right: rate pill + checkmark, aligned with the name row -->
+    <div
+      class="flex shrink-0 items-start gap-2"
+      :class="hasPeakRate && description ? 'row-span-2' : ''"
+    >
       <div class="flex shrink-0 flex-col items-end gap-1">
         <!-- Rate pill (platform color) -->
         <span v-if="rateMultiplier !== undefined" :class="['inline-flex items-center whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold', ratePillClass]">
@@ -55,6 +47,16 @@
         <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
       </svg>
     </div>
+
+    <!-- Description spans the complete card width and is limited to two lines. -->
+    <span
+      v-if="description"
+      class="mt-1.5 min-w-0 w-full whitespace-pre-line [overflow-wrap:anywhere] text-left text-xs leading-relaxed text-gray-500 dark:text-gray-400 line-clamp-2"
+      :class="hasPeakRate ? 'col-span-1' : 'col-span-2'"
+      :title="description"
+    >
+      {{ description }}
+    </span>
   </div>
 </template>
 
