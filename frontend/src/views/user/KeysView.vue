@@ -24,7 +24,7 @@
             />
           </div>
           <section v-if="recommendedGroupOptions.length" class="recommended-groups-strip">
-            <div class="flex items-center gap-2">
+            <div class="recommended-groups-heading">
               <Icon name="badge" size="sm" class="text-amber-500" />
               <span class="text-sm font-semibold text-gray-800 dark:text-gray-100">{{ t('keys.recommendedGroups') }}</span>
             </div>
@@ -1055,35 +1055,28 @@
           </button>
         </div>
 
-        <section v-if="recommendedGroupOptions.length" class="space-y-2.5">
-          <div class="flex items-center gap-2 border-b border-gray-200 pb-2 dark:border-dark-700">
+        <section v-if="recommendedGroupOptions.length" class="group-picker-recommended-section">
+          <div class="recommended-groups-heading">
             <Icon name="badge" size="sm" class="text-amber-500" />
             <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-100">{{ t('keys.recommendedGroups') }}</h4>
             <span class="text-xs text-gray-400 dark:text-gray-500">{{ recommendedGroupOptions.length }}</span>
           </div>
-          <div class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          <div class="group-picker-recommended-list">
             <button
               v-for="option in recommendedGroupOptions"
               :key="`recommended-${option.value}`"
               type="button"
-              class="group-card recommended-group-card relative pb-7"
+              class="recommended-group-mini-card group-picker-recommended-card"
               :class="formData.group_id === option.value ? 'group-card-selected' : ''"
+              :title="option.recommendationReason || option.description || option.label"
               @click="selectGroupFromCard(option.value)"
             >
-              <GroupOptionItem
-                :name="option.label"
-                :platform="option.platform"
-                :subscription-type="option.subscriptionType"
-                :rate-multiplier="option.rate"
-                :user-rate-multiplier="option.userRate"
-                :peak-rate-enabled="option.peakRateEnabled"
-                :peak-start="option.peakStart"
-                :peak-end="option.peakEnd"
-                :peak-rate-multiplier="option.peakRateMultiplier"
-                :description="option.recommendationReason ? `${t('keys.recommendationReason')}: ${option.recommendationReason}` : option.description"
-                :selected="formData.group_id === option.value"
-              />
-              <span class="absolute bottom-2 right-3 text-xs font-semibold text-amber-600 dark:text-amber-400">
+              <span class="truncate font-medium text-primary-700 dark:text-primary-300">{{ option.label }}</span>
+              <span class="shrink-0 text-xs text-gray-500 dark:text-gray-400">{{ formatGroupRate(option) }}x</span>
+              <span class="truncate text-left text-xs text-gray-500 dark:text-gray-400">
+                {{ option.recommendationReason || option.description || t('keys.recommendationReasonEmpty') }}
+              </span>
+              <span class="shrink-0 text-xs font-semibold text-amber-600 dark:text-amber-400">
                 {{ formatRecommendationRating(option.recommendationRating) }}
               </span>
             </button>
@@ -2483,11 +2476,15 @@ onUnmounted(() => {
 }
 
 .recommended-groups-strip {
-  @apply min-w-0 space-y-2 rounded-lg border border-amber-200/80 bg-amber-50/40 p-3 dark:border-amber-900/40 dark:bg-amber-900/10;
+  @apply flex min-w-0 items-start gap-3 rounded-lg border border-amber-200/80 bg-amber-50/40 p-3 dark:border-amber-900/40 dark:bg-amber-900/10;
+}
+
+.recommended-groups-heading {
+  @apply flex shrink-0 items-center gap-2 pt-1;
 }
 
 .recommended-group-mini-list {
-  @apply flex min-w-0 gap-2 overflow-x-auto pb-1;
+  @apply flex min-w-0 flex-1 gap-2 overflow-x-auto pb-1;
   scrollbar-width: thin;
 }
 
@@ -2495,8 +2492,17 @@ onUnmounted(() => {
   @apply grid min-w-[168px] max-w-[220px] shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-1.5 gap-y-0.5 rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-left text-xs transition-colors hover:border-primary-400 hover:bg-primary-50/50 dark:border-dark-600 dark:bg-dark-800 dark:hover:border-primary-500 dark:hover:bg-primary-900/20;
 }
 
-.recommended-group-card {
-  @apply min-h-[78px] p-2.5;
+.group-picker-recommended-list {
+  @apply flex min-w-0 gap-2 overflow-x-auto pb-1;
+  scrollbar-width: thin;
+}
+
+.group-picker-recommended-card {
+  @apply min-h-[58px] w-[220px] max-w-[75vw] shrink-0;
+}
+
+.group-picker-recommended-section {
+  @apply flex min-w-0 items-start gap-3;
 }
 
 .group-picker-shell {
