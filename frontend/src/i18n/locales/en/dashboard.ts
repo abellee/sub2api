@@ -627,8 +627,10 @@ export default {
       unitPerMillion: '$ / 1M tokens',
       perUnitRequest: '/ request',
       perUnitImage: '/ image',
+      perUnitVideo: '/ second',
       perRequest: 'Per request',
-      perImage: 'Per image'
+      perImage: 'Per image',
+      perVideo: 'Video billing'
     },
     nav: {
       login: 'Sign In',

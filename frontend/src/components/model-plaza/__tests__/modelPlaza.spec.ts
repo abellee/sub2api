@@ -4,6 +4,72 @@ import { createDevModelPlazaResponse } from '@/api/modelPlazaMock'
 import { buildModelPlazaEntries, formatActualModelPrice, modelPlazaProviderForGroup } from '../modelPlaza'
 
 describe('model plaza matching', () => {
+  it('renders only priced media tiers and keeps configured Grok media names as media', () => {
+    const group: ModelPlazaGroup = {
+      id: 29,
+      name: '生图/视频',
+      description: '',
+      platform: 'grok',
+      subscription_type: 'standard',
+      rate_multiplier: 0.2,
+      peak_rate_enabled: false,
+      peak_start: '',
+      peak_end: '',
+      peak_rate_multiplier: 1,
+      is_exclusive: false,
+      image_rate_independent: false,
+      image_rate_multiplier: 1,
+      video_rate_independent: false,
+      video_rate_multiplier: 1,
+      models: [
+        {
+          name: 'grok-imagine',
+          platform: 'grok',
+          pricing: {
+            billing_mode: 'image',
+            input_price: null,
+            output_price: null,
+            cache_write_price: null,
+            cache_read_price: null,
+            per_request_price: null,
+            intervals: [
+              { min_tokens: 0, max_tokens: null, tier_label: '1K', input_price: null, output_price: null, cache_write_price: null, cache_read_price: null, per_request_price: 0.03 },
+              { min_tokens: 0, max_tokens: null, tier_label: '4K', input_price: null, output_price: null, cache_write_price: null, cache_read_price: null, per_request_price: 0.08 },
+            ],
+          },
+          official_pricing: null,
+        },
+        {
+          name: 'grok-imagine-video',
+          platform: 'grok',
+          pricing: {
+            billing_mode: 'video',
+            input_price: null,
+            output_price: null,
+            cache_write_price: null,
+            cache_read_price: null,
+            per_request_price: null,
+            intervals: [{ min_tokens: 0, max_tokens: null, tier_label: '720p', input_price: null, output_price: null, cache_write_price: null, cache_read_price: null, per_request_price: 0.12 }],
+          },
+          official_pricing: null,
+        },
+      ],
+    }
+
+    expect(buildModelPlazaEntries([group])).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'grok-imagine',
+        kind: 'image',
+        tiers: [{ label: '1K', original: '0.03' }, { label: '4K', original: '0.08' }],
+      }),
+      expect.objectContaining({
+        id: 'grok-imagine-video',
+        kind: 'video',
+        tiers: [{ label: '720p', original: '0.12' }],
+      }),
+    ]))
+  })
+
   it('maps Sub2API official token prices to per-million model plaza entries', () => {
     const entries = buildModelPlazaEntries([{
       id: 7,
@@ -19,6 +85,8 @@ describe('model plaza matching', () => {
       is_exclusive: false,
       image_rate_independent: false,
       image_rate_multiplier: 1,
+      video_rate_independent: false,
+      video_rate_multiplier: 1,
       models: [{
         name: 'claude-sonnet-4-5-20250929',
         platform: 'anthropic',
@@ -53,6 +121,8 @@ describe('model plaza matching', () => {
       is_exclusive: false,
       image_rate_independent: false,
       image_rate_multiplier: 1,
+      video_rate_independent: false,
+      video_rate_multiplier: 1,
       models: [{
         name: 'gemini-2.5-flash',
         platform: 'google',
@@ -79,6 +149,8 @@ describe('model plaza matching', () => {
       is_exclusive: false,
       image_rate_independent: false,
       image_rate_multiplier: 1,
+      video_rate_independent: false,
+      video_rate_multiplier: 1,
       models: [{
         name: 'deepseek-v3.2',
         platform: 'deepseek',
@@ -109,6 +181,8 @@ describe('model plaza matching', () => {
       is_exclusive: false,
       image_rate_independent: false,
       image_rate_multiplier: 1,
+      video_rate_independent: false,
+      video_rate_multiplier: 1,
       models: [{
         name: 'gpt-low-price',
         platform: 'openai',
@@ -143,6 +217,8 @@ describe('model plaza matching', () => {
       is_exclusive: false,
       image_rate_independent: false,
       image_rate_multiplier: 1,
+      video_rate_independent: false,
+      video_rate_multiplier: 1,
       models: [{ name: 'gemini-unpriced', platform: 'gemini', pricing: null, official_pricing: null }],
     }])
 

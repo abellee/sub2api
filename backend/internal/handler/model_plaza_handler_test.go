@@ -73,7 +73,7 @@ func TestToModelPlazaGroupDTO_UserRateAndFieldWhitelist(t *testing.T) {
 				BillingMode: service.BillingModeToken,
 				InputPrice:  testPtr(3e-6),
 				Intervals: []service.PricingInterval{{
-					MinTokens: 200000,
+					MinTokens:  200000,
 					InputPrice: testPtr(6e-6),
 				}},
 			},
@@ -96,6 +96,7 @@ func TestToModelPlazaGroupDTO_UserRateAndFieldWhitelist(t *testing.T) {
 		"rate_multiplier", "user_rate_multiplier", "is_exclusive", "models",
 		"peak_rate_enabled", "peak_start", "peak_end", "peak_rate_multiplier",
 		"image_rate_independent", "image_rate_multiplier",
+		"video_rate_independent", "video_rate_multiplier",
 	} {
 		_, exists := decoded[key]
 		require.Truef(t, exists, "plaza group DTO must expose %q", key)

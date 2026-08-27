@@ -57,6 +57,8 @@ function group(overrides: Partial<ModelPlazaGroup> = {}): ModelPlazaGroup {
     is_exclusive: false,
     image_rate_independent: false,
     image_rate_multiplier: 1,
+    video_rate_independent: false,
+    video_rate_multiplier: 1,
     models: [ladderModel()],
     ...overrides
   }
@@ -90,6 +92,8 @@ describe('PlazaGroupSection 高峰配置传递', () => {
     // appStore mock 无 server_utc_offset,窗口描述不带时区标注
     expect(table.props('peakWindow')).toBe('14:00-18:00 ×1.5')
     expect(table.props('peakRateMultiplier')).toBe(1.5)
+    expect(table.props('imageRateIndependent')).toBe(false)
+    expect(table.props('videoRateIndependent')).toBe(false)
   })
 
   it('分组未启用高峰时窗口描述为空串', () => {

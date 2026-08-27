@@ -51,6 +51,8 @@ export interface ModelPlazaGroup {
   is_exclusive: boolean
   image_rate_independent: boolean
   image_rate_multiplier: number
+  video_rate_independent: boolean
+  video_rate_multiplier: number
   models: PlazaModel[]
 }
 
@@ -62,13 +64,14 @@ export interface ModelPlazaResponse {
 }
 
 export async function getModelPlaza(options?: { signal?: AbortSignal }): Promise<ModelPlazaResponse> {
+  const useLiveBackend = Boolean(import.meta.env.VITE_DEV_PROXY_TARGET)
   try {
     const { data } = await apiClient.get<ModelPlazaResponse>('/model-plaza/public', {
       signal: options?.signal
     })
-    if (!import.meta.env.DEV || data.groups.length > 0) return data
+    if (useLiveBackend || !import.meta.env.DEV || data.groups.length > 0) return data
   } catch (error) {
-    if (!import.meta.env.DEV || options?.signal?.aborted) throw error
+    if (useLiveBackend || !import.meta.env.DEV || options?.signal?.aborted) throw error
   }
 
   const { createDevModelPlazaResponse } = await import('./modelPlazaMock')
