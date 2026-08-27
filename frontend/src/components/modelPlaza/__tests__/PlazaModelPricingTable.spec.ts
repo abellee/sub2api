@@ -104,7 +104,7 @@ describe('PlazaModelPricingTable', () => {
     const wrapper = mountTable([model], 0.5)
     const text = wrapper.text()
 
-    expect(text).toContain('modelPlaza.table.longContext ≤128K')
+    expect(text).not.toContain('modelPlaza.table.longContext ≤128K')
     expect(text).toContain('modelPlaza.table.longContext >128K')
     expect(text).toContain('$2.00')
     expect(text).toContain('$10.00')

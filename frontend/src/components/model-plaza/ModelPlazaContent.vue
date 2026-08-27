@@ -5,7 +5,7 @@ import { modelPlazaAPI, type ModelPlazaGroup } from '@/api/modelPlaza'
 import { extractApiErrorMessage } from '@/utils/apiError'
 import ModelIcon from '@/components/common/ModelIcon.vue'
 import { formatDecimal } from '@/utils/pricing'
-import { buildModelPlazaEntries, formatActualModelPrice, modelPlazaProviderForGroup, type ModelPlazaEntry } from './modelPlaza'
+import { buildModelPlazaEntries, formatActualModelPrice, modelPlazaEntryKind, modelPlazaProviderForGroup, type ModelPlazaEntry } from './modelPlaza'
 
 type Language = 'zh' | 'en'
 type ViewMode = 'card' | 'list'
@@ -29,18 +29,25 @@ const text = computed(() => language.value === 'zh' ? {
   source: 'Sub2API official pricing', demoSource: 'Local demo data', updated: 'Data updated', connecting: 'Connecting...', pending: 'Waiting for response', cached: '', placeholder: 'Search models, e.g. gpt-5 or claude-sonnet', clear: 'Clear search', card: 'Card view', list: 'List view', provider: 'Model provider', providerHint: 'Choose a provider first, then browse its groups', allProviders: 'All providers', allGroups: 'All groups', noGroupsForProvider: 'No groups are available for this provider', lowest: 'LOWEST', models: 'available models', groups: 'groups', input: 'Input', cache: 'Cache', output: 'Output', original: 'List', actual: 'Actual', model: 'Model', rate: 'Rate', group: 'Group', unit: 'Unit', longContext: 'Context tiers', retry: 'Retry', failed: 'Model pricing is temporarily unavailable', empty: 'No matching models', emptyHint: 'Try another group or search term.', perImage: 'Per image', perVideo: 'Per second', perImageUnit: '/ image', perVideoUnit: '/ sec', imageUnit: 'USD / image', videoUnit: 'USD / sec', tokenUnit: 'USD / 1M TOKENS', disclaimer: 'Official list prices come from Sub2API pricing data; actual charges use the current group rate multiplier and the console billing records remain authoritative.',
 })
 
-const providers = computed(() => [...new Set(groups.value.map(modelPlazaProviderForGroup))].sort())
-const providerGroups = computed(() => selectedProvider.value === 'all'
-  ? groups.value
-  : groups.value.filter((group) => modelPlazaProviderForGroup(group) === selectedProvider.value))
+function isMediaGroup(group: ModelPlazaGroup): boolean {
+  return group.models.some((model) => {
+    const kind = modelPlazaEntryKind(group, model)
+    return kind === 'image' || kind === 'video'
+  })
+}
 
-watch(providers, (list) => {
-  if (list.length === 0) {
-    selectedProvider.value = 'all'
-  } else if (selectedProvider.value === 'all' || !list.includes(selectedProvider.value)) {
-    selectedProvider.value = list[0]
-  }
-}, { immediate: true })
+function compareGroups(a: ModelPlazaGroup, b: ModelPlazaGroup): number {
+  const mediaOrder = Number(isMediaGroup(b)) - Number(isMediaGroup(a))
+  return mediaOrder
+    || (a.user_rate_multiplier ?? a.rate_multiplier) - (b.user_rate_multiplier ?? b.rate_multiplier)
+    || a.name.localeCompare(b.name)
+}
+
+const orderedGroups = computed(() => [...groups.value].sort(compareGroups))
+const providers = computed(() => [...new Set(orderedGroups.value.map(modelPlazaProviderForGroup))].sort())
+const providerGroups = computed(() => selectedProvider.value === 'all'
+  ? orderedGroups.value
+  : orderedGroups.value.filter((group) => modelPlazaProviderForGroup(group) === selectedProvider.value))
 
 watch([selectedProvider, providerGroups], () => {
   if (selectedGroup.value !== 'all' && !providerGroups.value.some((group) => group.id === selectedGroup.value)) {
@@ -83,7 +90,7 @@ async function loadData() {
   try {
     const plaza = await modelPlazaAPI.getModelPlaza()
     groups.value = plaza.groups
-    entries.value = buildModelPlazaEntries(plaza.groups)
+    entries.value = buildModelPlazaEntries(orderedGroups.value)
     updatedAt.value = new Date()
     stale.value = Boolean(plaza.demo)
   } catch (loadError) {

@@ -639,12 +639,10 @@ func TestListConfiguredPlazaGroups_GrokHeavyChannelMediaPricing(t *testing.T) {
 	text := byName["grok-4"]
 	require.Equal(t, BillingModeToken, text.Pricing.BillingMode)
 	require.InDelta(t, 3e-6, *text.Pricing.InputPrice, 1e-15)
-	require.Len(t, text.Pricing.Intervals, 2)
-	require.Equal(t, "≤128K", text.Pricing.Intervals[0].TierLabel)
-	require.InDelta(t, 3e-6, *text.Pricing.Intervals[0].InputPrice, 1e-15)
-	require.Equal(t, ">128K", text.Pricing.Intervals[1].TierLabel)
-	require.InDelta(t, 6e-6, *text.Pricing.Intervals[1].InputPrice, 1e-15)
-	require.InDelta(t, 3e-5, *text.Pricing.Intervals[1].OutputPrice, 1e-15)
+	require.Len(t, text.Pricing.Intervals, 1)
+	require.Equal(t, ">128K", text.Pricing.Intervals[0].TierLabel)
+	require.InDelta(t, 6e-6, *text.Pricing.Intervals[0].InputPrice, 1e-15)
+	require.InDelta(t, 3e-5, *text.Pricing.Intervals[0].OutputPrice, 1e-15)
 }
 
 func TestListConfiguredPlazaGroups_GrokMediaEnabledWithoutPricesHidesDefaults(t *testing.T) {
@@ -690,11 +688,33 @@ func TestListGroups_GrokHeavyChannelMediaPricingWithBilling(t *testing.T) {
 	text := byName["grok-4"]
 	require.Equal(t, BillingModeToken, text.Pricing.BillingMode)
 	require.InDelta(t, 3e-6, *text.Pricing.InputPrice, 1e-15)
-	require.Len(t, text.Pricing.Intervals, 2)
-	require.Equal(t, "≤128K", text.Pricing.Intervals[0].TierLabel)
-	require.Equal(t, ">128K", text.Pricing.Intervals[1].TierLabel)
-	require.InDelta(t, 6e-6, *text.Pricing.Intervals[1].InputPrice, 1e-15)
-	require.InDelta(t, 3e-5, *text.Pricing.Intervals[1].OutputPrice, 1e-15)
+	require.Len(t, text.Pricing.Intervals, 1)
+	require.Equal(t, ">128K", text.Pricing.Intervals[0].TierLabel)
+	require.InDelta(t, 6e-6, *text.Pricing.Intervals[0].InputPrice, 1e-15)
+	require.InDelta(t, 3e-5, *text.Pricing.Intervals[0].OutputPrice, 1e-15)
+}
+
+func TestListConfiguredPlazaGroups_HidesCatalogLongContextWithoutChannelIntervals(t *testing.T) {
+	channels := []Channel{plazaPricedChannel(1, "grok", []int64{10}, PlatformGrok, "grok-flat")}
+	groups := []Group{{
+		ID: 10, Name: "g", Platform: PlatformGrok, RateMultiplier: 1,
+		LongContextPricingEnabled: true,
+		ModelsListConfig:          GroupModelsListConfig{Models: []string{"grok-flat"}},
+	}}
+	catalog := &PricingService{pricingData: map[string]*LiteLLMModelPricing{
+		"grok-flat": {
+			InputCostPerToken:               3e-6,
+			OutputCostPerToken:              15e-6,
+			LongContextInputTokenThreshold:  128000,
+			LongContextInputCostMultiplier:  2,
+			LongContextOutputCostMultiplier: 2,
+		},
+	}}
+	svc := newPlazaServiceWithBilling(channels, groups, map[int64]string{10: PlatformGrok}, catalog)
+	out, err := svc.ListConfiguredGroups(context.Background())
+	require.NoError(t, err)
+	require.Len(t, out, 1)
+	require.Empty(t, out[0].Models[0].Pricing.Intervals)
 }
 
 func TestListConfiguredPlazaGroups_GroupVideoPriceOverridesChannelTiers(t *testing.T) {
