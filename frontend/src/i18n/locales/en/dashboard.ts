@@ -614,6 +614,7 @@ export default {
       cacheRead: 'Read',
       cacheWriteShort: 'W',
       cacheReadShort: 'R',
+      longContext: 'Context tier',
       timePricingRowHint: 'Requests made within this period ({timezone} time) are billed at the prices in this row',
       timePricingRowHintWeekdays:
         'On weekdays (Mon–Fri) only, requests made within this period ({timezone} time) are billed at the prices in this row; weekends use the standard prices',

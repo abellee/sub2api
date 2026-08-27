@@ -100,9 +100,25 @@
           <template v-if="billingMode(m) === BILLING_MODE_TOKEN">
             <td class="pz-cell px-3 py-2.5 align-middle font-mono font-semibold text-gray-900 dark:text-gray-50">
               {{ paidPerMillion(m.pricing?.input_price, period) }}
+              <div
+                v-for="(iv, idx) in tokenIntervals(m)"
+                :key="idx"
+                class="mt-1.5 border-t border-gray-200 pt-1.5 text-xs font-normal dark:border-dark-600"
+              >
+                <span class="mr-1 font-sans text-[10px] text-gray-400 dark:text-dark-500">{{ t('modelPlaza.table.longContext') }} {{ tierLabel(iv) }}</span>
+                {{ paidPerMillion(iv.input_price, period) }}
+              </div>
             </td>
             <td class="pz-cell px-3 py-2.5 align-middle font-mono font-semibold text-gray-900 dark:text-gray-50">
               {{ paidPerMillion(m.pricing?.output_price, period) }}
+              <div
+                v-for="(iv, idx) in tokenIntervals(m)"
+                :key="idx"
+                class="mt-1.5 border-t border-gray-200 pt-1.5 text-xs font-normal dark:border-dark-600"
+              >
+                <span class="mr-1 font-sans text-[10px] text-gray-400 dark:text-dark-500">{{ t('modelPlaza.table.longContext') }} {{ tierLabel(iv) }}</span>
+                {{ paidPerMillion(iv.output_price, period) }}
+              </div>
             </td>
             <td class="pz-cell px-3 py-2.5 align-middle">
               <div v-if="hasCachePricing(m)"
@@ -115,6 +131,22 @@
                 <div>
                   <span class="mr-1 font-sans font-normal text-gray-400 dark:text-dark-500">{{ t('modelPlaza.table.cacheRead') }}</span>
                   {{ paidPerMillion(m.pricing?.cache_read_price, period) }}
+                </div>
+                <div
+                  v-for="(iv, idx) in tokenIntervals(m)"
+                  :key="idx"
+                  class="mt-1.5 border-t border-gray-200 pt-1.5 dark:border-dark-600"
+                >
+                  <div class="font-sans text-[10px] text-gray-400 dark:text-dark-500">{{ t('modelPlaza.table.longContext') }} {{ tierLabel(iv) }}</div>
+                  <div v-if="iv.cache_write_price != null">
+                    <span class="mr-1 font-sans font-normal text-gray-400 dark:text-dark-500">{{ t('modelPlaza.table.cacheWrite') }}</span>
+                    {{ paidPerMillion(iv.cache_write_price, period) }}
+                  </div>
+                  <div v-if="iv.cache_read_price != null">
+                    <span class="mr-1 font-sans font-normal text-gray-400 dark:text-dark-500">{{ t('modelPlaza.table.cacheRead') }}</span>
+                    {{ paidPerMillion(iv.cache_read_price, period) }}
+                  </div>
+                  <span v-if="iv.cache_write_price == null && iv.cache_read_price == null">-</span>
                 </div>
               </div>
               <span v-else class="text-gray-400 dark:text-dark-500">-</span>
@@ -357,7 +389,9 @@ function perUnitSuffix(m: PlazaModel): string {
 }
 
 function hasCachePricing(m: PlazaModel): boolean {
-  return m.pricing?.cache_write_price != null || m.pricing?.cache_read_price != null
+  return m.pricing?.cache_write_price != null
+    || m.pricing?.cache_read_price != null
+    || tokenIntervals(m).some((iv) => iv.cache_write_price != null || iv.cache_read_price != null)
 }
 
 function hasOfficialCache(o: NonNullable<PlazaModel['official_pricing']>): boolean {
@@ -396,6 +430,15 @@ function formatTimeWindow(p: PlazaTimePricingPeriod): string {
 /** 按次/按图模式的阶梯定价(仅保留配了按次价的档位)。 */
 function requestIntervals(m: PlazaModel): UserPricingInterval[] {
   return (m.pricing?.intervals ?? []).filter((iv) => iv.per_request_price != null)
+}
+
+/** token 模式的整单上下文档位；后端不会在此契约中输出边际计价规则。 */
+function tokenIntervals(m: PlazaModel): UserPricingInterval[] {
+  if (billingMode(m) !== BILLING_MODE_TOKEN) return []
+  return (m.pricing?.intervals ?? []).filter((iv) => iv.input_price != null
+    || iv.output_price != null
+    || iv.cache_write_price != null
+    || iv.cache_read_price != null)
 }
 
 /**

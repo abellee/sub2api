@@ -82,6 +82,35 @@ describe('PlazaModelPricingTable', () => {
     expect(text).toContain('0.5x')
   })
 
+  it('展示 token 长上下文档位并按分组倍率折算', () => {
+    const model = tokenModel({
+      name: 'grok-4.6',
+      platform: 'grok',
+      pricing: {
+        billing_mode: 'token',
+        input_price: 2e-6,
+        output_price: 10e-6,
+        cache_write_price: null,
+        cache_read_price: 0.5e-6,
+        image_input_price: null,
+        image_output_price: null,
+        per_request_price: null,
+        intervals: [
+          { min_tokens: 0, max_tokens: 128000, tier_label: '≤128K', input_price: 2e-6, output_price: 10e-6, cache_write_price: null, cache_read_price: 0.5e-6, per_request_price: null },
+          { min_tokens: 128000, max_tokens: null, tier_label: '>128K', input_price: 4e-6, output_price: 20e-6, cache_write_price: null, cache_read_price: 1e-6, per_request_price: null }
+        ]
+      }
+    })
+    const wrapper = mountTable([model], 0.5)
+    const text = wrapper.text()
+
+    expect(text).toContain('modelPlaza.table.longContext ≤128K')
+    expect(text).toContain('modelPlaza.table.longContext >128K')
+    expect(text).toContain('$2.00')
+    expect(text).toContain('$10.00')
+    expect(text).toContain('$0.50')
+  })
+
   it('用户专属倍率覆盖分组倍率,并划线展示原倍率', () => {
     const wrapper = mountTable([tokenModel()], 1, 0.8)
     const text = wrapper.text()

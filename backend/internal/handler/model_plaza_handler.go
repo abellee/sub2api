@@ -134,13 +134,9 @@ func (h *ModelPlazaHandler) get(c *gin.Context, enforceFeature bool) {
 		return
 	}
 
-	var groups []service.PlazaGroup
-	var err error
-	if enforceFeature {
-		groups, err = h.plazaService.ListGroups(c.Request.Context())
-	} else {
-		groups, err = h.plazaService.ListConfiguredGroups(c.Request.Context())
-	}
+	// 两个广场入口统一以分组 models_list_config 为模型白名单；渠道支持模型和
+	// 已配置价格只能补充定价，不能让未在分组模型设置中的模型出现在广场。
+	groups, err := h.plazaService.ListConfiguredGroups(c.Request.Context())
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -264,12 +260,8 @@ func toModelPlazaOfficialPricing(p *service.PlazaOfficialPricing) *modelPlazaOff
 	}
 }
 
-// toModelPlazaPricing keeps image/per-request tiers but hides token context
-// intervals from the model plaza display contract.
+// toModelPlazaPricing 将实收定价转换为公开白名单 DTO；service 层已排除不能按
+// 普通整单档位表达的边际上下文规则，因此这里保留 token 与媒体档位。
 func toModelPlazaPricing(p *service.ChannelModelPricing) *userSupportedModelPricing {
-	pricing := toUserPricing(p)
-	if pricing != nil && p != nil && p.BillingMode == service.BillingModeToken {
-		pricing.Intervals = []userPricingIntervalDTO{}
-	}
-	return pricing
+	return toUserPricing(p)
 }

@@ -18,6 +18,13 @@ export interface ModelPlazaTierPrice {
   original: string | null
 }
 
+export interface ModelPlazaTokenTierPrice {
+  label: string
+  input: string | null
+  output: string | null
+  cache: string | null
+}
+
 export interface ModelPlazaEntry {
   id: string
   provider: string
@@ -26,6 +33,7 @@ export interface ModelPlazaEntry {
   output: string | null
   cache: string | null
   tiers: ModelPlazaTierPrice[]
+  tokenTiers: ModelPlazaTokenTierPrice[]
   groupId: number
   groupName: string
   rateMultiplier: number
@@ -57,6 +65,7 @@ export function buildModelPlazaEntries(
           output: null,
           cache: null,
           tiers: mediaTiers(kind, model),
+          tokenTiers: [],
           groupId: group.id,
           groupName: group.name,
           rateMultiplier,
@@ -71,6 +80,7 @@ export function buildModelPlazaEntries(
         output: perMillion(official?.output_price),
         cache: perMillion(official?.cache_read_price ?? official?.cache_write_price),
         tiers: [],
+        tokenTiers: tokenTiers(model),
         groupId: group.id,
         groupName: group.name,
         rateMultiplier: group.user_rate_multiplier ?? group.rate_multiplier,
@@ -134,6 +144,36 @@ function requestTierMap(model: PlazaModel): Map<string, string> {
     if (formatted != null) map.set(interval.tier_label, formatted)
   }
   return map
+}
+
+function tokenTiers(model: PlazaModel): ModelPlazaTokenTierPrice[] {
+  return (model.pricing?.intervals ?? [])
+    .filter((interval) => interval.input_price != null
+      || interval.output_price != null
+      || interval.cache_read_price != null
+      || interval.cache_write_price != null)
+    .map((interval) => ({
+      label: interval.tier_label || tokenRangeLabel(interval.min_tokens, interval.max_tokens),
+      input: perMillion(interval.input_price),
+      output: perMillion(interval.output_price),
+      cache: perMillion(interval.cache_read_price ?? interval.cache_write_price),
+    }))
+}
+
+function tokenRangeLabel(min: number, max: number | null): string {
+  if (max == null) return `>${formatTokenCount(min)}`
+  if (min <= 0) return `<=${formatTokenCount(max)}`
+  return `${formatTokenCount(min)}-${formatTokenCount(max)}`
+}
+
+function formatTokenCount(value: number): string {
+  if (value >= 1_000_000) return `${formatTokenScale(value, 1_000_000)}M`
+  if (value >= 1_000) return `${formatTokenScale(value, 1_000)}K`
+  return String(value)
+}
+
+function formatTokenScale(value: number, scale: number): string {
+  return String(Math.round((value / scale) * 100) / 100)
 }
 
 function formatRequestPrice(value: number | null | undefined): string | null {

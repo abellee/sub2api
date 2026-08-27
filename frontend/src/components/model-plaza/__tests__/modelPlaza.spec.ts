@@ -125,6 +125,56 @@ describe('model plaza matching', () => {
     })])
   })
 
+  it('maps configured token context tiers to per-million prices', () => {
+    const entries = buildModelPlazaEntries([{
+      id: 18,
+      name: 'Grok Heavy',
+      description: '',
+      platform: 'grok',
+      subscription_type: 'standard',
+      rate_multiplier: 0.11,
+      peak_rate_enabled: false,
+      peak_start: '',
+      peak_end: '',
+      peak_rate_multiplier: 1,
+      is_exclusive: false,
+      image_rate_independent: false,
+      image_rate_multiplier: 1,
+      video_rate_independent: false,
+      video_rate_multiplier: 1,
+      models: [{
+        name: 'grok-4.6',
+        platform: 'grok',
+        pricing: {
+          billing_mode: 'token',
+          input_price: 2e-6,
+          output_price: 10e-6,
+          cache_write_price: null,
+          cache_read_price: 0.5e-6,
+          per_request_price: null,
+          intervals: [
+            { min_tokens: 0, max_tokens: 128000, tier_label: '≤128K', input_price: 2e-6, output_price: 10e-6, cache_write_price: null, cache_read_price: 0.5e-6, per_request_price: null },
+            { min_tokens: 128000, max_tokens: null, tier_label: '>128K', input_price: 4e-6, output_price: 20e-6, cache_write_price: null, cache_read_price: 1e-6, per_request_price: null },
+          ],
+        },
+        official_pricing: {
+          input_price: 2e-6,
+          output_price: 10e-6,
+          cache_write_price: null,
+          cache_read_price: 0.5e-6,
+        },
+      }],
+    }])
+
+    expect(entries[0]).toEqual(expect.objectContaining({
+      kind: 'token',
+      tokenTiers: [
+        { label: '≤128K', input: '2', output: '10', cache: '0.5' },
+        { label: '>128K', input: '4', output: '20', cache: '1' },
+      ],
+    }))
+  })
+
   it('normalizes Google pricing to the Gemini provider', () => {
     const entries = buildModelPlazaEntries([{
       id: 12,
