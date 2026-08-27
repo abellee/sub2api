@@ -331,8 +331,18 @@ func (s *ModelPlazaService) fillDisplayPricing(ctx context.Context, m *PlazaMode
 }
 
 func plazaIsGrokImagineImage(model string) bool {
-	m := strings.ToLower(strings.TrimSpace(model))
-	return m == "grok-imagine" || m == "grok-imagine-edit" || strings.HasPrefix(m, "grok-imagine-image")
+	m := strings.ToLower(xai.StripGrokProviderPrefix(model))
+	return m == "grok-imagine" || m == "grok-imagine-1" || m == "grok-imagine-edit" || strings.HasPrefix(m, "grok-imagine-image")
+}
+
+func plazaGrokImagePricingModel(model string) string {
+	m := strings.ToLower(xai.StripGrokProviderPrefix(model))
+	switch m {
+	case "grok-imagine", "grok-imagine-1", "grok-imagine-edit":
+		return xai.DefaultImagineImageQualityModel
+	default:
+		return strings.TrimSpace(model)
+	}
 }
 
 func plazaIsGrokMediaModel(model string) bool {
@@ -466,7 +476,7 @@ func plazaResolvedRequestPricing(ctx context.Context, resolver *ModelPricingReso
 	if resolver == nil || m == nil {
 		return nil
 	}
-	input := PricingInput{Model: m.Name, Group: g}
+	input := PricingInput{Group: g}
 	if g != nil {
 		gid := g.ID
 		input.GroupID = &gid
@@ -474,7 +484,15 @@ func plazaResolvedRequestPricing(ctx context.Context, resolver *ModelPricingReso
 	if m.Platform != "" {
 		ctx = WithResolvedTargetPlatform(ctx, m.Platform)
 	}
-	resolved := resolver.Resolve(ctx, input)
+	resolve := func(model string) *ResolvedPricing {
+		input.Model = model
+		return resolver.Resolve(ctx, input)
+	}
+	resolved := resolve(m.Name)
+	if canonical := plazaGrokImagePricingModel(m.Name); canonical != strings.TrimSpace(m.Name) &&
+		(resolved == nil || (resolved.Mode != BillingModeImage && resolved.Mode != BillingModePerRequest)) {
+		resolved = resolve(canonical)
+	}
 	if resolved == nil {
 		return nil
 	}
