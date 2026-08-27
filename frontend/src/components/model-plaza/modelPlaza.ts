@@ -118,9 +118,12 @@ function mediaRateMultiplier(group: ModelPlazaGroup, kind: ModelPlazaBillingKind
 function mediaTiers(kind: 'image' | 'video', model: PlazaModel): ModelPlazaTierPrice[] {
   const labels = kind === 'image' ? MODEL_PLAZA_IMAGE_TIERS : MODEL_PLAZA_VIDEO_TIERS
   const prices = requestTierMap(model)
-  return labels
+  const tiers = labels
     .filter((label) => prices.has(label))
     .map((label) => ({ label, original: prices.get(label) ?? null }))
+  if (tiers.length > 0) return tiers
+  const flatPrice = formatRequestPrice(model.pricing?.per_request_price)
+  return flatPrice == null ? [] : [{ label: '', original: flatPrice }]
 }
 
 function requestTierMap(model: PlazaModel): Map<string, string> {

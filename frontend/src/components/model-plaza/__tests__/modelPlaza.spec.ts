@@ -53,6 +53,20 @@ describe('model plaza matching', () => {
           },
           official_pricing: null,
         },
+        {
+          name: 'grok-imagine-image-quality',
+          platform: 'grok',
+          pricing: {
+            billing_mode: 'image',
+            input_price: null,
+            output_price: null,
+            cache_write_price: null,
+            cache_read_price: null,
+            per_request_price: 0.08,
+            intervals: [],
+          },
+          official_pricing: null,
+        },
       ],
     }
 
@@ -66,6 +80,11 @@ describe('model plaza matching', () => {
         id: 'grok-imagine-video',
         kind: 'video',
         tiers: [{ label: '720p', original: '0.12' }],
+      }),
+      expect.objectContaining({
+        id: 'grok-imagine-image-quality',
+        kind: 'image',
+        tiers: [{ label: '', original: '0.08' }],
       }),
     ]))
   })

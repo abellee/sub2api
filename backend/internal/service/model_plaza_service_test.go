@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/stretchr/testify/require"
 )
 
@@ -801,6 +802,29 @@ func TestListConfiguredPlazaGroups_PreservesConfiguredGrokImageVariants(t *testi
 	for _, name := range []string{"grok-imagine", "grok-imagine-image-quality"} {
 		require.Equal(t, BillingModeImage, byName[name].Pricing.BillingMode)
 		require.Equal(t, map[string]float64{"1K": 0.03}, plazaIntervalPrices(byName[name].Pricing))
+	}
+}
+
+func TestListConfiguredPlazaGroups_GrokImagineAliasUsesQualityChannelPricing(t *testing.T) {
+	channels := []Channel{{
+		ID: 1, Name: "grok-media", Status: StatusActive, GroupIDs: []int64{29},
+		ModelPricing: []ChannelModelPricing{{
+			Platform: PlatformGrok, Models: []string{xai.DefaultImagineImageQualityModel},
+			BillingMode: BillingModeImage, PerRequestPrice: testPtrFloat64(0.08),
+		}},
+	}}
+	groups := []Group{{
+		ID: 29, Name: "生图/视频", Platform: PlatformGrok, RateMultiplier: 1,
+		ModelsListConfig: GroupModelsListConfig{Models: []string{"grok-imagine", xai.DefaultImagineImageQualityModel}},
+	}}
+	svc := newPlazaServiceWithBilling(channels, groups, map[int64]string{29: PlatformGrok}, nil)
+	out, err := svc.ListConfiguredGroups(context.Background())
+	require.NoError(t, err)
+	require.Len(t, out, 1)
+	byName := plazaModelsByName(out[0].Models)
+	for _, name := range []string{"grok-imagine", xai.DefaultImagineImageQualityModel} {
+		require.Equal(t, BillingModeImage, byName[name].Pricing.BillingMode)
+		require.InDelta(t, 0.08, *byName[name].Pricing.PerRequestPrice, 1e-12)
 	}
 }
 
