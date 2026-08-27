@@ -1,4 +1,5 @@
 import Decimal from 'decimal.js'
+import type { UserPricingInterval } from './channels'
 import type { ModelPlazaGroup, ModelPlazaResponse, PlazaModel } from './modelPlaza'
 
 interface TokenPrice {
@@ -9,6 +10,43 @@ interface TokenPrice {
 
 function multiplyPrice(value: number, multiplier: number): number {
   return new Decimal(value).mul(multiplier).toNumber()
+}
+
+function requestInterval(tierLabel: string, price: number): UserPricingInterval {
+  return {
+    min_tokens: 0,
+    max_tokens: null,
+    tier_label: tierLabel,
+    input_price: null,
+    output_price: null,
+    cache_write_price: null,
+    cache_read_price: null,
+    per_request_price: price
+  }
+}
+
+function mediaModel(
+  name: string,
+  platform: string,
+  billingMode: 'image' | 'video',
+  intervals: Array<{ label: string; price: number }>
+): PlazaModel {
+  return {
+    name,
+    platform,
+    pricing: {
+      billing_mode: billingMode,
+      input_price: null,
+      output_price: null,
+      cache_write_price: null,
+      cache_read_price: null,
+      image_input_price: null,
+      image_output_price: null,
+      per_request_price: null,
+      intervals: intervals.map((item) => requestInterval(item.label, item.price))
+    },
+    official_pricing: null
+  }
 }
 
 function tokenModel(name: string, platform: string, price: TokenPrice): PlazaModel {
@@ -59,6 +97,8 @@ function group(
     is_exclusive: false,
     image_rate_independent: false,
     image_rate_multiplier: 1,
+    video_rate_independent: false,
+    video_rate_multiplier: 1,
     models,
     ...options
   }
@@ -88,6 +128,24 @@ export function createDevModelPlazaResponse(): ModelPlazaResponse {
     tokenModel('grok-4-fast', 'grok', { input: 2e-7, output: 5e-7 }),
     tokenModel('grok-4.1', 'grok', { input: 3e-6, output: 1.5e-5 })
   ]
+  const grokHeavyModels = [
+    tokenModel('grok-4.5', 'grok', { input: 3e-6, output: 1.5e-5 }),
+    tokenModel('grok-4.6', 'grok', { input: 3e-6, output: 1.5e-5 }),
+    mediaModel('grok-imagine-image', 'grok', 'image', [
+      { label: '1K', price: 0.03 },
+      { label: '2K', price: 0.05 },
+      { label: '4K', price: 0.08 }
+    ]),
+    mediaModel('grok-imagine-video', 'grok', 'video', [
+      { label: '480p', price: 0.09 },
+      { label: '720p', price: 0.12 }
+    ]),
+    mediaModel('grok-imagine-video-1.5', 'grok', 'video', [
+      { label: '480p', price: 0.09 },
+      { label: '720p', price: 0.14 },
+      { label: '1080p', price: 0.25 }
+    ])
+  ]
 
   return {
     demo: true,
@@ -108,7 +166,11 @@ export function createDevModelPlazaResponse(): ModelPlazaResponse {
       group(303, 'Gemini Pro 专线', 'gemini', 0.88, geminiModels.slice(2), { is_exclusive: true }),
       group(401, 'Grok 极速线路', 'grok', 0.58, grokModels.slice(0, 1)),
       group(402, 'Grok 推理线路', 'grok', 0.92, grokModels),
-      group(403, 'Grok 企业专线', 'grok', 1.1, grokModels, { subscription_type: 'subscription' })
+      group(403, 'Grok 企业专线', 'grok', 1.1, grokModels, { subscription_type: 'subscription' }),
+      group(404, 'Grok Heavy', 'grok', 0.2, grokHeavyModels, {
+        video_rate_independent: true,
+        video_rate_multiplier: 0.5
+      })
     ]
   }
 }

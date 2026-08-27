@@ -501,3 +501,326 @@ func TestListGroups_TimePricingPassthrough(t *testing.T) {
 	// 展示单价为标准时段价
 	require.InDelta(t, 0.28e-6, *m.Pricing.InputPrice, 1e-15)
 }
+
+func grokHeavyPlazaGroup() Group {
+	return Group{
+		ID: 10, Name: "Grok Heavy", Platform: PlatformGrok, RateMultiplier: 0.2,
+		VideoRateIndependent: true,
+		VideoRateMultiplier:  0.5,
+		ModelsListConfig: GroupModelsListConfig{
+			Models: []string{
+				"grok-imagine-image",
+				"grok-imagine-video",
+				"grok-imagine-video-1.5",
+				"grok-4",
+			},
+		},
+	}
+}
+
+func grokHeavyChannel() Channel {
+	return Channel{
+		ID: 1, Name: "grok-ch", Status: StatusActive, GroupIDs: []int64{10},
+		ModelPricing: []ChannelModelPricing{
+			{
+				Platform:    PlatformGrok,
+				Models:      []string{"grok-imagine-image"},
+				BillingMode: BillingModeImage,
+				Intervals: []PricingInterval{
+					{TierLabel: "1K", PerRequestPrice: testPtrFloat64(0.03)},
+					{TierLabel: "2K", PerRequestPrice: testPtrFloat64(0.05)},
+				},
+			},
+			{
+				Platform:    PlatformGrok,
+				Models:      []string{"grok-imagine-video"},
+				BillingMode: BillingModeVideo,
+				Intervals: []PricingInterval{
+					{TierLabel: "480p", PerRequestPrice: testPtrFloat64(0.09)},
+					{TierLabel: "720p", PerRequestPrice: testPtrFloat64(0.12)},
+				},
+			},
+			{
+				Platform:    PlatformGrok,
+				Models:      []string{"grok-imagine-video-1.5"},
+				BillingMode: BillingModeVideo,
+				Intervals: []PricingInterval{
+					{TierLabel: "480p", PerRequestPrice: testPtrFloat64(0.09)},
+					{TierLabel: "720p", PerRequestPrice: testPtrFloat64(0.14)},
+					{TierLabel: "1080p", PerRequestPrice: testPtrFloat64(0.25)},
+				},
+			},
+			{
+				Platform:    PlatformGrok,
+				Models:      []string{"grok-4"},
+				BillingMode: BillingModeToken,
+				InputPrice:  testPtrFloat64(3e-6),
+				OutputPrice: testPtrFloat64(1.5e-5),
+			},
+		},
+	}
+}
+
+func plazaIntervalPrices(p *ChannelModelPricing) map[string]float64 {
+	out := map[string]float64{}
+	if p == nil {
+		return out
+	}
+	for _, iv := range p.Intervals {
+		if iv.PerRequestPrice != nil {
+			out[iv.TierLabel] = *iv.PerRequestPrice
+		}
+	}
+	return out
+}
+
+func TestListPlazaGroups_GrokHeavyChannelMediaPricing(t *testing.T) {
+	// 混合品牌分组不在分组里定价：生图/生视频价格来自渠道价卡，只展示已配置档位。
+	channels := []Channel{grokHeavyChannel()}
+	groups := []Group{grokHeavyPlazaGroup()}
+	svc := newPlazaService(channels, groups, nil)
+	out, err := svc.ListGroups(context.Background())
+	require.NoError(t, err)
+	require.Len(t, out, 1)
+	require.True(t, out[0].VideoRateIndependent)
+	require.InDelta(t, 0.5, out[0].VideoRateMultiplier, 1e-9)
+
+	byName := plazaModelsByName(out[0].Models)
+	image := byName["grok-imagine-image"]
+	require.Equal(t, BillingModeImage, image.Pricing.BillingMode)
+	require.Equal(t, map[string]float64{"1K": 0.03, "2K": 0.05}, plazaIntervalPrices(image.Pricing))
+	_, has4K := plazaIntervalPrices(image.Pricing)["4K"]
+	require.False(t, has4K, "未配置的 4K 档不应展示")
+
+	video := byName["grok-imagine-video"]
+	require.Equal(t, BillingModeVideo, video.Pricing.BillingMode)
+	require.Equal(t, map[string]float64{"480p": 0.09, "720p": 0.12}, plazaIntervalPrices(video.Pricing))
+	_, has1080 := plazaIntervalPrices(video.Pricing)["1080p"]
+	require.False(t, has1080, "未配置的 1080p 档不应展示")
+
+	video15 := byName["grok-imagine-video-1.5"]
+	require.Equal(t, BillingModeVideo, video15.Pricing.BillingMode)
+	require.Equal(t, map[string]float64{"480p": 0.09, "720p": 0.14, "1080p": 0.25}, plazaIntervalPrices(video15.Pricing))
+
+	text := byName["grok-4"]
+	require.Equal(t, BillingModeToken, text.Pricing.BillingMode)
+	require.Empty(t, text.Pricing.Intervals)
+}
+
+func TestListConfiguredPlazaGroups_GrokHeavyChannelMediaPricing(t *testing.T) {
+	// 公共广场模型列表来自分组配置，价格仍应解析到关联渠道的 image/video 价卡。
+	channels := []Channel{grokHeavyChannel()}
+	groups := []Group{grokHeavyPlazaGroup()}
+	svc := newPlazaServiceWithBilling(channels, groups, map[int64]string{10: PlatformGrok}, nil)
+	out, err := svc.ListConfiguredGroups(context.Background())
+	require.NoError(t, err)
+	require.Len(t, out, 1)
+	byName := plazaModelsByName(out[0].Models)
+
+	image := byName["grok-imagine-image"]
+	require.Equal(t, BillingModeImage, image.Pricing.BillingMode)
+	require.Equal(t, map[string]float64{"1K": 0.03, "2K": 0.05}, plazaIntervalPrices(image.Pricing))
+
+	video := byName["grok-imagine-video"]
+	require.Equal(t, BillingModeVideo, video.Pricing.BillingMode)
+	require.Equal(t, map[string]float64{"480p": 0.09, "720p": 0.12}, plazaIntervalPrices(video.Pricing))
+
+	video15 := byName["grok-imagine-video-1.5"]
+	require.Equal(t, map[string]float64{"480p": 0.09, "720p": 0.14, "1080p": 0.25}, plazaIntervalPrices(video15.Pricing))
+
+	text := byName["grok-4"]
+	require.Equal(t, BillingModeToken, text.Pricing.BillingMode)
+	require.InDelta(t, 3e-6, *text.Pricing.InputPrice, 1e-15)
+}
+
+func TestListConfiguredPlazaGroups_GrokMediaEnabledWithoutPricesHidesDefaults(t *testing.T) {
+	// 仅开启生图/生视频、渠道和分组都未配置档位价时，不展示计费默认价。
+	groups := []Group{{
+		ID: 10, Name: "Grok Heavy", Platform: PlatformGrok, RateMultiplier: 1,
+		AllowImageGeneration: true,
+		ModelsListConfig: GroupModelsListConfig{
+			Models: []string{"grok-imagine-image", "grok-imagine-video"},
+		},
+	}}
+	svc := newPlazaService(nil, groups, nil)
+	out, err := svc.ListConfiguredGroups(context.Background())
+	require.NoError(t, err)
+	require.Len(t, out, 1)
+	byName := plazaModelsByName(out[0].Models)
+	require.Nil(t, byName["grok-imagine-image"].Pricing)
+	require.Nil(t, byName["grok-imagine-video"].Pricing)
+}
+
+func TestListGroups_GrokHeavyChannelMediaPricingWithBilling(t *testing.T) {
+	// 生产路径会先解析 token 阶梯；渠道 image/video 价卡必须覆盖 token 展示。
+	channels := []Channel{grokHeavyChannel()}
+	groups := []Group{grokHeavyPlazaGroup()}
+	svc := newPlazaServiceWithBilling(channels, groups, map[int64]string{10: PlatformGrok}, nil)
+	out, err := svc.ListGroups(context.Background())
+	require.NoError(t, err)
+	require.Len(t, out, 1)
+	byName := plazaModelsByName(out[0].Models)
+
+	image := byName["grok-imagine-image"]
+	require.Equal(t, BillingModeImage, image.Pricing.BillingMode)
+	require.Equal(t, map[string]float64{"1K": 0.03, "2K": 0.05}, plazaIntervalPrices(image.Pricing))
+	require.Nil(t, image.TimePricing)
+
+	video := byName["grok-imagine-video"]
+	require.Equal(t, BillingModeVideo, video.Pricing.BillingMode)
+	require.Equal(t, map[string]float64{"480p": 0.09, "720p": 0.12}, plazaIntervalPrices(video.Pricing))
+
+	video15 := byName["grok-imagine-video-1.5"]
+	require.Equal(t, map[string]float64{"480p": 0.09, "720p": 0.14, "1080p": 0.25}, plazaIntervalPrices(video15.Pricing))
+
+	text := byName["grok-4"]
+	require.Equal(t, BillingModeToken, text.Pricing.BillingMode)
+	require.InDelta(t, 3e-6, *text.Pricing.InputPrice, 1e-15)
+	require.Empty(t, text.Pricing.Intervals)
+}
+
+func TestListConfiguredPlazaGroups_GroupVideoPriceOverridesChannelTiers(t *testing.T) {
+	// 分组如果额外配了视频档位，只覆盖已配置项，其余回落渠道价卡。
+	channels := []Channel{grokHeavyChannel()}
+	group := grokHeavyPlazaGroup()
+	group.VideoPrice720P = testPtrFloat64(0.2)
+	group.VideoModelPrices = map[string]map[string]float64{
+		VideoPriceFamilyGrokImagineVideo15: {VideoBillingResolution1080P: 0.4},
+	}
+	svc := newPlazaServiceWithBilling(channels, []Group{group}, map[int64]string{10: PlatformGrok}, nil)
+	out, err := svc.ListConfiguredGroups(context.Background())
+	require.NoError(t, err)
+	byName := plazaModelsByName(out[0].Models)
+
+	video := byName["grok-imagine-video"]
+	require.Equal(t, map[string]float64{"480p": 0.09, "720p": 0.2}, plazaIntervalPrices(video.Pricing))
+	video15 := byName["grok-imagine-video-1.5"]
+	require.Equal(t, map[string]float64{"480p": 0.09, "720p": 0.2, "1080p": 0.4}, plazaIntervalPrices(video15.Pricing))
+}
+
+func TestListConfiguredPlazaGroups_GroupMediaPricesInjectGrokModels(t *testing.T) {
+	// Grok 分组名单通常只有文本模型；已配置的生图/生视频档位价仍应出现在公开广场。
+	groups := []Group{{
+		ID: 18, Name: "Grok Heavy", Platform: PlatformGrok, RateMultiplier: 0.11,
+		ImagePrice1K:         testPtrFloat64(0.03),
+		ImagePrice2K:         testPtrFloat64(0.05),
+		VideoPrice480P:       testPtrFloat64(0.09),
+		VideoPrice720P:       testPtrFloat64(0.12),
+		VideoRateIndependent: true,
+		VideoRateMultiplier:  0.5,
+		VideoModelPrices: map[string]map[string]float64{
+			VideoPriceFamilyGrokImagineVideo15: {VideoBillingResolution1080P: 0.25},
+		},
+		ModelsListConfig: GroupModelsListConfig{Models: []string{"grok-4.5", "grok-4.6"}},
+	}}
+	svc := newPlazaService(nil, groups, nil)
+	out, err := svc.ListConfiguredGroups(context.Background())
+	require.NoError(t, err)
+	require.Len(t, out, 1)
+	require.True(t, out[0].VideoRateIndependent)
+	require.InDelta(t, 0.5, out[0].VideoRateMultiplier, 1e-9)
+
+	byName := plazaModelsByName(out[0].Models)
+	require.Contains(t, byName, "grok-4.5")
+	require.Contains(t, byName, "grok-4.6")
+
+	image := byName["grok-imagine-image"]
+	require.Equal(t, BillingModeImage, image.Pricing.BillingMode)
+	require.Equal(t, map[string]float64{"1K": 0.03, "2K": 0.05}, plazaIntervalPrices(image.Pricing))
+	_, has4K := plazaIntervalPrices(image.Pricing)["4K"]
+	require.False(t, has4K)
+
+	video := byName["grok-imagine-video"]
+	require.Equal(t, BillingModeVideo, video.Pricing.BillingMode)
+	require.Equal(t, map[string]float64{"480p": 0.09, "720p": 0.12}, plazaIntervalPrices(video.Pricing))
+
+	video15 := byName["grok-imagine-video-1.5"]
+	require.Equal(t, BillingModeVideo, video15.Pricing.BillingMode)
+	require.Equal(t, map[string]float64{"480p": 0.09, "720p": 0.12, "1080p": 0.25}, plazaIntervalPrices(video15.Pricing))
+}
+
+func TestListConfiguredPlazaGroups_NoMediaPricesDoesNotInjectGrokModels(t *testing.T) {
+	groups := []Group{{
+		ID: 18, Name: "Grok Heavy", Platform: PlatformGrok, RateMultiplier: 0.11,
+		AllowImageGeneration: true,
+		ModelsListConfig:     GroupModelsListConfig{Models: []string{"grok-4.5"}},
+	}}
+	svc := newPlazaService(nil, groups, nil)
+	out, err := svc.ListConfiguredGroups(context.Background())
+	require.NoError(t, err)
+	require.Len(t, out, 1)
+	byName := plazaModelsByName(out[0].Models)
+	require.Len(t, byName, 1)
+	require.Contains(t, byName, "grok-4.5")
+	require.NotContains(t, byName, "grok-imagine-image")
+	require.NotContains(t, byName, "grok-imagine-video")
+}
+
+func TestListConfiguredPlazaGroups_DoesNotDuplicateConfiguredGrokMedia(t *testing.T) {
+	groups := []Group{{
+		ID:           10,
+		Name:         "Grok Heavy",
+		Platform:     PlatformGrok,
+		ImagePrice1K: testPtrFloat64(0.03),
+		ModelsListConfig: GroupModelsListConfig{
+			Models: []string{"grok-imagine-image", "grok-4"},
+		},
+	}}
+	svc := newPlazaService(nil, groups, nil)
+	out, err := svc.ListConfiguredGroups(context.Background())
+	require.NoError(t, err)
+	count := 0
+	for _, m := range out[0].Models {
+		if m.Name == "grok-imagine-image" {
+			count++
+		}
+	}
+	require.Equal(t, 1, count)
+	image := plazaModelsByName(out[0].Models)["grok-imagine-image"]
+	require.Equal(t, map[string]float64{"1K": 0.03}, plazaIntervalPrices(image.Pricing))
+}
+
+func TestListConfiguredPlazaGroups_PreservesConfiguredGrokImageVariants(t *testing.T) {
+	groups := []Group{{
+		ID:           29,
+		Name:         "生图/视频",
+		Platform:     PlatformGrok,
+		ImagePrice1K: testPtrFloat64(0.03),
+		ModelsListConfig: GroupModelsListConfig{
+			Models: []string{"grok-imagine", "grok-imagine-image-quality"},
+		},
+	}}
+	svc := newPlazaService(nil, groups, nil)
+	out, err := svc.ListConfiguredGroups(context.Background())
+	require.NoError(t, err)
+	require.Len(t, out, 1)
+	byName := plazaModelsByName(out[0].Models)
+	require.Contains(t, byName, "grok-imagine")
+	require.Contains(t, byName, "grok-imagine-image-quality")
+	require.NotContains(t, byName, "grok-imagine-image")
+	for _, name := range []string{"grok-imagine", "grok-imagine-image-quality"} {
+		require.Equal(t, BillingModeImage, byName[name].Pricing.BillingMode)
+		require.Equal(t, map[string]float64{"1K": 0.03}, plazaIntervalPrices(byName[name].Pricing))
+	}
+}
+
+func TestListGroups_GroupMediaPricesInjectGrokModels(t *testing.T) {
+	channels := []Channel{plazaPricedChannel(1, "ch", []int64{10}, PlatformGrok, "grok-4.5")}
+	groups := []Group{{
+		ID:             10,
+		Name:           "Grok Heavy",
+		Platform:       PlatformGrok,
+		RateMultiplier: 0.11,
+		ImagePrice1K:   testPtrFloat64(0.03),
+		VideoPrice720P: testPtrFloat64(0.12),
+	}}
+	svc := newPlazaService(channels, groups, nil)
+	out, err := svc.ListGroups(context.Background())
+	require.NoError(t, err)
+	require.Len(t, out, 1)
+	byName := plazaModelsByName(out[0].Models)
+	require.Contains(t, byName, "grok-4.5")
+	require.Equal(t, map[string]float64{"1K": 0.03}, plazaIntervalPrices(byName["grok-imagine-image"].Pricing))
+	require.Equal(t, map[string]float64{"720p": 0.12}, plazaIntervalPrices(byName["grok-imagine-video"].Pricing))
+	require.Equal(t, map[string]float64{"720p": 0.12}, plazaIntervalPrices(byName["grok-imagine-video-1.5"].Pricing))
+}

@@ -43,12 +43,14 @@ function mountTable(
   models: PlazaModel[],
   rateMultiplier: number,
   userRateMultiplier?: number | null,
-  extraProps?: {
-    imageRateIndependent?: boolean
-    imageRateMultiplier?: number | null
-    peakWindow?: string
-    peakRateMultiplier?: number | null
-  }
+    extraProps?: {
+      imageRateIndependent?: boolean
+      imageRateMultiplier?: number | null
+      videoRateIndependent?: boolean
+      videoRateMultiplier?: number | null
+      peakWindow?: string
+      peakRateMultiplier?: number | null
+    }
 ) {
   return mount(PlazaModelPricingTable, {
     props: { models, rateMultiplier, userRateMultiplier: userRateMultiplier ?? null, ...extraProps }
@@ -341,6 +343,95 @@ describe('PlazaModelPricingTable', () => {
     expect(text).toContain('modelPlaza.table.perUnitImage')
     // 旧 bug:image_output_price × 0.1 = 0.000003 被当按次价
     expect(text).not.toContain('$0.000003')
+  })
+
+  it('视频计费模型展示视频计费徽章、按秒单位,不按普通按次处理', () => {
+    const model = tokenModel({
+      name: 'grok-imagine-video',
+      platform: 'grok',
+      pricing: {
+        billing_mode: 'video',
+        input_price: null,
+        output_price: null,
+        cache_write_price: null,
+        cache_read_price: null,
+        image_input_price: null,
+        image_output_price: null,
+        per_request_price: null,
+        intervals: [
+          {
+            min_tokens: 0,
+            max_tokens: null,
+            tier_label: '480p',
+            input_price: null,
+            output_price: null,
+            cache_write_price: null,
+            cache_read_price: null,
+            per_request_price: 0.09
+          },
+          {
+            min_tokens: 0,
+            max_tokens: null,
+            tier_label: '720p',
+            input_price: null,
+            output_price: null,
+            cache_write_price: null,
+            cache_read_price: null,
+            per_request_price: 0.12
+          }
+        ]
+      },
+      official_pricing: null
+    })
+    const wrapper = mountTable([model], 0.5)
+    const text = wrapper.text()
+    expect(text).toContain('modelPlaza.table.perVideo')
+    expect(text).not.toContain('modelPlaza.table.perRequest')
+    expect(text).toContain('480p')
+    expect(text).toContain('$0.045')
+    expect(text).toContain('720p')
+    expect(text).toContain('$0.06')
+    expect(text).toContain('modelPlaza.table.perUnitVideo')
+    expect(text).not.toContain('modelPlaza.table.perUnitRequest')
+  })
+
+  it('生视频独立倍率开启时,视频价格 × 独立倍率,不乘分组倍率', () => {
+    const model = tokenModel({
+      name: 'grok-imagine-video',
+      platform: 'grok',
+      pricing: {
+        billing_mode: 'video',
+        input_price: null,
+        output_price: null,
+        cache_write_price: null,
+        cache_read_price: null,
+        image_input_price: null,
+        image_output_price: null,
+        per_request_price: null,
+        intervals: [
+          {
+            min_tokens: 0,
+            max_tokens: null,
+            tier_label: '480p',
+            input_price: null,
+            output_price: null,
+            cache_write_price: null,
+            cache_read_price: null,
+            per_request_price: 0.09
+          }
+        ]
+      },
+      official_pricing: null
+    })
+    const wrapper = mountTable([model], 0.2, null, {
+      videoRateIndependent: true,
+      videoRateMultiplier: 0.5
+    })
+    const text = wrapper.text()
+    expect(text).toContain('$0.045')
+    expect(text).not.toContain('$0.018')
+    const rateCell = wrapper.findAll('tbody tr td').at(-1)!
+    expect(rateCell.text()).toBe('0.5x')
   })
 
   it('Composite 分组中相同模型名按具体平台分别展示徽章', () => {
