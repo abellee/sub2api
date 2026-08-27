@@ -50,9 +50,13 @@ type TimePricingSchedule struct {
 // 单价由真实计费函数探针得出，与扣费同源；单档表示无阶梯。
 // Tiers 为标准时段单价；TimePricing 非 nil 时，落在时段内的请求整单再乘对应倍率。
 type ContextPricingSchedule struct {
-	Basis       ContextPricingBasis
-	Tiers       []ContextPricingTier
-	TimePricing *TimePricingSchedule
+	Basis ContextPricingBasis
+	Tiers []ContextPricingTier
+	// HasConfiguredLongContext indicates that the selected channel explicitly
+	// defines token intervals. Catalog presets alone must not be advertised as
+	// channel long-context pricing in the model plaza.
+	HasConfiguredLongContext bool
+	TimePricing              *TimePricingSchedule
 }
 
 // ContextPricingScheduleInput 阶梯表查询输入。
@@ -144,7 +148,12 @@ func (s *BillingService) ResolveContextPricingSchedule(ctx context.Context, reso
 	if legacy != nil {
 		basis = ContextPricingBasisMarginal
 	}
-	return &ContextPricingSchedule{Basis: basis, Tiers: tiers, TimePricing: resolvedTimePricingSchedule(resolved)}, nil
+	return &ContextPricingSchedule{
+		Basis:                    basis,
+		Tiers:                    tiers,
+		HasConfiguredLongContext: len(resolved.Intervals) > 0,
+		TimePricing:              resolvedTimePricingSchedule(resolved),
+	}, nil
 }
 
 // resolvedTimePricingSchedule 列出计费会生效的分时倍率时段。

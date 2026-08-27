@@ -70,7 +70,7 @@ import DOMPurify from 'dompurify'
 import Icon from '@/components/icons/Icon.vue'
 import PlazaFilterBar from './PlazaFilterBar.vue'
 import PlazaGroupSection from './PlazaGroupSection.vue'
-import { modelPlazaProviderForGroup } from '@/components/model-plaza/modelPlaza'
+import { modelPlazaEntryKind, modelPlazaProviderForGroup } from '@/components/model-plaza/modelPlaza'
 import type { ModelPlazaGroup, ModelPlazaResponse } from '@/api/modelPlaza'
 import { useAuthStore } from '@/stores/auth'
 
@@ -108,20 +108,22 @@ const platforms = computed(() =>
   [...new Set((props.response?.groups ?? []).map(modelPlazaProviderForGroup).filter(Boolean))].sort()
 )
 
-// Use the first available provider as the initial branch of the catalog. Users
-// can still choose "all providers" when they need a cross-provider view.
-watch(platforms, (list) => {
-  if (list.length === 0) {
-    selectedPlatform.value = 'all'
-    return
-  }
-  if (selectedPlatform.value === 'all' || !list.includes(selectedPlatform.value)) {
-    selectedPlatform.value = list[0]
-  }
-}, { immediate: true })
+function isMediaGroup(group: ModelPlazaGroup): boolean {
+  return group.models.some((model) => {
+    const kind = modelPlazaEntryKind(group, model)
+    return kind === 'image' || kind === 'video'
+  })
+}
+
+function compareGroups(a: ModelPlazaGroup, b: ModelPlazaGroup): number {
+  const mediaOrder = Number(isMediaGroup(b)) - Number(isMediaGroup(a))
+  return mediaOrder || effectiveRate(a) - effectiveRate(b) || a.name.localeCompare(b.name)
+}
+
+const orderedGroups = computed(() => [...(props.response?.groups ?? [])].sort(compareGroups))
 
 const groupOptions = computed(() =>
-  (props.response?.groups ?? []).map((g) => ({
+  orderedGroups.value.map((g) => ({
     id: g.id,
     name: g.name,
     platform: modelPlazaProviderForGroup(g),
@@ -158,7 +160,7 @@ watch(rates, (list) => {
 })
 
 const filteredGroups = computed(() => {
-  let groups = props.response?.groups ?? []
+  let groups = orderedGroups.value
   if (selectedPlatform.value !== 'all') {
     groups = groups.filter((g) => modelPlazaProviderForGroup(g) === selectedPlatform.value)
   }
@@ -175,10 +177,8 @@ const filteredGroups = computed(() => {
       .map((g) => ({ ...g, models: g.models.filter((m) => m.name.toLowerCase().includes(q)) }))
       .filter((g) => g.models.length > 0)
   }
-  // 专属倍率会改变生效值,不能只依赖后端按默认倍率的排序。
-  return [...groups].sort(
-    (a, b) => effectiveRate(a) - effectiveRate(b) || a.name.localeCompare(b.name)
-  )
+  // 专属倍率会改变生效值；媒体分组始终优先于倍率排序。
+  return [...groups].sort(compareGroups)
 })
 </script>
 

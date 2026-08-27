@@ -443,7 +443,8 @@ func plazaResolvedRequestPricing(ctx context.Context, resolver *ModelPricingReso
 }
 
 // plazaPricingFromSchedule 把计费阶梯表转换为模型广场展示定价。
-// 基础字段始终取第一档；整单计价且存在多档时同时公开全部上下文档位。
+// 基础字段始终取第一档；只有渠道明确配置了长上下文价时，才公开超过
+// 基础阈值的档位。第一档就是主价格，不重复放进“长上下文”区域。
 // 边际计价不能表示成普通整单档位，因此仍只展示基础字段。
 func plazaPricingFromSchedule(raw *ChannelModelPricing, sched *ContextPricingSchedule) *ChannelModelPricing {
 	out := &ChannelModelPricing{BillingMode: BillingModeToken}
@@ -457,9 +458,9 @@ func plazaPricingFromSchedule(raw *ChannelModelPricing, sched *ContextPricingSch
 	out.OutputPrice = first.Output
 	out.CacheWritePrice = first.CacheWrite
 	out.CacheReadPrice = first.CacheRead
-	if sched.Basis == ContextPricingBasisWholeRequest && len(sched.Tiers) > 1 {
-		out.Intervals = make([]PricingInterval, 0, len(sched.Tiers))
-		for i := range sched.Tiers {
+	if sched.Basis == ContextPricingBasisWholeRequest && sched.HasConfiguredLongContext && len(sched.Tiers) > 1 {
+		out.Intervals = make([]PricingInterval, 0, len(sched.Tiers)-1)
+		for i := 1; i < len(sched.Tiers); i++ {
 			tier := &sched.Tiers[i]
 			out.Intervals = append(out.Intervals, PricingInterval{
 				MinTokens:       tier.MinTokens,
@@ -469,7 +470,7 @@ func plazaPricingFromSchedule(raw *ChannelModelPricing, sched *ContextPricingSch
 				OutputPrice:     tier.Output,
 				CacheWritePrice: tier.CacheWrite,
 				CacheReadPrice:  tier.CacheRead,
-				SortOrder:       i,
+				SortOrder:       i - 1,
 			})
 		}
 	}

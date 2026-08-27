@@ -169,7 +169,6 @@ describe('model plaza matching', () => {
     expect(entries[0]).toEqual(expect.objectContaining({
       kind: 'token',
       tokenTiers: [
-        { label: '≤128K', input: '2', output: '10', cache: '0.5' },
         { label: '>128K', input: '4', output: '20', cache: '1' },
       ],
     }))

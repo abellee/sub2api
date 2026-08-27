@@ -435,10 +435,12 @@ function requestIntervals(m: PlazaModel): UserPricingInterval[] {
 /** token 模式的整单上下文档位；后端不会在此契约中输出边际计价规则。 */
 function tokenIntervals(m: PlazaModel): UserPricingInterval[] {
   if (billingMode(m) !== BILLING_MODE_TOKEN) return []
-  return (m.pricing?.intervals ?? []).filter((iv) => iv.input_price != null
+  return (m.pricing?.intervals ?? []).filter((iv) => iv.min_tokens > 0 && (
+    iv.input_price != null
     || iv.output_price != null
     || iv.cache_write_price != null
-    || iv.cache_read_price != null)
+    || iv.cache_read_price != null
+  ))
 }
 
 /**

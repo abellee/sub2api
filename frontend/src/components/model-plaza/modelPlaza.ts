@@ -148,10 +148,12 @@ function requestTierMap(model: PlazaModel): Map<string, string> {
 
 function tokenTiers(model: PlazaModel): ModelPlazaTokenTierPrice[] {
   return (model.pricing?.intervals ?? [])
-    .filter((interval) => interval.input_price != null
+    .filter((interval) => interval.min_tokens > 0 && (
+      interval.input_price != null
       || interval.output_price != null
       || interval.cache_read_price != null
-      || interval.cache_write_price != null)
+      || interval.cache_write_price != null
+    ))
     .map((interval) => ({
       label: interval.tier_label || tokenRangeLabel(interval.min_tokens, interval.max_tokens),
       input: perMillion(interval.input_price),
