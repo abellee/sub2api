@@ -619,6 +619,7 @@ export default {
       cacheRead: '读取',
       cacheWriteShort: '写',
       cacheReadShort: '读',
+      longContext: '上下文阶梯',
       timePricingRowHint: '按 {timezone} 时间，在该时段内发起的请求按本行价格计费',
       timePricingRowHintWeekdays:
         '按 {timezone} 时间，仅工作日（周一至周五）在该时段内发起的请求按本行价格计费，周末全天按标准价',

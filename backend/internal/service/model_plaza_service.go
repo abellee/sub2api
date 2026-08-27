@@ -95,7 +95,6 @@ func NewModelPlazaService(
 //   - token 模型的单价与阶梯按实收口径合成（见 ResolveContextPricingSchedule）；
 //     图片/视频计费模型优先使用渠道价卡（见 plazaResolvedRequestPricing），
 //     分组档位价仅覆盖已配置项（见 plazaImageDisplayPricing / plazaVideoDisplayPricing）；
-//     Grok 分组若配置了生图/生视频档位价，即使模型不在渠道/模型名单里也会补进广场；
 //   - 每个模型附带官方参考价（查不到为 nil）；
 //   - 只返回 Models 非空的分组；分组按 RateMultiplier 升序（同倍率按名称），
 //     组内模型按名称排序。
@@ -198,7 +197,6 @@ func (s *ModelPlazaService) ListGroups(ctx context.Context) ([]PlazaGroup, error
 	for _, gid := range order {
 		pg := byGroup[gid]
 		g := groupEnt[gid]
-		mergePlazaGroupConfiguredMediaModels(pg, g)
 		if len(pg.Models) == 0 {
 			continue
 		}
@@ -224,10 +222,9 @@ func (s *ModelPlazaService) ListGroups(ctx context.Context) ([]PlazaGroup, error
 	return out, nil
 }
 
-// ListConfiguredGroups returns the public catalog exactly as configured in
-// each active group's models_list_config. Official pricing enriches entries
-// when available but never determines whether a configured model is visible.
-// Grok 分组已配置的生图/生视频档位价会补出对应媒体模型，不要求写进模型名单。
+// ListConfiguredGroups returns the catalog exactly as configured in each
+// active group's models_list_config. Channel support and pricing only enrich
+// those configured entries and never determine which models are visible.
 func (s *ModelPlazaService) ListConfiguredGroups(ctx context.Context) ([]PlazaGroup, error) {
 	groups, err := s.groupRepo.ListActive(ctx)
 	if err != nil {
@@ -273,7 +270,6 @@ func (s *ModelPlazaService) ListConfiguredGroups(ctx context.Context) ([]PlazaGr
 				Platform: g.Platform,
 			})
 		}
-		mergePlazaGroupConfiguredMediaModels(&pg, g)
 		if len(pg.Models) == 0 {
 			continue
 		}
@@ -347,80 +343,6 @@ func plazaGrokImagePricingModel(model string) string {
 
 func plazaIsGrokMediaModel(model string) bool {
 	return plazaIsGrokImagineImage(model) || CanonicalGrokImagineVideoPriceFamily(model) != ""
-}
-
-func plazaGroupHasImagePrices(g *Group) bool {
-	return g != nil && (g.ImagePrice1K != nil || g.ImagePrice2K != nil || g.ImagePrice4K != nil)
-}
-
-func plazaVideoModelHasConfiguredPrice(g *Group, model string) bool {
-	if g == nil {
-		return false
-	}
-	for _, res := range []string{
-		VideoBillingResolution480P,
-		VideoBillingResolution720P,
-		VideoBillingResolution1080P,
-	} {
-		if g.GetVideoPriceForModel(model, res) != nil {
-			return true
-		}
-	}
-	return false
-}
-
-func plazaGroupConfiguredMediaModels(g *Group) []PlazaModel {
-	if g == nil || g.Platform != PlatformGrok {
-		return nil
-	}
-	out := make([]PlazaModel, 0, 3)
-	if plazaGroupHasImagePrices(g) {
-		out = append(out, PlazaModel{Name: xai.DefaultImagineImageFastModel, Platform: PlatformGrok})
-	}
-	if plazaVideoModelHasConfiguredPrice(g, xai.DefaultImagineVideoModel) {
-		out = append(out, PlazaModel{Name: xai.DefaultImagineVideoModel, Platform: PlatformGrok})
-	}
-	if plazaVideoModelHasConfiguredPrice(g, xai.DefaultImagineVideo15Model) {
-		out = append(out, PlazaModel{Name: xai.DefaultImagineVideo15Model, Platform: PlatformGrok})
-	}
-	return out
-}
-
-func mergePlazaGroupConfiguredMediaModels(pg *PlazaGroup, g *Group) {
-	if pg == nil {
-		return
-	}
-	seen := make(map[string]struct{}, len(pg.Models)+3)
-	hasGrokImage := false
-	hasVideoFamily := make(map[string]bool, 2)
-	for _, m := range pg.Models {
-		seen[m.Name] = struct{}{}
-		if plazaIsGrokImagineImage(m.Name) {
-			hasGrokImage = true
-		}
-		if family := CanonicalGrokImagineVideoPriceFamily(m.Name); family != "" {
-			hasVideoFamily[family] = true
-		}
-	}
-	for _, extra := range plazaGroupConfiguredMediaModels(g) {
-		if plazaIsGrokImagineImage(extra.Name) && hasGrokImage {
-			continue
-		}
-		if family := CanonicalGrokImagineVideoPriceFamily(extra.Name); family != "" && hasVideoFamily[family] {
-			continue
-		}
-		if _, ok := seen[extra.Name]; ok {
-			continue
-		}
-		pg.Models = append(pg.Models, extra)
-		seen[extra.Name] = struct{}{}
-		if plazaIsGrokImagineImage(extra.Name) {
-			hasGrokImage = true
-		}
-		if family := CanonicalGrokImagineVideoPriceFamily(extra.Name); family != "" {
-			hasVideoFamily[family] = true
-		}
-	}
 }
 
 func plazaHasRequestTiers(p *ChannelModelPricing) bool {
@@ -520,8 +442,9 @@ func plazaResolvedRequestPricing(ctx context.Context, resolver *ModelPricingReso
 	return &out
 }
 
-// plazaPricingFromSchedule 把阶梯表压成展示用的 ChannelModelPricing。
-// 模型广场只展示基础档单价；上下文阶梯仍由后台计费服务使用。
+// plazaPricingFromSchedule 把计费阶梯表转换为模型广场展示定价。
+// 基础字段始终取第一档；整单计价且存在多档时同时公开全部上下文档位。
+// 边际计价不能表示成普通整单档位，因此仍只展示基础字段。
 func plazaPricingFromSchedule(raw *ChannelModelPricing, sched *ContextPricingSchedule) *ChannelModelPricing {
 	out := &ChannelModelPricing{BillingMode: BillingModeToken}
 	if raw != nil {
@@ -534,6 +457,22 @@ func plazaPricingFromSchedule(raw *ChannelModelPricing, sched *ContextPricingSch
 	out.OutputPrice = first.Output
 	out.CacheWritePrice = first.CacheWrite
 	out.CacheReadPrice = first.CacheRead
+	if sched.Basis == ContextPricingBasisWholeRequest && len(sched.Tiers) > 1 {
+		out.Intervals = make([]PricingInterval, 0, len(sched.Tiers))
+		for i := range sched.Tiers {
+			tier := &sched.Tiers[i]
+			out.Intervals = append(out.Intervals, PricingInterval{
+				MinTokens:       tier.MinTokens,
+				MaxTokens:       tier.MaxTokens,
+				TierLabel:       tier.Label,
+				InputPrice:      tier.Input,
+				OutputPrice:     tier.Output,
+				CacheWritePrice: tier.CacheWrite,
+				CacheReadPrice:  tier.CacheRead,
+				SortOrder:       i,
+			})
+		}
+	}
 	return out
 }
 

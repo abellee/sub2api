@@ -506,8 +506,9 @@ func TestListGroups_TimePricingPassthrough(t *testing.T) {
 func grokHeavyPlazaGroup() Group {
 	return Group{
 		ID: 10, Name: "Grok Heavy", Platform: PlatformGrok, RateMultiplier: 0.2,
-		VideoRateIndependent: true,
-		VideoRateMultiplier:  0.5,
+		LongContextPricingEnabled: true,
+		VideoRateIndependent:      true,
+		VideoRateMultiplier:       0.5,
 		ModelsListConfig: GroupModelsListConfig{
 			Models: []string{
 				"grok-imagine-image",
@@ -557,6 +558,11 @@ func grokHeavyChannel() Channel {
 				BillingMode: BillingModeToken,
 				InputPrice:  testPtrFloat64(3e-6),
 				OutputPrice: testPtrFloat64(1.5e-5),
+				Intervals: []PricingInterval{{
+					MinTokens:   128000,
+					InputPrice:  testPtrFloat64(6e-6),
+					OutputPrice: testPtrFloat64(3e-5),
+				}},
 			},
 		},
 	}
@@ -605,7 +611,8 @@ func TestListPlazaGroups_GrokHeavyChannelMediaPricing(t *testing.T) {
 
 	text := byName["grok-4"]
 	require.Equal(t, BillingModeToken, text.Pricing.BillingMode)
-	require.Empty(t, text.Pricing.Intervals)
+	require.Len(t, text.Pricing.Intervals, 1, "未接计费服务时保留渠道长上下文档")
+	require.Equal(t, 128000, text.Pricing.Intervals[0].MinTokens)
 }
 
 func TestListConfiguredPlazaGroups_GrokHeavyChannelMediaPricing(t *testing.T) {
@@ -632,6 +639,12 @@ func TestListConfiguredPlazaGroups_GrokHeavyChannelMediaPricing(t *testing.T) {
 	text := byName["grok-4"]
 	require.Equal(t, BillingModeToken, text.Pricing.BillingMode)
 	require.InDelta(t, 3e-6, *text.Pricing.InputPrice, 1e-15)
+	require.Len(t, text.Pricing.Intervals, 2)
+	require.Equal(t, "≤128K", text.Pricing.Intervals[0].TierLabel)
+	require.InDelta(t, 3e-6, *text.Pricing.Intervals[0].InputPrice, 1e-15)
+	require.Equal(t, ">128K", text.Pricing.Intervals[1].TierLabel)
+	require.InDelta(t, 6e-6, *text.Pricing.Intervals[1].InputPrice, 1e-15)
+	require.InDelta(t, 3e-5, *text.Pricing.Intervals[1].OutputPrice, 1e-15)
 }
 
 func TestListConfiguredPlazaGroups_GrokMediaEnabledWithoutPricesHidesDefaults(t *testing.T) {
@@ -677,7 +690,11 @@ func TestListGroups_GrokHeavyChannelMediaPricingWithBilling(t *testing.T) {
 	text := byName["grok-4"]
 	require.Equal(t, BillingModeToken, text.Pricing.BillingMode)
 	require.InDelta(t, 3e-6, *text.Pricing.InputPrice, 1e-15)
-	require.Empty(t, text.Pricing.Intervals)
+	require.Len(t, text.Pricing.Intervals, 2)
+	require.Equal(t, "≤128K", text.Pricing.Intervals[0].TierLabel)
+	require.Equal(t, ">128K", text.Pricing.Intervals[1].TierLabel)
+	require.InDelta(t, 6e-6, *text.Pricing.Intervals[1].InputPrice, 1e-15)
+	require.InDelta(t, 3e-5, *text.Pricing.Intervals[1].OutputPrice, 1e-15)
 }
 
 func TestListConfiguredPlazaGroups_GroupVideoPriceOverridesChannelTiers(t *testing.T) {
@@ -699,8 +716,8 @@ func TestListConfiguredPlazaGroups_GroupVideoPriceOverridesChannelTiers(t *testi
 	require.Equal(t, map[string]float64{"480p": 0.09, "720p": 0.2, "1080p": 0.4}, plazaIntervalPrices(video15.Pricing))
 }
 
-func TestListConfiguredPlazaGroups_GroupMediaPricesInjectGrokModels(t *testing.T) {
-	// Grok 分组名单通常只有文本模型；已配置的生图/生视频档位价仍应出现在公开广场。
+func TestListConfiguredPlazaGroups_GroupMediaPricesDoNotExpandConfiguredModels(t *testing.T) {
+	// 已配置的媒体价格只负责定价，不能让未在分组模型列表中的模型出现在广场。
 	groups := []Group{{
 		ID: 18, Name: "Grok Heavy", Platform: PlatformGrok, RateMultiplier: 0.11,
 		ImagePrice1K:         testPtrFloat64(0.03),
@@ -722,22 +739,12 @@ func TestListConfiguredPlazaGroups_GroupMediaPricesInjectGrokModels(t *testing.T
 	require.InDelta(t, 0.5, out[0].VideoRateMultiplier, 1e-9)
 
 	byName := plazaModelsByName(out[0].Models)
+	require.Len(t, byName, 2)
 	require.Contains(t, byName, "grok-4.5")
 	require.Contains(t, byName, "grok-4.6")
-
-	image := byName["grok-imagine-image"]
-	require.Equal(t, BillingModeImage, image.Pricing.BillingMode)
-	require.Equal(t, map[string]float64{"1K": 0.03, "2K": 0.05}, plazaIntervalPrices(image.Pricing))
-	_, has4K := plazaIntervalPrices(image.Pricing)["4K"]
-	require.False(t, has4K)
-
-	video := byName["grok-imagine-video"]
-	require.Equal(t, BillingModeVideo, video.Pricing.BillingMode)
-	require.Equal(t, map[string]float64{"480p": 0.09, "720p": 0.12}, plazaIntervalPrices(video.Pricing))
-
-	video15 := byName["grok-imagine-video-1.5"]
-	require.Equal(t, BillingModeVideo, video15.Pricing.BillingMode)
-	require.Equal(t, map[string]float64{"480p": 0.09, "720p": 0.12, "1080p": 0.25}, plazaIntervalPrices(video15.Pricing))
+	require.NotContains(t, byName, "grok-imagine-image")
+	require.NotContains(t, byName, "grok-imagine-video")
+	require.NotContains(t, byName, "grok-imagine-video-1.5")
 }
 
 func TestListConfiguredPlazaGroups_NoMediaPricesDoesNotInjectGrokModels(t *testing.T) {
@@ -757,7 +764,7 @@ func TestListConfiguredPlazaGroups_NoMediaPricesDoesNotInjectGrokModels(t *testi
 	require.NotContains(t, byName, "grok-imagine-video")
 }
 
-func TestListConfiguredPlazaGroups_DoesNotDuplicateConfiguredGrokMedia(t *testing.T) {
+func TestListConfiguredPlazaGroups_KeepsConfiguredGrokMediaOnce(t *testing.T) {
 	groups := []Group{{
 		ID:           10,
 		Name:         "Grok Heavy",
@@ -828,7 +835,7 @@ func TestListConfiguredPlazaGroups_GrokImagineAliasUsesQualityChannelPricing(t *
 	}
 }
 
-func TestListGroups_GroupMediaPricesInjectGrokModels(t *testing.T) {
+func TestListGroups_GroupMediaPricesDoNotInjectGrokModels(t *testing.T) {
 	channels := []Channel{plazaPricedChannel(1, "ch", []int64{10}, PlatformGrok, "grok-4.5")}
 	groups := []Group{{
 		ID:             10,
@@ -843,8 +850,9 @@ func TestListGroups_GroupMediaPricesInjectGrokModels(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, out, 1)
 	byName := plazaModelsByName(out[0].Models)
+	require.Len(t, byName, 1)
 	require.Contains(t, byName, "grok-4.5")
-	require.Equal(t, map[string]float64{"1K": 0.03}, plazaIntervalPrices(byName["grok-imagine-image"].Pricing))
-	require.Equal(t, map[string]float64{"720p": 0.12}, plazaIntervalPrices(byName["grok-imagine-video"].Pricing))
-	require.Equal(t, map[string]float64{"720p": 0.12}, plazaIntervalPrices(byName["grok-imagine-video-1.5"].Pricing))
+	require.NotContains(t, byName, "grok-imagine-image")
+	require.NotContains(t, byName, "grok-imagine-video")
+	require.NotContains(t, byName, "grok-imagine-video-1.5")
 }
