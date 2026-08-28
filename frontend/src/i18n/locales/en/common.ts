@@ -177,7 +177,6 @@ export default {
     channels: 'Channels',
     availableChannels: 'Available Channels',
     modelPlaza: 'Model Plaza',
-    infiniteCanvas: 'Infinite Canvas',
     downgradeRadar: 'Downgrade Radar',
     subscriptions: 'Subscriptions',
     accounts: 'Accounts',
