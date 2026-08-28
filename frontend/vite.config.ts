@@ -81,6 +81,7 @@ export default defineConfig(({ mode }) => {
   // 加载环境变量
   const env = loadEnv(mode, process.cwd(), '')
   const backendUrl = env.VITE_DEV_PROXY_TARGET || 'http://localhost:8080'
+  const infiniteCanvasApiTarget = env.VITE_INFINITE_CANVAS_PROXY_TARGET || 'https://api.llmfree.work'
   const pushNotifierUrl = env.VITE_PUSH_PROXY_TARGET || 'http://127.0.0.1:8091'
   const devPort = Number(env.VITE_DEV_PORT || 3000)
 
@@ -176,6 +177,11 @@ export default defineConfig(({ mode }) => {
         '/v1': {
           target: backendUrl,
           changeOrigin: true
+        },
+        '/infinite-api': {
+          target: infiniteCanvasApiTarget,
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/infinite-api/, '')
         },
         '/setup': {
           target: backendUrl,

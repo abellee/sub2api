@@ -287,6 +287,17 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/infinite-canvas',
+    name: 'InfiniteCanvas',
+    component: () => import('@/views/user/InfiniteCanvasView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: '无限画布',
+      titleKey: 'nav.infiniteCanvas'
+    }
+  },
+  {
     path: '/downgrade-radar',
     name: 'DowngradeRadar',
     component: () => import('@/views/user/DowngradeRadarView.vue'),
