@@ -8,7 +8,6 @@ node_modules/
 # 忽略构建输出
 dist/
 ../backend/internal/web/dist/
-public/infinite-canvas/
 
 # 忽略缓存
 .cache/
