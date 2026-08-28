@@ -413,6 +413,25 @@ const ChannelIcon = {
     )
 }
 
+const InfiniteCanvasIcon = {
+  render: () =>
+    h(
+      'svg',
+      { fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', 'stroke-width': '1.5' },
+      [
+        h('path', {
+          'stroke-linecap': 'round',
+          'stroke-linejoin': 'round',
+          d: 'M4.5 4.5h6v6h-6v-6zm9 9h6v6h-6v-6zM10.5 7.5l3 3m-6 3l-3 3m9-9l3-3'
+        }),
+        h('path', {
+          'stroke-linecap': 'round',
+          d: 'M15.75 4.5h3.75v3.75M4.5 15.75v3.75h3.75'
+        })
+      ]
+    )
+}
+
 const CreditCardIcon = {
   render: () =>
     h(
@@ -734,6 +753,7 @@ function buildSelfNavItems(withDashboard: boolean): NavItem[] {
       iconSvg: item.icon_svg,
     })),
     { path: '/model-plaza', label: t('nav.modelPlaza'), icon: ChannelIcon },
+    { path: '/infinite-canvas', label: t('nav.infiniteCanvas'), icon: InfiniteCanvasIcon },
   )
   return items
 }
