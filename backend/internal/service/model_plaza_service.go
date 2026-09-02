@@ -318,6 +318,12 @@ func (s *ModelPlazaService) fillDisplayPricing(ctx context.Context, m *PlazaMode
 		}
 	}
 	if !plazaIsGrokMediaModel(m.Name) && s.billingService != nil && s.resolver != nil {
+		var groupID *int64
+		if g != nil {
+			id := g.ID
+			groupID = &id
+		}
+		resolved := s.resolver.Resolve(ctx, PricingInput{Model: m.Name, Group: g, GroupID: groupID})
 		sched, err := s.billingService.ResolveContextPricingSchedule(ctx, s.resolver, ContextPricingScheduleInput{
 			Model:    m.Name,
 			Group:    g,
@@ -325,6 +331,11 @@ func (s *ModelPlazaService) fillDisplayPricing(ctx context.Context, m *PlazaMode
 		})
 		if err == nil && sched != nil && len(sched.Tiers) > 0 {
 			m.Pricing = plazaPricingFromSchedule(m.Pricing, sched)
+			// Catalog ladders are not channel pricing. Only expose context tiers
+			// for a channel when that channel explicitly configures intervals.
+			if resolved != nil && resolved.Source == PricingSourceChannel && len(resolved.Intervals) == 0 {
+				m.Pricing.Intervals = nil
+			}
 			if len(sched.Tiers) > 1 {
 				m.LongContextBasis = sched.Basis
 			}
