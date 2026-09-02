@@ -107,14 +107,6 @@ func (s *BillingService) ResolveContextPricingSchedule(ctx context.Context, reso
 		return nil, nil
 	}
 
-	var legacy *LegacyLongContextRule
-	if in.Group != nil {
-		legacy = s.LegacyLongContextRule(in.Platform)
-	}
-	if !legacyLongContextApplies(resolved, in.Group, legacy) {
-		legacy = nil
-	}
-
 	req := TokenCostRequest{
 		Ctx:               ctx,
 		Model:             in.Model,
@@ -122,7 +114,6 @@ func (s *BillingService) ResolveContextPricingSchedule(ctx context.Context, reso
 		RateMultiplier:    1,
 		Resolver:          resolver,
 		Resolved:          resolved,
-		LegacyLongContext: legacy,
 	}
 	probe := func(tokens UsageTokens) (*CostBreakdown, error) {
 		r := req
@@ -130,7 +121,7 @@ func (s *BillingService) ResolveContextPricingSchedule(ctx context.Context, reso
 		return s.CalculateTokenCostForRequest(r)
 	}
 
-	plan := s.contextPricingBreakpoints(resolver, resolved, in.Model, legacy)
+	plan := s.contextPricingBreakpoints(resolver, resolved, in.Model)
 	segments := buildContextSegments(plan.bounds)
 
 	tiers := make([]ContextPricingTier, 0, len(segments))
@@ -144,12 +135,8 @@ func (s *BillingService) ResolveContextPricingSchedule(ctx context.Context, reso
 	tiers = mergeEqualContextTiers(tiers)
 	applyContextTierLabels(tiers, plan)
 
-	basis := ContextPricingBasisWholeRequest
-	if legacy != nil {
-		basis = ContextPricingBasisMarginal
-	}
 	return &ContextPricingSchedule{
-		Basis:                    basis,
+		Basis:                    ContextPricingBasisWholeRequest,
 		Tiers:                    tiers,
 		HasConfiguredLongContext: len(resolved.Intervals) > 0,
 		TimePricing:              resolvedTimePricingSchedule(resolved),
@@ -219,14 +206,8 @@ type contextBreakpointPlan struct {
 }
 
 // contextPricingBreakpoints 从计费自身的规则输入收集价格断点（不读取任何倍率）。
-func (s *BillingService) contextPricingBreakpoints(resolver *ModelPricingResolver, resolved *ResolvedPricing, model string, legacy *LegacyLongContextRule) contextBreakpointPlan {
+func (s *BillingService) contextPricingBreakpoints(resolver *ModelPricingResolver, resolved *ResolvedPricing, model string) contextBreakpointPlan {
 	plan := contextBreakpointPlan{}
-	if legacy != nil {
-		plan.bounds = []int{legacy.Threshold}
-		plan.thresholdBound = legacy.Threshold
-		plan.threshold = legacy.Threshold
-		return plan
-	}
 	if !resolved.longContextPricingEnabled {
 		return plan
 	}
