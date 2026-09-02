@@ -22,12 +22,61 @@ env:
   SIMPLE_RELEASE: ${{ github.event.inputs.simple_release == 'true' || vars.SIMPLE_RELEASE == 'true' }}
 
 permissions:
+  actions: read
   contents: write
   packages: write
 
 jobs:
+  verify-checks:
+    name: Verify CI and Security Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Resolve release commit
+        id: target
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            git init -q
+            git remote add origin "https://github.com/${{ github.repository }}.git"
+            git fetch --depth=1 origin "refs/tags/${{ github.event.inputs.tag }}"
+            SHA=$(git rev-list -n 1 FETCH_HEAD)
+          else
+            SHA="$GITHUB_SHA"
+          fi
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for required checks
+        uses: actions/github-script@v8
+        env:
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
+        with:
+          script: |
+            const required = new Set(['CI', 'Security Scan']);
+            const deadline = Date.now() + 40 * 60 * 1000;
+            while (Date.now() < deadline) {
+              const { data } = await github.rest.actions.listWorkflowRunsForRepo({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                head_sha: process.env.TARGET_SHA,
+                per_page: 100,
+              });
+              const runs = data.workflow_runs.filter(run => required.has(run.name));
+              const byName = new Map(runs.map(run => [run.name, run]));
+              if (required.size === byName.size && [...byName.values()].every(run => run.status === 'completed')) {
+                const failed = [...byName.values()]
+                  .filter(run => run.conclusion !== 'success')
+                  .map(run => `${run.name}: ${run.conclusion}`);
+                if (failed.length > 0) core.setFailed(`Required checks failed: ${failed.join(', ')}`);
+                return;
+              }
+              await new Promise(resolve => setTimeout(resolve, 30000));
+            }
+            core.setFailed('Timed out waiting for CI and Security Scan for this release commit.');
+
   # Update VERSION file with tag version
   update-version:
+    needs: [verify-checks]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -52,6 +101,7 @@ jobs:
           retention-days: 1
 
   build-frontend:
+    needs: [verify-checks]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -85,6 +135,7 @@ jobs:
           retention-days: 1
 
   build-push-notifier:
+    needs: [verify-checks]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -127,7 +178,7 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
 
   release:
-    needs: [update-version, build-frontend, build-push-notifier]
+    needs: [verify-checks, update-version, build-frontend, build-push-notifier]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
