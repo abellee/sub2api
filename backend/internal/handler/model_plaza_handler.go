@@ -273,9 +273,3 @@ func toModelPlazaOfficialPricing(p *service.PlazaOfficialPricing) *modelPlazaOff
 		Intervals:         toUserPricingIntervals(p.Intervals),
 	}
 }
-
-// toModelPlazaPricing 将实收定价转换为公开白名单 DTO；service 层已排除不能按
-// 普通整单档位表达的边际上下文规则，因此这里保留 token 与媒体档位。
-func toModelPlazaPricing(p *service.ChannelModelPricing) *userSupportedModelPricing {
-	return toUserPricing(p)
-}
