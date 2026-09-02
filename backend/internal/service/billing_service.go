@@ -1736,6 +1736,63 @@ func (s *BillingService) CalculateCostWithConfig(model string, tokens UsageToken
 	return s.CalculateCost(model, tokens, multiplier)
 }
 
+// CalculateCostWithLongContext applies the legacy marginal long-context rule.
+func (s *BillingService) CalculateCostWithLongContext(model string, tokens UsageTokens, rateMultiplier float64, threshold int, extraMultiplier float64) (*CostBreakdown, error) {
+	if threshold <= 0 || extraMultiplier <= 1 {
+		return s.CalculateCost(model, tokens, rateMultiplier)
+	}
+
+	total := tokens.CacheReadTokens + tokens.InputTokens
+	if total <= threshold {
+		return s.CalculateCost(model, tokens, rateMultiplier)
+	}
+
+	var inRangeCacheTokens, inRangeInputTokens int
+	var outRangeCacheTokens, outRangeInputTokens int
+	if tokens.CacheReadTokens >= threshold {
+		inRangeCacheTokens = threshold
+		outRangeCacheTokens = tokens.CacheReadTokens - threshold
+		outRangeInputTokens = tokens.InputTokens
+	} else {
+		inRangeCacheTokens = tokens.CacheReadTokens
+		inRangeInputTokens = threshold - tokens.CacheReadTokens
+		outRangeInputTokens = tokens.InputTokens - inRangeInputTokens
+	}
+
+	inRangeCost, err := s.CalculateCost(model, UsageTokens{
+		InputTokens:           inRangeInputTokens,
+		OutputTokens:          tokens.OutputTokens,
+		CacheCreationTokens:   tokens.CacheCreationTokens,
+		CacheReadTokens:       inRangeCacheTokens,
+		CacheCreation5mTokens: tokens.CacheCreation5mTokens,
+		CacheCreation1hTokens: tokens.CacheCreation1hTokens,
+		ImageOutputTokens:     tokens.ImageOutputTokens,
+	}, rateMultiplier)
+	if err != nil {
+		return nil, err
+	}
+
+	outRangeCost, err := s.CalculateCost(model, UsageTokens{
+		InputTokens:     outRangeInputTokens,
+		CacheReadTokens: outRangeCacheTokens,
+	}, rateMultiplier*extraMultiplier)
+	if err != nil {
+		return inRangeCost, fmt.Errorf("out-range cost: %w", err)
+	}
+
+	return &CostBreakdown{
+		InputCost:                 inRangeCost.InputCost + outRangeCost.InputCost,
+		ImageInputCost:            inRangeCost.ImageInputCost + outRangeCost.ImageInputCost,
+		OutputCost:                inRangeCost.OutputCost,
+		ImageOutputCost:           inRangeCost.ImageOutputCost,
+		CacheCreationCost:         inRangeCost.CacheCreationCost,
+		CacheReadCost:             inRangeCost.CacheReadCost + outRangeCost.CacheReadCost,
+		TotalCost:                 inRangeCost.TotalCost + outRangeCost.TotalCost,
+		ActualCost:                inRangeCost.ActualCost + outRangeCost.ActualCost,
+		LongContextBillingApplied: outRangeCost.ActualCost > 0,
+	}, nil
+}
+
 // ListSupportedModels 列出所有支持的模型（现在总是返回true，因为有模糊匹配）
 func (s *BillingService) ListSupportedModels() []string {
 	models := make([]string, 0)

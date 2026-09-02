@@ -59,6 +59,23 @@ func geminiLadderCatalogStub(t *testing.T) *PricingService {
 	return newStubPricingServiceFromJSON(t, geminiLadderCatalogJSON)
 }
 
+func TestCalculateTokenCostForRequest_GeminiLegacyLongContextRule(t *testing.T) {
+	bs, resolver := newTokenCostTestEnv(t, PlatformGemini, nil, geminiCatalogStub())
+	group := &Group{ID: 100, Platform: PlatformGemini, LongContextPricingEnabled: true}
+	groupID := group.ID
+	resolved := resolver.Resolve(context.Background(), PricingInput{Model: "gemini-2.5-pro", GroupID: &groupID, Group: group})
+	tokens := UsageTokens{InputTokens: 300000, OutputTokens: 1000}
+	rule := bs.LegacyLongContextRule(PlatformGemini)
+
+	got, err := bs.CalculateTokenCostForRequest(TokenCostRequest{
+		Ctx: context.Background(), Model: "gemini-2.5-pro", Group: group, Tokens: tokens, RateMultiplier: 1,
+		Resolver: resolver, Resolved: resolved, LegacyLongContext: rule,
+	})
+	require.NoError(t, err)
+	require.InDelta(t, 0.51, got.ActualCost, 1e-9)
+	require.True(t, got.LongContextBillingApplied)
+}
+
 // 渠道平价之上叠加目录阶梯：与分组价卡/OpenAI 渠道价的既有语义一致，
 // 超阈值整单按渠道价 × 目录倍率。
 func TestCalculateTokenCostForRequest_ChannelFlatPriceStacksCatalogLadder(t *testing.T) {
