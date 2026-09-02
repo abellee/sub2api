@@ -5,6 +5,28 @@ import (
 	"time"
 )
 
+// LegacyLongContextRule 平台级"超出阈值部分按倍率计费"的旧规则。
+type LegacyLongContextRule struct {
+	Threshold  int
+	Multiplier float64
+}
+
+const (
+	geminiLegacyLongContextThreshold  = 200000
+	geminiLegacyLongContextMultiplier = 2.0
+)
+
+// LegacyLongContextRule 返回平台的旧长上下文规则；无规则的平台返回 nil。
+func (s *BillingService) LegacyLongContextRule(platform string) *LegacyLongContextRule {
+	if platform == PlatformGemini {
+		return &LegacyLongContextRule{
+			Threshold:  geminiLegacyLongContextThreshold,
+			Multiplier: geminiLegacyLongContextMultiplier,
+		}
+	}
+	return nil
+}
+
 // TokenCostRequest 通用网关 token 计费请求。
 type TokenCostRequest struct {
 	Ctx            context.Context
@@ -17,6 +39,19 @@ type TokenCostRequest struct {
 	Resolver       *ModelPricingResolver
 	// Resolved 为调用方预先解析的定价（Resolver.Resolve 的结果），nil 表示未解析。
 	Resolved *ResolvedPricing
+	// LegacyLongContext 入口携带的旧长上下文规则，nil 表示该入口不使用。
+	LegacyLongContext *LegacyLongContextRule
+}
+
+// legacyLongContextApplies 判定请求是否走旧长上下文规则。
+func legacyLongContextApplies(resolved *ResolvedPricing, group *Group, rule *LegacyLongContextRule) bool {
+	if rule == nil || rule.Threshold <= 0 {
+		return false
+	}
+	if resolved != nil && (resolved.Source == PricingSourceGroup || resolved.Source == PricingSourceChannel) {
+		return false
+	}
+	return group == nil || group.LongContextPricingEnabled
 }
 
 // CalculateTokenCostForRequest 按通用网关的路径选择计算 token 费用：
@@ -29,6 +64,10 @@ func (s *BillingService) CalculateTokenCostForRequest(req TokenCostRequest) (*Co
 	resolved := req.Resolved
 	if resolved != nil && (resolved.Source == PricingSourceGroup || resolved.Source == PricingSourceChannel) {
 		return s.CalculateCostUnified(s.tokenCostInput(req, resolved))
+	}
+	if legacyLongContextApplies(resolved, req.Group, req.LegacyLongContext) {
+		return s.CalculateCostWithLongContext(req.Model, req.Tokens, req.RateMultiplier,
+			req.LegacyLongContext.Threshold, req.LegacyLongContext.Multiplier)
 	}
 	if req.Resolver != nil && req.Group != nil {
 		return s.CalculateCostUnified(s.tokenCostInput(req, resolved))

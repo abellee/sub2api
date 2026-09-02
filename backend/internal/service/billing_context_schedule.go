@@ -219,8 +219,14 @@ type contextBreakpointPlan struct {
 }
 
 // contextPricingBreakpoints 从计费自身的规则输入收集价格断点（不读取任何倍率）。
-func (s *BillingService) contextPricingBreakpoints(resolver *ModelPricingResolver, resolved *ResolvedPricing, model string) contextBreakpointPlan {
+func (s *BillingService) contextPricingBreakpoints(resolver *ModelPricingResolver, resolved *ResolvedPricing, model string, legacy *LegacyLongContextRule) contextBreakpointPlan {
 	plan := contextBreakpointPlan{}
+	if legacy != nil {
+		plan.bounds = []int{legacy.Threshold}
+		plan.thresholdBound = legacy.Threshold
+		plan.threshold = legacy.Threshold
+		return plan
+	}
 	if !resolved.longContextPricingEnabled {
 		return plan
 	}
