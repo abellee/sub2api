@@ -36,7 +36,20 @@ jobs:
           go version | grep -q 'go1.27.0'
       - name: Unit tests
         working-directory: backend
-        run: make test-unit
+        run: |
+          set -o pipefail
+          make test-unit 2>&1 | tee test-unit.log
+
+      - name: Report unit test failure
+        if: failure()
+        working-directory: backend
+        run: |
+          summary=$(awk '
+            /--- FAIL:/ { show=1; count=0 }
+            show { print; count++ }
+            show && count >= 16 { exit }
+          ' test-unit.log | tail -n 16 | sed ':a;N;$!ba;s/\n/%0A/g')
+          echo "::error title=Go unit tests failed::${summary:-See the unit test log.}"
       - name: Integration tests
         working-directory: backend
         run: make test-integration
