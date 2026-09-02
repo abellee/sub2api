@@ -411,6 +411,50 @@ func plazaModelsByName(models []PlazaModel) map[string]PlazaModel {
 	return out
 }
 
+func TestListGroups_TokenLadderFollowsGroupToggle(t *testing.T) {
+	// 同一渠道挂开启/关闭阶梯的两个分组：实付档位随分组开关，官方阶梯不受影响。
+	channels := []Channel{{
+		ID: 1, Name: "ch", Status: StatusActive, GroupIDs: []int64{10, 20},
+		ModelPricing: []ChannelModelPricing{{Platform: PlatformOpenAI, Models: []string{"gpt-5.4"}, BillingMode: BillingModeToken}},
+	}}
+	groups := []Group{
+		{ID: 10, Name: "on", Platform: PlatformOpenAI, RateMultiplier: 1, LongContextPricingEnabled: true},
+		{ID: 20, Name: "off", Platform: PlatformOpenAI, RateMultiplier: 2, LongContextPricingEnabled: false},
+	}
+	svc := newPlazaServiceWithBilling(channels, groups, map[int64]string{10: PlatformOpenAI, 20: PlatformOpenAI},
+		newStubPricingServiceFromJSON(t, openAILadderCatalogJSON))
+	out, err := svc.ListGroups(context.Background())
+	require.NoError(t, err)
+	require.Len(t, out, 2)
+
+	on, off := out[0], out[1]
+	require.True(t, on.LongContextPricingEnabled)
+	require.False(t, off.LongContextPricingEnabled)
+
+	onModel := on.Models[0]
+	require.Equal(t, ContextPricingBasisWholeRequest, onModel.LongContextBasis)
+	require.Len(t, onModel.Pricing.Intervals, 2)
+	require.Equal(t, "≤272K", onModel.Pricing.Intervals[0].TierLabel)
+	require.Equal(t, ">272K", onModel.Pricing.Intervals[1].TierLabel)
+	require.InDelta(t, 2.5e-6, *onModel.Pricing.InputPrice, 1e-15)
+	require.InDelta(t, 5e-6, *onModel.Pricing.Intervals[1].InputPrice, 1e-15)
+	require.InDelta(t, 22.5e-6, *onModel.Pricing.Intervals[1].OutputPrice, 1e-15)
+	require.InDelta(t, 5e-6, *onModel.Pricing.Intervals[1].CacheWritePrice, 1e-15)
+	require.InDelta(t, 0.5e-6, *onModel.Pricing.Intervals[1].CacheReadPrice, 1e-15)
+
+	offModel := off.Models[0]
+	require.Empty(t, offModel.LongContextBasis)
+	require.Empty(t, offModel.Pricing.Intervals)
+	require.InDelta(t, 2.5e-6, *offModel.Pricing.InputPrice, 1e-15)
+
+	for _, m := range []PlazaModel{onModel, offModel} {
+		require.NotNil(t, m.OfficialPricing)
+		require.Len(t, m.OfficialPricing.Intervals, 2, "官方阶梯不受分组开关影响")
+		require.InDelta(t, 5e-6, *m.OfficialPricing.Intervals[1].InputPrice, 1e-15)
+		require.InDelta(t, 2.5e-6, *m.OfficialPricing.InputPrice, 1e-15)
+	}
+}
+
 func TestListGroups_GeminiLegacyRuleShownAsMarginal(t *testing.T) {
 	channels := []Channel{{
 		ID: 1, Name: "ch", Status: StatusActive, GroupIDs: []int64{10},

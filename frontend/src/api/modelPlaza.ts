@@ -1,5 +1,5 @@
 import { apiClient } from './client'
-import type { UserSupportedModelPricing } from './channels'
+import type { UserPricingInterval, UserSupportedModelPricing } from './channels'
 
 /** 官方参考价（USD per token，与计费目录同源；字段缺失 = 目录未覆盖）。 */
 export interface PlazaOfficialPricing {
@@ -8,6 +8,7 @@ export interface PlazaOfficialPricing {
   cache_write_price: number | null
   cache_write_1h_price?: number | null
   cache_read_price: number | null
+  intervals?: UserPricingInterval[]
 }
 
 /** 分时倍率时段：配置时区当天 [start_time, end_time) 内整单实付乘 multiplier。 */
@@ -32,6 +33,7 @@ export interface PlazaModel {
   /** 实收口径的基础展示定价；均为标准时段价。 */
   pricing: UserSupportedModelPricing | null
   official_pricing: PlazaOfficialPricing | null
+  long_context_basis?: 'whole_request' | 'marginal'
   /** 仅配置了分时倍率的模型返回。 */
   time_pricing?: PlazaTimePricing
 }

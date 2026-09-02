@@ -121,12 +121,36 @@
               </div>
             </td>
             <td class="pz-cell px-3 py-2.5 align-middle">
-              <div v-if="hasCachePricing(m)"
+              <template v-if="hasTierCachePricing(tokenIntervals(m))">
+                <div
+                  v-for="(iv, idx) in tokenIntervals(m)"
+                  :key="idx"
+                  class="whitespace-nowrap font-mono text-xs leading-5 text-gray-800 dark:text-gray-200"
+                  :title="tierHint(m)"
+                >
+                  <template v-if="iv.cache_write_price != null || iv.cache_write_1h_price != null || iv.cache_read_price != null">
+                    <span class="font-sans font-normal text-gray-400 dark:text-dark-500">{{ t('modelPlaza.table.cacheWriteShort') }}</span>
+                    {{ paidPerMillion(iv.cache_write_price, period) }}
+                    <template v-if="iv.cache_write_1h_price != null"
+                      ><span class="font-sans font-normal text-gray-400 dark:text-dark-500"> (1h </span>{{ paidPerMillion(iv.cache_write_1h_price, period)
+                      }}<span class="font-sans font-normal text-gray-400 dark:text-dark-500">)</span></template
+                    >
+                    <span class="ml-1 font-sans font-normal text-gray-400 dark:text-dark-500">{{ t('modelPlaza.table.cacheReadShort') }}</span>
+                    {{ paidPerMillion(iv.cache_read_price, period) }}
+                  </template>
+                  <span v-else class="text-gray-400 dark:text-dark-500">-</span>
+                </div>
+              </template>
+              <div v-else-if="hasCachePricing(m)"
                 class="space-y-0.5 font-mono text-xs text-gray-800 dark:text-gray-200"
               >
                 <div>
                   <span class="mr-1 font-sans font-normal text-gray-400 dark:text-dark-500">{{ t('modelPlaza.table.cacheWrite') }}</span>
-                  {{ paidPerMillion(m.pricing?.cache_write_price, period) }}
+                  {{ paidPerMillion(m.pricing?.cache_write_price, period)
+                  }}<template v-if="m.pricing?.cache_write_1h_price != null"
+                    ><span class="font-sans font-normal text-gray-400 dark:text-dark-500"> (1h </span>{{ paidPerMillion(m.pricing.cache_write_1h_price, period)
+                    }}<span class="font-sans font-normal text-gray-400 dark:text-dark-500">)</span></template
+                  >
                 </div>
                 <div>
                   <span class="mr-1 font-sans font-normal text-gray-400 dark:text-dark-500">{{ t('modelPlaza.table.cacheRead') }}</span>
@@ -190,7 +214,28 @@
             {{ billingMode(m) === BILLING_MODE_TOKEN ? official(m.official_pricing?.output_price) : '-' }}
           </td>
           <td class="px-3 py-2.5 align-middle">
-            <div v-if="billingMode(m) === BILLING_MODE_TOKEN && m.official_pricing && hasOfficialCache(m.official_pricing)"
+            <template v-if="hasTierCachePricing(officialIntervals(m))">
+              <div
+                v-for="(iv, idx) in officialIntervals(m)"
+                :key="idx"
+                class="whitespace-nowrap font-mono text-xs leading-5 text-gray-500 dark:text-dark-400"
+                :title="t('modelPlaza.table.tierHint')"
+              >
+                <template v-if="iv.cache_write_price != null || iv.cache_write_1h_price != null || iv.cache_read_price != null">
+                  <span class="font-sans text-gray-400 dark:text-dark-500">{{ t('modelPlaza.table.cacheWriteShort') }}</span>
+                  {{ official(iv.cache_write_price) }}
+                  <template v-if="iv.cache_write_1h_price != null"
+                    ><span class="font-sans text-gray-400 dark:text-dark-500"> (1h </span>{{ official(iv.cache_write_1h_price)
+                    }}<span class="font-sans text-gray-400 dark:text-dark-500">)</span></template
+                  >
+                  <span class="ml-1 font-sans text-gray-400 dark:text-dark-500">{{ t('modelPlaza.table.cacheReadShort') }}</span>
+                  {{ official(iv.cache_read_price) }}
+                </template>
+                <span v-else class="text-gray-400 dark:text-dark-500">-</span>
+              </div>
+            </template>
+            <div
+              v-else-if="m.official_pricing && hasOfficialCache(m.official_pricing)"
               class="space-y-0.5 font-mono text-xs text-gray-500 dark:text-dark-400"
             >
               <div>
@@ -390,8 +435,9 @@ function perUnitSuffix(m: PlazaModel): string {
 
 function hasCachePricing(m: PlazaModel): boolean {
   return m.pricing?.cache_write_price != null
+    || m.pricing?.cache_write_1h_price != null
     || m.pricing?.cache_read_price != null
-    || tokenIntervals(m).some((iv) => iv.cache_write_price != null || iv.cache_read_price != null)
+    || tokenIntervals(m).some((iv) => iv.cache_write_price != null || iv.cache_write_1h_price != null || iv.cache_read_price != null)
 }
 
 function hasOfficialCache(o: NonNullable<PlazaModel['official_pricing']>): boolean {
@@ -427,6 +473,27 @@ function formatTimeWindow(p: PlazaTimePricingPeriod): string {
   return `${clock(p.start_time)}–${clock(p.end_time)}`
 }
 
+/** 上下文档位按下限升序展示(后端已升序,此处兜底)。 */
+function sortByContext(intervals: UserPricingInterval[]): UserPricingInterval[] {
+  return [...intervals].sort((a, b) => a.min_tokens - b.min_tokens)
+}
+
+/** 官方阶梯(后端按目录规则合成,不受分组开关影响)。 */
+function officialIntervals(m: PlazaModel): UserPricingInterval[] {
+  return sortByContext(m.official_pricing?.intervals ?? [])
+}
+
+/** 任一档带缓存价才按档渲染缓存列;否则沿用平价的写入/读取两行。 */
+function hasTierCachePricing(intervals: UserPricingInterval[]): boolean {
+  return intervals.some((iv) => iv.cache_write_price != null || iv.cache_write_1h_price != null || iv.cache_read_price != null)
+}
+
+/** 档位说明:整单按档计价,或(平台旧规则)仅超出部分按档计价。 */
+function tierHint(m: PlazaModel): string {
+  return m.long_context_basis === 'marginal'
+    ? t('modelPlaza.table.tierHintMarginal')
+    : t('modelPlaza.table.tierHint')
+}
 /** 按次/按图模式的阶梯定价(仅保留配了按次价的档位)。 */
 function requestIntervals(m: PlazaModel): UserPricingInterval[] {
   return (m.pricing?.intervals ?? []).filter((iv) => iv.per_request_price != null)
@@ -435,12 +502,13 @@ function requestIntervals(m: PlazaModel): UserPricingInterval[] {
 /** token 模式的整单上下文档位；后端不会在此契约中输出边际计价规则。 */
 function tokenIntervals(m: PlazaModel): UserPricingInterval[] {
   if (billingMode(m) !== BILLING_MODE_TOKEN) return []
-  return (m.pricing?.intervals ?? []).filter((iv) => iv.min_tokens > 0 && (
+  return sortByContext((m.pricing?.intervals ?? []).filter((iv) => iv.min_tokens > 0 && (
     iv.input_price != null
     || iv.output_price != null
     || iv.cache_write_price != null
+    || iv.cache_write_1h_price != null
     || iv.cache_read_price != null
-  ))
+  )))
 }
 
 /**
