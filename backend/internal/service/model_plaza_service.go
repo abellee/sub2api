@@ -333,8 +333,14 @@ func (s *ModelPlazaService) fillDisplayPricing(ctx context.Context, m *PlazaMode
 			m.Pricing = plazaPricingFromSchedule(m.Pricing, sched)
 			// Catalog ladders are not channel pricing. Only expose context tiers
 			// for a channel when that channel explicitly configures intervals.
-			if resolved != nil && resolved.Source == PricingSourceChannel && len(resolved.Intervals) == 0 {
-				m.Pricing.Intervals = nil
+			if resolved != nil && resolved.Source == PricingSourceChannel {
+				if len(resolved.Intervals) == 0 {
+					m.Pricing.Intervals = nil
+				} else if len(sched.Tiers) > 1 {
+					// The first probed tier is the channel base price. Channel
+					// intervals are displayed as the additional context tiers.
+					m.Pricing.Intervals = plazaIntervalsFromTiers(sched.Tiers[1:])
+				}
 			}
 			if len(sched.Tiers) > 1 {
 				m.LongContextBasis = sched.Basis
