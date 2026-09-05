@@ -27,6 +27,10 @@ type PlazaModel struct {
 	Platform        string
 	Pricing         *ChannelModelPricing
 	OfficialPricing *PlazaOfficialPricing
+	// HasChannelContextPricing is true only when the selected channel explicitly
+	// defines token intervals. Catalog/official ladders must not be advertised
+	// as channel pricing in the model plaza.
+	HasChannelContextPricing bool
 	// LongContextBasis 多档时的计价基准（整单 / 仅超出部分），单档为空。
 	LongContextBasis ContextPricingBasis
 	// TimePricing 计费会生效的分时倍率时段；无分时为 nil。
@@ -308,6 +312,7 @@ func (s *ModelPlazaService) ListConfiguredGroups(ctx context.Context) ([]PlazaGr
 // 图片/视频/按次模型优先用渠道价卡，分组档位价只覆盖已配置项。
 // 公开页模型最初可能没有渠道定价指针，因此这里会再走一遍 Resolver。
 func (s *ModelPlazaService) fillDisplayPricing(ctx context.Context, m *PlazaModel, g *Group) {
+	m.HasChannelContextPricing = false
 	if s.resolver != nil {
 		if requestPricing := plazaResolvedRequestPricing(ctx, s.resolver, m, g); requestPricing != nil {
 			m.Pricing = plazaImageDisplayPricing(requestPricing, g)
@@ -323,8 +328,16 @@ func (s *ModelPlazaService) fillDisplayPricing(ctx context.Context, m *PlazaMode
 			id := g.ID
 			groupID = &id
 		}
-		resolved := s.resolver.Resolve(ctx, PricingInput{Model: m.Name, Group: g, GroupID: groupID})
-		sched, err := s.billingService.ResolveContextPricingSchedule(ctx, s.resolver, ContextPricingScheduleInput{
+		// Resolve the ownership marker with the same target-platform context used
+		// by the schedule probe. This matters for composite groups: without it,
+		// the schedule can correctly use a Grok channel interval while the
+		// separate ownership lookup falls back to the official ladder.
+		pricingCtx := ctx
+		if m.Platform != "" {
+			pricingCtx = WithResolvedTargetPlatform(pricingCtx, m.Platform)
+		}
+		resolved := s.resolver.Resolve(pricingCtx, PricingInput{Model: m.Name, Group: g, GroupID: groupID})
+		sched, err := s.billingService.ResolveContextPricingSchedule(pricingCtx, s.resolver, ContextPricingScheduleInput{
 			Model:    m.Name,
 			Group:    g,
 			Platform: m.Platform,
@@ -332,15 +345,16 @@ func (s *ModelPlazaService) fillDisplayPricing(ctx context.Context, m *PlazaMode
 		if err == nil && sched != nil && len(sched.Tiers) > 0 {
 			m.Pricing = plazaPricingFromSchedule(m.Pricing, sched)
 			// Catalog ladders are not channel pricing. Only expose context tiers
-			// for a channel when that channel explicitly configures intervals.
-			if resolved != nil && resolved.Source == PricingSourceChannel && m.Platform == PlatformGrok {
-				if len(resolved.Intervals) == 0 {
-					m.Pricing.Intervals = nil
-				} else if len(sched.Tiers) > 1 {
-					// The first probed tier is the channel base price. Channel
-					// intervals are displayed as the additional context tiers.
-					m.Pricing.Intervals = plazaIntervalsFromTiers(sched.Tiers[1:])
-				}
+			// when the resolved channel explicitly configures token intervals.
+			// This keeps the model plaza from advertising official/catalog tiers
+			// that do not apply to the selected channel.
+			if resolved == nil || resolved.Source != PricingSourceChannel || len(resolved.Intervals) == 0 {
+				m.Pricing.Intervals = nil
+			} else if len(sched.Tiers) > 1 {
+				// The first probed tier is the channel base price. Channel
+				// intervals are displayed as the additional context tiers.
+				m.Pricing.Intervals = plazaIntervalsFromTiers(sched.Tiers[1:])
+				m.HasChannelContextPricing = true
 			}
 			if len(sched.Tiers) > 1 {
 				m.LongContextBasis = sched.Basis
@@ -352,6 +366,11 @@ func (s *ModelPlazaService) fillDisplayPricing(ctx context.Context, m *PlazaMode
 	m.Pricing = plazaImageDisplayPricing(m.Pricing, g)
 	m.Pricing = plazaVideoDisplayPricing(m.Name, m.Pricing, g)
 	m.Pricing = plazaApplyGroupMediaDisplayPricing(m.Name, m.Pricing, g)
+	if m.Pricing != nil && len(m.Pricing.Intervals) > 0 {
+		// Without a resolver (unit/test or legacy path), intervals already on
+		// the model are the only available channel-owned pricing source.
+		m.HasChannelContextPricing = true
+	}
 }
 
 func plazaIsGrokImagineImage(model string) bool {

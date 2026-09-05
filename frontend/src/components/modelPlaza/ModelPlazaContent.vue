@@ -6,6 +6,25 @@
       <p class="mt-1.5 text-sm text-gray-500 dark:text-dark-400">{{ t('modelPlaza.description') }}</p>
     </div>
 
+    <div class="flex gap-3 rounded-lg border border-amber-200 border-l-4 bg-amber-50 px-4 py-3 text-xs leading-6 text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100" role="note">
+      <Icon name="infoCircle" size="sm" class="mt-1 h-4 w-4 shrink-0" />
+      <div class="min-w-0">
+        <strong class="block font-semibold">{{ t('modelPlaza.pricingNotice.title') }}</strong>
+        <span>{{ t('modelPlaza.pricingNotice.body') }}</span>
+        <span class="mt-1 flex flex-wrap gap-x-3 gap-y-1">
+          <a class="underline underline-offset-2" href="https://github.com/Wei-Shaw/model-price-repo" target="_blank" rel="noopener noreferrer">{{ t('modelPlaza.pricingNotice.data') }}</a>
+          <span class="text-amber-700/70 dark:text-amber-200/70">{{ t('modelPlaza.pricingNotice.official') }}:</span>
+          <a class="underline underline-offset-2" href="https://docs.anthropic.com/en/docs/about-claude/models/all-models" target="_blank" rel="noopener noreferrer">Anthropic</a>
+          <a class="underline underline-offset-2" href="https://platform.openai.com/docs/pricing" target="_blank" rel="noopener noreferrer">OpenAI</a>
+          <a class="underline underline-offset-2" href="https://ai.google.dev/gemini-api/docs/pricing" target="_blank" rel="noopener noreferrer">Gemini</a>
+          <a class="underline underline-offset-2" href="https://docs.x.ai/docs/models" target="_blank" rel="noopener noreferrer">Grok</a>
+          <a class="underline underline-offset-2" href="https://api-docs.deepseek.com/quick_start/pricing" target="_blank" rel="noopener noreferrer">DeepSeek</a>
+          <a class="underline underline-offset-2" href="https://platform.moonshot.cn/docs/pricing" target="_blank" rel="noopener noreferrer">Kimi</a>
+          <a class="underline underline-offset-2" href="https://open.bigmodel.cn/pricing" target="_blank" rel="noopener noreferrer">GLM</a>
+        </span>
+      </div>
+    </div>
+
     <!-- 全局价格说明(管理员配置,Markdown) -->
     <div
       v-if="descriptionHtml"
