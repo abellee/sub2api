@@ -108,7 +108,11 @@ export default defineConfig(({ mode }) => {
     optimizeDeps: {
       // The dependency tree is already installed from the lockfile. Avoid a
       // broad filesystem scan on Windows that can terminate the dev server.
-      noDiscovery: true
+      noDiscovery: true,
+      // CJS packages still need explicit pre-bundling when dependency
+      // discovery is disabled; otherwise the browser receives the raw UMD
+      // file and named/default imports fail during route loading.
+      include: ['file-saver']
     },
   build: {
     outDir: '../backend/internal/web/dist',

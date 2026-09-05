@@ -71,13 +71,12 @@ const formatLocalDate = (date: Date): string => {
   return `${year}-${month}-${day}`
 }
 
-const getLast24HoursRangeDates = () => {
-  const end = new Date()
-  const start = new Date(end.getTime() - 24 * 60 * 60 * 1000)
-  return { start: formatLocalDate(start), end: formatLocalDate(end) }
+const getTodayRangeDates = () => {
+  const today = formatLocalDate(new Date())
+  return { start: today, end: today }
 }
 
-const defaultRange = getLast24HoursRangeDates()
+const defaultRange = getTodayRangeDates()
 const startDate = ref(defaultRange.start)
 const endDate = ref(defaultRange.end)
 const metric = ref<RankingMetric>('tokens')

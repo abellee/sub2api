@@ -574,6 +574,8 @@ export default {
         subtitle: 'Per-user token usage for the current filters and time range',
         rowHint: "Click to view this user's usage details",
         userCount: '{count} users',
+        totalTokens: 'Total tokens: {value}',
+        totalCost: 'Total amount consumed: {value}',
         columns: {
           user: 'User',
           requests: 'Requests',

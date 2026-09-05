@@ -12,6 +12,11 @@
         <span v-if="!loading && items.length > 0" class="text-xs text-gray-400 dark:text-gray-500">
           {{ t('admin.usage.tokenRanking.userCount', { count: items.length }) }}
         </span>
+        <span v-if="!loading && items.length > 0" data-testid="ranking-total" class="text-xs text-gray-400 dark:text-gray-500">
+          {{ props.metric === 'cost'
+            ? t('admin.usage.tokenRanking.totalCost', { value: `$${fmtCost(totalMetric)}` })
+            : t('admin.usage.tokenRanking.totalTokens', { value: fmtTokens(totalMetric) }) }}
+        </span>
         <div v-if="showLimit" class="w-28">
           <Select v-model="limit" :options="limitOptions" @change="load" />
         </div>
@@ -161,6 +166,9 @@ let reqSeq = 0
 
 const fmtTokens = (v: number) => formatCompactNumber(v)
 const fmtCost = (v: number) => formatCostFixed(v, 4)
+const totalMetric = computed(() => props.metric === 'cost'
+  ? items.value.reduce((sum, item) => sum + Number(item.actual_cost || 0), 0)
+  : items.value.reduce((sum, item) => sum + Number(item.total_tokens || 0), 0))
 const formatColumnValue = (item: UserBreakdownItem, key: SortKey): string => {
   if (key === 'requests') return item.requests.toLocaleString()
   if (key === 'actual_cost' || key === 'cost') return `$${fmtCost(item.actual_cost)}`

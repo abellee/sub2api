@@ -571,6 +571,8 @@ export default {
         subtitle: '按当前筛选与时间范围统计每个用户的 Token 用量',
         rowHint: '点击查看该用户的用量明细',
         userCount: '共 {count} 位用户',
+        totalTokens: '总 Token: {value}',
+        totalCost: '总金额消耗: {value}',
         columns: {
           user: '用户',
           requests: '请求数',
