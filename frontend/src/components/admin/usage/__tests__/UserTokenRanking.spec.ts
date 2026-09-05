@@ -14,7 +14,13 @@ vi.mock('vue-i18n', async () => {
   return {
     ...actual,
     useI18n: () => ({
-      t: (key: string) => key,
+      t: (key: string, params?: Record<string, unknown>) => {
+        const messages: Record<string, string> = {
+          'admin.usage.tokenRanking.totalTokens': 'Total tokens: {value}',
+          'admin.usage.tokenRanking.totalCost': 'Total amount consumed: {value}',
+        }
+        return (messages[key] || key).replace('{value}', String(params?.value ?? ''))
+      },
     }),
   }
 })
@@ -111,5 +117,17 @@ describe('UserTokenRanking', () => {
       limit: 0,
     }))
     expect(wrapper.findComponent({ name: 'Select' }).exists()).toBe(false)
+  })
+
+  it('shows the sum for the visible ranking and switches it with the metric', async () => {
+    const wrapper = mountRanking({ resultLimit: 0, showLimit: false })
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="ranking-total"]').text()).toContain('150')
+
+    await wrapper.setProps({ metric: 'cost' })
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="ranking-total"]').text()).toContain('$1.0000')
   })
 })

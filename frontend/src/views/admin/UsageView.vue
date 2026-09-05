@@ -66,7 +66,8 @@
       </div>
       <!-- 明细区：tab 栏 + 筛选 + 内容收进同一张卡片，消除割裂感 -->
       <div class="card">
-        <div class="flex flex-wrap items-center border-b border-gray-200 px-2 dark:border-dark-700 sm:px-4">
+        <div class="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-2 dark:border-dark-700 sm:px-4">
+          <div class="flex flex-wrap items-center">
           <button
             v-for="tab in detailTabs"
             :key="tab.key"
@@ -81,10 +82,33 @@
             <Icon :name="tab.icon" size="sm" />
             {{ tab.label }}
           </button>
+          </div>
+          <div class="flex flex-wrap items-center justify-end gap-2 py-1.5">
+            <button type="button" class="btn btn-secondary btn-sm" @click="resetFilters">{{ t('common.reset') }}</button>
+            <div v-if="activeTab !== 'ranking'" class="relative" ref="columnDropdownRef">
+              <button data-testid="usage-column-settings" type="button" @click="showColumnDropdown = !showColumnDropdown" class="btn btn-secondary btn-sm px-2 md:px-3" :title="t('admin.users.columnSettings')">
+                <span>{{ t('admin.users.columnSettings') }}</span>
+              </button>
+              <div v-if="showColumnDropdown" class="absolute right-0 top-full z-50 mt-1 max-h-80 w-48 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-dark-600 dark:bg-dark-800">
+                <button v-for="col in currentToggleableColumns" :key="col.key" :data-testid="`usage-column-toggle-${col.key}`" type="button" @click="toggleCurrentColumn(col.key)" class="flex w-full items-center justify-between px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-dark-700">
+                  <span>{{ col.label }}</span><Icon v-if="isCurrentColumnVisible(col.key)" name="check" size="sm" class="text-primary-500" :stroke-width="2" />
+                </button>
+              </div>
+            </div>
+            <button v-if="activeTab === 'usage'" type="button" class="btn btn-danger btn-sm" @click="openCleanupDialog">{{ t('admin.usage.cleanup.button') }}</button>
+            <button v-if="activeTab === 'usage'" type="button" @click="exportToExcel" :disabled="exporting" class="btn btn-primary btn-sm">{{ t('usage.exportExcel') }}</button>
+          </div>
         </div>
 
-        <UsageFilters v-model="filters" ref="usageFiltersRef" flat :mode="activeTab" :auto-refresh="autoRefreshEnabled" :auto-refresh-countdown="autoRefreshCountdown" :auto-refresh-pending="autoRefreshPending" class="border-b border-gray-100 dark:border-dark-700/50" :start-date="startDate" :end-date="endDate" :exporting="exporting" :model-options="modelNameOptions" @change="applyFilters" @refresh="refreshData" @update:autoRefresh="autoRefreshEnabled = $event" @reset="resetFilters" @cleanup="openCleanupDialog" @export="exportToExcel">
-          <template #after-reset>
+        <UsageFilters v-model="filters" ref="usageFiltersRef" flat :mode="activeTab" :show-secondary-actions="false" :auto-refresh="autoRefreshEnabled" :auto-refresh-countdown="autoRefreshCountdown" :auto-refresh-pending="autoRefreshPending" class="border-b border-gray-100 dark:border-dark-700/50" :start-date="startDate" :end-date="endDate" :exporting="exporting" :model-options="modelNameOptions" @change="applyFilters" @refresh="refreshData" @update:autoRefresh="autoRefreshEnabled = $event">
+          <template #after-refresh>
+            <button type="button" class="btn btn-secondary h-[42px] min-w-[5.5rem] flex-col items-stretch gap-0 px-3 py-1.5" :disabled="slaPercent === null" @click="openSlaDetails">
+              <span class="self-start text-[10px] font-medium leading-none">SLA</span>
+              <span class="self-center text-lg font-bold leading-none">{{ slaPercent === null ? '-' : `${slaPercent.toFixed(3)}%` }}</span>
+            </button>
+          </template>
+          <!-- Secondary actions live in the tab toolbar above. -->
+          <!--
             <div v-if="activeTab !== 'ranking'" class="relative" ref="columnDropdownRef">
               <button
                 data-testid="usage-column-settings"
@@ -119,7 +143,7 @@
                 </button>
               </div>
             </div>
-          </template>
+            -->
         </UsageFilters>
 
         <div v-show="activeTab === 'usage'" class="overflow-hidden rounded-b-2xl">
@@ -127,12 +151,17 @@
             flat
             :data="usageLogs"
             :loading="loading"
+            :skeleton-rows="pagination.page_size"
             :columns="visibleColumns"
             :server-side-sort="true"
             :default-sort-key="'created_at'"
             :default-sort-order="'desc'"
             @sort="handleSort"
             @userClick="handleUserClick"
+            @userFilterClick="handleUserFilterClick"
+            @accountClick="handleAccountClick"
+            @groupClick="handleGroupClick"
+            @modelClick="handleModelClick"
             @ipGeoBatchFailed="handleIpGeoBatchFailed"
           />
           <Pagination v-if="pagination.total > 0" :page="pagination.page" :total="pagination.total" :page-size="pagination.page_size" @update:page="handlePageChange" @update:pageSize="handlePageSizeChange" />
@@ -164,6 +193,14 @@
         </div>
       </div>
       <OpsErrorDetailModal v-model:show="showErrorModal" :error-id="selectedErrorId" :error-type="'request'" />
+      <OpsRequestDetailsModal
+        v-model="showSlaDetails"
+        time-range="custom"
+        :custom-start-time="slaStartTime"
+        :custom-end-time="slaEndTime"
+        :preset="slaDetailsPreset"
+        :group-id="filters.group_id"
+      />
     </div>
   </AppLayout>
   <UsageExportProgress :show="exportProgress.show" :progress="exportProgress.progress" :current="exportProgress.current" :total="exportProgress.total" :estimated-time="exportProgress.estimatedTime" @cancel="cancelExport" />
@@ -186,7 +223,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { saveAs } from 'file-saver'
+import saveAs from 'file-saver'
 import { useRoute } from 'vue-router'
 import { useAppStore } from '@/stores/app'; import { adminAPI } from '@/api/admin'; import { adminUsageAPI } from '@/api/admin/usage'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
@@ -201,7 +238,8 @@ import UserBalanceHistoryModal from '@/components/admin/user/UserBalanceHistoryM
 import OpsErrorLogTable from '@/views/admin/ops/components/OpsErrorLogTable.vue'
 import OpsErrorDetailModal from '@/views/admin/ops/components/OpsErrorDetailModal.vue'
 import { listErrorLogs } from '@/api/admin/ops'
-import type { OpsErrorLog } from '@/api/admin/ops'
+import type { OpsDashboardOverview, OpsErrorLog } from '@/api/admin/ops'
+import OpsRequestDetailsModal, { type OpsRequestDetailsPreset } from '@/views/admin/ops/components/OpsRequestDetailsModal.vue'
 import ModelDistributionChart from '@/components/charts/ModelDistributionChart.vue'; import GroupDistributionChart from '@/components/charts/GroupDistributionChart.vue'; import TokenUsageTrend from '@/components/charts/TokenUsageTrend.vue'
 import EndpointDistributionChart from '@/components/charts/EndpointDistributionChart.vue'
 import Icon from '@/components/icons/Icon.vue'
@@ -239,10 +277,31 @@ let statsReqSeq = 0
 let modelStatsReqSeq = 0
 const exportProgress = reactive({ show: false, progress: 0, current: 0, total: 0, estimatedTime: '' })
 const cleanupDialogVisible = ref(false)
+const slaOverview = ref<OpsDashboardOverview | null>(null)
+const slaLoading = ref(false)
+let slaReqSeq = 0
+const slaRefreshIntervalSeconds = ref(30)
+let slaRefreshTimer: number | null = null
+type OpsOverviewParams = {
+  time_range?: '5m' | '30m' | '1h' | '6h' | '24h'
+  start_time?: string
+  end_time?: string
+  group_id?: number
+  mode: 'auto'
+}
+type UsageOpsClient = {
+  getDashboardOverview: (params: OpsOverviewParams) => Promise<OpsDashboardOverview>
+  getAdvancedSettings?: () => Promise<{ auto_refresh_interval_seconds?: number }>
+}
+const showSlaDetails = ref(false)
+const slaDetailsPreset = ref<OpsRequestDetailsPreset>({
+  title: '',
+  kind: 'error',
+  sort: 'created_at_desc'
+})
 // Balance history modal state
 const showBalanceHistoryModal = ref(false)
 const balanceHistoryUser = ref<AdminUser | null>(null)
-
 const breakdownFilters = computed(() => {
   const f: Record<string, any> = {}
   if (filters.value.user_id) f.user_id = filters.value.user_id
@@ -267,6 +326,33 @@ const handleUserClick = async (userId: number) => {
   } catch {
     appStore.showError(t('admin.usage.failedToLoadUser'))
   }
+}
+
+const handleUserFilterClick = (userId: number, email: string) => {
+  if (!Number.isFinite(userId) || userId <= 0) return
+  filters.value = { ...filters.value, user_id: userId }
+  usageFiltersRef.value?.setUserKeyword?.(email || String(userId))
+  applyFilters()
+}
+
+const handleModelClick = (model: string) => {
+  const value = model?.trim()
+  if (!value) return
+  filters.value = { ...filters.value, model: value }
+  applyFilters()
+}
+
+const handleGroupClick = (groupId: number) => {
+  if (!Number.isFinite(groupId) || groupId <= 0) return
+  filters.value = { ...filters.value, group_id: groupId }
+  applyFilters()
+}
+
+const handleAccountClick = (accountId: number, accountName: string) => {
+  if (!Number.isFinite(accountId) || accountId <= 0) return
+  filters.value = { ...filters.value, account_id: accountId }
+  usageFiltersRef.value?.setAccountKeyword?.(accountName || String(accountId))
+  applyFilters()
 }
 
 // Drill down from the per-user token ranking: scope the whole usage view to
@@ -307,6 +393,21 @@ const pagination = reactive({ page: 1, page_size: getPersistedPageSize(), total:
 const sortState = reactive({
   sort_by: 'created_at',
   sort_order: 'desc' as 'asc' | 'desc'
+})
+
+const slaPercent = computed(() => {
+  const value = slaOverview.value?.sla
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null
+  if ((slaOverview.value?.request_count_sla ?? 0) <= 0) return null
+  return value * 100
+})
+
+const slaTimeRange = '1h' as const
+const slaStartTime = computed(() => {
+  return new Date(Date.now() - 60 * 60 * 1000).toISOString()
+})
+const slaEndTime = computed(() => {
+  return new Date().toISOString()
 })
 
 const getSingleQueryValue = (value: string | null | Array<string | null> | undefined): string | undefined => {
@@ -446,7 +547,24 @@ const startAutoRefresh = () => {
   }, 1000)
 }
 
-watch(autoRefreshEnabled, startAutoRefresh)
+const stopSlaAutoRefresh = () => {
+  if (slaRefreshTimer !== null) {
+    window.clearInterval(slaRefreshTimer)
+    slaRefreshTimer = null
+  }
+}
+
+const startSlaAutoRefresh = () => {
+  stopSlaAutoRefresh()
+  slaRefreshTimer = window.setInterval(() => {
+    if (slaLoading.value) return
+    void loadSla()
+  }, Math.max(1, slaRefreshIntervalSeconds.value) * 1000)
+}
+
+watch(autoRefreshEnabled, () => {
+  startAutoRefresh()
+})
 const loadStats = async (force = false) => {
   const seq = ++statsReqSeq
   endpointStatsLoading.value = true
@@ -472,6 +590,53 @@ const loadStats = async (force = false) => {
   } finally {
     if (seq === statsReqSeq) endpointStatsLoading.value = false
   }
+}
+
+const loadSla = async () => {
+  const seq = ++slaReqSeq
+  slaLoading.value = true
+  try {
+    const opsClient = (adminAPI as typeof adminAPI & { ops?: UsageOpsClient }).ops
+    if (!opsClient) return
+    const params: OpsOverviewParams = {
+      time_range: slaTimeRange,
+      group_id: filters.value.group_id ?? undefined,
+      mode: 'auto'
+    }
+    const data = await opsClient.getDashboardOverview(params)
+    if (seq === slaReqSeq) slaOverview.value = data
+  } catch (error) {
+    if (seq === slaReqSeq) {
+      slaOverview.value = null
+      console.error('Failed to load SLA:', error)
+    }
+  } finally {
+    if (seq === slaReqSeq) slaLoading.value = false
+  }
+}
+
+const loadSlaRefreshSettings = async () => {
+  try {
+    const opsClient = (adminAPI as typeof adminAPI & { ops?: UsageOpsClient }).ops
+    const interval = await opsClient?.getAdvancedSettings?.()
+    const seconds = Number(interval?.auto_refresh_interval_seconds)
+    if (Number.isFinite(seconds) && seconds > 0) {
+      slaRefreshIntervalSeconds.value = seconds
+    }
+    startSlaAutoRefresh()
+  } catch (error) {
+    console.warn('Failed to load SLA refresh settings:', error)
+  }
+}
+
+const openSlaDetails = () => {
+  if (slaPercent.value === null) return
+  slaDetailsPreset.value = {
+    title: `${t('admin.ops.sla')} ${slaPercent.value.toFixed(3)}%`,
+    kind: 'error',
+    sort: 'created_at_desc'
+  }
+  showSlaDetails.value = true
 }
 
 // 失效模型统计缓存:仅标记需要重取,保留旧数据直到新数据到达(避免刷新时图表闪空)。
@@ -571,6 +736,7 @@ const applyFilters = () => {
   invalidateModelStatsCache()
   loadLogs()
   loadStats()
+  loadSla()
   loadModelStats(modelDistributionSource.value, true)
   loadChartData()
   errPage.value = 1
@@ -586,6 +752,7 @@ const refreshData = () => {
   loadStats(true)
   loadModelStats(modelDistributionSource.value, true)
   loadChartData()
+  loadSla()
   if (activeTab.value === 'errors') loadAdminErrors()
   if (rankingMounted.value) rankingRef.value?.reload()
 }
@@ -679,31 +846,30 @@ const exportToExcel = async () => {
 
 // Column visibility
 const ALWAYS_VISIBLE = ['user', 'created_at']
-const DEFAULT_HIDDEN_COLUMNS = ['reasoning_effort', 'request_id', 'upstream_request_id', 'user_agent']
+const DEFAULT_HIDDEN_COLUMNS: string[] = []
 const HIDDEN_COLUMNS_KEY = 'usage-hidden-columns'
 const HIDDEN_COLUMNS_VERSION_KEY = 'usage-hidden-columns-version'
 // 隐藏列版本链：每级只把当级新增列加入隐藏集，不重置用户已显式打开的列。
-const HIDDEN_COLUMNS_PREV_VERSION = 'request-id-hidden-by-default'
-const HIDDEN_COLUMNS_CURRENT_VERSION = 'upstream-request-id-hidden-by-default'
+const HIDDEN_COLUMNS_CURRENT_VERSION = 'usage-columns-v2'
 
 const allColumns = computed(() => [
   { key: 'user', label: t('admin.usage.user'), sortable: false },
-  { key: 'api_key', label: t('usage.apiKeyFilter'), sortable: false },
-  { key: 'account', label: t('admin.usage.account'), sortable: false },
   { key: 'model', label: t('usage.model'), sortable: true },
   { key: 'reasoning_effort', label: t('usage.reasoningEffort'), sortable: false },
-  { key: 'endpoint', label: t('usage.endpoint'), sortable: false },
+  { key: 'account', label: t('admin.usage.account'), sortable: false },
   { key: 'group', label: t('admin.usage.group'), sortable: false },
-  { key: 'stream', label: t('usage.type'), sortable: false },
-  { key: 'billing_mode', label: t('admin.usage.billingMode'), sortable: false },
+  { key: 'ip_address', label: t('admin.usage.ipAddress'), sortable: false },
   { key: 'tokens', label: t('usage.tokens'), sortable: false },
-  { key: 'cost', label: t('usage.cost'), sortable: false },
   { key: 'latency', label: t('usage.latency'), sortable: false },
+  { key: 'cost', label: t('usage.cost'), sortable: false },
   { key: 'created_at', label: t('usage.time'), sortable: true },
+  { key: 'endpoint', label: t('usage.endpoint'), sortable: false },
+  { key: 'stream', label: t('usage.type'), sortable: false },
+  { key: 'user_agent', label: t('usage.userAgent'), sortable: false },
+  { key: 'api_key', label: t('usage.apiKeyFilter'), sortable: false },
+  { key: 'billing_mode', label: t('admin.usage.billingMode'), sortable: false },
   { key: 'request_id', label: t('admin.usage.requestId'), sortable: false },
   { key: 'upstream_request_id', label: t('admin.usage.upstreamRequestId'), sortable: false },
-  { key: 'user_agent', label: t('usage.userAgent'), sortable: false },
-  { key: 'ip_address', label: t('admin.usage.ipAddress'), sortable: false }
 ])
 
 const hiddenColumns = reactive<Set<string>>(new Set())
@@ -811,10 +977,7 @@ const loadSavedColumns = () => {
       })
       const savedVersion = localStorage.getItem(HIDDEN_COLUMNS_VERSION_KEY)
       if (savedVersion !== HIDDEN_COLUMNS_CURRENT_VERSION) {
-        if (savedVersion !== HIDDEN_COLUMNS_PREV_VERSION) {
-          hiddenColumns.add('request_id')
-        }
-        hiddenColumns.add('upstream_request_id')
+        hiddenColumns.clear()
         localStorage.setItem(HIDDEN_COLUMNS_KEY, JSON.stringify([...hiddenColumns]))
         localStorage.setItem(HIDDEN_COLUMNS_VERSION_KEY, HIDDEN_COLUMNS_CURRENT_VERSION)
       }
@@ -916,8 +1079,11 @@ const handleColumnClickOutside = (event: MouseEvent) => {
 onMounted(() => {
   applyRouteQueryFilters()
   void loadRouteUserFilterLabel()
+  void loadSlaRefreshSettings()
+  startSlaAutoRefresh()
   loadLogs()
   loadStats()
+  loadSla()
   loadModelStats(modelDistributionSource.value, true)
   window.setTimeout(() => {
     void loadChartData()
@@ -926,7 +1092,7 @@ onMounted(() => {
   loadSavedErrColumns()
   document.addEventListener('click', handleColumnClickOutside)
 })
-onUnmounted(() => { stopAutoRefresh(); abortController?.abort(); exportAbortController?.abort(); document.removeEventListener('click', handleColumnClickOutside) })
+onUnmounted(() => { stopAutoRefresh(); stopSlaAutoRefresh(); abortController?.abort(); exportAbortController?.abort(); document.removeEventListener('click', handleColumnClickOutside) })
 
 watch(modelDistributionSource, (source) => {
   void loadModelStats(source)

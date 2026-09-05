@@ -21,6 +21,7 @@
         :columns="columns"
         :data="data"
         :loading="loading"
+        :skeleton-rows="skeletonRows"
         :server-side-sort="serverSideSort"
         :default-sort-key="defaultSortKey"
         :default-sort-order="defaultSortOrder"
@@ -32,6 +33,7 @@
               v-if="row.user?.email"
               class="font-medium text-primary-600 underline decoration-dashed underline-offset-2 transition-colors hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
               @click="$emit('userClick', row.user_id, row.user?.email)"
+              @contextmenu.prevent="openUserContextMenu($event, row.user_id, row.user.email)"
               :title="t('admin.usage.clickToViewBalance')"
             >
               {{ row.user.email }}
@@ -49,11 +51,19 @@
         </template>
 
         <template #cell-account="{ row }">
-          <span class="text-sm text-gray-900 dark:text-white">{{ row.account?.name || '-' }}</span>
+          <button
+            v-if="row.account?.name && row.account?.id"
+            type="button"
+            class="text-left text-sm text-white underline decoration-dotted underline-offset-2 hover:text-white dark:text-white dark:hover:text-white"
+            @click.stop="emit('accountClick', row.account.id, row.account.name)"
+          >
+            {{ row.account.name }}
+          </button>
+          <span v-else class="text-sm text-white">{{ row.account?.name || '-' }}</span>
         </template>
 
         <template #cell-model="{ row }">
-          <div class="space-y-0.5 text-xs">
+          <div class="space-y-0.5 text-xs cursor-pointer" @click.stop="emit('modelClick', row.model)">
             <div v-if="row.model_mapping_chain && row.model_mapping_chain.includes('→')" class="space-y-0.5">
               <div v-for="(step, i) in row.model_mapping_chain.split('→')" :key="i"
                    class="break-all"
@@ -118,9 +128,14 @@
         </template>
 
         <template #cell-group="{ row }">
-          <span v-if="row.group" class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200">
+          <button
+            v-if="row.group"
+            type="button"
+            class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200"
+            @click.stop="emit('groupClick', row.group.id)"
+          >
             {{ row.group.name }}
-          </span>
+          </button>
           <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
         </template>
 
@@ -297,8 +312,8 @@
         </template>
 
         <template #cell-ip_address="{ row }">
-          <div v-if="row.ip_address">
-            <span class="text-sm font-mono text-gray-600 dark:text-gray-400">{{ row.ip_address }}</span>
+          <div v-if="row.ip_address" class="min-w-0 max-w-[10rem]">
+            <span class="block max-w-[10rem] truncate text-sm font-mono text-gray-600 dark:text-gray-400" :title="row.ip_address">{{ row.ip_address }}</span>
             <IpGeoCell :ip="row.ip_address" />
           </div>
           <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
@@ -529,10 +544,27 @@
       </div>
     </div>
   </Teleport>
+
+  <Teleport to="body">
+    <div
+      v-if="userContextMenu.visible"
+      class="fixed z-[10000] min-w-20 rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-dark-600 dark:bg-dark-800"
+      :style="{ left: `${userContextMenu.x}px`, top: `${userContextMenu.y}px` }"
+      @click.stop
+    >
+      <button
+        type="button"
+        class="block w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-dark-700"
+        @click="applyUserContextMenu"
+      >
+        {{ t('common.view') }}
+      </button>
+    </div>
+  </Teleport>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { formatDateTime, formatReasoningEffort, reasoningEffortValuesEqual } from '@/utils/format'
@@ -595,6 +627,7 @@ interface Props {
   defaultSortOrder?: 'asc' | 'desc'
   showAccountBilling?: boolean
   showUpstreamEndpoint?: boolean
+  skeletonRows?: number
   /** 嵌入统一卡片内使用：去掉自身卡片外观 */
   flat?: boolean
 }
@@ -606,10 +639,15 @@ const props = withDefaults(defineProps<Props>(), {
   defaultSortOrder: 'asc',
   showAccountBilling: true,
   showUpstreamEndpoint: true,
+  skeletonRows: 5,
   flat: false
 })
 const emit = defineEmits<{
   userClick: [userID: number, email?: string]
+  userFilterClick: [userID: number, email: string]
+  accountClick: [accountID: number, accountName: string]
+  groupClick: [groupID: number]
+  modelClick: [model: string]
   sort: [key: string, order: 'asc' | 'desc']
   ipGeoBatchFailed: []
 }>()
@@ -619,6 +657,27 @@ const copiedRequestId = ref<string | null>(null)
 const showAccountBilling = props.showAccountBilling
 const showUpstreamEndpoint = props.showUpstreamEndpoint
 const ipGeoBatchLoading = ref(false)
+const userContextMenu = ref({ visible: false, x: 0, y: 0, userId: 0, email: '' })
+
+const openUserContextMenu = (event: MouseEvent, userId: number, email: string) => {
+  userContextMenu.value = {
+    visible: true,
+    x: Math.min(event.clientX, Math.max(0, window.innerWidth - 100)),
+    y: Math.min(event.clientY, Math.max(0, window.innerHeight - 48)),
+    userId,
+    email
+  }
+}
+
+const closeUserContextMenu = () => {
+  userContextMenu.value.visible = false
+}
+
+const applyUserContextMenu = () => {
+  const { userId, email } = userContextMenu.value
+  closeUserContextMenu()
+  emit('userFilterClick', userId, email)
+}
 
 const showIpGeoToolbar = computed(() => props.columns.some((col) => col.key === 'ip_address'))
 
@@ -763,4 +822,14 @@ const hideTokenTooltip = () => {
   tokenTooltipVisible.value = false
   tokenTooltipData.value = null
 }
+
+onMounted(() => {
+  document.addEventListener('click', closeUserContextMenu)
+  window.addEventListener('scroll', closeUserContextMenu, true)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', closeUserContextMenu)
+  window.removeEventListener('scroll', closeUserContextMenu, true)
+})
 </script>

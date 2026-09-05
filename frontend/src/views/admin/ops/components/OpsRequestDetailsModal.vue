@@ -20,6 +20,8 @@ export interface OpsRequestDetailsPreset {
 interface Props {
   modelValue: boolean
   timeRange: string
+  customStartTime?: string
+  customEndTime?: string
   preset: OpsRequestDetailsPreset
   platform?: string
   groupId?: number | null
@@ -54,6 +56,9 @@ const rangeLabel = computed(() => {
 })
 
 function buildTimeParams(): Pick<OpsRequestDetailsParams, 'start_time' | 'end_time'> {
+  if (props.customStartTime && props.customEndTime) {
+    return { start_time: props.customStartTime, end_time: props.customEndTime }
+  }
   const minutes = parseTimeRangeMinutes(props.timeRange)
   const endTime = new Date()
   const startTime = new Date(endTime.getTime() - minutes * 60 * 1000)
@@ -110,6 +115,8 @@ watch(
 watch(
   () => [
     props.timeRange,
+    props.customStartTime,
+    props.customEndTime,
     props.platform,
     props.groupId,
     props.preset.kind,

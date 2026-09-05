@@ -3,7 +3,6 @@ import { mount } from '@vue/test-utils'
 import RankingView from '../RankingView.vue'
 
 const push = vi.fn()
-
 vi.mock('vue-i18n', async () => {
   const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
   return {
@@ -81,5 +80,31 @@ describe('RankingView', () => {
 
     expect(ranking.props('startDate')).toBe('2026-07-01')
     expect(ranking.props('endDate')).toBe('2026-07-07')
+  })
+
+  it('defaults the ranking range to today', () => {
+    const wrapper = mount(RankingView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          DateRangePicker: {
+            name: 'DateRangePicker',
+            props: { startDate: String, endDate: String },
+            template: '<div />',
+          },
+          UserTokenRanking: {
+            name: 'UserTokenRanking',
+            props: { startDate: String, endDate: String },
+            template: '<div />',
+          },
+        },
+      },
+    })
+
+    const today = new Date()
+    const expected = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+    const ranking = wrapper.findComponent({ name: 'UserTokenRanking' })
+    expect(ranking.props('startDate')).toBe(expected)
+    expect(ranking.props('endDate')).toBe(expected)
   })
 })
