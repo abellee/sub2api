@@ -343,7 +343,7 @@ func (s *ModelPlazaService) fillDisplayPricing(ctx context.Context, m *PlazaMode
 			Platform: m.Platform,
 		})
 		if err == nil && sched != nil && len(sched.Tiers) > 0 {
-			m.Pricing = plazaPricingFromSchedule(m.Pricing, sched)
+			m.Pricing = withDefaultMaxReasoningEffortMultiplier(plazaPricingFromSchedule(m.Pricing, sched), m.Name)
 			// Catalog ladders are not channel pricing. Only expose context tiers
 			// when the resolved channel explicitly configures token intervals.
 			// This keeps the model plaza from advertising official/catalog tiers
@@ -363,7 +363,7 @@ func (s *ModelPlazaService) fillDisplayPricing(ctx context.Context, m *PlazaMode
 			return
 		}
 	}
-	m.Pricing = plazaImageDisplayPricing(m.Pricing, g)
+	m.Pricing = withDefaultMaxReasoningEffortMultiplier(plazaImageDisplayPricing(m.Pricing, g), m.Name)
 	m.Pricing = plazaVideoDisplayPricing(m.Name, m.Pricing, g)
 	m.Pricing = plazaApplyGroupMediaDisplayPricing(m.Name, m.Pricing, g)
 	if m.Pricing != nil && len(m.Pricing.Intervals) > 0 {
@@ -371,6 +371,19 @@ func (s *ModelPlazaService) fillDisplayPricing(ctx context.Context, m *PlazaMode
 		// the model are the only available channel-owned pricing source.
 		m.HasChannelContextPricing = true
 	}
+}
+
+func withDefaultMaxReasoningEffortMultiplier(pricing *ChannelModelPricing, model string) *ChannelModelPricing {
+	if pricing == nil || pricing.MaxReasoningEffortMultiplier != nil {
+		return pricing
+	}
+	multiplier := defaultMaxReasoningEffortMultiplier(model)
+	if multiplier == nil {
+		return pricing
+	}
+	cloned := pricing.Clone()
+	cloned.MaxReasoningEffortMultiplier = multiplier
+	return &cloned
 }
 
 func plazaIsGrokImagineImage(model string) bool {
@@ -497,6 +510,7 @@ func plazaPricingFromSchedule(raw *ChannelModelPricing, sched *ContextPricingSch
 		out.ImageInputPrice = raw.ImageInputPrice
 		out.ImageOutputPrice = raw.ImageOutputPrice
 		out.PerRequestPrice = raw.PerRequestPrice
+		out.MaxReasoningEffortMultiplier = raw.MaxReasoningEffortMultiplier
 	}
 	first := sched.Tiers[0]
 	out.InputPrice = first.Input
