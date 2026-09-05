@@ -415,7 +415,13 @@ func TestListGroups_TokenLadderFollowsGroupToggle(t *testing.T) {
 	// 同一渠道挂开启/关闭阶梯的两个分组：实付档位随分组开关，官方阶梯不受影响。
 	channels := []Channel{{
 		ID: 1, Name: "ch", Status: StatusActive, GroupIDs: []int64{10, 20},
-		ModelPricing: []ChannelModelPricing{{Platform: PlatformOpenAI, Models: []string{"gpt-5.4"}, BillingMode: BillingModeToken}},
+		ModelPricing: []ChannelModelPricing{{
+			Platform: PlatformOpenAI, Models: []string{"gpt-5.4"}, BillingMode: BillingModeToken,
+			Intervals: []PricingInterval{
+				{MinTokens: 0, MaxTokens: testPtrInt(272000), InputPrice: testPtrFloat64(2.5e-6), OutputPrice: testPtrFloat64(10e-6), CacheWritePrice: testPtrFloat64(2.5e-6), CacheReadPrice: testPtrFloat64(0.3e-6)},
+				{MinTokens: 272000, MaxTokens: nil, InputPrice: testPtrFloat64(5e-6), OutputPrice: testPtrFloat64(22.5e-6), CacheWritePrice: testPtrFloat64(5e-6), CacheReadPrice: testPtrFloat64(0.5e-6)},
+			},
+		}},
 	}}
 	groups := []Group{
 		{ID: 10, Name: "on", Platform: PlatformOpenAI, RateMultiplier: 1, LongContextPricingEnabled: true},
@@ -433,16 +439,19 @@ func TestListGroups_TokenLadderFollowsGroupToggle(t *testing.T) {
 
 	onModel := on.Models[0]
 	require.Equal(t, ContextPricingBasisWholeRequest, onModel.LongContextBasis)
-	require.Len(t, onModel.Pricing.Intervals, 2)
-	require.Equal(t, "≤272K", onModel.Pricing.Intervals[0].TierLabel)
-	require.Equal(t, ">272K", onModel.Pricing.Intervals[1].TierLabel)
+	require.True(t, onModel.HasChannelContextPricing)
+	// The base tier is represented by Pricing's scalar fields; only additional
+	// channel-defined context tiers are emitted in Intervals.
+	require.Len(t, onModel.Pricing.Intervals, 1)
+	require.Equal(t, ">272K", onModel.Pricing.Intervals[0].TierLabel)
 	require.InDelta(t, 2.5e-6, *onModel.Pricing.InputPrice, 1e-15)
-	require.InDelta(t, 5e-6, *onModel.Pricing.Intervals[1].InputPrice, 1e-15)
-	require.InDelta(t, 22.5e-6, *onModel.Pricing.Intervals[1].OutputPrice, 1e-15)
-	require.InDelta(t, 5e-6, *onModel.Pricing.Intervals[1].CacheWritePrice, 1e-15)
-	require.InDelta(t, 0.5e-6, *onModel.Pricing.Intervals[1].CacheReadPrice, 1e-15)
+	require.InDelta(t, 5e-6, *onModel.Pricing.Intervals[0].InputPrice, 1e-15)
+	require.InDelta(t, 22.5e-6, *onModel.Pricing.Intervals[0].OutputPrice, 1e-15)
+	require.InDelta(t, 5e-6, *onModel.Pricing.Intervals[0].CacheWritePrice, 1e-15)
+	require.InDelta(t, 0.5e-6, *onModel.Pricing.Intervals[0].CacheReadPrice, 1e-15)
 
 	offModel := off.Models[0]
+	require.False(t, offModel.HasChannelContextPricing)
 	require.Empty(t, offModel.LongContextBasis)
 	require.Empty(t, offModel.Pricing.Intervals)
 	require.InDelta(t, 2.5e-6, *offModel.Pricing.InputPrice, 1e-15)
@@ -453,6 +462,50 @@ func TestListGroups_TokenLadderFollowsGroupToggle(t *testing.T) {
 		require.InDelta(t, 5e-6, *m.OfficialPricing.Intervals[1].InputPrice, 1e-15)
 		require.InDelta(t, 2.5e-6, *m.OfficialPricing.InputPrice, 1e-15)
 	}
+}
+
+func TestListGroups_CompositeUsesModelPlatformForChannelContextPricing(t *testing.T) {
+	// Composite groups can contain the same model name on multiple concrete
+	// platforms. The channel ownership lookup must use the model's platform,
+	// otherwise the composite platform iteration may select a flat price from
+	// another platform while the schedule probe correctly uses Grok intervals.
+	channels := []Channel{{
+		ID: 1, Name: "multi-platform", Status: StatusActive, GroupIDs: []int64{10},
+		ModelPricing: []ChannelModelPricing{
+			{
+				Platform: PlatformOpenAI, Models: []string{"shared-model"}, BillingMode: BillingModeToken,
+				InputPrice: testPtrFloat64(1e-6), OutputPrice: testPtrFloat64(4e-6),
+			},
+			{
+				Platform: PlatformGrok, Models: []string{"shared-model"}, BillingMode: BillingModeToken,
+				InputPrice: testPtrFloat64(2e-6), OutputPrice: testPtrFloat64(6e-6),
+				Intervals: []PricingInterval{{
+					MinTokens: 200000, InputPrice: testPtrFloat64(4e-6),
+					OutputPrice: testPtrFloat64(12e-6), CacheReadPrice: testPtrFloat64(1e-6),
+				}},
+			},
+		},
+	}}
+	groups := []Group{{
+		ID: 10, Name: "composite", Platform: PlatformComposite, RateMultiplier: 1,
+		LongContextPricingEnabled: true,
+	}}
+	svc := newPlazaServiceWithBilling(channels, groups, map[int64]string{10: PlatformComposite}, nil)
+	out, err := svc.ListGroups(context.Background())
+	require.NoError(t, err)
+	require.Len(t, out, 1)
+
+	var grokModel *PlazaModel
+	for i := range out[0].Models {
+		if out[0].Models[i].Platform == PlatformGrok && out[0].Models[i].Name == "shared-model" {
+			grokModel = &out[0].Models[i]
+			break
+		}
+	}
+	require.NotNil(t, grokModel)
+	require.True(t, grokModel.HasChannelContextPricing)
+	require.Len(t, grokModel.Pricing.Intervals, 1)
+	require.InDelta(t, 1e-6, *grokModel.Pricing.Intervals[0].CacheReadPrice, 1e-15)
 }
 
 func TestListGroups_GeminiLegacyRuleShownAsMarginal(t *testing.T) {
@@ -739,14 +792,17 @@ func TestListGroups_GrokHeavyChannelMediaPricingWithBilling(t *testing.T) {
 }
 
 func TestListConfiguredPlazaGroups_HidesCatalogLongContextWithoutChannelIntervals(t *testing.T) {
-	channels := []Channel{plazaPricedChannel(1, "grok", []int64{10}, PlatformGrok, "grok-flat")}
+	// A catalog long-context ladder must not leak into the paid column when the
+	// selected channel only defines a flat price. This applies to Claude and all
+	// other token models, not only to Grok.
+	channels := []Channel{plazaPricedChannel(1, "anthropic", []int64{10}, PlatformAnthropic, "claude-flat")}
 	groups := []Group{{
-		ID: 10, Name: "g", Platform: PlatformGrok, RateMultiplier: 1,
+		ID: 10, Name: "g", Platform: PlatformAnthropic, RateMultiplier: 1,
 		LongContextPricingEnabled: true,
-		ModelsListConfig:          GroupModelsListConfig{Models: []string{"grok-flat"}},
+		ModelsListConfig:          GroupModelsListConfig{Models: []string{"claude-flat"}},
 	}}
 	catalog := &PricingService{pricingData: map[string]*LiteLLMModelPricing{
-		"grok-flat": {
+		"claude-flat": {
 			InputCostPerToken:               3e-6,
 			OutputCostPerToken:              15e-6,
 			LongContextInputTokenThreshold:  128000,
@@ -754,11 +810,12 @@ func TestListConfiguredPlazaGroups_HidesCatalogLongContextWithoutChannelInterval
 			LongContextOutputCostMultiplier: 2,
 		},
 	}}
-	svc := newPlazaServiceWithBilling(channels, groups, map[int64]string{10: PlatformGrok}, catalog)
+	svc := newPlazaServiceWithBilling(channels, groups, map[int64]string{10: PlatformAnthropic}, catalog)
 	out, err := svc.ListConfiguredGroups(context.Background())
 	require.NoError(t, err)
 	require.Len(t, out, 1)
 	require.Empty(t, out[0].Models[0].Pricing.Intervals)
+	require.False(t, out[0].Models[0].HasChannelContextPricing)
 }
 
 func TestListConfiguredPlazaGroups_GroupVideoPriceOverridesChannelTiers(t *testing.T) {

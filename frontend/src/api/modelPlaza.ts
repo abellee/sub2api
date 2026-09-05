@@ -33,6 +33,8 @@ export interface PlazaModel {
   /** 实收口径的基础展示定价；均为标准时段价。 */
   pricing: UserSupportedModelPricing | null
   official_pricing: PlazaOfficialPricing | null
+  /** True only when the selected channel explicitly defines token intervals. */
+  has_channel_context_pricing?: boolean
   long_context_basis?: 'whole_request' | 'marginal'
   /** 仅配置了分时倍率的模型返回。 */
   time_pricing?: PlazaTimePricing

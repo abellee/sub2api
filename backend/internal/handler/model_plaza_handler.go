@@ -64,10 +64,11 @@ type modelPlazaTimePricing struct {
 
 // modelPlazaModel 广场模型条目：实收口径展示定价（白名单形态）+ 官方参考价。
 type modelPlazaModel struct {
-	Name            string                     `json:"name"`
-	Platform        string                     `json:"platform"`
-	Pricing         *userSupportedModelPricing `json:"pricing"`
-	OfficialPricing *modelPlazaOfficialPricing `json:"official_pricing"`
+	Name                     string                     `json:"name"`
+	Platform                 string                     `json:"platform"`
+	Pricing                  *userSupportedModelPricing `json:"pricing"`
+	OfficialPricing          *modelPlazaOfficialPricing `json:"official_pricing"`
+	HasChannelContextPricing bool                       `json:"has_channel_context_pricing,omitempty"`
 	// LongContextBasis 多档时的计价基准："whole_request"（整单按档）| "marginal"（仅超出部分）。
 	LongContextBasis string `json:"long_context_basis,omitempty"`
 	// TimePricing 分时倍率时段，落在时段内的请求整单乘倍率；无分时省略。
@@ -209,13 +210,23 @@ func toModelPlazaGroupDTO(g *service.PlazaGroup, userRates map[int64]float64) mo
 	models := make([]modelPlazaModel, 0, len(g.Models))
 	for i := range g.Models {
 		m := &g.Models[i]
+		pricing := toUserPricing(m.Pricing)
+		// Token intervals are context ladders and are only part of the public
+		// contract when the service explicitly confirms channel ownership. Keep
+		// request/image/video tiers intact because those use intervals as their
+		// normal price representation.
+		if pricing != nil && !m.HasChannelContextPricing &&
+			(pricing.BillingMode == string(service.BillingModeToken) || pricing.BillingMode == "") {
+			pricing.Intervals = []userPricingIntervalDTO{}
+		}
 		models = append(models, modelPlazaModel{
-			Name:             m.Name,
-			Platform:         m.Platform,
-			Pricing:          toUserPricing(m.Pricing),
-			OfficialPricing:  toModelPlazaOfficialPricing(m.OfficialPricing),
-			LongContextBasis: string(m.LongContextBasis),
-			TimePricing:      toModelPlazaTimePricing(m.TimePricing),
+			Name:                     m.Name,
+			Platform:                 m.Platform,
+			Pricing:                  pricing,
+			OfficialPricing:          toModelPlazaOfficialPricing(m.OfficialPricing),
+			HasChannelContextPricing: m.HasChannelContextPricing,
+			LongContextBasis:         string(m.LongContextBasis),
+			TimePricing:              toModelPlazaTimePricing(m.TimePricing),
 		})
 	}
 	dto := modelPlazaGroup{

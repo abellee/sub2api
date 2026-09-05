@@ -608,6 +608,21 @@ export default {
   modelPlaza: {
     title: 'Model Plaza',
     description: 'Browse available models and pricing by group',
+    pricingNotice: {
+      title: 'Pricing note',
+      body: 'Model prices are synchronized from Sub2API. Because channel definitions are not uniform and the catalog is large, this page only shows long-context prices for selected models with targeted configuration; see the official price lists for complete definitions.',
+      data: 'Sub2API synchronized pricing data',
+      official: 'Official price lists',
+      providers: {
+        anthropic: 'Anthropic Claude',
+        openai: 'OpenAI',
+        google: 'Google Gemini',
+        xai: 'xAI Grok',
+        deepseek: 'DeepSeek',
+        moonshot: 'Moonshot Kimi',
+        zhipu: 'Zhipu GLM'
+      }
+    },
     loading: 'Loading...',
     empty: 'No groups to display',
     loadFailed: 'Failed to load model plaza',
@@ -646,18 +661,23 @@ export default {
       cacheRead: 'Read',
       cacheWriteShort: 'W',
       cacheReadShort: 'R',
-      longContext: 'Context tier',
+      longContext: 'Long-context tier',
+      viewLongContext: 'View long-context tier prices',
+      closeLongContext: 'Hide long-context tier prices',
       timePricingRowHint: 'Requests made within this period ({timezone} time) are billed at the prices in this row',
       timePricingRowHintWeekdays:
         'On weekdays (Mon–Fri) only, requests made within this period ({timezone} time) are billed at the prices in this row; weekends use the standard prices',
       timePricingRowHintPeak:
         '; prices in this row exclude the peak-hour rate — where this period overlaps the peak hours {window}, the overlapping portion is additionally multiplied by ×{multiplier}',
       timePricingWeekdays: 'Weekdays',
+      standard: 'Standard period',
+      current: 'CURRENT',
+      to: 'to',
       timePricingRateHint: 'Effective rate {rate} × period multiplier {multiplier}',
       paidPrice: 'Your Price (Discounted)',
       officialPrice: 'Official Price',
       rate: 'Rate',
-      unitPerMillion: '$ / 1M tokens',
+      unitPerMillion: '/ 1M tokens',
       perUnitRequest: '/ request',
       perUnitImage: '/ image',
       perUnitVideo: '/ second',

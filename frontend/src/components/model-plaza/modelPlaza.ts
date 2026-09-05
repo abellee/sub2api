@@ -1,5 +1,6 @@
 import Decimal from 'decimal.js'
 import type { ModelPlazaGroup, PlazaModel } from '@/api/modelPlaza'
+import type { UserPricingInterval } from '@/api/channels'
 import {
   BILLING_MODE_IMAGE,
   BILLING_MODE_TOKEN,
@@ -23,6 +24,9 @@ export interface ModelPlazaTokenTierPrice {
   input: string | null
   output: string | null
   cache: string | null
+  cacheWrite: string | null
+  cacheWrite1h: string | null
+  cacheRead: string | null
 }
 
 export interface ModelPlazaEntry {
@@ -32,17 +36,35 @@ export interface ModelPlazaEntry {
   input: string | null
   output: string | null
   cache: string | null
+  cacheWrite: string | null
+  cacheWrite1h: string | null
+  cacheRead: string | null
   tiers: ModelPlazaTierPrice[]
   tokenTiers: ModelPlazaTokenTierPrice[]
+  /** Sub2API official context tiers shown on demand when the channel has none. */
+  officialTokenTiers: ModelPlazaTokenTierPrice[]
   groupId: number
   groupName: string
   rateMultiplier: number
+  currency: 'USD' | 'CNY'
+  timePricing: PlazaModel['time_pricing'] | null
 }
 
 export function modelPlazaProviderForGroup(
   group: Pick<ModelPlazaGroup, 'platform'>,
 ): string {
   return normalizeProvider(group.platform)
+}
+
+/** Whether token intervals are owned by the selected channel. */
+export function hasModelPlazaChannelContextPricing(model: PlazaModel): boolean {
+  if (model.has_channel_context_pricing === true) return true
+  if (model.has_channel_context_pricing != null) return false
+  // Compatibility for the live API response emitted before the ownership
+  // flag was added. Other providers remain conservative to avoid exposing
+  // catalog-only ladders as paid channel pricing.
+  return normalizeProvider(model.platform) === 'grok'
+    && (model.pricing?.intervals?.length ?? 0) > 0
 }
 
 export function buildModelPlazaEntries(
@@ -64,26 +86,52 @@ export function buildModelPlazaEntries(
           input: null,
           output: null,
           cache: null,
+          cacheWrite: null,
+          cacheWrite1h: null,
+          cacheRead: null,
           tiers: mediaTiers(kind, model),
           tokenTiers: [],
+          officialTokenTiers: [],
           groupId: group.id,
           groupName: group.name,
           rateMultiplier,
+          currency: currencyForModel(modelPlazaProviderForGroup(group), model),
+          timePricing: model.time_pricing ?? null,
         }]
       }
+      const channel = hasMeaningfulPricing(model.pricing) ? model.pricing : null
       const official = model.official_pricing
+      const price = (field: 'input_price' | 'output_price' | 'cache_read_price' | 'cache_write_price' | 'cache_write_1h_price') => channel?.[field] ?? official?.[field] ?? null
+      const cacheWrite = perMillion(price('cache_write_price'))
+      const cacheWrite1h = perMillion(price('cache_write_1h_price'))
+      const cacheRead = perMillion(price('cache_read_price'))
+      // Older production responses (before the ownership flag was added)
+      // already contained Grok channel intervals in pricing. Keep those
+      // payloads readable while leaving omitted flags on other providers
+      // conservative, since their intervals may be catalog-only.
+      const channelIntervals = hasModelPlazaChannelContextPricing(model)
+        ? channel?.intervals ?? []
+        : []
+      const channelTiers = tokenTiers(channelIntervals, official?.intervals ?? [])
+      const officialTiers = channelTiers.length > 0 ? [] : tokenTiers(official?.intervals ?? [], official?.intervals ?? [])
       return [{
         id,
         provider: modelPlazaProviderForGroup(group),
         kind: 'token',
-        input: perMillion(official?.input_price),
-        output: perMillion(official?.output_price),
-        cache: perMillion(official?.cache_read_price ?? official?.cache_write_price),
+        input: perMillion(price('input_price')),
+        output: perMillion(price('output_price')),
+        cache: cacheRead ?? cacheWrite,
+        cacheWrite,
+        cacheWrite1h,
+        cacheRead,
         tiers: [],
-        tokenTiers: tokenTiers(model),
+        tokenTiers: channelTiers,
+        officialTokenTiers: officialTiers,
         groupId: group.id,
         groupName: group.name,
         rateMultiplier: group.user_rate_multiplier ?? group.rate_multiplier,
+        currency: currencyForModel(modelPlazaProviderForGroup(group), model),
+        timePricing: model.time_pricing ?? null,
       }]
     })
   })
@@ -146,20 +194,58 @@ function requestTierMap(model: PlazaModel): Map<string, string> {
   return map
 }
 
-function tokenTiers(model: PlazaModel): ModelPlazaTokenTierPrice[] {
-  return (model.pricing?.intervals ?? [])
+function tokenTiers(channelIntervals: UserPricingInterval[], officialIntervals: UserPricingInterval[]): ModelPlazaTokenTierPrice[] {
+	// Long-context prices are only advertised when the selected channel has
+	// explicitly configured token intervals. Official intervals remain a
+	// per-field fallback for those same channel-defined tiers.
+	const intervals = channelIntervals
+  return intervals
     .filter((interval) => interval.min_tokens > 0 && (
       interval.input_price != null
       || interval.output_price != null
       || interval.cache_read_price != null
       || interval.cache_write_price != null
+      || interval.cache_write_1h_price != null
     ))
-    .map((interval) => ({
-      label: interval.tier_label || tokenRangeLabel(interval.min_tokens, interval.max_tokens),
-      input: perMillion(interval.input_price),
-      output: perMillion(interval.output_price),
-      cache: perMillion(interval.cache_read_price ?? interval.cache_write_price),
-    }))
+    .map((interval) => {
+      const official = officialIntervals.find((candidate) => (
+        candidate.tier_label === interval.tier_label
+        || (candidate.min_tokens === interval.min_tokens && candidate.max_tokens === interval.max_tokens)
+      ))
+      const price = (field: 'input_price' | 'output_price' | 'cache_read_price' | 'cache_write_price' | 'cache_write_1h_price') => interval[field] ?? official?.[field] ?? null
+      const cacheWrite = perMillion(price('cache_write_price'))
+      const cacheWrite1h = perMillion(price('cache_write_1h_price'))
+      const cacheRead = perMillion(price('cache_read_price'))
+      return {
+        label: interval.tier_label || tokenRangeLabel(interval.min_tokens, interval.max_tokens),
+        input: perMillion(price('input_price')),
+        output: perMillion(price('output_price')),
+        cache: cacheRead ?? cacheWrite,
+        cacheWrite,
+        cacheWrite1h,
+        cacheRead,
+      }
+    })
+}
+
+function hasMeaningfulPricing(pricing: PlazaModel['pricing']): pricing is NonNullable<PlazaModel['pricing']> {
+  if (!pricing) return false
+  return pricing.input_price != null
+    || pricing.output_price != null
+    || pricing.cache_read_price != null
+    || pricing.cache_write_price != null
+    || pricing.cache_write_1h_price != null
+    || pricing.per_request_price != null
+    || pricing.intervals.length > 0
+}
+
+function currencyForProvider(provider: string): 'USD' | 'CNY' {
+  return ['deepseek', 'kimi', 'zhipu', 'glm', 'moonshot', 'minimax', 'doubao'].includes(provider.toLowerCase()) ? 'CNY' : 'USD'
+}
+
+function currencyForModel(provider: string, model: PlazaModel): 'USD' | 'CNY' {
+  const identity = `${provider} ${model.platform} ${model.name}`.toLowerCase()
+  return /deepseek|(?:^|\s)glm[-\s]|kimi|moonshot|minimax|doubao|zhipu/.test(identity) ? 'CNY' : currencyForProvider(provider)
 }
 
 function tokenRangeLabel(min: number, max: number | null): string {
@@ -200,6 +286,7 @@ function hasTokenPaidPrice(model: PlazaModel): boolean {
     || pricing.output_price != null
     || pricing.cache_read_price != null
     || pricing.cache_write_price != null
+    || pricing.cache_write_1h_price != null
 }
 
 function isMediaRateGroup(group: ModelPlazaGroup): boolean {

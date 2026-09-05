@@ -114,15 +114,120 @@ describe('model plaza matching', () => {
           input_price: 0.000003,
           output_price: 0.000015,
           cache_write_price: 0.00000375,
+          cache_write_1h_price: 0.000006,
           cache_read_price: 0.0000003,
         },
       }],
     }])
 
     expect(entries).toEqual([expect.objectContaining({
-      id: 'claude-sonnet-4-5-20250929', provider: 'anthropic', input: '3', cache: '0.3', output: '15',
+      id: 'claude-sonnet-4-5-20250929', provider: 'anthropic', input: '3', cache: '0.3',
+      cacheWrite: '3.75', cacheWrite1h: '6', cacheRead: '0.3', output: '15',
       groupId: 7, groupName: 'CC - Kiro', rateMultiplier: 0.12,
     })])
+  })
+
+  it('uses channel cache fields independently, preserves zero, and falls back per missing field', () => {
+    const entries = buildModelPlazaEntries([{
+      id: 8,
+      name: 'Claude channel',
+      description: '',
+      platform: 'anthropic',
+      subscription_type: 'standard',
+      rate_multiplier: 0.2,
+      peak_rate_enabled: false,
+      peak_start: '',
+      peak_end: '',
+      peak_rate_multiplier: 1,
+      is_exclusive: false,
+      image_rate_independent: false,
+      image_rate_multiplier: 1,
+      video_rate_independent: false,
+      video_rate_multiplier: 1,
+      models: [{
+        name: 'claude-opus-4-6',
+        platform: 'anthropic',
+        pricing: {
+          billing_mode: 'token',
+          input_price: 5e-6,
+          output_price: 25e-6,
+          cache_write_price: 0,
+          cache_write_1h_price: null,
+          cache_read_price: 0.4e-6,
+          image_input_price: null,
+          image_output_price: null,
+          per_request_price: null,
+          intervals: [],
+        },
+        official_pricing: {
+          input_price: 5e-6,
+          output_price: 25e-6,
+          cache_write_price: 6.25e-6,
+          cache_write_1h_price: 10e-6,
+          cache_read_price: 0.5e-6,
+        },
+      }],
+    }])
+
+    expect(entries[0]).toEqual(expect.objectContaining({
+      cacheWrite: '0',
+      cacheWrite1h: '10',
+      cacheRead: '0.4',
+    }))
+  })
+
+  it('prefers configured channel prices and marks domestic model prices as CNY', () => {
+    const entries = buildModelPlazaEntries([{
+      id: 31,
+      name: '智谱渠道',
+      description: '',
+      platform: 'zhipu',
+      subscription_type: 'standard',
+      rate_multiplier: 0.5,
+      peak_rate_enabled: false,
+      peak_start: '',
+      peak_end: '',
+      peak_rate_multiplier: 1,
+      is_exclusive: false,
+      image_rate_independent: false,
+      image_rate_multiplier: 1,
+      video_rate_independent: false,
+      video_rate_multiplier: 1,
+      models: [{
+        name: 'glm-5',
+        platform: 'zhipu',
+        pricing: {
+          billing_mode: 'token',
+          input_price: 0.25e-6,
+          output_price: null,
+          cache_write_price: null,
+          cache_read_price: null,
+          image_input_price: null,
+          image_output_price: null,
+          per_request_price: null,
+          intervals: [],
+        },
+        official_pricing: {
+          input_price: 1e-6,
+          output_price: 3.2e-6,
+          cache_write_price: null,
+          cache_read_price: 0.2e-6,
+        },
+        time_pricing: {
+          timezone: 'Asia/Shanghai',
+          weekdays_only: true,
+          periods: [{ start_time: '09:00', end_time: '12:00', multiplier: 1.5 }],
+        },
+      }],
+    }])
+
+    expect(entries[0]).toEqual(expect.objectContaining({
+      input: '0.25',
+      output: '3.2',
+      cache: '0.2',
+      currency: 'CNY',
+      timePricing: expect.objectContaining({ periods: [{ start_time: '09:00', end_time: '12:00', multiplier: 1.5 }] }),
+    }))
   })
 
   it('maps configured token context tiers to per-million prices', () => {
@@ -145,6 +250,7 @@ describe('model plaza matching', () => {
       models: [{
         name: 'grok-4.6',
         platform: 'grok',
+        has_channel_context_pricing: true,
         pricing: {
           billing_mode: 'token',
           input_price: 2e-6,
@@ -169,9 +275,148 @@ describe('model plaza matching', () => {
     expect(entries[0]).toEqual(expect.objectContaining({
       kind: 'token',
       tokenTiers: [
-        { label: '>128K', input: '4', output: '20', cache: '1' },
+        {
+          label: '>128K', input: '4', output: '20', cache: '1',
+          cacheWrite: null, cacheWrite1h: null, cacheRead: '1',
+        },
       ],
     }))
+  })
+
+  it('does not advertise official context tiers without channel intervals', () => {
+    const entries = buildModelPlazaEntries([{
+      id: 19,
+      name: 'Official only',
+      description: '',
+      platform: 'anthropic',
+      subscription_type: 'standard',
+      rate_multiplier: 1,
+      peak_rate_enabled: false,
+      peak_start: '',
+      peak_end: '',
+      peak_rate_multiplier: 1,
+      is_exclusive: false,
+      image_rate_independent: false,
+      image_rate_multiplier: 1,
+      video_rate_independent: false,
+      video_rate_multiplier: 1,
+      models: [{
+        name: 'claude-sonnet-4-6',
+        platform: 'anthropic',
+        pricing: {
+          billing_mode: 'token',
+          input_price: 3e-6,
+          output_price: 15e-6,
+          cache_write_price: null,
+          cache_read_price: 0.3e-6,
+          per_request_price: null,
+          intervals: [],
+        },
+        official_pricing: {
+          input_price: 3e-6,
+          output_price: 15e-6,
+          cache_write_price: null,
+          cache_read_price: 0.3e-6,
+          intervals: [{ min_tokens: 200000, max_tokens: null, tier_label: '>200K', input_price: 6e-6, output_price: 30e-6, cache_write_price: null, cache_read_price: 0.6e-6, per_request_price: null }],
+        },
+      }],
+    }])
+
+    expect(entries[0].tokenTiers).toEqual([])
+    expect(entries[0].officialTokenTiers).toEqual([
+      expect.objectContaining({ label: '>200K', input: '6', output: '30', cacheRead: '0.6' }),
+    ])
+  })
+
+  it('uses the official Grok 4.5 cache-read value for the displayed original price', () => {
+    const entries = buildModelPlazaEntries([{
+      id: 20,
+      name: 'Grok',
+      description: '',
+      platform: 'grok',
+      subscription_type: 'standard',
+      rate_multiplier: 1,
+      peak_rate_enabled: false,
+      peak_start: '',
+      peak_end: '',
+      peak_rate_multiplier: 1,
+      is_exclusive: false,
+      image_rate_independent: false,
+      image_rate_multiplier: 1,
+      video_rate_independent: false,
+      video_rate_multiplier: 1,
+      models: [{
+        name: 'grok-4.5',
+        platform: 'grok',
+        pricing: { billing_mode: 'token', input_price: 2e-6, output_price: 6e-6, cache_write_price: 0, cache_read_price: 0.5e-6, per_request_price: null, intervals: [] },
+        official_pricing: { input_price: 2e-6, output_price: 6e-6, cache_write_price: null, cache_read_price: 0.3e-6 },
+      }],
+    }])
+
+    expect(entries[0]).toEqual(expect.objectContaining({ cacheRead: '0.5' }))
+  })
+
+  it('recognizes legacy Grok channel intervals when the ownership flag is absent', () => {
+    const entries = buildModelPlazaEntries([{
+      id: 20,
+      name: 'Grok',
+      description: '',
+      platform: 'grok',
+      subscription_type: 'standard',
+      rate_multiplier: 1,
+      peak_rate_enabled: false,
+      peak_start: '',
+      peak_end: '',
+      peak_rate_multiplier: 1,
+      is_exclusive: false,
+      image_rate_independent: false,
+      image_rate_multiplier: 1,
+      video_rate_independent: false,
+      video_rate_multiplier: 1,
+      models: [{
+        name: 'grok-4.5',
+        platform: 'grok',
+        pricing: {
+          billing_mode: 'token',
+          input_price: 2e-6,
+          output_price: 6e-6,
+          cache_write_price: 0,
+          cache_read_price: 0.5e-6,
+          per_request_price: null,
+          intervals: [{
+            min_tokens: 200000,
+            max_tokens: null,
+            tier_label: '>200K',
+            input_price: 4e-6,
+            output_price: 12e-6,
+            cache_write_price: 0,
+            cache_read_price: 1e-6,
+            per_request_price: null,
+          }],
+        },
+        official_pricing: {
+          input_price: 2e-6,
+          output_price: 6e-6,
+          cache_write_price: null,
+          cache_read_price: 0.3e-6,
+          intervals: [{
+            min_tokens: 199999,
+            max_tokens: null,
+            tier_label: '≥200K',
+            input_price: 4e-6,
+            output_price: 12e-6,
+            cache_write_price: null,
+            cache_read_price: 0.6e-6,
+            per_request_price: null,
+          }],
+        },
+      }],
+    }])
+
+    expect(entries[0].tokenTiers).toEqual([
+      expect.objectContaining({ label: '>200K', cacheRead: '1' }),
+    ])
+    expect(entries[0].officialTokenTiers).toEqual([])
   })
 
   it('normalizes Google pricing to the Gemini provider', () => {

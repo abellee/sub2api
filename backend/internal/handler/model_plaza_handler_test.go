@@ -90,8 +90,9 @@ func TestToModelPlazaGroupDTO_UserRateAndFieldWhitelist(t *testing.T) {
 		ID: 2, Name: "vip", Description: "d", Platform: "anthropic",
 		SubscriptionType: "standard", RateMultiplier: 1, IsExclusive: true,
 		Models: []service.PlazaModel{{
-			Name:     "claude-sonnet",
-			Platform: "anthropic",
+			Name:                     "claude-sonnet",
+			Platform:                 "anthropic",
+			HasChannelContextPricing: true,
 			Pricing: &service.ChannelModelPricing{
 				BillingMode: service.BillingModeToken,
 				InputPrice:  testPtr(3e-6),
@@ -154,6 +155,30 @@ func TestToModelPlazaGroupDTO_UserRateAndFieldWhitelist(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rawNoRate, &decodedNoRate))
 	_, hasRate := decodedNoRate["user_rate_multiplier"]
 	require.False(t, hasRate, "无专属倍率时 user_rate_multiplier 应 omitempty")
+}
+
+func TestToModelPlazaGroupDTO_HidesUnconfirmedTokenIntervals(t *testing.T) {
+	g := service.PlazaGroup{Models: []service.PlazaModel{
+		{
+			Name: "claude-sonnet",
+			Pricing: &service.ChannelModelPricing{
+				BillingMode: service.BillingModeToken,
+				Intervals:   []service.PricingInterval{{MinTokens: 200000, InputPrice: testPtr(6e-6)}},
+			},
+		},
+		{
+			Name: "grok-imagine",
+			Pricing: &service.ChannelModelPricing{
+				BillingMode: service.BillingModeImage,
+				Intervals:   []service.PricingInterval{{TierLabel: "1K", PerRequestPrice: testPtr(0.03)}},
+			},
+		},
+	}}
+
+	dto := toModelPlazaGroupDTO(&g, nil)
+	models := dto.Models
+	require.Empty(t, models[0].Pricing.Intervals, "未确认来源的 token 阶梯不得通过 DTO 泄漏")
+	require.Len(t, models[1].Pricing.Intervals, 1, "图片档位仍属于正常价格表达")
 }
 
 func TestToModelPlazaOfficialPricing_NilPassthrough(t *testing.T) {
