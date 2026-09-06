@@ -907,6 +907,43 @@ func TestExtractGeminiUsage(t *testing.T) {
 	}
 }
 
+func TestConvertGeminiToClaudeMessageIncludesCacheReadUsage(t *testing.T) {
+	response := map[string]any{
+		"candidates": []any{
+			map[string]any{
+				"content": map[string]any{
+					"parts": []any{map[string]any{"text": "ok"}},
+				},
+			},
+		},
+	}
+	raw := []byte(`{"usageMetadata":{"promptTokenCount":120,"cachedContentTokenCount":100,"candidatesTokenCount":7}}`)
+
+	converted, usage := convertGeminiToClaudeMessage(response, "gemini-3.8", raw, false)
+	require.Equal(t, 20, usage.InputTokens)
+	require.Equal(t, 100, usage.CacheReadInputTokens)
+	usageMap, ok := converted["usage"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, 100, usageMap["cache_read_input_tokens"])
+}
+
+func TestNormalizeGeminiUpstreamEndpoint(t *testing.T) {
+	tests := []struct {
+		path string
+		want string
+	}{
+		{"/v1/messages", "/v1/messages"},
+		{"/relay/v1/messages", "/v1/messages"},
+		{"/v1beta/models/gemini-3.8:generateContent", "/v1beta/models"},
+		{"/v1internal:streamGenerateContent", "/v1internal:streamGenerateContent"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			require.Equal(t, tt.want, normalizeGeminiUpstreamEndpoint(tt.path))
+		})
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Task 8.2 — estimateGeminiCountTokens 测试
 // ---------------------------------------------------------------------------
@@ -1064,7 +1101,7 @@ func TestGeminiMessagesHandleStreamingResponse_ClosesToolBlockBeforeText(t *test
 	gin.SetMode(gin.TestMode)
 
 	upstreamBody := `data: {"candidates":[{"content":{"parts":[{"functionCall":{"name":"get_weather","args":{"city":"SF"}}}]}}]}` + "\n\n" +
-		`data: {"candidates":[{"content":{"parts":[{"text":"All done."}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":5,"candidatesTokenCount":3}}` + "\n\n" +
+		`data: {"candidates":[{"content":{"parts":[{"text":"All done."}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":7,"cachedContentTokenCount":2,"candidatesTokenCount":3}}` + "\n\n" +
 		"data: [DONE]\n\n"
 
 	resp := &http.Response{
@@ -1080,6 +1117,8 @@ func TestGeminiMessagesHandleStreamingResponse_ClosesToolBlockBeforeText(t *test
 	result, err := svc.handleStreamingResponse(c, resp, time.Now(), "claude-3-5-sonnet")
 	require.NoError(t, err)
 	require.NotNil(t, result)
+	require.Equal(t, 2, result.usage.CacheReadInputTokens)
+	require.Contains(t, rec.Body.String(), `"cache_read_input_tokens":2`)
 
 	events := parseAnthropicContentBlockEvents(t, rec.Body.String())
 

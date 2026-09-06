@@ -610,6 +610,10 @@ type AudioUsage struct {
 
 type ForwardResult struct {
 	RequestID string
+	// UpstreamEndpoint is the normalized path used for the actual upstream request.
+	// It is populated by compatibility services whose upstream path can differ
+	// from the platform-derived fallback.
+	UpstreamEndpoint string
 	// UpstreamHeaders 是直接上游的响应头，用于按账户配置解析上游请求标识。
 	UpstreamHeaders http.Header
 	Usage           ClaudeUsage
