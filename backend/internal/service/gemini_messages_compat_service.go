@@ -2964,8 +2964,9 @@ func convertGeminiToClaudeMessage(geminiResp map[string]any, originalModel strin
 		},
 	}
 	if usage.CacheReadInputTokens > 0 {
-		respUsage := resp["usage"].(map[string]any)
-		respUsage["cache_read_input_tokens"] = usage.CacheReadInputTokens
+		if respUsage, ok := resp["usage"].(map[string]any); ok {
+			respUsage["cache_read_input_tokens"] = usage.CacheReadInputTokens
+		}
 	}
 
 	return resp, usage
