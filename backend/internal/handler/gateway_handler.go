@@ -553,7 +553,10 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			clientIP := ip.GetClientIP(c)
 			requestPayloadHash := service.HashUsageRequestPayload(body)
 			inboundEndpoint := GetInboundEndpoint(c)
-			upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
+			upstreamEndpoint := result.UpstreamEndpoint
+			if upstreamEndpoint == "" {
+				upstreamEndpoint = GetUpstreamEndpoint(c, account.Platform)
+			}
 
 			stampForwardRequestedReasoningEffort(result, service.NormalizeClaudeOutputEffort(parsedReq.OutputEffort))
 			if result.ReasoningEffort == nil {
@@ -917,7 +920,10 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				// Forward 内部可能继续改写 body，usage 去重指纹必须使用最终上游接受的当前 body。
 				requestPayloadHash := service.HashUsageRequestPayload(attemptParsedReq.Body.Bytes())
 				inboundEndpoint := GetInboundEndpoint(c)
-				upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
+				upstreamEndpoint := result.UpstreamEndpoint
+				if upstreamEndpoint == "" {
+					upstreamEndpoint = GetUpstreamEndpoint(c, account.Platform)
+				}
 
 				stampForwardRequestedReasoningEffort(result, service.NormalizeClaudeOutputEffort(attemptParsedReq.OutputEffort))
 				if result.ReasoningEffort == nil {
