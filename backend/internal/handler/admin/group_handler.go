@@ -136,7 +136,6 @@ type publicModelPlazaGroup struct {
 	Platform       string                      `json:"platform"`
 	RateMultiplier float64                     `json:"rate_multiplier"`
 	ModelAllowlist service.GroupModelAllowlist `json:"model_allowlist"`
-
 }
 
 // GetLiveCapability 返回当前服务端是否具备生成 Live attestation 的运行环境。
