@@ -100,8 +100,8 @@ func ProvideAPIKeyHandler(apiKeyService *service.APIKeyService, recommendationSt
 	return h
 }
 
-func ProvideAdminGroupHandler(adminService service.AdminService, dashboardService *service.DashboardService, groupCapacityService *service.GroupCapacityService, recommendationStore *service.GroupRecommendationStore) *admin.GroupHandler {
-	h := admin.NewGroupHandler(adminService, dashboardService, groupCapacityService)
+func ProvideAdminGroupHandler(adminService service.AdminService, dashboardService *service.DashboardService, groupCapacityService *service.GroupCapacityService, recommendationStore *service.GroupRecommendationStore, cfg *config.Config) *admin.GroupHandler {
+	h := admin.NewGroupHandlerWithConfig(adminService, dashboardService, groupCapacityService, cfg)
 	h.SetRecommendationStore(recommendationStore)
 	return h
 }

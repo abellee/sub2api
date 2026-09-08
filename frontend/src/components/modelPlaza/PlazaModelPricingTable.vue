@@ -1,6 +1,6 @@
 <template>
   <div class="plaza-pricing-table overflow-x-auto" :style="accentStyle">
-    <table class="w-full min-w-[1000px] table-fixed border-collapse text-sm tabular-nums">
+    <table class="w-full min-w-[1000px] table-auto border-collapse text-sm tabular-nums">
       <colgroup>
         <col class="w-[25%]" />
         <col class="w-[11%]" />
@@ -341,7 +341,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { formatScaled } from '@/utils/pricing'
+import { formatScaled, resolveIntervalPrices } from '@/utils/pricing'
 import ModelIcon from '@/components/common/ModelIcon.vue'
 import Select from '@/components/common/Select.vue'
 import { platformAccentColor, platformBadgeLightClass, platformLabel } from '@/utils/platformColors'
@@ -638,7 +638,10 @@ function officialIntervals(m: PlazaModel): UserPricingInterval[] {
 
 /** 任一档带缓存价才按档渲染缓存列;否则沿用平价的写入/读取两行。 */
 function hasTierCachePricing(intervals: UserPricingInterval[]): boolean {
-  return intervals.some((iv) => iv.cache_write_price != null || iv.cache_write_1h_price != null || iv.cache_read_price != null)
+  return intervals.some((iv) =>
+    iv.cache_write_price != null || iv.cache_write_1h_price != null || iv.cache_read_price != null ||
+    iv.cache_write_multiplier != null || iv.cache_read_multiplier != null
+  )
 }
 
 function hasTierCachePricingForModel(m: PlazaModel): boolean {
@@ -660,15 +663,17 @@ function requestIntervals(m: PlazaModel): UserPricingInterval[] {
 
 /** token 模式的整单上下文档位；后端不会在此契约中输出边际计价规则。 */
 function tokenIntervals(m: PlazaModel): UserPricingInterval[] {
-  if (billingMode(m) !== BILLING_MODE_TOKEN) return []
-  const intervals = hasModelPlazaChannelContextPricing(m) ? m.pricing?.intervals ?? [] : []
-  return sortByContext(intervals.filter((iv) => iv.min_tokens > 0 && (
-    iv.input_price != null
-    || iv.output_price != null
-    || iv.cache_write_price != null
-    || iv.cache_write_1h_price != null
-    || iv.cache_read_price != null
-  )))
+  if (billingMode(m) !== BILLING_MODE_TOKEN || !m.pricing) return []
+  const intervals = hasModelPlazaChannelContextPricing(m) ? m.pricing.intervals ?? [] : []
+  return sortByContext(intervals)
+    .map((iv) => resolveIntervalPrices(iv, m.pricing!))
+    .filter((iv) =>
+      iv.input_price != null
+      || iv.output_price != null
+      || iv.cache_write_price != null
+      || iv.cache_write_1h_price != null
+      || iv.cache_read_price != null
+    )
 }
 
 /**

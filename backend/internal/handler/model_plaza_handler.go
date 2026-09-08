@@ -142,7 +142,7 @@ func (h *ModelPlazaHandler) get(c *gin.Context, enforceFeature bool) {
 		return
 	}
 
-	// 两个广场入口统一以分组 models_list_config 为模型白名单；渠道支持模型和
+	// 两个广场入口统一以分组 model_allowlist 为模型白名单；渠道支持模型和
 	// 已配置价格只能补充定价，不能让未在分组模型设置中的模型出现在广场。
 	groups, err := h.plazaService.ListConfiguredGroups(c.Request.Context())
 	if err != nil {
