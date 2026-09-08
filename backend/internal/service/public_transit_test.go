@@ -4,6 +4,7 @@ package service
 
 import (
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
 	"github.com/stretchr/testify/require"
@@ -233,4 +234,27 @@ func TestToPublicTransitModel_NormalizesImageModeToPerRequest(t *testing.T) {
 	require.InDelta(t, 0.134, *model.Price.ImageSizePrices["1k"], 1e-12)
 	require.InDelta(t, 0.201, *model.Price.ImageSizePrices["2k"], 1e-12)
 	require.InDelta(t, 0.268, *model.Price.ImageSizePrices["4k"], 1e-12)
+}
+
+func TestBuildPublicTransitPassiveDisclosureAggregatesModelsAndGroups(t *testing.T) {
+	now := time.Now().UTC()
+	bucketA := now.Add(-time.Hour).Truncate(time.Hour)
+	bucketB := now.Truncate(time.Hour)
+	rows := []PublicTransitPassiveAggregate{
+		{BucketStart: &bucketA, Platform: "openai", GroupName: "gpt", Model: "gpt-5", RequestCount: 3, SuccessCount: 2, ErrorCount: 1, TotalLatencyMs: 300, LatencySamples: 2, TotalTTFTMs: 80, TTFTSamples: 2, InputTokens: 100, CacheRead: 50, LastRequestAt: &now},
+		{BucketStart: &bucketB, Platform: "openai", GroupName: "gpt", Model: "gpt-5", RequestCount: 2, SuccessCount: 2, TotalLatencyMs: 100, LatencySamples: 2, TotalTTFTMs: 20, TTFTSamples: 1, InputTokens: 50, CacheCreate: 25, CacheRead: 25, LastRequestAt: &now},
+	}
+	out := buildPublicTransitPassiveDisclosure(rows, PublicTransitPassiveWindow{Period: "last_24h", BucketSeconds: 3600})
+	require.Len(t, out.Models, 1)
+	require.Equal(t, "gpt", out.Models[0].GroupName)
+	require.Equal(t, int64(5), out.Models[0].RequestCount)
+	require.InDelta(t, 0.8, out.Models[0].SuccessRate, 1e-12)
+	require.Equal(t, 100, *out.Models[0].AvgLatencyMs)
+	require.Equal(t, int64(5), out.Window.RequestCount)
+	require.Equal(t, 100, *out.Window.AvgLatencyMs)
+	require.Len(t, out.Groups, 1)
+	require.Equal(t, "gpt", out.Groups[0].Name)
+	require.Len(t, out.Groups[0].Buckets, 2)
+	require.Equal(t, bucketA.Format(time.RFC3339), out.Groups[0].Buckets[0].Start)
+	require.InDelta(t, 50.0/150.0, out.Groups[0].Buckets[0].CacheHitRate, 1e-12)
 }

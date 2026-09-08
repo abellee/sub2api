@@ -333,7 +333,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	batchImageDownloadService := service.NewBatchImageDownloadService(batchImageRepository, accountRepository, batchImageDownloadLimiter, configConfig)
 	batchImageCleanupService := service.ProvideBatchImageCleanupService(batchImageRepository, accountRepository, configConfig)
 	batchImageHandler := handler.ProvideBatchImageHandler(batchImagePublicService, batchImageDownloadService, batchImageCleanupService, openAIGatewayHandler)
-	publicTransitService := service.NewPublicTransitService(channelService, channelMonitorService, channelMonitorV2Service, settingService, paymentConfigService, groupRepository, usageLogRepository)
+	publicTransitService := service.ProvidePublicTransitService(channelService, channelMonitorService, settingService, paymentConfigService, groupRepository, usageLogRepository, opsRepository, channelMonitorV2Service)
 	publicTransitHandler := handler.NewPublicTransitHandler(publicTransitService)
 	idempotencyCleanupService := service.ProvideIdempotencyCleanupService(idempotencyRepository, configConfig)
 	openAIQuotaAutoResetService := service.ProvideOpenAIQuotaAutoResetService(accountRepository, openAIQuotaService, rateLimitService, idempotencyCoordinator, auditLogService, settingService, leaderLockCache)

@@ -7377,9 +7377,14 @@
         </div>
 
         <div class="card">
-          <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
-            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('admin.settings.features.publicTransit.title') }}</h2>
-            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('admin.settings.features.publicTransit.description') }}</p>
+          <div class="flex items-start justify-between gap-4 border-b border-gray-100 px-6 py-4 dark:border-dark-700">
+            <div>
+              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('admin.settings.features.publicTransit.title') }}</h2>
+              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('admin.settings.features.publicTransit.description') }}</p>
+            </div>
+            <router-link to="/admin/public-transit" class="shrink-0 text-sm font-medium text-primary-600 hover:underline dark:text-primary-400">
+              {{ t('admin.settings.features.publicTransit.previewLink') }}
+            </router-link>
           </div>
           <div class="space-y-5 p-6">
             <div class="flex items-center justify-between"><div><label class="text-sm font-medium">{{ t('admin.settings.features.publicTransit.apiEnabled') }}</label><p class="mt-0.5 text-xs text-gray-500">{{ t('admin.settings.features.publicTransit.apiEnabledHint') }}</p></div><Toggle v-model="form.public_transit_enabled" /></div>

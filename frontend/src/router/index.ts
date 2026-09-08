@@ -476,6 +476,18 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/public-transit',
+    name: 'AdminPublicTransit',
+    component: () => import('@/views/admin/PublicTransitPreviewView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Public Transit Preview',
+      titleKey: 'publicTransit.title',
+      descriptionKey: 'publicTransit.subtitle'
+    }
+  },
+  {
     path: '/admin/ops',
     name: 'AdminOps',
     component: () => import('@/views/admin/ops/OpsDashboard.vue'),
@@ -907,7 +919,7 @@ let authInitialized = false
 const navigationLoading = useNavigationLoadingState()
 // 延迟初始化预加载，传入 router 实例
 let routePrefetch: ReturnType<typeof useRoutePrefetch> | null = null
-const BACKEND_MODE_ALLOWED_PATHS = ['/login', '/key-usage', '/setup', '/payment/result', '/payment/airwallex', '/legal']
+const BACKEND_MODE_ALLOWED_PATHS = ['/login', '/key-usage', '/setup', '/payment/result', '/payment/airwallex', '/legal', '/public/transit']
 const BACKEND_MODE_CALLBACK_PATHS = [
   '/auth/callback',
   '/auth/linuxdo/callback',
@@ -1014,6 +1026,23 @@ router.beforeEach(async (to, _from, next) => {
       // Backend mode:登录的非管理员也不可见(匿名由下方公共拦截处理,广场不在白名单)
       if (appStore.backendModeEnabled && authStore.isAuthenticated && !authStore.isAdmin) {
         next('/login')
+        return
+      }
+    }
+    // Public transit: keep the API and the visual page independently
+    // configurable. Administrators can still open the public route while
+    // tuning it; anonymous and regular users are redirected when the page is
+    // explicitly disabled.
+    if (to.path === '/public/transit' && !authStore.isAdmin) {
+      if (!appStore.publicSettingsLoaded) {
+        try {
+          await appStore.fetchPublicSettings()
+        } catch (error) {
+          console.warn('Failed to load public transit settings in route guard', error)
+        }
+      }
+      if (appStore.publicSettingsLoaded && appStore.cachedPublicSettings?.public_transit_page_enabled === false) {
+        next(authStore.isAuthenticated ? '/dashboard' : '/home')
         return
       }
     }
