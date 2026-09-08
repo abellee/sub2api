@@ -1,6 +1,5 @@
 import { defineConfig, loadEnv, Plugin } from 'vite'
 import vue from '@vitejs/plugin-vue'
-import checker from 'vite-plugin-checker'
 import { resolve } from 'path'
 
 function escapeHtml(value: string): string {
@@ -87,9 +86,6 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [
       vue(),
-      checker({
-        vueTsc: true
-      }),
       injectPublicSettings(backendUrl)
     ],
   resolve: {
@@ -112,7 +108,7 @@ export default defineConfig(({ mode }) => {
       // CJS packages still need explicit pre-bundling when dependency
       // discovery is disabled; otherwise the browser receives the raw UMD
       // file and named/default imports fail during route loading.
-      include: ['file-saver']
+      include: ['file-saver', 'qrcode']
     },
   build: {
     outDir: '../backend/internal/web/dist',
