@@ -79,7 +79,7 @@ func TestListConfiguredPlazaGroups_UsesGroupModelListWithoutChannelIntersection(
 	groups := []Group{
 		{
 			ID: 12, Name: "Gemini", Platform: PlatformGemini, RateMultiplier: 0.15,
-			ModelsListConfig: GroupModelsListConfig{
+			ModelAllowlist: GroupModelAllowlist{
 				Enabled: false,
 				Models: []string{
 					"gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash",
@@ -619,7 +619,7 @@ func grokHeavyPlazaGroup() Group {
 		LongContextPricingEnabled: true,
 		VideoRateIndependent:      true,
 		VideoRateMultiplier:       0.5,
-		ModelsListConfig: GroupModelsListConfig{
+		ModelAllowlist: GroupModelAllowlist{
 			Models: []string{
 				"grok-imagine-image",
 				"grok-imagine-video",
@@ -760,7 +760,7 @@ func TestListConfiguredPlazaGroups_GrokMediaEnabledWithoutPricesHidesDefaults(t 
 	groups := []Group{{
 		ID: 10, Name: "Grok Heavy", Platform: PlatformGrok, RateMultiplier: 1,
 		AllowImageGeneration: true,
-		ModelsListConfig: GroupModelsListConfig{
+		ModelAllowlist: GroupModelAllowlist{
 			Models: []string{"grok-imagine-image", "grok-imagine-video"},
 		},
 	}}
@@ -812,7 +812,7 @@ func TestListConfiguredPlazaGroups_HidesCatalogLongContextWithoutChannelInterval
 	groups := []Group{{
 		ID: 10, Name: "g", Platform: PlatformAnthropic, RateMultiplier: 1,
 		LongContextPricingEnabled: true,
-		ModelsListConfig:          GroupModelsListConfig{Models: []string{"claude-flat"}},
+		ModelAllowlist:          GroupModelAllowlist{Models: []string{"claude-flat"}},
 	}}
 	catalog := &PricingService{pricingData: map[string]*LiteLLMModelPricing{
 		"claude-flat": {
@@ -863,7 +863,7 @@ func TestListConfiguredPlazaGroups_GroupMediaPricesDoNotExpandConfiguredModels(t
 		VideoModelPrices: map[string]map[string]float64{
 			VideoPriceFamilyGrokImagineVideo15: {VideoBillingResolution1080P: 0.25},
 		},
-		ModelsListConfig: GroupModelsListConfig{Models: []string{"grok-4.5", "grok-4.6"}},
+		ModelAllowlist: GroupModelAllowlist{Models: []string{"grok-4.5", "grok-4.6"}},
 	}}
 	svc := newPlazaService(nil, groups, nil)
 	out, err := svc.ListConfiguredGroups(context.Background())
@@ -885,7 +885,7 @@ func TestListConfiguredPlazaGroups_NoMediaPricesDoesNotInjectGrokModels(t *testi
 	groups := []Group{{
 		ID: 18, Name: "Grok Heavy", Platform: PlatformGrok, RateMultiplier: 0.11,
 		AllowImageGeneration: true,
-		ModelsListConfig:     GroupModelsListConfig{Models: []string{"grok-4.5"}},
+		ModelAllowlist:     GroupModelAllowlist{Models: []string{"grok-4.5"}},
 	}}
 	svc := newPlazaService(nil, groups, nil)
 	out, err := svc.ListConfiguredGroups(context.Background())
@@ -904,7 +904,7 @@ func TestListConfiguredPlazaGroups_KeepsConfiguredGrokMediaOnce(t *testing.T) {
 		Name:         "Grok Heavy",
 		Platform:     PlatformGrok,
 		ImagePrice1K: testPtrFloat64(0.03),
-		ModelsListConfig: GroupModelsListConfig{
+		ModelAllowlist: GroupModelAllowlist{
 			Models: []string{"grok-imagine-image", "grok-4"},
 		},
 	}}
@@ -928,7 +928,7 @@ func TestListConfiguredPlazaGroups_PreservesConfiguredGrokImageVariants(t *testi
 		Name:         "生图/视频",
 		Platform:     PlatformGrok,
 		ImagePrice1K: testPtrFloat64(0.03),
-		ModelsListConfig: GroupModelsListConfig{
+		ModelAllowlist: GroupModelAllowlist{
 			Models: []string{"grok-imagine", "grok-imagine-image-quality"},
 		},
 	}}
@@ -956,7 +956,7 @@ func TestListConfiguredPlazaGroups_GrokImagineAliasUsesQualityChannelPricing(t *
 	}}
 	groups := []Group{{
 		ID: 29, Name: "生图/视频", Platform: PlatformGrok, RateMultiplier: 1,
-		ModelsListConfig: GroupModelsListConfig{Models: []string{"grok-imagine", xai.DefaultImagineImageQualityModel}},
+		ModelAllowlist: GroupModelAllowlist{Models: []string{"grok-imagine", xai.DefaultImagineImageQualityModel}},
 	}}
 	svc := newPlazaServiceWithBilling(channels, groups, map[int64]string{29: PlatformGrok}, nil)
 	out, err := svc.ListConfiguredGroups(context.Background())

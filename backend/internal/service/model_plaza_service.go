@@ -234,7 +234,7 @@ func (s *ModelPlazaService) ListGroups(ctx context.Context) ([]PlazaGroup, error
 }
 
 // ListConfiguredGroups returns the catalog exactly as configured in each
-// active group's models_list_config. Channel support and pricing only enrich
+// active group's model_allowlist. Channel support and pricing only enrich
 // those configured entries and never determine which models are visible.
 func (s *ModelPlazaService) ListConfiguredGroups(ctx context.Context) ([]PlazaGroup, error) {
 	groups, err := s.groupRepo.ListActive(ctx)
@@ -246,7 +246,7 @@ func (s *ModelPlazaService) ListConfiguredGroups(ctx context.Context) ([]PlazaGr
 	out := make([]PlazaGroup, 0, len(groups))
 	for i := range groups {
 		g := &groups[i]
-		if len(g.ModelsListConfig.Models) == 0 {
+		if len(g.ModelAllowlist.Models) == 0 {
 			continue
 		}
 		pg := PlazaGroup{
@@ -267,8 +267,8 @@ func (s *ModelPlazaService) ListConfiguredGroups(ctx context.Context) ([]PlazaGr
 			VideoRateMultiplier:       g.VideoRateMultiplier,
 			LongContextPricingEnabled: g.LongContextPricingEnabled,
 		}
-		seen := make(map[string]struct{}, len(g.ModelsListConfig.Models))
-		for _, configuredName := range g.ModelsListConfig.Models {
+		seen := make(map[string]struct{}, len(g.ModelAllowlist.Models))
+		for _, configuredName := range g.ModelAllowlist.Models {
 			name := strings.TrimSpace(configuredName)
 			if name == "" {
 				continue
@@ -516,6 +516,7 @@ func plazaPricingFromSchedule(raw *ChannelModelPricing, sched *ContextPricingSch
 	out.InputPrice = first.Input
 	out.OutputPrice = first.Output
 	out.CacheWritePrice = first.CacheWrite
+	out.CacheWrite1hPrice = first.CacheWrite1h
 	out.CacheReadPrice = first.CacheRead
 	if len(sched.Tiers) > 1 {
 		out.Intervals = plazaIntervalsFromTiers(sched.Tiers)
@@ -527,14 +528,15 @@ func plazaIntervalsFromTiers(tiers []ContextPricingTier) []PricingInterval {
 	intervals := make([]PricingInterval, 0, len(tiers))
 	for i, tier := range tiers {
 		intervals = append(intervals, PricingInterval{
-			MinTokens:       tier.MinTokens,
-			MaxTokens:       tier.MaxTokens,
-			TierLabel:       tier.Label,
-			InputPrice:      tier.Input,
-			OutputPrice:     tier.Output,
-			CacheWritePrice: tier.CacheWrite,
-			CacheReadPrice:  tier.CacheRead,
-			SortOrder:       i,
+			MinTokens:         tier.MinTokens,
+			MaxTokens:         tier.MaxTokens,
+			TierLabel:         tier.Label,
+			InputPrice:        tier.Input,
+			OutputPrice:       tier.Output,
+			CacheWritePrice:   tier.CacheWrite,
+			CacheWrite1hPrice: tier.CacheWrite1h,
+			CacheReadPrice:    tier.CacheRead,
+			SortOrder:         i,
 		})
 	}
 	return intervals

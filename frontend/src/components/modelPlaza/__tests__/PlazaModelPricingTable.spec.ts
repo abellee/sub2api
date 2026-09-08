@@ -308,6 +308,105 @@ describe('PlazaModelPricingTable', () => {
     expect(text).toContain('modelPlaza.table.perUnitRequest')
   })
 
+
+  it('token 模型阶梯定价内联进输入/输出列,按倍率折算', async () => {
+    const model = tokenModel({
+      pricing: {
+        billing_mode: 'token',
+        input_price: 3e-6,
+        output_price: 1.5e-5,
+        cache_write_price: null,
+        cache_read_price: null,
+        image_input_price: null,
+        image_output_price: null,
+        per_request_price: null,
+        intervals: [
+          {
+            min_tokens: 0,
+            max_tokens: 200000,
+            tier_label: '',
+            input_price: 3e-6,
+            output_price: 1.5e-5,
+            cache_write_price: null,
+            cache_read_price: null,
+            per_request_price: null
+          },
+          {
+            min_tokens: 200000,
+            max_tokens: null,
+            tier_label: '',
+            input_price: 6e-6,
+            output_price: 3e-5,
+            cache_write_price: null,
+            cache_read_price: null,
+            per_request_price: null
+          }
+        ]
+      }
+    })
+    const wrapper = mountTable([model], 0.5)
+    await wrapper.find('button[aria-pressed]').trigger('click')
+    const text = wrapper.text()
+    // 区间标签按 token 数生成
+    expect(text).toContain('≤200K')
+    expect(text).toContain('>200K')
+    // 折后:输入 1.5 / 3,输出 7.5 / 15
+    expect(text).toContain('$1.50')
+    expect(text).toContain('$7.50')
+    expect(text).toContain('$15.00')
+  })
+
+  it('仅配置区间倍率时按基础价格展示 input/output/cache 各档价格', async () => {
+    const model = tokenModel({
+      pricing: {
+        billing_mode: 'token',
+        input_price: 10e-6,
+        output_price: 50e-6,
+        cache_write_price: 12.5e-6,
+        cache_write_1h_price: 12.5e-6,
+        cache_read_price: 2e-6,
+        image_input_price: null,
+        image_output_price: null,
+        per_request_price: null,
+        intervals: [{
+          min_tokens: 272000,
+          max_tokens: null,
+          tier_label: '>272K',
+          input_price: null,
+          output_price: null,
+          cache_write_price: null,
+          cache_write_1h_price: null,
+          cache_read_price: null,
+          input_multiplier: 2,
+          output_multiplier: 1.5,
+          cache_write_multiplier: 2,
+          cache_read_multiplier: 2,
+          per_request_price: null
+        }]
+      },
+      official_pricing: null
+    })
+
+    const first = mountTable([model], 1)
+    await first.find('button[aria-pressed]').trigger('click')
+    const text = first.text()
+    expect(text).toContain('$20.00')
+    expect(text).toContain('$75.00')
+    expect(text).toContain('$25.00')
+    expect(text).toContain('$4.00')
+    model.pricing!.intervals.unshift({
+      ...model.pricing!.intervals[0], min_tokens: 0, max_tokens: 272000,
+      tier_label: '<=272K', cache_write_multiplier: null, cache_read_multiplier: null
+    })
+    const expanded = mountTable([model], 1)
+    await expanded.find('button[aria-pressed]').trigger('click')
+    const cells = expanded.findAll('tbody td')
+    expect(cells[3].text()).toContain('$12.50')
+    expect(cells[3].text()).toContain('$2.00')
+    expect(cells[3].text()).toContain('$25.00')
+    expect(cells[3].text()).toContain('$4.00')
+  })
+
   it('生图独立倍率开启时,按图价格 × 独立倍率,不乘分组倍率;倍率列展示独立倍率', () => {
     const model = tokenModel({
       name: 'gpt-image-2',
