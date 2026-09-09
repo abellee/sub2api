@@ -40,10 +40,31 @@ export async function getRecommendations(): Promise<GroupRecommendation[]> {
   return data
 }
 
+export interface GroupCategory {
+  id: string
+  name: string
+  description?: string
+  sort_order?: number
+}
+
+export interface GroupCategorySnapshot {
+  categories: GroupCategory[]
+  assignments: Record<string, string>
+}
+
+export async function getCategories(): Promise<GroupCategorySnapshot> {
+  const { data } = await apiClient.get<GroupCategorySnapshot>('/groups/categories')
+  return {
+    categories: data?.categories ?? [],
+    assignments: data?.assignments ?? {}
+  }
+}
+
 export const userGroupsAPI = {
   getAvailable,
   getUserGroupRates,
-  getRecommendations
+  getRecommendations,
+  getCategories
 }
 
 export default userGroupsAPI

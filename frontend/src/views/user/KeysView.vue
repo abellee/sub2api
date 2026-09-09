@@ -506,7 +506,7 @@
             type="button"
             class="group-picker-trigger mt-1.5"
             data-tour="key-form-group"
-            @click="showGroupPickerModal = true"
+            @click="openGroupPicker"
           >
             <GroupBadge
               v-if="selectedGroupOption"
@@ -1055,89 +1055,106 @@
           </button>
         </div>
 
-        <section v-if="recommendedGroupOptions.length" class="group-picker-recommended-section">
-          <div class="recommended-groups-heading">
-            <Icon name="badge" size="sm" class="text-amber-500" />
-            <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-100">{{ t('keys.recommendedGroups') }}</h4>
-            <span class="text-xs text-gray-400 dark:text-gray-500">{{ recommendedGroupOptions.length }}</span>
-          </div>
-          <div class="group-picker-recommended-list">
-            <button
-              v-for="option in recommendedGroupOptions"
-              :key="`recommended-${option.value}`"
-              type="button"
-              class="recommended-group-mini-card group-picker-recommended-card"
-              :class="formData.group_id === option.value ? 'group-card-selected' : ''"
-              :title="option.recommendationReason || option.description || option.label"
-              @click="selectGroupFromCard(option.value)"
-            >
-              <span class="truncate font-medium text-primary-700 dark:text-primary-300">{{ option.label }}</span>
-              <span class="shrink-0 text-xs text-gray-500 dark:text-gray-400">{{ formatGroupRate(option) }}x</span>
-              <span class="truncate text-left text-xs text-gray-500 dark:text-gray-400">
-                {{ option.recommendationReason || option.description || t('keys.recommendationReasonEmpty') }}
-              </span>
-              <span class="shrink-0 text-xs font-semibold text-amber-600 dark:text-amber-400">
-                {{ formatRecommendationRating(option.recommendationRating) }}
-              </span>
-            </button>
-          </div>
-        </section>
-
         <nav
-          v-if="groupCardSections.length"
-          class="group-picker-anchors"
-          :aria-label="t('keys.groupProviders')"
+          v-if="groupCategoryTabs.length"
+          class="group-picker-tabs"
+          role="tablist"
+          :aria-label="t('keys.selectGroup')"
         >
           <button
-            v-for="section in groupCardSections"
-            :key="`anchor-${section.platform}`"
+            v-for="tab in groupCategoryTabs"
+            :key="tab.id"
             type="button"
-            class="group-picker-anchor"
-            @click="scrollToProvider(section.platform)"
+            role="tab"
+            class="group-picker-tab"
+            :class="{
+              'group-picker-tab-active': activeCategoryTab === tab.id,
+              'group-picker-tab-recommended': tab.recommended
+            }"
+            :aria-selected="activeCategoryTab === tab.id"
+            :title="tab.description || tab.name"
+            @click="activeCategoryTab = tab.id"
           >
-            <PlatformIcon :platform="section.platform" size="sm" />
-            <span>{{ section.label }}</span>
+            <Icon
+              v-if="tab.recommended"
+              name="trophy"
+              size="sm"
+              class="text-amber-500"
+            />
+            <span class="truncate">{{ tab.name }}</span>
+            <span class="text-[11px] font-normal text-gray-400 dark:text-gray-500">{{ tab.options.length }}</span>
           </button>
         </nav>
 
         <div ref="groupPickerContentRef" class="group-picker-scroll">
-          <div v-if="groupCardSections.length" class="space-y-5">
-          <section
-            v-for="section in groupCardSections"
-            :id="`group-provider-${section.platform}`"
-            :key="section.platform"
-            class="space-y-2.5"
-          >
-            <div class="flex items-center gap-2 border-b border-gray-200 pb-2 dark:border-dark-700">
-              <PlatformIcon :platform="section.platform" size="sm" class="text-gray-500 dark:text-gray-300" />
-              <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-100">{{ section.label }}</h4>
-              <span class="text-xs text-gray-400 dark:text-gray-500">{{ section.options.length }}</span>
-            </div>
-            <div class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              <button
-                v-for="option in section.options"
-                :key="option.value"
-                type="button"
-                class="group-card"
-                :class="formData.group_id === option.value ? 'group-card-selected' : ''"
-                @click="selectGroupFromCard(option.value)"
-              >
-                <GroupOptionItem
-                  :name="option.label"
-                  :platform="option.platform"
-                  :subscription-type="option.subscriptionType"
-                  :rate-multiplier="option.rate"
-                  :user-rate-multiplier="option.userRate"
-                  :peak-rate-enabled="option.peakRateEnabled"
-                  :peak-start="option.peakStart"
-                  :peak-end="option.peakEnd"
-                  :peak-rate-multiplier="option.peakRateMultiplier"
-                  :description="option.description"
-                  :selected="formData.group_id === option.value"
-                />
-              </button>
-            </div>
-          </section>
+          <div v-if="activeCategoryBrandSections.length" class="space-y-5">
+            <section
+              v-for="section in activeCategoryBrandSections"
+              :key="section.platform"
+              class="space-y-2.5"
+            >
+              <div class="flex items-center gap-2 border-b border-gray-200 pb-2 dark:border-dark-700">
+                <PlatformIcon :platform="section.platform" size="sm" class="text-gray-500 dark:text-gray-300" />
+                <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-100">{{ section.label }}</h4>
+                <span class="text-xs text-gray-400 dark:text-gray-500">{{ section.options.length }}</span>
+              </div>
+              <div class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                <button
+                  v-for="option in section.options"
+                  :key="option.value"
+                  type="button"
+                  class="group-card"
+                  :class="formData.group_id === option.value ? 'group-card-selected' : ''"
+                  @click="selectGroupFromCard(option.value)"
+                >
+                  <div class="flex min-w-0 w-full flex-col">
+                    <GroupOptionItem
+                      :name="option.label"
+                      :platform="option.platform"
+                      :subscription-type="option.subscriptionType"
+                      :rate-multiplier="option.rate"
+                      :user-rate-multiplier="option.userRate"
+                      :peak-rate-enabled="option.peakRateEnabled"
+                      :peak-start="option.peakStart"
+                      :peak-end="option.peakEnd"
+                      :peak-rate-multiplier="option.peakRateMultiplier"
+                      :description="option.description"
+                      :selected="formData.group_id === option.value"
+                      :show-rate-label="false"
+                      :reserve-description="true"
+                    />
+                    <div
+                      v-if="option.recommendationReason || option.recommendationRating != null"
+                      class="recommendation-note"
+                    >
+                      <div class="flex w-full items-center justify-between gap-3">
+                        <span class="recommendation-note-label">
+                          {{ t('keys.recommendationReason') }}
+                        </span>
+                        <span
+                          v-if="option.recommendationRating != null"
+                          class="recommendation-note-stars"
+                          :aria-label="t('keys.recommendationReason')"
+                        >
+                          <span
+                            v-for="index in 5"
+                            :key="index"
+                            class="recommendation-note-star"
+                          >{{ recommendationStarEmoji(option.recommendationRating, index) }}</span>
+                        </span>
+                      </div>
+                      <p
+                        v-if="option.recommendationReason"
+                        class="recommendation-note-text"
+                        :title="option.recommendationReason"
+                      >
+                        {{ option.recommendationReason }}
+                      </p>
+                    </div>
+                  </div>
+                </button>
+              </div>
+            </section>
           </div>
           <div v-else class="rounded-xl border border-dashed border-gray-300 px-4 py-8 text-center text-sm text-gray-500 dark:border-dark-600 dark:text-gray-400">
             {{ t('keys.noGroupFound') }}
@@ -1311,7 +1328,7 @@
 </template>
 
 <script setup lang="ts">
-	import { ref, reactive, computed, onMounted, onUnmounted, type ComponentPublicInstance } from 'vue'
+	import { ref, reactive, computed, onMounted, onUnmounted, watch, type ComponentPublicInstance } from 'vue'
 	import { useI18n } from 'vue-i18n'
 	import { useAppStore } from '@/stores/app'
 	import { useOnboardingStore } from '@/stores/onboarding'
@@ -1320,7 +1337,7 @@ import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 
 const { t } = useI18n()
 import { keysAPI, authAPI, usageAPI, userGroupsAPI } from '@/api'
-import type { GroupRecommendation } from '@/api/groups'
+import type { GroupCategory, GroupRecommendation } from '@/api/groups'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 	import DataTable from '@/components/common/DataTable.vue'
@@ -1337,6 +1354,7 @@ import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 	import GroupOptionItem from '@/components/common/GroupOptionItem.vue'
 	import PlatformIcon from '@/components/common/PlatformIcon.vue'
 	import type { ApiKey, Group, PublicSettings, SubscriptionType, GroupPlatform, UpdateApiKeyRequest } from '@/types'
+import { GROUP_PLATFORM_OPTIONS } from '@/constants/platforms'
 import type { Column } from '@/components/common/types'
 import type { BatchApiKeyUsageStats } from '@/api/usage'
 import { formatDateTime } from '@/utils/format'
@@ -1488,6 +1506,11 @@ let resetTimer: ReturnType<typeof setInterval> | null = null
 const usageStats = ref<Record<string, BatchApiKeyUsageStats>>({})
 const userGroupRates = ref<Record<number, number>>({})
 const groupRecommendations = ref<GroupRecommendation[]>([])
+const groupCategories = ref<GroupCategory[]>([])
+const groupCategoryAssignments = ref<Record<string, string>>({})
+const activeCategoryTab = ref('')
+const UNCATEGORIZED_TAB = '__uncategorized__'
+const RECOMMENDED_TAB = '__recommended__'
 
 const pagination = ref({
   page: 1,
@@ -1663,56 +1686,156 @@ const formatRecommendationRating = (rating?: number) => {
   return `${Number.isInteger(value) ? value : value.toFixed(1)}⭐`
 }
 
+const recommendationStarEmoji = (rating: number | undefined, index: number) => {
+  const value = Number(rating)
+  if (Number.isNaN(value) || value < index - 0.5) return '☆'
+  return '⭐'
+}
+
 const selectedGroupOption = computed(() =>
   groupOptions.value.find((option) => option.value === formData.value.group_id) ?? null
 )
 
-const providerOrder: GroupPlatform[] = [
-  'openai',
-  'anthropic',
-  'gemini',
-  'grok',
-  'antigravity',
-  'kimi',
-  'deepseek',
-  'zhipu',
-  'composite'
-]
+const sortGroupOptions = (options: GroupOption[]) =>
+  [...options].sort((a, b) => {
+    const rateA = a.userRate ?? a.rate
+    const rateB = b.userRate ?? b.rate
+    return rateA - rateB || a.label.localeCompare(b.label)
+  })
 
-const providerLabels: Record<GroupPlatform, string> = {
-  openai: 'OpenAI',
-  anthropic: 'Anthropic',
-  gemini: 'Gemini',
-  grok: 'Grok',
-  antigravity: 'Antigravity',
-  kimi: 'Kimi',
-  deepseek: 'DeepSeek',
-  zhipu: '智谱 AI',
-  composite: 'Composite'
-}
-
-const groupCardSections = computed(() => {
+const groupCategoryTabs = computed(() => {
   const query = groupCardSearch.value.trim().toLowerCase()
   const filtered = groupOptions.value.filter((option) => {
     if (!query) return true
     return option.label.toLowerCase().includes(query) ||
-      (option.description && option.description.toLowerCase().includes(query))
+      Boolean(option.description && option.description.toLowerCase().includes(query))
   })
 
-  return providerOrder
-    .map((platform) => ({
-      platform,
-      label: providerLabels[platform],
-      options: filtered
-        .filter((option) => option.platform === platform)
-        .sort((a, b) => {
-          const rateA = a.userRate ?? a.rate
-          const rateB = b.userRate ?? b.rate
-          return rateA - rateB || a.label.localeCompare(b.label)
-        })
-    }))
-    .filter((section) => section.options.length > 0)
+  const categoryById = new Map(groupCategories.value.map((category) => [category.id, category]))
+  const groupsByCategory = new Map<string, GroupOption[]>()
+  const uncategorized: GroupOption[] = []
+
+  for (const option of filtered) {
+    const categoryId = groupCategoryAssignments.value[String(option.value)]
+    if (categoryId && categoryById.has(categoryId)) {
+      const list = groupsByCategory.get(categoryId) ?? []
+      list.push(option)
+      groupsByCategory.set(categoryId, list)
+    } else {
+      uncategorized.push(option)
+    }
+  }
+
+  const toTab = (category: GroupCategory) => ({
+    id: category.id,
+    name: category.name,
+    description: category.description || '',
+    recommended: false,
+    options: sortGroupOptions(groupsByCategory.get(category.id) ?? [])
+  })
+
+  const tabs: Array<{
+    id: string
+    name: string
+    description: string
+    recommended: boolean
+    options: GroupOption[]
+  }> = []
+
+  if (recommendedGroupOptions.value.length) {
+    tabs.push({
+      id: RECOMMENDED_TAB,
+      name: t('keys.recommendedGroups'),
+      description: '',
+      recommended: true,
+      options: sortGroupOptions(recommendedGroupOptions.value.filter((option) => {
+        if (!query) return true
+        return option.label.toLowerCase().includes(query) ||
+          Boolean(option.description && option.description.toLowerCase().includes(query)) ||
+          Boolean(option.recommendationReason && option.recommendationReason.toLowerCase().includes(query))
+      }))
+    })
+  }
+
+  if (!groupCategories.value.length && !tabs.length) {
+    return [{
+      id: 'all',
+      name: t('keys.allGroups'),
+      description: '',
+      recommended: false,
+      options: sortGroupOptions(filtered)
+    }]
+  }
+
+  tabs.push(
+    ...[...groupCategories.value]
+      .sort((a, b) => (b.sort_order ?? 0) - (a.sort_order ?? 0))
+      .map(toTab)
+  )
+
+  if (uncategorized.length) {
+    tabs.push({
+      id: UNCATEGORIZED_TAB,
+      name: t('keys.uncategorizedGroups'),
+      description: '',
+      recommended: false,
+      options: sortGroupOptions(uncategorized)
+    })
+  }
+
+  return tabs
 })
+
+const defaultCategoryTabId = computed(() => {
+  const groupId = formData.value.group_id
+  if (groupId != null) {
+    const categoryId = groupCategoryAssignments.value[String(groupId)]
+    if (categoryId && groupCategoryTabs.value.some((tab) => tab.id === categoryId)) {
+      return categoryId
+    }
+    const otherTab = groupCategoryTabs.value.find((tab) => tab.id === UNCATEGORIZED_TAB)
+    if (otherTab?.options.some((option) => option.value === groupId)) {
+      return UNCATEGORIZED_TAB
+    }
+    const recommendedTab = groupCategoryTabs.value.find((tab) => tab.recommended)
+    if (recommendedTab?.options.some((option) => option.value === groupId)) {
+      return recommendedTab.id
+    }
+  }
+  const recommended = groupCategoryTabs.value.find((tab) => tab.recommended)
+  return recommended?.id || groupCategoryTabs.value[0]?.id || ''
+})
+
+const activeCategoryGroups = computed(() => {
+  const current = groupCategoryTabs.value.find((tab) => tab.id === activeCategoryTab.value)
+  return current?.options ?? []
+})
+
+const activeCategoryBrandSections = computed(() => {
+  const groupsByPlatform = new Map<GroupPlatform, GroupOption[]>()
+  for (const option of activeCategoryGroups.value) {
+    const list = groupsByPlatform.get(option.platform) ?? []
+    list.push(option)
+    groupsByPlatform.set(option.platform, list)
+  }
+  return GROUP_PLATFORM_OPTIONS
+    .filter((platform) => groupsByPlatform.has(platform.value))
+    .map((platform) => ({
+      platform: platform.value,
+      label: platform.label,
+      options: sortGroupOptions(groupsByPlatform.get(platform.value) ?? [])
+    }))
+})
+
+watch(
+  [groupCategoryTabs, () => showGroupPickerModal.value],
+  () => {
+    if (!showGroupPickerModal.value) return
+    if (!groupCategoryTabs.value.some((tab) => tab.id === activeCategoryTab.value)) {
+      activeCategoryTab.value = defaultCategoryTabId.value
+    }
+  }
+)
 
 // Group dropdown search
 const groupSearchQuery = ref('')
@@ -1942,6 +2065,18 @@ const loadGroups = async () => {
   }
 }
 
+const loadGroupCategories = async () => {
+  try {
+    const snap = await userGroupsAPI.getCategories()
+    groupCategories.value = snap.categories
+    groupCategoryAssignments.value = snap.assignments
+  } catch (error) {
+    console.error('Failed to load group categories:', error)
+    groupCategories.value = []
+    groupCategoryAssignments.value = {}
+  }
+}
+
 const loadGroupRecommendations = async () => {
   try {
     const recommendations = await userGroupsAPI.getRecommendations()
@@ -2035,18 +2170,15 @@ const openCreateModal = () => {
   showCreateModal.value = true
 }
 
+const openGroupPicker = () => {
+  groupCardSearch.value = ''
+  activeCategoryTab.value = defaultCategoryTabId.value
+  showGroupPickerModal.value = true
+}
+
 const closeGroupPicker = () => {
   showGroupPickerModal.value = false
   groupCardSearch.value = ''
-}
-
-const scrollToProvider = (platform: GroupPlatform) => {
-  const container = groupPickerContentRef.value
-  const section = container?.querySelector<HTMLElement>(`#group-provider-${platform}`)
-  if (!container || !section) return
-
-  const top = section.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop
-  container.scrollTo({ top, behavior: 'smooth' })
 }
 
 const useNativeGroupSelect = () => {
@@ -2458,6 +2590,7 @@ onMounted(() => {
   loadApiKeys()
   loadGroups()
   loadGroupRecommendations()
+  loadGroupCategories()
   loadUserGroupRates()
   loadPublicSettings()
   document.addEventListener('click', closeGroupSelector)
@@ -2492,19 +2625,6 @@ onUnmounted(() => {
   @apply grid min-w-[168px] max-w-[220px] shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-1.5 gap-y-0.5 rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-left text-xs transition-colors hover:border-primary-400 hover:bg-primary-50/50 dark:border-dark-600 dark:bg-dark-800 dark:hover:border-primary-500 dark:hover:bg-primary-900/20;
 }
 
-.group-picker-recommended-list {
-  @apply flex min-w-0 gap-2 overflow-x-auto pb-1;
-  scrollbar-width: thin;
-}
-
-.group-picker-recommended-card {
-  @apply min-h-[58px] w-[220px] max-w-[75vw] shrink-0;
-}
-
-.group-picker-recommended-section {
-  @apply flex min-w-0 items-start gap-3;
-}
-
 .group-picker-shell {
   display: flex;
   height: min(68vh, 640px);
@@ -2514,18 +2634,34 @@ onUnmounted(() => {
   gap: 1rem;
 }
 
-.group-picker-anchors {
+.group-picker-tabs {
   display: flex;
   min-width: 0;
   flex-shrink: 0;
-  gap: 0.5rem;
+  gap: 0.25rem;
   overflow-x: auto;
-  padding-bottom: 0.25rem;
+  border-bottom: 1px solid rgb(229 231 235);
   scrollbar-width: thin;
 }
 
-.group-picker-anchor {
-  @apply inline-flex shrink-0 items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:border-primary-300 hover:bg-primary-50 hover:text-primary-700 dark:border-dark-600 dark:bg-dark-700/60 dark:text-gray-300 dark:hover:border-primary-500 dark:hover:bg-primary-900/20 dark:hover:text-primary-300;
+.dark .group-picker-tabs {
+  border-bottom-color: rgb(55 65 81);
+}
+
+.group-picker-tab {
+  @apply inline-flex shrink-0 items-center gap-1.5 border-b-2 border-transparent bg-transparent px-3 py-2 text-sm font-medium text-gray-500 shadow-none transition-colors hover:bg-transparent hover:text-gray-800 dark:bg-transparent dark:text-gray-400 dark:hover:bg-transparent dark:hover:text-gray-200;
+}
+
+.group-picker-tab-active {
+  @apply border-primary-500 text-primary-700 dark:border-primary-400 dark:text-primary-300;
+}
+
+.group-picker-tab-recommended {
+  @apply text-amber-700 dark:text-amber-300;
+}
+
+.group-picker-tab-recommended.group-picker-tab-active {
+  @apply border-amber-500 dark:border-amber-400;
 }
 
 .group-picker-scroll {
@@ -2533,12 +2669,34 @@ onUnmounted(() => {
   flex: 1 1 0%;
   overflow-y: auto;
   overscroll-behavior: contain;
+  padding-top: 0.5rem;
   padding-right: 0.25rem;
+  padding-bottom: 0.5rem;
   scroll-behavior: smooth;
 }
 
 .group-card {
-  @apply flex min-h-[92px] w-full items-start rounded-xl border border-gray-200 bg-white p-3 text-left transition-all hover:-translate-y-0.5 hover:border-primary-400 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 dark:border-dark-600 dark:bg-dark-800 dark:hover:border-primary-500;
+  @apply relative z-0 flex min-h-[92px] w-full items-start rounded-xl border border-gray-200 bg-white p-3 text-left transition-all hover:z-10 hover:-translate-y-0.5 hover:border-primary-400 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 dark:border-dark-600 dark:bg-dark-800 dark:hover:border-primary-500;
+}
+
+.recommendation-note {
+  @apply mt-2.5 w-full rounded-lg bg-amber-50/80 px-2.5 py-2 text-left dark:bg-amber-950/30;
+}
+
+.recommendation-note-label {
+  @apply text-[11px] font-semibold tracking-wide text-amber-800 dark:text-amber-200;
+}
+
+.recommendation-note-stars {
+  @apply flex shrink-0 items-center gap-px;
+}
+
+.recommendation-note-star {
+  @apply text-[13px] leading-none;
+}
+
+.recommendation-note-text {
+  @apply mt-1.5 w-full overflow-hidden text-left text-xs leading-relaxed text-amber-900/80 dark:text-amber-100/80 line-clamp-1;
 }
 
 .group-card-selected {

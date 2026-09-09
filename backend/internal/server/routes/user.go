@@ -88,6 +88,7 @@ func RegisterUserRoutes(
 			groups.GET("/available", h.APIKey.GetAvailableGroups)
 			groups.GET("/rates", h.APIKey.GetUserGroupRates)
 			groups.GET("/recommendations", h.APIKey.GetRecommendedGroups)
+			groups.GET("/categories", newGroupCategoryHandler().List)
 		}
 
 		// 用户可用渠道（非管理员接口）

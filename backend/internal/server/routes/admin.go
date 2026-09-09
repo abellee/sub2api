@@ -2,10 +2,14 @@
 package routes
 
 import (
+	"path/filepath"
+
 	"github.com/Wei-Shaw/sub2api/internal/handler"
+	adminhandler "github.com/Wei-Shaw/sub2api/internal/handler/admin"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/Wei-Shaw/sub2api/internal/setup"
 
 	"github.com/gin-gonic/gin"
 )
@@ -42,6 +46,9 @@ func RegisterAdminRoutes(
 
 		// 分组管理
 		registerGroupRoutes(admin, h)
+
+		// 分组分类（JSON 落盘，二开）
+		registerGroupCategoryRoutes(admin)
 
 		// 账号管理
 		registerAccountRoutes(admin, h, stepUpAuth)
@@ -365,6 +372,25 @@ func registerGroupRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		groups.PUT("/:id/rpm-overrides", h.Admin.Group.BatchSetGroupRPMOverrides)
 		groups.DELETE("/:id/rpm-overrides", h.Admin.Group.ClearGroupRPMOverrides)
 		groups.GET("/:id/api-keys", h.Admin.Group.GetGroupAPIKeys)
+	}
+}
+
+func newGroupCategoryHandler() *adminhandler.GroupCategoryHandler {
+	return adminhandler.NewGroupCategoryHandler(
+		service.NewGroupCategoryStore(filepath.Join(setup.GetDataDir(), "group_categories.json")),
+	)
+}
+
+func registerGroupCategoryRoutes(admin *gin.RouterGroup) {
+	h := newGroupCategoryHandler()
+	cats := admin.Group("/group-categories")
+	{
+		cats.GET("", h.List)
+		cats.POST("", h.Create)
+		cats.PUT("/assignments/:group_id", h.Assign)
+		cats.PUT("/sort-order", h.Reorder)
+		cats.PUT("/:id", h.Update)
+		cats.DELETE("/:id", h.Delete)
 	}
 }
 
