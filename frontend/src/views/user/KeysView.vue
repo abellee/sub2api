@@ -1104,6 +1104,7 @@
                   :key="option.value"
                   type="button"
                   class="group-card"
+                  :data-group-id="option.value"
                   :class="formData.group_id === option.value ? 'group-card-selected' : ''"
                   @click="selectGroupFromCard(option.value)"
                 >
@@ -1328,7 +1329,7 @@
 </template>
 
 <script setup lang="ts">
-	import { ref, reactive, computed, onMounted, onUnmounted, watch, type ComponentPublicInstance } from 'vue'
+	import { ref, reactive, computed, onMounted, onUnmounted, watch, nextTick, type ComponentPublicInstance } from 'vue'
 	import { useI18n } from 'vue-i18n'
 	import { useAppStore } from '@/stores/app'
 	import { useOnboardingStore } from '@/stores/onboarding'
@@ -1511,6 +1512,7 @@ const groupCategoryAssignments = ref<Record<string, string>>({})
 const activeCategoryTab = ref('')
 const UNCATEGORIZED_TAB = '__uncategorized__'
 const RECOMMENDED_TAB = '__recommended__'
+const pendingScrollToSelected = ref(false)
 
 const pagination = ref({
   page: 1,
@@ -1834,6 +1836,32 @@ watch(
     if (!groupCategoryTabs.value.some((tab) => tab.id === activeCategoryTab.value)) {
       activeCategoryTab.value = defaultCategoryTabId.value
     }
+  }
+)
+
+const scrollSelectedGroupIntoView = () => {
+  const groupId = formData.value.group_id
+  const container = groupPickerContentRef.value
+  if (groupId == null || !container) return false
+  const el = container.querySelector<HTMLElement>(`[data-group-id="${groupId}"]`)
+  if (!el) return false
+  const containerRect = container.getBoundingClientRect()
+  const elRect = el.getBoundingClientRect()
+  const nextTop = container.scrollTop + (elRect.top - containerRect.top) - (container.clientHeight - elRect.height) / 2
+  container.scrollTo({ top: Math.max(0, nextTop), behavior: 'smooth' })
+  return true
+}
+
+watch(
+  [() => showGroupPickerModal.value, activeCategoryBrandSections],
+  async ([show]) => {
+    if (!show || !pendingScrollToSelected.value) return
+    await nextTick()
+    requestAnimationFrame(() => {
+      if (scrollSelectedGroupIntoView()) {
+        pendingScrollToSelected.value = false
+      }
+    })
   }
 )
 
@@ -2173,12 +2201,14 @@ const openCreateModal = () => {
 const openGroupPicker = () => {
   groupCardSearch.value = ''
   activeCategoryTab.value = defaultCategoryTabId.value
+  pendingScrollToSelected.value = formData.value.group_id != null
   showGroupPickerModal.value = true
 }
 
 const closeGroupPicker = () => {
   showGroupPickerModal.value = false
   groupCardSearch.value = ''
+  pendingScrollToSelected.value = false
 }
 
 const useNativeGroupSelect = () => {
@@ -2627,8 +2657,8 @@ onUnmounted(() => {
 
 .group-picker-shell {
   display: flex;
-  height: min(68vh, 640px);
-  min-height: min(360px, calc(100vh - 180px));
+  height: min(76vh, 720px, calc(90vh - 7rem));
+  min-height: min(400px, calc(90vh - 7rem));
   min-width: 0;
   flex-direction: column;
   gap: 1rem;
@@ -2670,8 +2700,9 @@ onUnmounted(() => {
   overflow-y: auto;
   overscroll-behavior: contain;
   padding-top: 0.5rem;
-  padding-right: 0.25rem;
+  padding-right: 0.85rem;
   padding-bottom: 0.5rem;
+  scrollbar-gutter: stable;
   scroll-behavior: smooth;
 }
 
