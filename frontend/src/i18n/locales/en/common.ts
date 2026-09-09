@@ -180,6 +180,8 @@ export default {
     users: 'Users',
     ranking: 'Leaderboard',
     groups: 'Groups',
+    groupList: 'Group List',
+    groupCategories: 'Categories',
     channels: 'Channels',
     availableChannels: 'Available Channels',
     modelPlaza: 'Model Plaza',

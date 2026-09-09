@@ -386,6 +386,26 @@ const UsersIcon = {
     )
 }
 
+const TagIcon = {
+  render: () =>
+    h(
+      'svg',
+      { fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', 'stroke-width': '1.5' },
+      [
+        h('path', {
+          'stroke-linecap': 'round',
+          'stroke-linejoin': 'round',
+          d: 'M9.568 3H5.25A2.25 2.25 0 003 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.698 2.48 0l4.318-4.318a1.875 1.875 0 000-2.48l-9.581-9.581A2.25 2.25 0 009.568 3z'
+        }),
+        h('path', {
+          'stroke-linecap': 'round',
+          'stroke-linejoin': 'round',
+          d: 'M6 6h.008v.008H6V6z'
+        })
+      ]
+    )
+}
+
 const FolderIcon = {
   render: () =>
     h(
@@ -776,7 +796,16 @@ const adminNavItems = computed((): NavItem[] => {
     { path: '/admin/ops', label: t('nav.ops'), icon: ChartIcon, featureFlag: flagOpsMonitoring },
     { path: '/admin/users', label: t('nav.users'), icon: UsersIcon, hideInSimpleMode: true },
     { path: '/admin/ranking', label: t('nav.ranking'), icon: ChartIcon },
-    { path: '/admin/groups', label: t('nav.groups'), icon: FolderIcon },
+    {
+      path: '/admin/groups-section',
+      label: t('nav.groups'),
+      icon: FolderIcon,
+      expandOnly: true,
+      children: [
+        { path: '/admin/groups', label: t('nav.groupList'), icon: FolderIcon },
+        { path: '/admin/group-categories', label: t('nav.groupCategories'), icon: TagIcon },
+      ],
+    },
     {
       path: '/admin/channels',
       label: t('nav.channelManagement'),

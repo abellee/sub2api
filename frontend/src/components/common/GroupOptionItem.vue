@@ -24,7 +24,7 @@
             <span class="font-bold">{{ userRateMultiplier }}x</span>
           </template>
           <template v-else>
-            {{ rateMultiplier }}x {{ t('admin.groups.rateLabel') }}
+            {{ rateMultiplier }}x<template v-if="showRateLabel"> {{ t('admin.groups.rateLabel') }}</template>
           </template>
         </span>
         <span
@@ -50,10 +50,13 @@
 
     <!-- Description spans the complete card width and is limited to two lines. -->
     <span
-      v-if="description"
+      v-if="description || reserveDescription"
       class="mt-1.5 min-w-0 w-full whitespace-pre-line [overflow-wrap:anywhere] text-left text-xs leading-relaxed text-gray-500 dark:text-gray-400 line-clamp-2"
-      :class="hasPeakRate ? 'col-span-1' : 'col-span-2'"
-      :title="description"
+      :class="[
+        hasPeakRate ? 'col-span-1' : 'col-span-2',
+        reserveDescription ? 'min-h-[2.5rem]' : ''
+      ]"
+      :title="description || undefined"
     >
       {{ description }}
     </span>
@@ -83,12 +86,16 @@ interface Props {
   description?: string | null
   selected?: boolean
   showCheckmark?: boolean
+  showRateLabel?: boolean
+  reserveDescription?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   subscriptionType: 'standard',
   selected: false,
   showCheckmark: true,
+  showRateLabel: true,
+  reserveDescription: false,
   userRateMultiplier: null,
   peakRateEnabled: false
 })

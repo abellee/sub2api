@@ -495,6 +495,18 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/group-categories',
+    name: 'AdminGroupCategories',
+    component: () => import('@/views/admin/GroupCategoriesView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Group Categories',
+      titleKey: 'admin.groups.categories.title',
+      descriptionKey: 'admin.groups.categories.description'
+    }
+  },
+  {
     path: '/admin/channels',
     redirect: '/admin/channels/pricing'
   },

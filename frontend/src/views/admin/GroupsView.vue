@@ -418,6 +418,15 @@
               </button>
               <button
                 v-if="!authStore.isSimpleMode"
+                data-testid="group-set-category"
+                @click="handleSetCategory(row)"
+                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-amber-600 dark:hover:bg-dark-700 dark:hover:text-amber-400"
+              >
+                <Icon name="grid" size="sm" />
+                <span class="text-xs">{{ t("admin.groups.setCategory") }}</span>
+              </button>
+              <button
+                v-if="!authStore.isSimpleMode"
                 data-testid="group-rate-multipliers"
                 @click="handleRateMultipliers(row)"
                 class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-purple-600 dark:hover:bg-dark-700 dark:hover:text-purple-400"
@@ -4245,7 +4254,6 @@
       </template>
     </BaseDialog>
 
-    <!-- Group Recommendation Modal -->
     <BaseDialog
       :show="showRecommendationModal"
       :title="t('admin.groups.recommendation.title')"
@@ -4289,6 +4297,13 @@
         </div>
       </template>
     </BaseDialog>
+
+    <GroupSetCategoryModal
+      :show="showSetCategoryModal"
+      :group="setCategoryGroup"
+      @close="showSetCategoryModal = false"
+      @success="loadGroups"
+    />
 
     <!-- Group Rate Multipliers Modal -->
     <GroupRateMultipliersModal
@@ -4344,6 +4359,7 @@ import Select from "@/components/common/Select.vue";
 import PlatformIcon from "@/components/common/PlatformIcon.vue";
 import Icon from "@/components/icons/Icon.vue";
 import GroupRateMultipliersModal from "@/components/admin/group/GroupRateMultipliersModal.vue";
+import GroupSetCategoryModal from "@/components/admin/group/GroupSetCategoryModal.vue";
 import GroupRPMOverridesModal from "@/components/admin/group/GroupRPMOverridesModal.vue";
 import GroupCapacityBadge from "@/components/common/GroupCapacityBadge.vue";
 import ReasoningEffortPolicyFields from "@/components/admin/group/ReasoningEffortPolicyFields.vue";
@@ -4935,6 +4951,8 @@ const editingGroup = ref<AdminGroup | null>(null);
 const deletingGroup = ref<AdminGroup | null>(null);
 const duplicatingGroupIds = reactive(new Set<number>());
 const showRateMultipliersModal = ref(false);
+const showSetCategoryModal = ref(false);
+const setCategoryGroup = ref<AdminGroup | null>(null);
 const rateMultipliersGroup = ref<AdminGroup | null>(null);
 const showRPMOverridesModal = ref(false);
 const rpmOverridesGroup = ref<AdminGroup | null>(null);
@@ -6591,6 +6609,11 @@ const removeEditMessagesDispatchMapping = (row: MessagesDispatchMappingRow) => {
 const handleRateMultipliers = (group: AdminGroup) => {
   rateMultipliersGroup.value = group;
   showRateMultipliersModal.value = true;
+};
+
+const handleSetCategory = (group: AdminGroup) => {
+  setCategoryGroup.value = group;
+  showSetCategoryModal.value = true;
 };
 
 const handleRPMOverrides = (group: AdminGroup) => {
