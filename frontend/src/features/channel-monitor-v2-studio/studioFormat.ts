@@ -363,7 +363,7 @@ export function formatStudioMultiplier(
 ): string {
   const n = formatStudioRateNumber(value)
   if (!n) return ''
-  return pattern.includes('{n}') ? pattern.replaceAll('{n}', n) : pattern
+  return pattern.includes('{n}') ? pattern.replace(/\{n\}/g, n) : pattern
 }
 
 export type StudioGroupRateCatalog = {
