@@ -3,13 +3,62 @@
  * Keep original monitorFormat untouched; this file only serves new components.
  */
 
-import type { HealthState, MonitorHealth, MonitorMetric } from '@/api/channelMonitorV2'
+import type { HealthState, MonitorHealth, MonitorMatrixRow, MonitorMetric } from '@/api/channelMonitorV2'
 import { GROUP_PLATFORM_OPTIONS } from '@/constants/platforms'
-import { healthModeScore, isTtftUnavailable, type HealthDisplayMode } from '@/features/channel-monitor-v2/monitorFormat'
+import {
+  formatMonitorPercent,
+  formatMonitorSuccessRate,
+  formatMonitorSuccessRateFromError,
+  healthModeScore,
+  isTtftUnavailable,
+  type HealthDisplayMode,
+} from '@/features/channel-monitor-v2/monitorFormat'
 import type { GroupPlatform } from '@/types'
+import { studioMetricsHaveActivity } from './studioBuckets'
 
-export type StudioAccent = 'teal' | 'coral' | 'indigo' | 'amber' | 'sky'
+export type StudioAccent = 'teal' | 'coral' | 'indigo' | 'amber' | 'sky' | 'slate'
 export type StudioTone = 'healthy' | 'warning' | 'critical' | 'unknown'
+
+export type StudioSparkPaint = {
+  stroke: string
+  deep: string
+  fill: string
+}
+
+export const STUDIO_SPARK_PAINT: Record<StudioAccent, StudioSparkPaint> = {
+  teal: { stroke: '#14b8a6', deep: '#0f766e', fill: '#14b8a6' },
+  coral: { stroke: '#e11d48', deep: '#be123c', fill: '#e11d48' },
+  indigo: { stroke: '#6366f1', deep: '#4338ca', fill: '#6366f1' },
+  amber: { stroke: '#d97706', deep: '#b45309', fill: '#d97706' },
+  sky: { stroke: '#0284c7', deep: '#0369a1', fill: '#0284c7' },
+  slate: { stroke: '#64748b', deep: '#475569', fill: '#64748b' },
+}
+
+/** Stroke + fill for the KPI K-line. Keep this out of CSS vars so each card keeps its own paint. */
+export function studioSparkPaint(accent?: StudioAccent | string | null): StudioSparkPaint {
+  if (accent && accent in STUDIO_SPARK_PAINT) return STUDIO_SPARK_PAINT[accent as StudioAccent]
+  return STUDIO_SPARK_PAINT.teal
+}
+
+let studioSparkSeq = 0
+
+/** Module-level IDs. A counter in `<script setup>` resets per instance and collides every chart. */
+export function allocStudioSparkIds(): { fillId: string; fadeId: string; maskId: string } {
+  const n = ++studioSparkSeq
+  return {
+    fillId: `studio-spark-fill-${n}`,
+    fadeId: `studio-spark-fade-${n}`,
+    maskId: `studio-spark-mask-${n}`,
+  }
+}
+
+/** Card wash follows status, not card index. */
+export function studioAccentFromState(state?: StudioTone | string | null): StudioAccent {
+  if (state === 'warning') return 'amber'
+  if (state === 'critical') return 'coral'
+  if (state === 'unknown') return 'slate'
+  return 'teal'
+}
 
 /** Mirrors V2 settings defaults (MonitorSettingsPanel). */
 export type StudioThresholds = {
@@ -28,6 +77,37 @@ export const STUDIO_DEFAULT_THRESHOLDS: Required<StudioThresholds> = {
   critical_ttft_ms: 10000,
   warning_cache_rate: 0.85,
   critical_cache_rate: 0.6,
+}
+
+/** KPI group names show 8 Chinese-character widths; ASCII letters count as half. */
+export const STUDIO_GROUP_NAME_WIDTH = 8
+
+export function studioCharDisplayWidth(char: string): number {
+  const code = char.codePointAt(0) || 0
+  if (code <= 0x7f) return 0.5
+  if (code >= 0xff61 && code <= 0xff9f) return 0.5
+  return 1
+}
+
+export function studioTextDisplayWidth(value: string): number {
+  let width = 0
+  for (const char of value) width += studioCharDisplayWidth(char)
+  return width
+}
+
+export function truncateStudioGroupName(value: string, max = STUDIO_GROUP_NAME_WIDTH): string {
+  const text = String(value || '')
+  if (max <= 0) return ''
+  if (studioTextDisplayWidth(text) <= max) return text
+  let width = 0
+  let out = ''
+  for (const char of text) {
+    const next = studioCharDisplayWidth(char)
+    if (width + next > max) break
+    out += char
+    width += next
+  }
+  return `${out}…`
 }
 
 export function clamp01(value: number): number {
@@ -119,11 +199,12 @@ export function studioChartLine(dots: StudioChartDot[]): string {
   return dots.map((dot) => `${dot.x.toFixed(2)},${dot.y.toFixed(2)}`).join(' ')
 }
 
-export function studioChartArea(dots: StudioChartDot[], height = 36): string {
+export function studioChartArea(dots: StudioChartDot[], height = 36, width = 0): string {
   if (dots.length < 2) return ''
   const first = dots[0]
   const last = dots[dots.length - 1]
-  return `${first.x.toFixed(2)},${height} ${studioChartLine(dots)} ${last.x.toFixed(2)},${height}`
+  const right = width > last.x ? width : last.x
+  return `0,${height} 0,${first.y.toFixed(2)} ${studioChartLine(dots)} ${right.toFixed(2)},${last.y.toFixed(2)} ${right.toFixed(2)},${height}`
 }
 
 export function healthTone(state?: HealthState): StudioTone {
@@ -189,20 +270,27 @@ export function worstTone(tones: StudioTone[]): StudioTone {
   return 'unknown'
 }
 
+function hasStudioCacheSignal(metrics?: MonitorMetric): boolean {
+  return (metrics?.cache_rate_denominator || 0) > 0 || (metrics?.cache_rate || 0) > 0
+}
+
 /** Prefer API health when the backend already applied thresholds; otherwise compare metrics to V2 settings. */
 export function overallToneFromRow(
   metrics: MonitorMetric | undefined,
   health?: MonitorHealth,
   thresholds?: StudioThresholds | null,
 ): StudioTone {
+  if (!metrics || !studioMetricsHaveActivity(metrics, health)) return 'unknown'
+  const observed = errorRateTone(displayedErrorRate(metrics), thresholds)
   const api = healthTone(health?.overall || health?.error_rate)
-  if (api !== 'unknown') return api
-  if (!metrics) return 'unknown'
-  return worstTone([
+  if (api !== 'unknown') return worstTone([api, observed])
+  const tones: StudioTone[] = [
+    observed,
     errorRateTone(metrics.error_rate, thresholds),
     ttftTone(metrics.ttft?.p50_ms, thresholds, metrics.ttft),
-    cacheTone(metrics.cache_rate, thresholds),
-  ])
+  ]
+  if (hasStudioCacheSignal(metrics)) tones.push(cacheTone(metrics.cache_rate, thresholds))
+  return worstTone(tones)
 }
 
 export function metricTextClass(tone: StudioTone | undefined, missing = false): string {
@@ -216,6 +304,24 @@ export function studioPlatformLabel(platform: string): string {
   return GROUP_PLATFORM_OPTIONS.find((item) => item.value === platform)?.label || platform
 }
 
+/** OpenAI → Anthropic → Grok, then the rest of the group-platform catalog. */
+const STUDIO_BRAND_HEAD = ['openai', 'anthropic', 'grok'] as const
+
+export const STUDIO_BRAND_ORDER: string[] = [
+  ...STUDIO_BRAND_HEAD,
+  ...GROUP_PLATFORM_OPTIONS.map((item) => item.value).filter(
+    (value) => !STUDIO_BRAND_HEAD.includes(value as (typeof STUDIO_BRAND_HEAD)[number]),
+  ),
+]
+
+export function studioBrandOrderIndex(platform: string | null | undefined): number {
+  const key = String(platform || '')
+  const head = STUDIO_BRAND_HEAD.indexOf(key as (typeof STUDIO_BRAND_HEAD)[number])
+  if (head >= 0) return head
+  const rest = GROUP_PLATFORM_OPTIONS.findIndex((item) => item.value === key)
+  return rest >= 0 ? STUDIO_BRAND_HEAD.length + rest : Number.MAX_SAFE_INTEGER
+}
+
 export type StudioBrandSection<T extends { platform?: string | null; brandLabel?: string }> = {
   key: string
   platform?: T['platform']
@@ -223,8 +329,76 @@ export type StudioBrandSection<T extends { platform?: string | null; brandLabel?
   cards: T[]
 }
 
-/** Cluster group cards by model brand, keeping first-seen brand order and in-brand order. */
-export function groupStudioCardsByBrand<T extends { platform?: string | null; brandLabel?: string }>(
+export const STUDIO_ACTIVE_GROUP_LIMIT = 4
+const STUDIO_ACTIVE_RECENT_SLOTS = 2
+
+export type StudioActivitySource = {
+  metrics?: MonitorMetric | null
+  health?: MonitorHealth | null
+  buckets?: Array<{ metrics?: MonitorMetric | null; health?: MonitorHealth | null }> | null
+}
+
+/** Higher = currently busier. 0 means idle and should stay out of 活跃分组. */
+export function studioGroupActivityScore(card: StudioActivitySource): number {
+  const buckets = card.buckets || []
+  const recent = buckets.slice(-STUDIO_ACTIVE_RECENT_SLOTS)
+  const recentLive = recent.filter((bucket) => studioMetricsHaveActivity(bucket.metrics, bucket.health))
+  const rowLive = studioMetricsHaveActivity(card.metrics, card.health)
+  if (!recentLive.length && !rowLive) return 0
+
+  const latestLive = recentLive[recentLive.length - 1]
+  const currentRpm = Number(latestLive?.metrics?.rpm || card.metrics?.rpm) || 0
+  const rpm = Number(card.metrics?.rpm) || 0
+  const tpm = Number(card.metrics?.tpm) || 0
+  const requests = Number(card.metrics?.request_count) || 0
+  const liveCount = buckets.filter((bucket) => studioMetricsHaveActivity(bucket.metrics, bucket.health)).length
+  return (
+    currentRpm * 1_000_000 +
+    rpm * 10_000 +
+    tpm * 10 +
+    requests +
+    recentLive.length * 1_000 +
+    liveCount * 10 +
+    (rowLive ? 1 : 0)
+  )
+}
+
+/** Top currently-busy group cards, newest/highest RPM first. Idle rows are dropped. */
+export function pickStudioActiveGroups<T extends StudioActivitySource>(
+  cards: T[],
+  limit = STUDIO_ACTIVE_GROUP_LIMIT,
+): T[] {
+  const cap = Number.isFinite(limit) ? Math.max(0, Math.floor(limit)) : STUDIO_ACTIVE_GROUP_LIMIT
+  return cards
+    .map((card, index) => ({ card, index, score: studioGroupActivityScore(card) }))
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .slice(0, cap)
+    .map((item) => item.card)
+}
+
+const STUDIO_STATUS_RANK: Record<StudioTone, number> = {
+  healthy: 0,
+  warning: 1,
+  critical: 2,
+  unknown: 3,
+}
+
+export function studioStatusSortRank(state?: StudioTone | string | null): number {
+  if (state && state in STUDIO_STATUS_RANK) return STUDIO_STATUS_RANK[state as StudioTone]
+  return 4
+}
+
+/** 正常 → 降级 → 失败 → 样本不足; same-status cards keep their original order. */
+export function sortStudioCardsByStatus<T extends { state?: StudioTone | string | null }>(cards: T[]): T[] {
+  return cards
+    .map((card, index) => ({ card, index }))
+    .sort((a, b) => studioStatusSortRank(a.card.state) - studioStatusSortRank(b.card.state) || a.index - b.index)
+    .map((item) => item.card)
+}
+
+/** Cluster group cards by model brand. Brand sections follow STUDIO_BRAND_ORDER. */
+export function groupStudioCardsByBrand<T extends { platform?: string | null; brandLabel?: string; state?: StudioTone | string | null }>(
   cards: T[],
 ): StudioBrandSection<T>[] {
   const sections: StudioBrandSection<T>[] = []
@@ -245,6 +419,8 @@ export function groupStudioCardsByBrand<T extends { platform?: string | null; br
     sections[existing].cards.push(card)
   }
   return sections
+    .map((section) => ({ ...section, cards: sortStudioCardsByStatus(section.cards) }))
+    .sort((a, b) => studioBrandOrderIndex(a.key) - studioBrandOrderIndex(b.key))
 }
 
 export function studioPlatform(platform: string): GroupPlatform | undefined {
@@ -369,6 +545,7 @@ export function formatStudioMultiplier(
 export type StudioGroupRateCatalog = {
   id?: number | string | null
   name?: string | null
+  platform?: string | null
   rate_multiplier?: number | string | null
 }
 
@@ -431,6 +608,155 @@ export function lookupStudioGroupRate(
   const name = String(groupName || '').trim()
   if (name && rates?.byName.has(name)) return rates.byName.get(name)
   return readStudioRate(fallback)
+}
+
+export function emptyStudioMetrics(): MonitorMetric {
+  return {
+    success_requests: 0,
+    error_requests: 0,
+    request_count: 0,
+    token_count: 0,
+    rpm: 0,
+    tpm: 0,
+    error_rate: 0,
+    success_rate: 0,
+    cache_rate: 0,
+    cache_rate_numerator: 0,
+    cache_rate_denominator: 0,
+    ttft: { sample_count: 0, p50_ms: null, p95_ms: null, avg_ms: null },
+    duration: { sample_count: 0, p50_ms: null, p95_ms: null, avg_ms: null },
+  }
+}
+
+/** Prefer API success_rate so user-redacted counts still show a real percentage. */
+export function formatStudioSuccessRate(
+  metrics?: MonitorMetric | null,
+  health?: MonitorHealth | null,
+): string {
+  if (!metrics) return '-'
+  if (metrics.success_rate != null && Number.isFinite(metrics.success_rate)) {
+    if (!studioMetricsHaveActivity(metrics, health) && metrics.success_rate <= 0) return '-'
+    return formatMonitorPercent(metrics.success_rate)
+  }
+  if ((metrics.request_count || 0) > 0) {
+    return formatMonitorSuccessRate(metrics.success_requests, metrics.request_count)
+  }
+  if (studioMetricsHaveActivity(metrics, health)) {
+    return formatMonitorSuccessRateFromError(metrics.error_rate)
+  }
+  return '-'
+}
+
+/** True failure share, including ignored categories. */
+export function displayedErrorRate(metrics?: MonitorMetric | null): number | null {
+  if (!metrics) return null
+  if (metrics.success_rate != null && Number.isFinite(metrics.success_rate)) {
+    return Math.max(0, Math.min(1, 1 - metrics.success_rate))
+  }
+  if ((metrics.request_count || 0) > 0) {
+    return (metrics.error_requests || 0) / metrics.request_count
+  }
+  if (metrics.error_rate != null && Number.isFinite(metrics.error_rate)) return metrics.error_rate
+  return null
+}
+
+/**
+ * Displayed error share is 1 − success_rate (true failures, including ignored
+ * categories). Faces and card status use this so a 100% fail bucket cannot stay green.
+ */
+export function formatStudioErrorRate(
+  metrics?: MonitorMetric | null,
+  health?: MonitorHealth | null,
+): string {
+  if (!metrics || !studioMetricsHaveActivity(metrics, health)) return '-'
+  const rate = displayedErrorRate(metrics)
+  if (rate == null) return '-'
+  return formatMonitorPercent(rate)
+}
+
+export function formatStudioCacheRate(
+  metrics?: MonitorMetric | null,
+  health?: MonitorHealth | null,
+): string {
+  if (!metrics) return '-'
+  if ((metrics.cache_rate_denominator || 0) > 0 || studioMetricsHaveActivity(metrics, health)) {
+    return formatMonitorPercent(metrics.cache_rate || 0)
+  }
+  return '-'
+}
+
+export function emptyStudioHealth(): MonitorHealth {
+  return {
+    overall: 'unknown',
+    error_rate: 'unknown',
+    ttft: 'unknown',
+    score: null,
+    minimum_sample: 0,
+  }
+}
+
+function emptyStudioGroupRow(
+  groupId: number,
+  catalog?: StudioGroupRateCatalog | null,
+): MonitorMatrixRow {
+  const name = String(catalog?.name || '').trim()
+  return {
+    platform: String(catalog?.platform || '').trim() || 'unknown',
+    group_id: groupId,
+    group_name: name || `#${groupId}`,
+    metrics: emptyStudioMetrics(),
+    health: emptyStudioHealth(),
+    buckets: [],
+  }
+}
+
+function studioGroupId(row: MonitorMatrixRow): number {
+  return Number(row.group_id)
+}
+
+/** Keep every selected monitor group on 渠道状态, even when the matrix omitted idle rows. */
+export function mergeSelectedStudioGroups(
+  items: MonitorMatrixRow[] | null | undefined,
+  selectedIds: Array<number | string> | null | undefined,
+  catalog: Iterable<StudioGroupRateCatalog> | StudioGroupRateCatalog[] | null | undefined,
+): MonitorMatrixRow[] {
+  const rows = (items || []).filter((row) => Number.isFinite(studioGroupId(row)) && studioGroupId(row) > 0)
+  const selected = [...new Set((selectedIds || []).map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0))]
+  if (!selected.length) {
+    return [...rows].sort((a, b) => (b.metrics?.rpm || 0) - (a.metrics?.rpm || 0))
+  }
+
+  const catalogById = new Map<number, StudioGroupRateCatalog>()
+  const list = Array.isArray(catalog)
+    ? catalog
+    : catalog && typeof catalog === 'object' && Symbol.iterator in Object(catalog)
+      ? [...catalog]
+      : []
+  for (const group of list) {
+    const id = Number(group?.id)
+    if (Number.isFinite(id) && id > 0 && !catalogById.has(id)) catalogById.set(id, group)
+  }
+
+  const rowsByGroupId = new Map<number, MonitorMatrixRow[]>()
+  for (const row of rows) {
+    const id = studioGroupId(row)
+    const current = rowsByGroupId.get(id)
+    if (current) current.push(row)
+    else rowsByGroupId.set(id, [row])
+  }
+
+  const merged: MonitorMatrixRow[] = []
+  const seen = new Set<number>()
+  for (const id of selected) {
+    seen.add(id)
+    const existing = rowsByGroupId.get(id)
+    if (existing?.length) merged.push(...existing)
+    else merged.push(emptyStudioGroupRow(id, catalogById.get(id)))
+  }
+  for (const [id, extra] of rowsByGroupId) {
+    if (!seen.has(id)) merged.push(...extra)
+  }
+  return merged
 }
 
 /** Shrink the gap only when a short card cannot already show `visibleDots` at `minGap`. */

@@ -160,6 +160,24 @@ func TestChannelMonitorV2MatrixDoesNotSeedGroupsForEmptyViewerScope(t *testing.T
 	require.Empty(t, accs)
 }
 
+func TestChannelMonitorV2MatrixSeedsEveryConfiguredGroup(t *testing.T) {
+	filter := service.ChannelMonitorV2Filter{}
+	cfg := service.ChannelMonitorV2Config{
+		Platforms: []service.ChannelMonitorV2PlatformConfig{{Platform: "openai", Enabled: true}},
+		GroupIDs:  []int64{1, 2, 3, 4, 5},
+	}
+	accs := seedChannelMonitorV2MatrixAccumulators(filter, cfg, service.ChannelMonitorV2GroupByPlatformGroup, map[int64]channelMonitorV2GroupInfo{
+		1: {name: "gpt-a", platform: "openai"},
+		2: {name: "gpt-b", platform: "openai"},
+		3: {name: "claude", platform: "anthropic"},
+		4: {name: "idle"},
+		5: {name: "grok", platform: "grok"},
+	})
+	require.Len(t, accs, 5)
+	require.Equal(t, "idle", accs[channelMonitorV2MatrixKey{platform: "unknown", groupID: 4}].groupName)
+	require.Equal(t, "claude", accs[channelMonitorV2MatrixKey{platform: "anthropic", groupID: 3}].groupName)
+}
+
 func TestChannelMonitorV2EmptyRestrictedScopeReturnsEmptyInventory(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)

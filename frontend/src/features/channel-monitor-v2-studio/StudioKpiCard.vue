@@ -11,14 +11,21 @@
         >
           <StudioBrandIcon :platform="platform" size="md" />
         </span>
-        <div class="studio-kpi-copy">
-          <span
-            class="studio-kpi-name stat-label block text-[13px] font-black tracking-tight text-gray-900 dark:text-white"
-            :title="label"
-          >
-            {{ label }}
-          </span>
-          <div class="studio-kpi-brand-row mt-1 flex items-center gap-1">
+        <div class="studio-kpi-copy min-w-0 flex-1">
+          <div class="studio-kpi-name-row flex min-w-0 items-start gap-2">
+            <span
+              class="studio-kpi-name stat-label block min-w-0 text-[13px] font-black tracking-tight text-gray-900 dark:text-white"
+              :title="label"
+            >
+              {{ displayLabel }}
+            </span>
+            <span
+              class="studio-kpi-status ml-auto shrink-0 text-right whitespace-nowrap"
+              :class="statusClass"
+              :aria-label="`${statusHeading} ${statusLabel}`"
+            >{{ statusLabel }}</span>
+          </div>
+          <div class="studio-kpi-brand-row mt-1 flex min-w-0 items-center gap-1">
             <span
               v-if="brandLabel"
               class="studio-kpi-brand"
@@ -32,11 +39,6 @@
           </div>
         </div>
       </div>
-      <span
-        class="studio-kpi-status ml-auto shrink-0 text-right whitespace-nowrap"
-        :class="statusClass"
-        :aria-label="`${statusHeading} ${statusLabel}`"
-      >{{ statusLabel }}</span>
     </div>
 
     <dl class="studio-kpi-metrics grid w-full">
@@ -62,12 +64,13 @@
     </dl>
 
     <StudioSparkChart
-      v-if="buckets.length"
+      v-if="coverage || buckets.length"
       class="studio-kpi-spark"
       :buckets="buckets"
       :coverage="coverage"
       :show-throughput="showThroughput"
       :label="label"
+      :accent="accent"
     />
   </div>
 </template>
@@ -80,7 +83,7 @@ import StudioBrandIcon from './StudioBrandIcon.vue'
 import StudioSparkChart from './StudioSparkChart.vue'
 import { studioBrandFill } from './studioBrand'
 import type { StudioBucketPoint } from './studioBuckets'
-import { metricTextClass, type StudioAccent, type StudioTone } from './studioFormat'
+import { metricTextClass, truncateStudioGroupName, type StudioAccent, type StudioTone } from './studioFormat'
 
 const props = withDefaults(
   defineProps<{
@@ -122,12 +125,14 @@ function isMissing(value: string | undefined) {
 }
 
 const brandColor = computed(() => studioBrandFill(props.platform))
+const displayLabel = computed(() => truncateStudioGroupName(props.label))
 
 const accentClass = computed(() => {
   if (props.accent === 'coral') return 'studio-kpi--coral'
   if (props.accent === 'indigo') return 'studio-kpi--indigo'
   if (props.accent === 'amber') return 'studio-kpi--amber'
   if (props.accent === 'sky') return 'studio-kpi--sky'
+  if (props.accent === 'slate') return 'studio-kpi--slate'
   return 'studio-kpi--teal'
 })
 
@@ -146,111 +151,103 @@ const statusClass = computed(() => {
 <style scoped>
 .studio-kpi {
   --studio-faces-bg: rgb(241 245 249);
+  --studio-wash-from: color-mix(in oklab, #14b8a6 11%, #ffffff);
+  --studio-wash-to: #ffffff;
+  --studio-spark: #14b8a6;
+  --studio-spark-deep: #0f766e;
+  --studio-spark-fill: #14b8a6;
   position: relative;
   z-index: 2;
   contain: layout style;
+  background: linear-gradient(180deg, var(--studio-wash-from) 0%, var(--studio-wash-to) 78%);
 }
 .studio-kpi--joined {
   height: 100%;
   border-radius: 0 !important;
   box-shadow: none;
   --tw-ring-shadow: 0 0 #0000;
+  --studio-wash-to: var(--studio-faces-bg);
+  background: linear-gradient(180deg, var(--studio-wash-from) 0%, var(--studio-wash-to) 100%);
 }
 .studio-kpi--teal {
-  background: linear-gradient(180deg, rgb(240 253 250) 0%, rgb(255 255 255) 58%);
+  --studio-wash-from: color-mix(in oklab, #14b8a6 11%, #ffffff);
+  --studio-spark: #14b8a6;
+  --studio-spark-deep: #0f766e;
+  --studio-spark-fill: #14b8a6;
 }
 .studio-kpi--coral {
-  background: linear-gradient(180deg, rgb(255 247 237) 0%, rgb(255 255 255) 58%);
+  --studio-wash-from: color-mix(in oklab, #fb7185 9%, #ffffff);
+  --studio-spark: #e11d48;
+  --studio-spark-deep: #be123c;
+  --studio-spark-fill: #e11d48;
 }
 .studio-kpi--indigo {
-  background: linear-gradient(180deg, rgb(238 242 255) 0%, rgb(255 255 255) 58%);
+  --studio-wash-from: color-mix(in oklab, #818cf8 9%, #ffffff);
+  --studio-spark: #6366f1;
+  --studio-spark-deep: #4338ca;
+  --studio-spark-fill: #6366f1;
 }
 .studio-kpi--amber {
-  background: linear-gradient(180deg, rgb(255 251 235) 0%, rgb(255 255 255) 58%);
+  --studio-wash-from: color-mix(in oklab, #e8b84a 12%, #ffffff);
+  --studio-spark: #d97706;
+  --studio-spark-deep: #b45309;
+  --studio-spark-fill: #d97706;
 }
 .studio-kpi--sky {
-  background: linear-gradient(180deg, rgb(240 249 255) 0%, rgb(255 255 255) 58%);
+  --studio-wash-from: color-mix(in oklab, #38bdf8 9%, #ffffff);
+  --studio-spark: #0284c7;
+  --studio-spark-deep: #0369a1;
+  --studio-spark-fill: #0284c7;
 }
-.studio-kpi--joined.studio-kpi--teal {
-  background: linear-gradient(180deg, rgb(240 253 250) 0%, var(--studio-faces-bg) 100%);
-}
-.studio-kpi--joined.studio-kpi--coral {
-  background: linear-gradient(180deg, rgb(255 247 237) 0%, var(--studio-faces-bg) 100%);
-}
-.studio-kpi--joined.studio-kpi--indigo {
-  background: linear-gradient(180deg, rgb(238 242 255) 0%, var(--studio-faces-bg) 100%);
-}
-.studio-kpi--joined.studio-kpi--amber {
-  background: linear-gradient(180deg, rgb(255 251 235) 0%, var(--studio-faces-bg) 100%);
-}
-.studio-kpi--joined.studio-kpi--sky {
-  background: linear-gradient(180deg, rgb(240 249 255) 0%, var(--studio-faces-bg) 100%);
+.studio-kpi--slate {
+  --studio-wash-from: color-mix(in oklab, #94a3b8 10%, #ffffff);
+  --studio-spark: #64748b;
+  --studio-spark-deep: #475569;
+  --studio-spark-fill: #64748b;
 }
 @container studio-row (min-width: 34rem) {
-  .studio-kpi--joined.studio-kpi--teal {
-    background: linear-gradient(115deg, rgb(240 253 250) 0%, rgb(240 253 250) 42%, var(--studio-faces-bg) 100%);
-  }
-  .studio-kpi--joined.studio-kpi--coral {
-    background: linear-gradient(115deg, rgb(255 247 237) 0%, rgb(255 247 237) 42%, var(--studio-faces-bg) 100%);
-  }
-  .studio-kpi--joined.studio-kpi--indigo {
-    background: linear-gradient(115deg, rgb(238 242 255) 0%, rgb(238 242 255) 42%, var(--studio-faces-bg) 100%);
-  }
-  .studio-kpi--joined.studio-kpi--amber {
-    background: linear-gradient(115deg, rgb(255 251 235) 0%, rgb(255 251 235) 42%, var(--studio-faces-bg) 100%);
-  }
-  .studio-kpi--joined.studio-kpi--sky {
-    background: linear-gradient(115deg, rgb(240 249 255) 0%, rgb(240 249 255) 42%, var(--studio-faces-bg) 100%);
+  .studio-kpi--joined {
+    background: linear-gradient(
+      90deg,
+      var(--studio-wash-from) 0%,
+      var(--studio-wash-from) 42%,
+      var(--studio-wash-to) 82%,
+      var(--studio-wash-to) 100%
+    );
   }
 }
 .dark .studio-kpi {
   --studio-faces-bg: rgb(30 41 59);
+  --studio-wash-from: color-mix(in oklab, #2dd4bf 12%, rgb(15 23 42));
+  --studio-wash-to: rgb(15 23 42);
 }
-.dark .studio-kpi--teal {
-  background: linear-gradient(180deg, rgb(19 78 74) 0%, rgb(15 23 42) 58%);
+.dark .studio-kpi--joined {
+  --studio-wash-to: var(--studio-faces-bg);
 }
 .dark .studio-kpi--coral {
-  background: linear-gradient(180deg, rgb(67 32 18) 0%, rgb(15 23 42) 58%);
+  --studio-wash-from: color-mix(in oklab, #fb7185 11%, rgb(15 23 42));
 }
 .dark .studio-kpi--indigo {
-  background: linear-gradient(180deg, rgb(49 46 129) 0%, rgb(15 23 42) 58%);
+  --studio-wash-from: color-mix(in oklab, #818cf8 11%, rgb(15 23 42));
 }
 .dark .studio-kpi--amber {
-  background: linear-gradient(180deg, rgb(69 47 12) 0%, rgb(15 23 42) 58%);
+  --studio-wash-from: color-mix(in oklab, #e8b84a 10%, rgb(15 23 42));
 }
 .dark .studio-kpi--sky {
-  background: linear-gradient(180deg, rgb(12 74 110) 0%, rgb(15 23 42) 58%);
+  --studio-wash-from: color-mix(in oklab, #38bdf8 11%, rgb(15 23 42));
 }
-.dark .studio-kpi--joined.studio-kpi--teal {
-  background: linear-gradient(180deg, rgb(19 78 74) 0%, var(--studio-faces-bg) 100%);
-}
-.dark .studio-kpi--joined.studio-kpi--coral {
-  background: linear-gradient(180deg, rgb(67 32 18) 0%, var(--studio-faces-bg) 100%);
-}
-.dark .studio-kpi--joined.studio-kpi--indigo {
-  background: linear-gradient(180deg, rgb(49 46 129) 0%, var(--studio-faces-bg) 100%);
-}
-.dark .studio-kpi--joined.studio-kpi--amber {
-  background: linear-gradient(180deg, rgb(69 47 12) 0%, var(--studio-faces-bg) 100%);
-}
-.dark .studio-kpi--joined.studio-kpi--sky {
-  background: linear-gradient(180deg, rgb(12 74 110) 0%, var(--studio-faces-bg) 100%);
+.dark .studio-kpi--slate {
+  --studio-wash-from: color-mix(in oklab, #94a3b8 10%, rgb(15 23 42));
 }
 @container studio-row (min-width: 34rem) {
-  .dark .studio-kpi--joined.studio-kpi--teal {
-    background: linear-gradient(115deg, rgb(19 78 74) 0%, rgb(19 78 74) 42%, var(--studio-faces-bg) 100%);
-  }
-  .dark .studio-kpi--joined.studio-kpi--coral {
-    background: linear-gradient(115deg, rgb(67 32 18) 0%, rgb(67 32 18) 42%, var(--studio-faces-bg) 100%);
-  }
-  .dark .studio-kpi--joined.studio-kpi--indigo {
-    background: linear-gradient(115deg, rgb(49 46 129) 0%, rgb(49 46 129) 42%, var(--studio-faces-bg) 100%);
-  }
-  .dark .studio-kpi--joined.studio-kpi--amber {
-    background: linear-gradient(115deg, rgb(69 47 12) 0%, rgb(69 47 12) 42%, var(--studio-faces-bg) 100%);
-  }
-  .dark .studio-kpi--joined.studio-kpi--sky {
-    background: linear-gradient(115deg, rgb(12 74 110) 0%, rgb(12 74 110) 42%, var(--studio-faces-bg) 100%);
+  .dark .studio-kpi--joined {
+    background: linear-gradient(
+      90deg,
+      var(--studio-wash-from) 0%,
+      color-mix(in oklab, var(--studio-wash-from) 62%, var(--studio-wash-to)) 28%,
+      var(--studio-wash-to) 64%,
+      var(--studio-wash-to) 100%
+    );
   }
 }
 
@@ -261,18 +258,18 @@ const statusClass = computed(() => {
   padding-right: 0.15rem;
 }
 .studio-kpi-copy {
-  min-width: 8em;
+  min-width: 0;
   max-width: 100%;
   font-size: 13px;
 }
 .studio-kpi-name {
-  max-width: 8em;
+  max-width: none;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .studio-kpi-brand-row {
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 .studio-kpi-brand {
   display: inline-flex;
@@ -291,9 +288,11 @@ const statusClass = computed(() => {
   color: var(--studio-brand-color);
 }
 .studio-kpi-rate {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
+  display: block;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   border-radius: 9999px;
   background: rgb(243 244 246);
   padding: 0.05rem 0.4rem;
@@ -330,51 +329,40 @@ const statusClass = computed(() => {
   letter-spacing: 0.01em;
 }
 .studio-kpi-status--healthy {
-  background: rgb(209 250 229);
+  background: color-mix(in oklab, #34d399 22%, #ffffff);
   color: rgb(4 120 87);
 }
 .studio-kpi-status--warning {
-  background: rgb(254 243 199);
+  background: color-mix(in oklab, #e8b84a 20%, #ffffff);
   color: rgb(180 83 9);
 }
 .studio-kpi-status--critical {
-  background: rgb(254 226 226);
+  background: color-mix(in oklab, #fb7185 18%, #ffffff);
   color: rgb(185 28 28);
 }
 .studio-kpi-status--unknown {
-  background: rgb(243 244 246);
+  background: color-mix(in oklab, #94a3b8 14%, #ffffff);
   color: rgb(107 114 128);
 }
 .dark .studio-kpi-status--healthy {
-  background: rgb(6 78 59 / 0.55);
+  background: color-mix(in oklab, #34d399 22%, rgb(15 23 42));
   color: rgb(110 231 183);
 }
 .dark .studio-kpi-status--warning {
-  background: rgb(120 53 15 / 0.55);
+  background: color-mix(in oklab, #e8b84a 18%, rgb(15 23 42));
   color: rgb(253 186 116);
 }
 .dark .studio-kpi-status--critical {
-  background: rgb(127 29 29 / 0.5);
+  background: color-mix(in oklab, #fb7185 18%, rgb(15 23 42));
   color: rgb(252 165 165);
 }
 .dark .studio-kpi-status--unknown {
-  background: rgb(51 65 85 / 0.85);
+  background: color-mix(in oklab, #94a3b8 16%, rgb(15 23 42));
   color: rgb(148 163 184);
 }
 
 .studio-kpi-spark {
-  color: #14b8a6;
-}
-.studio-kpi--coral .studio-kpi-spark {
-  color: #f97316;
-}
-.studio-kpi--indigo .studio-kpi-spark {
-  color: #6366f1;
-}
-.studio-kpi--amber .studio-kpi-spark {
-  color: #d97706;
-}
-.studio-kpi--sky .studio-kpi-spark {
-  color: #0284c7;
+  color: var(--studio-spark);
+  --studio-spark-fill: var(--studio-spark);
 }
 </style>

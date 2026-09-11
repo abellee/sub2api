@@ -128,7 +128,7 @@ import type { MonitorCoverage } from '@/api/channelMonitorV2'
 import { healthModeScore } from '@/features/channel-monitor-v2/monitorFormat'
 import StudioFaceSvg from './StudioFaceSvg.vue'
 import { STUDIO_FACE_MOVE_MS, STUDIO_FACE_POP_MS, STUDIO_FACE_STAGGER_MS, studioAfterPaint, studioPageHidden, studioPopIncomingKeys, subscribeStudioVisibility } from './studioDemo'
-import { alignBuckets, coverageBucketStarts, type StudioBucketPoint } from './studioBuckets'
+import { alignBuckets, coverageBucketStarts, isStudioBucketEmpty, type StudioBucketPoint } from './studioBuckets'
 import { overallToneFromRow, statusFace, type StudioThresholds } from './studioFormat'
 import { bucketTooltipLines, emptyTooltipLines, formatSlotTime } from './studioTooltip'
 import { studioFaceClipLeft, studioFaceUncovered } from './studioFaceVisible'
@@ -215,10 +215,11 @@ function toneLabel(tone: ReturnType<typeof statusFace>['tone']) {
 
 const faces = computed(() =>
   slots.value.map((slot) => {
-    const score = slot.bucket ? healthModeScore(slot.bucket.health, 'overall') : null
-    const tone = slot.bucket
-      ? overallToneFromRow(slot.bucket.metrics, slot.bucket.health, props.thresholds)
-      : 'unknown'
+    const empty = isStudioBucketEmpty(slot.bucket)
+    const score = empty ? null : healthModeScore(slot.bucket!.health, 'overall')
+    const tone = empty
+      ? 'unknown'
+      : overallToneFromRow(slot.bucket!.metrics, slot.bucket!.health, props.thresholds)
     const face = statusFace(score, tone)
     const time = formatSlotTime(slot.start, locale.value)
     return {
@@ -228,8 +229,8 @@ const faces = computed(() =>
       tone: face.tone,
       score,
       toneClass: toneClass(face.tone),
-      empty: !slot.bucket,
-      bucket: slot.bucket,
+      empty,
+      bucket: empty ? undefined : slot.bucket,
       aria: `${time} · ${toneLabel(face.tone)}`,
     }
   }),

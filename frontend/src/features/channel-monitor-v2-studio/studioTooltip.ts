@@ -1,12 +1,11 @@
 import type { LatencyMetric, MonitorHealth, MonitorMetric } from '@/api/channelMonitorV2'
 import {
   formatLatencyPrivacy,
-  formatMonitorPercent,
-  formatMonitorSuccessRateFromError,
   formatMonitorThroughput,
   formatMonitorTokensPerSecond,
   healthModeScore,
 } from '@/features/channel-monitor-v2/monitorFormat'
+import { formatStudioCacheRate, formatStudioErrorRate, formatStudioSuccessRate } from './studioFormat'
 
 type Translate = (key: string, params?: Record<string, unknown>) => string
 
@@ -52,11 +51,11 @@ export function formatSlotTime(start: string, locale?: string): string {
   }).format(new Date(start))
 }
 
-function successRate(metrics: MonitorMetric, showThroughput: boolean): string {
+function successRate(metrics: MonitorMetric, health: MonitorHealth, showThroughput: boolean): string {
   const noCount = (metrics.request_count || 0) <= 0 && (metrics.success_requests || 0) <= 0
   const noTP = (metrics.rpm || 0) <= 0 && (metrics.tpm || 0) <= 0
-  if (noCount && noTP && showThroughput) return '-'
-  return formatMonitorSuccessRateFromError(metrics.error_rate)
+  if (noCount && noTP && showThroughput && metrics.success_rate == null) return '-'
+  return formatStudioSuccessRate(metrics, health)
 }
 
 function formatScore(health: MonitorHealth): string {
@@ -82,15 +81,15 @@ export function bucketTooltipLines(
   const lines = [
     formatBucketRange(bucket.bucket_start, options.bucketSeconds, options.locale),
     t('channelMonitorV2.matrix.scoreLine', { score: formatScore(bucket.health) }),
-    t('channelMonitorV2.metrics.successRateValue', { value: successRate(metrics, options.showThroughput) }),
+    t('channelMonitorV2.metrics.successRateValue', { value: successRate(metrics, bucket.health, options.showThroughput) }),
     t('channelMonitorV2.metrics.ttftValue', { value: latencyPrivacy(metrics.ttft) }),
   ]
   if (options.showThroughput) {
     lines.push(t('channelMonitorV2.metrics.tpsValue', { value: formatMonitorTokensPerSecond(metrics.tpm) }))
   }
   lines.push(
-    t('channelMonitorV2.metrics.cacheRateValue', { value: formatMonitorPercent(metrics.cache_rate) }),
-    t('channelMonitorV2.metrics.errorRateValue', { value: formatMonitorPercent(metrics.error_rate) }),
+    t('channelMonitorV2.metrics.cacheRateValue', { value: formatStudioCacheRate(metrics, bucket.health) }),
+    t('channelMonitorV2.metrics.errorRateValue', { value: formatStudioErrorRate(metrics, bucket.health) }),
   )
   if (options.showThroughput) {
     lines.push(t('channelMonitorV2.metrics.rpmValue', { value: formatMonitorThroughput(metrics.rpm) }))
