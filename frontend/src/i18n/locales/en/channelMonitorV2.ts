@@ -133,6 +133,58 @@ export default {
         models: 'Empty model lists show real names and never dump everything into “Other”',
       },
     },
+    studio: {
+      subtitle: 'Channel journey overview',
+      live: 'Live',
+      journey: {
+        title: 'Channel journey',
+        description: 'Each node is a channel dimension; click to filter that node',
+        empty: 'No channel nodes in this window',
+        stage: 'Stage {n}',
+        selectAria: 'Filter {label}',
+      },
+      health: {
+        title: 'Health score',
+        description: 'Blended from success rate, first token, and cache rate',
+        score: 'Health',
+        unknown: 'Not enough samples',
+      },
+      models: {
+        title: 'Models',
+        empty: 'No models in this window',
+        selectAria: 'Show interval status for {label}',
+      },
+      groups: {
+        title: 'Groups',
+        empty: 'No groups in this window',
+        selectAria: 'Show interval status for {label}',
+        userRate: 'User rate {n}x',
+      },
+      brands: {
+        title: 'Brands',
+        sectionAria: '{label} groups',
+      },
+      status: {
+        label: 'Status',
+        healthy: 'Normal',
+        warning: 'Degraded',
+        critical: 'Failed',
+        unknown: 'No data',
+      },
+      faces: {
+        title: 'Interval status',
+        description: 'Each face is one time bucket; hover for the same details as the old cells',
+        forModel: 'Interval status for {label}; hover for details',
+        panHint: 'Hold Shift and scroll to pan; trackpads can swipe sideways',
+        prev: 'Scroll left',
+        next: 'Scroll right',
+        empty: 'No interval status in this window',
+        healthy: 'Healthy',
+        warning: 'Watch',
+        critical: 'Critical',
+        unknown: 'Not enough samples',
+      },
+    },
     admin: {
       descriptionV1:
         'System mode is V1 active probes: manage probe monitors and run checks now; V2 aggregation does not run.',
