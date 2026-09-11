@@ -105,7 +105,7 @@ export function coverageBucketStarts(
   const hasRequestedEnd =
     Number.isFinite(requestedEnd) && (!Number.isFinite(requestedStart) || requestedEnd > requestedStart)
 
-  let end = hasRequestedEnd ? requestedEnd : exclusiveEndFromNow(step)
+  const end = hasRequestedEnd ? requestedEnd : exclusiveEndFromNow(step)
   let start = requestedStart
   if (!Number.isFinite(start) || start >= end) {
     start = end - native * step
