@@ -31,7 +31,7 @@ export default {
       label: '展示维度', platform: '平台', platformGroup: '平台 / 分组', platformModel: '平台 / 模型', platformGroupModel: '平台 / 分组 / 模型'
     },
     trendView: { label: '趋势视图', pulse: '色块矩阵', line: '折线图' },
-    healthMode: { label: '健康显示', overall: '综合', success: '错误率', ttft: '首 Token', cache: '缓存率' },
+    healthMode: { label: '健康显示', overall: '综合', success: '错误率', ttft: '首 TOKEN', cache: '缓存率' },
     tabs: { aria: '明细维度', models: '模型', errors: '错误原因', users: '用户排行' },
     metrics: {
       rpm: 'RPM',
@@ -41,8 +41,8 @@ export default {
       tpmDetail: '每分钟 Token 数',
       tpsDetail: '由 TPM ÷ 60 换算',
       errorRate: '错误率',
-      ttft: '首 Token',
-      ttftP50: '首 Token P50',
+      ttft: '首 TOKEN',
+      ttftP50: '首 TOKEN P50',
       durationP50: '请求时长 P50',
       cacheRate: '缓存率',
       cacheDetail: '读缓存占比',
@@ -52,7 +52,7 @@ export default {
       rpmValue: 'RPM {value}',
       tpmValue: 'TPM {value}',
       tpsValue: '每秒 Token {value}',
-      ttftValue: '首 Token {value}',
+      ttftValue: '首 TOKEN {value}',
       durationValue: '请求时长 {value}',
       cacheRateValue: '缓存率 {value}',
     },
@@ -63,7 +63,7 @@ export default {
       title: '可用性趋势', description: '每行是一种渠道组合，每个色块代表一个统计区间；悬停查看明细', wheelZoom: '在色块上滚轮放大（区间变窄、色块变宽）', wheelZoomX: '在色块上滚轮放大（区间变窄、色块变宽）', dimension: '渠道维度', emptyTitle: '当前筛选窗口没有矩阵数据', legendAria: '健康分数图例', bad: '差', good: '好', healthyLegend: '健康 (≥80)', warningLegend: '需关注 (50–79)', criticalLegend: '异常 (<50)', unknownLegend: '无流量 / 样本不足', noTraffic: '该区间无流量', noTrafficAt: '{time} · 无流量', scoreLine: '健康分 {score}', resetZoom: '重置缩放'
     },
     chart: {
-      title: '可用性趋势', description: '平滑趋势：错误率 · 首 Token P50 · 缓存率', emptyTitle: '当前筛选窗口没有趋势数据', errorLegend: '错误率（左轴 %）', cacheLegend: '缓存率（左轴 %）', ttftLegend: '首 Token P50（右轴）', errorDataset: '错误率趋势 %', cacheDataset: '缓存率趋势 %', ttftDataset: '首 Token 趋势 P50 (ms)', percentAxis: '比率 %', resetZoom: '重置缩放'
+      title: '可用性趋势', description: '平滑趋势：错误率 · 首 TOKEN P50 · 缓存率', emptyTitle: '当前筛选窗口没有趋势数据', errorLegend: '错误率（左轴 %）', cacheLegend: '缓存率（左轴 %）', ttftLegend: '首 TOKEN P50（右轴）', errorDataset: '错误率趋势 %', cacheDataset: '缓存率趋势 %', ttftDataset: '首 TOKEN 趋势 P50 (ms)', percentAxis: '比率 %', resetZoom: '重置缩放'
     },
     errorDetail: { http: 'HTTP {code}', upstream: '上游 {code}', noMessage: '无错误消息', empty: '仅展示分类占比（样本消息仅管理员可见）' },
     errorCategories: {
@@ -124,10 +124,62 @@ export default {
       namedModelsCount: '将展示 {count} 个命名模型维度；名单外模型归入各平台「其他」。',
       userContractTitle: '用户端展示约定',
       userContract: {
-        health: '健康色三指标：错误率 60% + 首 Token P50 20% + 缓存率 20%（阈值可在上方配置）',
-        trend: '趋势可切换色块矩阵 / 折线图（错误率 · 缓存率 · 首 Token）',
+        health: '健康色三指标：错误率 60% + 首 TOKEN P50 20% + 缓存率 20%（阈值可在上方配置）',
+        trend: '趋势可切换色块矩阵 / 折线图（错误率 · 缓存率 · 首 TOKEN）',
         latency: '延迟展示 AVG · P50 · P90；不展示绝对请求数 / 错误数',
         models: '模型列表留空时展示真实模型名，不会全部归入「其他」',
+      },
+    },
+    studio: {
+      subtitle: '渠道旅程总览',
+      live: '实时',
+      journey: {
+        title: '渠道旅程',
+        description: '每个节点是一个渠道维度；点击可筛选该节点',
+        empty: '当前窗口没有渠道节点',
+        stage: '节点 {n}',
+        selectAria: '筛选 {label}',
+      },
+      health: {
+        title: '健康评分',
+        description: '综合成功率、首 TOKEN 与缓存率',
+        score: '健康分',
+        unknown: '样本不足',
+      },
+      models: {
+        title: '模型',
+        empty: '当前窗口没有模型数据',
+        selectAria: '查看 {label} 的区间状态',
+      },
+      groups: {
+        title: '分组',
+        empty: '当前窗口没有分组数据',
+        selectAria: '查看 {label} 的区间状态',
+        userRate: '用户倍率{n}x',
+      },
+      brands: {
+        title: '品牌',
+        sectionAria: '{label} 分组',
+      },
+      status: {
+        label: '当前状态',
+        healthy: '正常',
+        warning: '降级',
+        critical: '失败',
+        unknown: '无数据',
+      },
+      faces: {
+        title: '区间状态',
+        description: '每个表情对应一个统计区间，悬停查看明细',
+        forModel: '{label} 各区间状态，悬停查看明细',
+        panHint: '按住 Shift 滚动可横向浏览；触控板可直接左右滑动',
+        prev: '向左滚动',
+        next: '向右滚动',
+        empty: '当前窗口没有区间状态',
+        healthy: '健康',
+        warning: '需关注',
+        critical: '异常',
+        unknown: '样本不足',
       },
     },
     admin: {
