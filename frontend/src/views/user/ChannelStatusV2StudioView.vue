@@ -116,19 +116,30 @@
         class="studio-content space-y-10"
         :aria-label="t('channelMonitorV2.studio.groups.title')"
       >
-        <template v-if="brandSections.length">
+        <template v-if="pageSections.length">
           <section
-            v-for="section in brandSections"
+            v-for="section in pageSections"
             :key="section.key"
             class="studio-brand-section"
-            :aria-label="t('channelMonitorV2.studio.brands.sectionAria', { label: section.brandLabel })"
+            :class="section.kind === 'active' ? 'studio-active-section' : ''"
+            :aria-label="
+              section.kind === 'active'
+                ? t('channelMonitorV2.studio.groups.activeAria')
+                : t('channelMonitorV2.studio.brands.sectionAria', { label: section.brandLabel })
+            "
           >
             <header class="studio-brand-heading mb-4 flex items-center gap-3 px-0.5">
               <span
                 class="studio-brand-heading-mark"
-                :style="{ '--studio-brand-color': studioBrandFill(section.platform) }"
+                :style="{ '--studio-brand-color': section.kind === 'active' ? '#14B8A6' : studioBrandFill(section.platform) }"
               >
-                <StudioBrandIcon :platform="section.platform" size="lg" />
+                <Icon
+                  v-if="section.kind === 'active'"
+                  name="radar"
+                  size="md"
+                  class="studio-active-mark-icon"
+                />
+                <StudioBrandIcon v-else :platform="section.platform" size="lg" />
               </span>
               <h2 class="text-base font-extrabold tracking-tight text-gray-900 dark:text-white">
                 {{ section.brandLabel }}
@@ -209,22 +220,27 @@ import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import StudioBrandIcon from '@/features/channel-monitor-v2-studio/StudioBrandIcon.vue'
 import StudioKpiCard from '@/features/channel-monitor-v2-studio/StudioKpiCard.vue'
 import StudioStatusFaces from '@/features/channel-monitor-v2-studio/StudioStatusFaces.vue'
-import { rowHasActivity } from '@/features/channel-monitor-v2-studio/studioDemo'
 import { studioBrandFill } from '@/features/channel-monitor-v2-studio/studioBrand'
 import {
   asStudioGroupCatalog,
   cacheTone,
   collectStudioGroupRates,
   errorRateTone,
+  formatStudioCacheRate,
   formatStudioMultiplier,
   formatStudioRateNumber,
+  formatStudioSuccessRate,
   groupStudioCardsByBrand,
   lookupStudioGroupRate,
+  pickStudioActiveGroups,
+  sortStudioCardsByStatus,
+  mergeSelectedStudioGroups,
   overallToneFromRow,
+  studioAccentFromState,
   studioPlatform,
   studioPlatformLabel,
   ttftTone,
-  type StudioAccent,
+  type StudioGroupRateCatalog,
   type StudioGroupRateIndex,
 } from '@/features/channel-monitor-v2-studio/studioFormat'
 import { useAuthStore } from '@/stores/auth'
@@ -244,10 +260,7 @@ import type {
 import {
   formatLatencyPrivacy,
   formatMonitorMs,
-  formatMonitorPercent,
 } from '@/features/channel-monitor-v2/monitorFormat'
-
-const ACCENTS: StudioAccent[] = ['teal', 'coral', 'indigo', 'amber', 'sky']
 
 const route = useRoute()
 const router = useRouter()
@@ -269,6 +282,7 @@ const snapshot = ref<MonitorSnapshot | null>(null)
 const matrix = ref<MonitorMatrixResponse | null>(null)
 const EMPTY_GROUP_RATES: StudioGroupRateIndex = { byId: new Map(), byName: new Map() }
 const groupRates = ref<StudioGroupRateIndex>(EMPTY_GROUP_RATES)
+const groupCatalog = ref<StudioGroupRateCatalog[]>([])
 const loading = ref(false)
 const refreshing = ref(false)
 let controller: AbortController | null = null
@@ -292,17 +306,18 @@ const bootstrapPercent = computed(() => {
 const healthThresholds = computed(() => snapshot.value?.config?.health_thresholds || null)
 const faceCoverage = computed(() => matrix.value?.coverage || snapshot.value?.coverage || null)
 
-const groupRows = computed(() => {
-  const items = matrix.value?.items || []
-  return [...items]
-    .filter((row) => row.group_id != null && Number(row.group_id) > 0)
-    .sort((a, b) => (b.metrics.rpm || 0) - (a.metrics.rpm || 0))
-})
+const groupRows = computed(() =>
+  mergeSelectedStudioGroups(
+    matrix.value?.items,
+    snapshot.value?.config?.group_ids,
+    groupCatalog.value,
+  ),
+)
 
 const groupCards = computed(() => {
   const thresholds = healthThresholds.value
   const rates = groupRates.value
-  const source = groupRows.value.filter(rowHasActivity).map((row) => ({
+  const source = groupRows.value.map((row) => ({
     key: groupKey(row),
     platform: row.platform,
     groupId: row.group_id,
@@ -312,9 +327,10 @@ const groupCards = computed(() => {
     health: row.health,
     buckets: row.buckets ?? [],
   }))
-  return source.map((row, index) => {
+  return source.map((row) => {
     const state = overallToneFromRow(row.metrics, row.health, thresholds)
     const rate = lookupStudioGroupRate(rates, row.groupId, row.label, row.rate)
+    const scored = state !== 'unknown'
     return {
       key: row.key,
       label: row.label,
@@ -322,11 +338,11 @@ const groupCards = computed(() => {
       brandLabel: studioPlatformLabel(row.platform),
       rateLabel: formatStudioMultiplier(rate, t('channelMonitorV2.studio.groups.userRate', { n: formatStudioRateNumber(rate) })),
       successLabel: t('channelMonitorV2.metrics.successRate'),
-      successRate: formatMonitorPercent(1 - (row.metrics.error_rate || 0)),
+      successRate: formatStudioSuccessRate(row.metrics, row.health),
       ttftLabel: t('channelMonitorV2.metrics.ttft'),
       ttft: formatMonitorMs(row.metrics.ttft.p50_ms),
       cacheLabel: t('channelMonitorV2.metrics.cacheRate'),
-      cacheRate: formatMonitorPercent(row.metrics.cache_rate),
+      cacheRate: formatStudioCacheRate(row.metrics, row.health),
       statusHeading: t('channelMonitorV2.studio.status.label'),
       statusLabel: t(`channelMonitorV2.studio.status.${state}`),
       title: formatLatencyPrivacy(
@@ -336,21 +352,41 @@ const groupCards = computed(() => {
         row.metrics.ttft.p95_ms,
       ),
       state,
-      successState: errorRateTone(row.metrics.error_rate, thresholds),
-      ttftState: ttftTone(row.metrics.ttft.p50_ms, thresholds, row.metrics.ttft),
-      cacheState: cacheTone(row.metrics.cache_rate, thresholds),
-      accent: ACCENTS[index % ACCENTS.length],
+      successState: scored ? errorRateTone(row.metrics.error_rate, thresholds) : 'unknown',
+      ttftState: scored ? ttftTone(row.metrics.ttft.p50_ms, thresholds, row.metrics.ttft) : 'unknown',
+      cacheState: scored ? cacheTone(row.metrics.cache_rate, thresholds) : 'unknown',
+      accent: studioAccentFromState(state),
       buckets: row.buckets,
+      metrics: row.metrics,
+      health: row.health,
     }
   })
 })
 
-const brandSections = computed(() => {
+const pageSections = computed(() => {
   let rowIndex = 0
-  return groupStudioCardsByBrand(groupCards.value).map((section) => ({
-    ...section,
-    cards: section.cards.map((card) => ({ ...card, rowIndex: rowIndex++ })),
-  }))
+  const withRowIndex = (cards: typeof groupCards.value) =>
+    cards.map((card) => ({ ...card, rowIndex: rowIndex++ }))
+  const cards = groupCards.value
+  const sections = []
+  const active = pickStudioActiveGroups(cards)
+  if (active.length) {
+    sections.push({
+      key: 'active',
+      kind: 'active' as const,
+      platform: undefined as (typeof cards)[number]['platform'] | undefined,
+      brandLabel: t('channelMonitorV2.studio.groups.active'),
+      cards: withRowIndex(sortStudioCardsByStatus(active)),
+    })
+  }
+  for (const section of groupStudioCardsByBrand(cards)) {
+    sections.push({
+      ...section,
+      kind: 'brand' as const,
+      cards: withRowIndex(section.cards),
+    })
+  }
+  return sections
 })
 
 function parseRange(value: unknown): MonitorRange {
@@ -381,10 +417,9 @@ async function loadGroupRates(signal?: AbortSignal) {
       isAdmin.value ? groupsAPI.getAll().catch(() => []) : Promise.resolve([]),
     ])
     if (signal?.aborted) return
-    groupRates.value = collectStudioGroupRates(
-      [...asStudioGroupCatalog(groups), ...asStudioGroupCatalog(adminGroups)],
-      custom,
-    )
+    const catalog = [...asStudioGroupCatalog(groups), ...asStudioGroupCatalog(adminGroups)]
+    groupCatalog.value = catalog
+    groupRates.value = collectStudioGroupRates(catalog, custom)
   } catch {
     /* keep last known rates */
   }
@@ -475,7 +510,11 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   border-radius: 9999px;
+  color: var(--studio-brand-color, #14b8a6);
   background: color-mix(in srgb, var(--studio-brand-color, #14b8a6) 16%, white);
+}
+.studio-active-mark-icon {
+  color: inherit;
 }
 .dark .studio-brand-heading-mark {
   background: color-mix(in srgb, var(--studio-brand-color, #14b8a6) 24%, rgb(15 23 42));

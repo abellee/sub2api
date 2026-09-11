@@ -512,54 +512,74 @@ func seedChannelMonitorV2MatrixAccumulators(filter service.ChannelMonitorV2Filte
 	if len(filter.Platforms) > 0 {
 		platforms = intersectStrings(platforms, filter.Platforms)
 	}
-	// Platform-only groupBy seeds groupID=0. When group is part of the dimension
-	// (platform_group / platform_group_model), never seed a bare platform row —
-	// only real group IDs (from config or discovered groupInfo).
 	needsGroup := groupBy == service.ChannelMonitorV2GroupByPlatformGroup || groupBy == service.ChannelMonitorV2GroupByPlatformGroupModel
-	groupIDs := []int64{0}
-	if needsGroup {
-		groupIDs = configuredChannelMonitorV2GroupIDs(filter, cfg)
-		if len(groupIDs) == 0 && !filter.RestrictGroups {
-			// Empty config group list means "all groups": use discovered active groups.
-			for id := range groupInfo {
-				groupIDs = append(groupIDs, id)
+	needsModel := groupBy == service.ChannelMonitorV2GroupByPlatformModel || groupBy == service.ChannelMonitorV2GroupByPlatformGroupModel
+	if !needsGroup {
+		for _, platform := range platforms {
+			models := []string{""}
+			if needsModel {
+				models = configuredChannelMonitorV2Models(cfg, platform, filter)
+				if len(models) == 0 {
+					models = []string{""}
+				}
 			}
-			sort.Slice(groupIDs, func(i, j int) bool { return groupIDs[i] < groupIDs[j] })
+			for _, model := range models {
+				key := channelMonitorV2MatrixKey{platform: platform}
+				if needsModel {
+					key.model = model
+				}
+				if accs[key] == nil {
+					accs[key] = &channelMonitorV2MatrixAccumulator{total: newMetricAccumulator(), buckets: make(map[string]*metricAccumulator)}
+				}
+			}
 		}
-		// Still empty → seed nothing; rows come only from fact traffic.
-		if len(groupIDs) == 0 {
-			return accs
-		}
+		return accs
 	}
-	for _, platform := range platforms {
+
+	// platform_group views seed every configured group, including idle ones
+	// whose platform is unknown or not in the enabled-platform list.
+	groupIDs := configuredChannelMonitorV2GroupIDs(filter, cfg)
+	if len(groupIDs) == 0 && !filter.RestrictGroups {
+		for id := range groupInfo {
+			groupIDs = append(groupIDs, id)
+		}
+		sort.Slice(groupIDs, func(i, j int) bool { return groupIDs[i] < groupIDs[j] })
+	}
+	if len(groupIDs) == 0 {
+		return accs
+	}
+	filterPlatforms := map[string]struct{}{}
+	for _, platform := range filter.Platforms {
+		filterPlatforms[platform] = struct{}{}
+	}
+	for _, groupID := range groupIDs {
+		if groupID <= 0 {
+			continue
+		}
+		info := groupInfo[groupID]
+		platform := info.platform
+		if platform == "" {
+			platform = "unknown"
+		}
+		if len(filterPlatforms) > 0 {
+			if _, ok := filterPlatforms[platform]; !ok {
+				continue
+			}
+		}
 		models := []string{""}
-		if groupBy == service.ChannelMonitorV2GroupByPlatformModel || groupBy == service.ChannelMonitorV2GroupByPlatformGroupModel {
+		if needsModel {
 			models = configuredChannelMonitorV2Models(cfg, platform, filter)
 			if len(models) == 0 {
 				models = []string{""}
 			}
 		}
-		for _, groupID := range groupIDs {
-			info := groupInfo[groupID]
-			if needsGroup {
-				if groupID <= 0 {
-					continue
-				}
-				if info.platform == "" || info.platform != platform {
-					continue
-				}
+		for _, model := range models {
+			key := channelMonitorV2MatrixKey{platform: platform, groupID: groupID}
+			if needsModel {
+				key.model = model
 			}
-			for _, model := range models {
-				key := channelMonitorV2MatrixKey{platform: platform}
-				if needsGroup {
-					key.groupID = groupID
-				}
-				if groupBy == service.ChannelMonitorV2GroupByPlatformModel || groupBy == service.ChannelMonitorV2GroupByPlatformGroupModel {
-					key.model = model
-				}
-				if accs[key] == nil {
-					accs[key] = &channelMonitorV2MatrixAccumulator{groupName: info.name, total: newMetricAccumulator(), buckets: make(map[string]*metricAccumulator)}
-				}
+			if accs[key] == nil {
+				accs[key] = &channelMonitorV2MatrixAccumulator{groupName: info.name, total: newMetricAccumulator(), buckets: make(map[string]*metricAccumulator)}
 			}
 		}
 	}

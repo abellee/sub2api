@@ -4,6 +4,7 @@
     ref="rootRef"
     class="studio-spark"
     :class="{ 'is-page-hidden': pageHidden }"
+    :style="paintStyle"
     @mouseleave="onChartLeave"
   >
     <div ref="trackRef" class="studio-spark-track" :style="{ width: `${trackWidth}px` }">
@@ -18,14 +19,31 @@
       >
         <defs>
           <linearGradient :id="fillId" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stop-color="currentColor" stop-opacity="0.28" />
-            <stop offset="100%" stop-color="currentColor" stop-opacity="0" />
+            <stop class="studio-spark-fill-top" offset="0%" :stop-color="paint.fill" stop-opacity="0.2" />
+            <stop class="studio-spark-fill-bottom" offset="100%" :stop-color="paint.fill" stop-opacity="0" />
           </linearGradient>
+          <linearGradient
+            :id="fadeId"
+            gradientUnits="userSpaceOnUse"
+            :x1="visibleLeft"
+            y1="0"
+            :x2="trackWidth"
+            y2="0"
+          >
+            <stop offset="0%" stop-color="#fff" stop-opacity="0" />
+            <stop offset="16%" stop-color="#fff" stop-opacity="1" />
+            <stop offset="84%" stop-color="#fff" stop-opacity="1" />
+            <stop offset="100%" stop-color="#fff" stop-opacity="0" />
+          </linearGradient>
+          <mask :id="maskId" maskUnits="userSpaceOnUse">
+            <rect :width="trackWidth" :height="chartH" :fill="`url(#${fadeId})`" />
+          </mask>
         </defs>
         <polygon
           v-if="area"
           :points="area"
           :fill="`url(#${fillId})`"
+          :mask="`url(#${maskId})`"
           class="studio-spark-area"
         />
         <polyline
@@ -33,7 +51,7 @@
           :points="line"
           fill="none"
           class="studio-spark-line"
-          stroke="currentColor"
+          :stroke="paint.stroke"
           stroke-width="1.7"
           stroke-linecap="round"
           stroke-linejoin="round"
@@ -93,12 +111,11 @@ import { useI18n } from 'vue-i18n'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { MonitorCoverage } from '@/api/channelMonitorV2'
 import { STUDIO_CHART_MIN_GAP, STUDIO_CHART_VISIBLE_DOTS, STUDIO_FACE_MOVE_MS, STUDIO_FACE_POP_MS, studioAfterPaint, studioPageHidden, studioPopIncomingKeys, subscribeStudioVisibility } from './studioDemo'
-import { alignBuckets, coverageBucketStarts, type StudioBucketPoint } from './studioBuckets'
-import { studioChartArea, studioChartDots, studioChartGap, studioChartLine, studioChartTrackWidth, studioValueShade } from './studioFormat'
+import { alignBuckets, coverageBucketStarts, isStudioBucketEmpty, studioSparkValue, type StudioBucketPoint } from './studioBuckets'
+import { allocStudioSparkIds, studioSparkPaint, studioChartArea, studioChartDots, studioChartGap, studioChartLine, studioChartTrackWidth, studioValueShade, type StudioAccent } from './studioFormat'
 import { bucketTooltipLines, emptyTooltipLines, formatSlotTime } from './studioTooltip'
 import { useStudioHoverTooltip } from './useStudioHoverTooltip'
 
-let chartSeq = 0
 const chartH = 44
 
 const props = withDefaults(
@@ -107,12 +124,20 @@ const props = withDefaults(
     coverage?: MonitorCoverage | null
     showThroughput?: boolean
     label?: string
+    accent?: StudioAccent
   }>(),
-  { buckets: () => [], coverage: null, showThroughput: true, label: '' },
+  { buckets: () => [], coverage: null, showThroughput: true, label: '', accent: 'teal' },
 )
 
 const { t, locale } = useI18n()
-const fillId = `studio-spark-fill-${++chartSeq}`
+const { fillId, fadeId, maskId } = allocStudioSparkIds()
+const paint = computed(() => studioSparkPaint(props.accent))
+const paintStyle = computed(() => ({
+  color: paint.value.stroke,
+  '--studio-spark': paint.value.stroke,
+  '--studio-spark-deep': paint.value.deep,
+  '--studio-spark-fill': paint.value.fill,
+}))
 const { tooltipRef, state, show, patch, move, hide } = useStudioHoverTooltip()
 
 const rootRef = ref<HTMLElement | null>(null)
@@ -137,13 +162,7 @@ const slots = computed(() => {
   return alignBuckets(starts, props.buckets)
 })
 
-const values = computed(() =>
-  slots.value.map((slot) => {
-    if (!slot.bucket) return null
-    const rate = 1 - (slot.bucket.metrics.error_rate || 0)
-    return Number.isFinite(rate) ? rate : null
-  }),
-)
+const values = computed(() => slots.value.map((slot) => studioSparkValue(slot.bucket)))
 
 const sparkPadX = 14
 
@@ -157,7 +176,8 @@ const trackWidth = computed(() =>
 
 const layout = computed(() => studioChartDots(values.value, trackWidth.value, chartH, sparkPadX, 8))
 const line = computed(() => studioChartLine(layout.value))
-const area = computed(() => studioChartArea(layout.value, chartH))
+const area = computed(() => studioChartArea(layout.value, chartH, trackWidth.value))
+const visibleLeft = computed(() => Math.max(0, trackWidth.value - containerWidth.value))
 
 const dots = computed(() => {
   const present = layout.value
@@ -175,7 +195,7 @@ const dots = computed(() => {
       shade: studioValueShade(dot.value, min, max),
       start: slot?.start || '',
       label: formatSlotTime(slot?.start || '', locale.value),
-      bucket: slot?.bucket,
+      bucket: isStudioBucketEmpty(slot?.bucket) ? undefined : slot?.bucket,
     }
   })
 })
@@ -312,9 +332,26 @@ onBeforeUnmount(() => {
   margin-top: auto;
   height: 2.75rem;
   width: 100%;
-  overflow: visible;
-  /* Let the leftmost visible dot sit fully on the line instead of clipping in half. */
-  clip-path: inset(-2px -2px -2px -6px);
+  color: var(--studio-spark, currentColor);
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    transparent 0,
+    #000 2.75rem,
+    #000 calc(100% - 0.35rem),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    90deg,
+    transparent 0,
+    #000 2.75rem,
+    #000 calc(100% - 0.35rem),
+    transparent 100%
+  );
+  mask-repeat: no-repeat;
+  mask-size: 100% 100%;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-size: 100% 100%;
 }
 .studio-spark-track {
   position: absolute;
@@ -328,6 +365,14 @@ onBeforeUnmount(() => {
   height: 100%;
   overflow: visible;
   color: inherit;
+}
+.studio-spark-fill-top {
+  stop-color: var(--studio-spark-fill, currentColor);
+  stop-opacity: 0.2;
+}
+.studio-spark-fill-bottom {
+  stop-color: var(--studio-spark-fill, currentColor);
+  stop-opacity: 0;
 }
 .studio-spark-hit {
   position: absolute;
@@ -351,14 +396,18 @@ onBeforeUnmount(() => {
   margin: 0;
   flex-shrink: 0;
   border-radius: 50%;
-  background: color-mix(in srgb, currentColor, #0f766e var(--studio-dot-depth, 22%));
-  box-shadow: 0 0 0 1.15px rgb(255 255 255);
+  background: color-mix(
+    in oklab,
+    currentColor,
+    var(--studio-spark-deep, currentColor) var(--studio-dot-depth, 22%)
+  );
+  box-shadow: 0 0 0 1.15px var(--studio-wash-to, #ffffff);
   transform-origin: 50% 50%;
 }
 .studio-spark-dot--empty {
-  background: rgb(255 255 255);
-  box-shadow: 0 0 0 1.15px currentColor;
-  opacity: 0.55;
+  background: var(--studio-wash-to, #ffffff);
+  box-shadow: 0 0 0 1.15px color-mix(in oklab, currentColor 55%, var(--studio-wash-to, #ffffff));
+  opacity: 0.5;
 }
 .studio-spark-dot--pending {
   transform: scale(0);
@@ -408,10 +457,14 @@ onBeforeUnmount(() => {
   animation: none !important;
 }
 .dark .studio-spark-dot {
-  box-shadow: 0 0 0 1.15px rgb(30 41 59);
+  box-shadow: 0 0 0 1.15px var(--studio-wash-to, rgb(15 23 42));
 }
 .dark .studio-spark-dot--empty {
-  background: rgb(51 65 85);
+  background: color-mix(
+    in oklab,
+    var(--studio-spark-deep, #64748b) 22%,
+    var(--studio-wash-to, rgb(15 23 42))
+  );
 }
 .studio-spark-tooltip {
   pointer-events: none;

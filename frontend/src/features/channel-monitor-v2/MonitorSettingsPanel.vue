@@ -136,21 +136,21 @@
             {{ t('channelMonitorV2.settings.groupsAll') }}
           </button>
         </div>
-        <div class="max-h-[min(40vh,280px)] overflow-y-auto px-3 py-2 sm:px-4">
-          <div class="grid grid-cols-1 gap-1 sm:grid-cols-2">
+        <div class="max-h-[min(70vh,36rem)] overflow-y-auto px-3 py-2 sm:px-4">
+          <div class="grid grid-cols-1 gap-1 xl:grid-cols-2">
             <label
               v-for="group in groups"
               :key="group.id"
-              class="flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition hover:bg-gray-50 dark:hover:bg-dark-800/60"
+              class="flex cursor-pointer items-start gap-3 rounded-xl px-3 py-2.5 text-sm transition hover:bg-gray-50 dark:hover:bg-dark-800/60"
             >
               <input
                 type="checkbox"
-                class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500/40"
+                class="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 text-primary-600 focus:ring-primary-500/40"
                 :checked="draft.group_ids.includes(group.id)"
                 @change="toggleGroup(group.id)"
               />
-              <span class="min-w-0 flex-1 truncate font-medium text-gray-800 dark:text-gray-100">{{ group.name }}</span>
-              <small class="shrink-0 text-xs text-gray-400">{{ platformLabel(group.platform) }} · #{{ group.id }}</small>
+              <span class="min-w-0 flex-1 whitespace-normal break-words font-medium text-gray-800 dark:text-gray-100">{{ group.name }}</span>
+              <small class="shrink-0 pt-0.5 text-xs text-gray-400">{{ platformLabel(group.platform) }} · #{{ group.id }}</small>
             </label>
           </div>
           <p v-if="groups.length === 0" class="empty-state py-8 text-sm text-gray-400">{{ t('channelMonitorV2.settings.groupsEmpty') }}</p>

@@ -156,6 +156,8 @@ export default {
         empty: '当前窗口没有分组数据',
         selectAria: '查看 {label} 的区间状态',
         userRate: '用户倍率{n}x',
+        active: '活跃分组',
+        activeAria: '当前活跃分组',
       },
       brands: {
         title: '品牌',
@@ -166,7 +168,7 @@ export default {
         healthy: '正常',
         warning: '降级',
         critical: '失败',
-        unknown: '无数据',
+        unknown: '样本不足',
       },
       faces: {
         title: '区间状态',

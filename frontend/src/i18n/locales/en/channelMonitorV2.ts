@@ -159,6 +159,8 @@ export default {
         empty: 'No groups in this window',
         selectAria: 'Show interval status for {label}',
         userRate: 'User rate {n}x',
+        active: 'Active groups',
+        activeAria: 'Currently active groups',
       },
       brands: {
         title: 'Brands',
@@ -169,7 +171,7 @@ export default {
         healthy: 'Normal',
         warning: 'Degraded',
         critical: 'Failed',
-        unknown: 'No data',
+        unknown: 'Not enough samples',
       },
       faces: {
         title: 'Interval status',
