@@ -30,13 +30,13 @@
         <template #cell-user="{ row }">
           <div class="text-sm">
             <button
-              v-if="row.user?.email"
+              v-if="row.user?.email || userLabel(row) !== '-'"
               class="font-medium text-primary-600 underline decoration-dashed underline-offset-2 transition-colors hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
               @click="$emit('userClick', row.user_id, row.user?.email)"
-              @contextmenu.prevent="openUserContextMenu($event, row.user_id, row.user.email)"
-              :title="t('admin.usage.clickToViewBalance')"
+              @contextmenu.prevent="openUserContextMenu($event, row.user_id, row.user?.email || '')"
+              :title="userLabelTitle(row)"
             >
-              {{ row.user.email }}
+              {{ userLabel(row) }}
             </button>
             <span v-else class="font-medium text-gray-900 dark:text-white">-</span>
             <span v-if="row.user?.deleted_at" class="ml-1 inline-flex items-center rounded px-1 py-px text-[10px] font-medium leading-tight bg-rose-100 text-rose-600 ring-1 ring-inset ring-rose-200 dark:bg-rose-500/20 dark:text-rose-400 dark:ring-rose-500/30">
@@ -56,10 +56,18 @@
             type="button"
             class="text-left text-sm text-white underline decoration-dotted underline-offset-2 hover:text-white dark:text-white dark:hover:text-white"
             @click.stop="emit('accountClick', row.account.id, row.account.name)"
+            @mouseenter="showAccountTooltip($event, row)"
+            @mouseleave="hideAccountTooltip"
           >
             {{ row.account.name }}
           </button>
-          <span v-else class="text-sm text-white">{{ row.account?.name || '-' }}</span>
+          <span
+            v-else-if="row.account?.name"
+            class="text-sm text-white"
+            @mouseenter="showAccountTooltip($event, row)"
+            @mouseleave="hideAccountTooltip"
+          >{{ row.account.name }}</span>
+          <span v-else class="text-sm text-white">-</span>
         </template>
 
         <template #cell-model="{ row }">
@@ -547,6 +555,32 @@
 
   <Teleport to="body">
     <div
+      v-if="accountTooltipVisible"
+      data-testid="usage-account-tooltip"
+      class="fixed z-[9999] pointer-events-none -translate-y-1/2"
+      :style="{
+        left: accountTooltipPosition.x + 'px',
+        top: accountTooltipPosition.y + 'px'
+      }"
+    >
+      <div class="max-w-xs rounded-lg border border-gray-700 bg-gray-900 px-3 py-2.5 text-xs text-white shadow-xl dark:border-gray-600 dark:bg-gray-800">
+        <div class="space-y-1.5">
+          <div class="flex items-start justify-between gap-4">
+            <span class="shrink-0 text-gray-400">{{ t('admin.usage.upstreamMultiplier') }}</span>
+            <span class="font-semibold text-blue-400">{{ formatAccountHoverRate(accountTooltipInfo.rate) }}</span>
+          </div>
+          <div class="flex items-start justify-between gap-4">
+            <span class="shrink-0 text-gray-400">{{ t('admin.usage.apiAddress') }}</span>
+            <span class="break-all text-right font-medium text-white">{{ accountTooltipInfo.baseUrl }}</span>
+          </div>
+        </div>
+      </div>
+      <div class="absolute right-full top-1/2 h-0 w-0 -translate-y-1/2 border-b-[6px] border-r-[6px] border-t-[6px] border-b-transparent border-r-gray-900 border-t-transparent dark:border-r-gray-800"></div>
+    </div>
+  </Teleport>
+
+  <Teleport to="body">
+    <div
       v-if="userContextMenu.visible"
       class="fixed z-[10000] min-w-20 rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-dark-600 dark:bg-dark-800"
       :style="{ left: `${userContextMenu.x}px`, top: `${userContextMenu.y}px` }"
@@ -564,7 +598,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { formatDateTime, formatReasoningEffort, reasoningEffortValuesEqual } from '@/utils/format'
@@ -614,9 +648,48 @@ import DataTable from '@/components/common/DataTable.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import IpGeoCell from '@/components/common/IpGeoCell.vue'
 import Icon from '@/components/icons/Icon.vue'
+import { getById as getAccountById } from '@/api/admin/accounts'
+import { getById as getUserById } from '@/api/admin/users'
 import { fetchBatch, getEntry } from '@/utils/ipGeoLookup'
-import type { AdminUsageLog } from '@/types'
+import { upstreamDeclaredRateFromExtra } from '@/utils/upstreamDeclaredRate'
+import type { AdminUsageLog, UsageLogAccountSummary } from '@/types'
 import type { Column } from '@/components/common/types'
+
+interface AccountHoverCacheEntry {
+  rate: number | null
+  base_url: string
+}
+
+function credentialBaseUrl(credentials?: Record<string, unknown> | null): string {
+  const raw = credentials?.base_url
+  return typeof raw === 'string' ? raw.trim() : ''
+}
+
+function hasUpstreamRateField(account?: UsageLogAccountSummary | null): boolean {
+  return !!account && Object.prototype.hasOwnProperty.call(account, 'upstream_rate_multiplier')
+}
+
+function resolveAccountHover(
+  row: AdminUsageLog | null,
+  cache: Record<number, AccountHoverCacheEntry>
+): { rate: number | null; baseUrl: string } {
+  if (!row?.account) return { rate: null, baseUrl: '-' }
+  const cached = cache[row.account.id]
+  const rate = hasUpstreamRateField(row.account)
+    ? (row.account.upstream_rate_multiplier ?? null)
+    : (cached?.rate ?? null)
+  const raw = (row.account.base_url ?? cached?.base_url ?? '').trim()
+  return { rate, baseUrl: raw || '-' }
+}
+
+function formatAccountHoverRate(rate: number | null): string {
+  return rate == null ? '-' : `${formatMultiplier(rate)}x`
+}
+
+function needsAccountHoverLookup(account?: UsageLogAccountSummary | null): boolean {
+  if (!account?.id) return false
+  return !hasUpstreamRateField(account)
+}
 
 interface Props {
   data: AdminUsageLog[]
@@ -658,6 +731,25 @@ const showAccountBilling = props.showAccountBilling
 const showUpstreamEndpoint = props.showUpstreamEndpoint
 const ipGeoBatchLoading = ref(false)
 const userContextMenu = ref({ visible: false, x: 0, y: 0, userId: 0, email: '' })
+const userNotesCache = ref<Record<number, string>>({})
+const showUserColumn = computed(() => props.columns.some((col) => col.key === 'user'))
+
+function resolvedUserNotes(row: AdminUsageLog): string {
+  const fromRow = row.user?.notes
+  if (typeof fromRow === 'string') return fromRow.trim()
+  const cached = userNotesCache.value[row.user?.id ?? row.user_id]
+  return typeof cached === 'string' ? cached.trim() : ''
+}
+
+function userLabel(row: AdminUsageLog): string {
+  return resolvedUserNotes(row) || row.user?.email || '-'
+}
+
+function userLabelTitle(row: AdminUsageLog): string {
+  const notes = resolvedUserNotes(row)
+  if (notes && row.user?.email) return row.user.email
+  return t('admin.usage.clickToViewBalance')
+}
 
 const openUserContextMenu = (event: MouseEvent, userId: number, email: string) => {
   userContextMenu.value = {
@@ -757,6 +849,13 @@ const tokenTooltipVisible = ref(false)
 const tokenTooltipPosition = ref({ x: 0, y: 0 })
 const tokenTooltipData = ref<AdminUsageLog | null>(null)
 
+// Tooltip state - account hover (上游倍率 + API地址)
+const accountTooltipVisible = ref(false)
+const accountTooltipPosition = ref({ x: 0, y: 0 })
+const accountTooltipRow = ref<AdminUsageLog | null>(null)
+const accountHoverCache = ref<Record<number, AccountHoverCacheEntry>>({})
+const accountTooltipInfo = computed(() => resolveAccountHover(accountTooltipRow.value, accountHoverCache.value))
+
 const getRequestTypeLabel = (row: AdminUsageLog): string => {
   const requestType = resolveUsageRequestType(row)
   if (requestType === 'cyber') return t('usage.cyber')
@@ -822,6 +921,68 @@ const hideTokenTooltip = () => {
   tokenTooltipVisible.value = false
   tokenTooltipData.value = null
 }
+
+const showAccountTooltip = (event: MouseEvent, row: AdminUsageLog) => {
+  const target = event.currentTarget as HTMLElement
+  const rect = target.getBoundingClientRect()
+  accountTooltipRow.value = row
+  accountTooltipPosition.value = { x: rect.right + 8, y: rect.top + rect.height / 2 }
+  accountTooltipVisible.value = true
+  void hydrateAccountHover(row)
+}
+
+const hideAccountTooltip = () => {
+  accountTooltipVisible.value = false
+  accountTooltipRow.value = null
+}
+
+const hydrateAccountHover = async (row: AdminUsageLog) => {
+  const account = row.account
+  if (!account?.id || !needsAccountHoverLookup(account)) return
+  if (Object.prototype.hasOwnProperty.call(accountHoverCache.value, account.id)) return
+  try {
+    const detail = await getAccountById(account.id)
+    accountHoverCache.value = {
+      ...accountHoverCache.value,
+      [account.id]: {
+        rate: upstreamDeclaredRateFromExtra(detail.extra),
+        base_url: credentialBaseUrl(detail.credentials),
+      },
+    }
+  } catch {
+    accountHoverCache.value = {
+      ...accountHoverCache.value,
+      [account.id]: { rate: null, base_url: '' },
+    }
+  }
+}
+
+const hydrateUserNotes = async (rows: AdminUsageLog[]) => {
+  if (!showUserColumn.value) return
+  const pending = new Set<number>()
+  for (const row of rows) {
+    const id = row.user?.id ?? row.user_id
+    if (!id) continue
+    if (typeof row.user?.notes === 'string') continue
+    if (Object.prototype.hasOwnProperty.call(userNotesCache.value, id)) continue
+    pending.add(id)
+  }
+  if (pending.size === 0) return
+  await Promise.all([...pending].map(async (id) => {
+    try {
+      const user = await getUserById(id, true)
+      userNotesCache.value = { ...userNotesCache.value, [id]: user.notes ?? '' }
+    } catch {
+      userNotesCache.value = { ...userNotesCache.value, [id]: '' }
+    }
+  }))
+}
+
+watch(
+  () => [props.data, showUserColumn.value] as const,
+  ([rows]) => { void hydrateUserNotes(rows) },
+  { immediate: true }
+)
 
 onMounted(() => {
   document.addEventListener('click', closeUserContextMenu)

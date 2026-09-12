@@ -67,6 +67,8 @@ export interface User {
   id: number
   username: string
   email: string
+  /** 管理员备注；仅管理员使用记录等接口返回，普通用户接口不返回 */
+  notes?: string | null
   avatar_url?: string | null
   avatar_source?: string | UserProfileSourceContext | null
   username_source?: string | UserProfileSourceContext | null
@@ -1755,6 +1757,12 @@ export interface UsageLog {
 export interface UsageLogAccountSummary {
   id: number
   name: string
+  /** 上游声明倍率（extra.upstream_billing_probe），管理员使用记录悬停展示 */
+  upstream_rate_multiplier?: number | null
+  /** 旧字段：账号计费倍率。不得当作上游声明倍率展示 */
+  rate_multiplier?: number | null
+  /** 上游 API 地址（credentials.base_url），非敏感字段 */
+  base_url?: string | null
 }
 
 export interface AdminUsageLog extends UsageLog {

@@ -329,6 +329,117 @@ func TestUsageLogFromService_PreservesHistoricalMissingImageSize(t *testing.T) {
 	require.NotContains(t, string(body), `"image_size":"2K"`)
 }
 
+func TestAccountSummaryFromService_IncludesUpstreamDeclaredRateAndBaseURL(t *testing.T) {
+	t.Parallel()
+
+	billingRate := 0.35
+	account := &service.Account{
+		ID:             42,
+		Name:           "relay-a",
+		RateMultiplier: &billingRate,
+		Credentials: map[string]any{
+			"base_url":      "https://api.example.com/v1",
+			"api_key":       "sk-secret",
+			"refresh_token": "rt-secret",
+		},
+		Extra: map[string]any{
+			"upstream_billing_probe": map[string]any{
+				"status": "ok",
+				"data": map[string]any{
+					"billing_scope":             "token",
+					"resolved_rate_multiplier":  0.065,
+					"peak_rate_enabled":         false,
+					"effective_rate_multiplier": 0.065,
+				},
+			},
+		},
+	}
+
+	summary := AccountSummaryFromService(account)
+	require.NotNil(t, summary)
+	require.Equal(t, int64(42), summary.ID)
+	require.Equal(t, "relay-a", summary.Name)
+	require.NotNil(t, summary.UpstreamRateMultiplier)
+	require.InDelta(t, 0.065, *summary.UpstreamRateMultiplier, 1e-12)
+	require.Equal(t, "https://api.example.com/v1", summary.BaseURL)
+
+	body, err := json.Marshal(summary)
+	require.NoError(t, err)
+	require.Contains(t, string(body), `"upstream_rate_multiplier":0.065`)
+	require.NotContains(t, string(body), `"rate_multiplier":0.35`)
+	require.Contains(t, string(body), `"base_url":"https://api.example.com/v1"`)
+	require.NotContains(t, string(body), "sk-secret")
+	require.NotContains(t, string(body), "rt-secret")
+}
+
+func TestUsageLogFromServiceAdmin_IncludesAccountHoverFields(t *testing.T) {
+	t.Parallel()
+
+	billingRate := 1.25
+	log := &service.UsageLog{
+		RequestID: "req_account_hover",
+		Model:     "gpt-5.4",
+		User: &service.User{
+			ID:    3,
+			Email: "alice@example.com",
+			Notes: "张三",
+		},
+		Account: &service.Account{
+			ID:             7,
+			Name:           "upstream-b",
+			RateMultiplier: &billingRate,
+			Credentials: map[string]any{
+				"base_url": " https://relay.llmfree.work ",
+				"api_key":  "sk-do-not-leak",
+			},
+			Extra: map[string]any{
+				"upstream_billing_probe": map[string]any{
+					"status": "ok",
+					"data": map[string]any{
+						"billing_scope":             "token",
+						"resolved_rate_multiplier":  0.08,
+						"peak_rate_enabled":         false,
+						"effective_rate_multiplier": 0.08,
+					},
+				},
+			},
+		},
+	}
+
+	userDTO := UsageLogFromService(log)
+	adminDTO := UsageLogFromServiceAdmin(log)
+
+	userJSON, err := json.Marshal(userDTO)
+	require.NoError(t, err)
+	var userMap map[string]any
+	require.NoError(t, json.Unmarshal(userJSON, &userMap))
+	_, hasAccount := userMap["account"]
+	require.False(t, hasAccount)
+	require.NotContains(t, string(userJSON), "base_url")
+	require.NotContains(t, string(userJSON), "sk-do-not-leak")
+	require.NotContains(t, string(userJSON), "upstream_rate_multiplier")
+	require.NotContains(t, string(userJSON), "张三")
+	require.NotContains(t, string(userJSON), `"notes"`)
+
+	require.NotNil(t, adminDTO.Account)
+	require.Equal(t, int64(7), adminDTO.Account.ID)
+	require.Equal(t, "upstream-b", adminDTO.Account.Name)
+	require.NotNil(t, adminDTO.Account.UpstreamRateMultiplier)
+	require.InDelta(t, 0.08, *adminDTO.Account.UpstreamRateMultiplier, 1e-12)
+	require.Equal(t, "https://relay.llmfree.work", adminDTO.Account.BaseURL)
+	require.NotNil(t, adminDTO.User)
+	require.NotNil(t, adminDTO.User.Notes)
+	require.Equal(t, "张三", *adminDTO.User.Notes)
+
+	adminJSON, err := json.Marshal(adminDTO)
+	require.NoError(t, err)
+	require.Contains(t, string(adminJSON), `"upstream_rate_multiplier":0.08`)
+	require.NotContains(t, string(adminJSON), `"rate_multiplier":1.25`)
+	require.Contains(t, string(adminJSON), `"base_url":"https://relay.llmfree.work"`)
+	require.Contains(t, string(adminJSON), `"notes":"张三"`)
+	require.NotContains(t, string(adminJSON), "sk-do-not-leak")
+}
+
 func f64Ptr(value float64) *float64 {
 	return &value
 }
