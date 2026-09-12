@@ -9,11 +9,25 @@ const appStoreMocks = vi.hoisted(() => ({
   showError: vi.fn(),
 }))
 
+const accountApiMocks = vi.hoisted(() => ({
+  getById: vi.fn(),
+}))
+
+const userApiMocks = vi.hoisted(() => ({
+  getById: vi.fn(),
+}))
+
 vi.mock('@/utils/ipGeoLookup', () => ipGeoMocks)
 vi.mock('@/stores/app', () => ({ useAppStore: () => appStoreMocks }))
+vi.mock('@/api/admin/accounts', () => ({
+  getById: (...args: unknown[]) => accountApiMocks.getById(...args),
+}))
+vi.mock('@/api/admin/users', () => ({
+  getById: (...args: unknown[]) => userApiMocks.getById(...args),
+}))
 
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 
 import UsageTable from '../UsageTable.vue'
@@ -71,6 +85,8 @@ const messages: Record<string, string> = {
 	'usage.upstreamResponseModel': 'Upstream response',
 	'usage.modelVariant': 'Possible version variant',
 	'usage.modelMismatch': 'Different model',
+  'admin.usage.upstreamMultiplier': 'Upstream rate',
+  'admin.usage.apiAddress': 'API URL',
 }
 
 vi.mock('vue-i18n', async () => {
@@ -805,5 +821,265 @@ describe('admin UsageTable deleted-user badge', () => {
 
     expect(wrapper.text()).not.toContain('Deleted')
     expect(wrapper.text()).toContain('active@test.com')
+  })
+})
+
+describe('admin UsageTable account hover', () => {
+  const DataTableAccountStub = {
+    props: ['data'],
+    template: `
+      <div>
+        <div v-for="row in data" :key="row.request_id">
+          <slot name="cell-account" :row="row" />
+        </div>
+      </div>
+    `,
+  }
+
+  const TeleportStub = { template: '<div><slot /></div>' }
+
+  beforeEach(() => {
+    accountApiMocks.getById.mockReset()
+    userApiMocks.getById.mockReset()
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      x: 0,
+      y: 0,
+      top: 20,
+      left: 20,
+      right: 120,
+      bottom: 40,
+      width: 100,
+      height: 20,
+      toJSON: () => ({}),
+    } as DOMRect)
+  })
+
+  it('shows probed upstream declared rate and API URL from the account summary without fetching', async () => {
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [{
+          request_id: 'req-account-hover',
+          model: 'gpt-5.4',
+          account: {
+            id: 9,
+            name: 'relay-a',
+            upstream_rate_multiplier: 0.065,
+            rate_multiplier: 0.35,
+            base_url: 'https://api.example.com/v1',
+          },
+        }],
+        loading: false,
+        columns: [{ key: 'account', label: 'Account' }],
+      },
+      global: {
+        stubs: {
+          DataTable: DataTableAccountStub,
+          EmptyState: true,
+          Icon: true,
+          Teleport: TeleportStub,
+        },
+      },
+    })
+
+    await wrapper.get('button').trigger('mouseenter')
+    await nextTick()
+
+    const tooltip = wrapper.get('[data-testid="usage-account-tooltip"]')
+    expect(tooltip.text()).toContain('Upstream rate')
+    expect(tooltip.text()).toContain('0.065x')
+    expect(tooltip.text()).not.toContain('0.35x')
+    expect(tooltip.text()).toContain('API URL')
+    expect(tooltip.text()).toContain('https://api.example.com/v1')
+    expect(accountApiMocks.getById).not.toHaveBeenCalled()
+  })
+
+  it('loads missing hover fields from account extra.upstream_billing_probe, not account billing rate', async () => {
+    accountApiMocks.getById.mockResolvedValue({
+      id: 11,
+      name: 'relay-b',
+      rate_multiplier: 1.5,
+      credentials: { base_url: 'https://relay.llmfree.work' },
+      extra: {
+        upstream_billing_probe: {
+          status: 'ok',
+          data: {
+            object: 'sub2api.key_billing',
+            schema_version: 1,
+            billing_scope: 'token',
+            group_rate_multiplier: 1,
+            resolved_rate_multiplier: 0.065,
+            peak_rate_enabled: false,
+            effective_rate_multiplier: 0.065,
+            observed_at: '2026-07-13T00:00:00Z',
+          },
+          last_attempt_at: '2026-07-13T00:00:00Z',
+          next_probe_at: '2026-07-13T00:30:00Z',
+        },
+      },
+    })
+
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [{
+          request_id: 'req-account-lookup',
+          model: 'gpt-5.4',
+          account_rate_multiplier: 1.5,
+          account: { id: 11, name: 'relay-b' },
+        }],
+        loading: false,
+        columns: [{ key: 'account', label: 'Account' }],
+      },
+      global: {
+        stubs: {
+          DataTable: DataTableAccountStub,
+          EmptyState: true,
+          Icon: true,
+          Teleport: TeleportStub,
+        },
+      },
+    })
+
+    await wrapper.get('button').trigger('mouseenter')
+    await flushPromises()
+
+    expect(accountApiMocks.getById).toHaveBeenCalledWith(11)
+    const tooltip = wrapper.get('[data-testid="usage-account-tooltip"]')
+    expect(tooltip.text()).toContain('0.065x')
+    expect(tooltip.text()).not.toContain('1.50x')
+    expect(tooltip.text()).toContain('https://relay.llmfree.work')
+  })
+
+  it('shows dash when the account has no upstream billing probe', async () => {
+    accountApiMocks.getById.mockResolvedValue({
+      id: 12,
+      name: 'oauth-a',
+      rate_multiplier: 1.5,
+      credentials: { base_url: 'https://api.openai.com' },
+    })
+
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [{
+          request_id: 'req-account-no-probe',
+          model: 'gpt-5.4',
+          account: { id: 12, name: 'oauth-a' },
+        }],
+        loading: false,
+        columns: [{ key: 'account', label: 'Account' }],
+      },
+      global: {
+        stubs: {
+          DataTable: DataTableAccountStub,
+          EmptyState: true,
+          Icon: true,
+          Teleport: TeleportStub,
+        },
+      },
+    })
+
+    await wrapper.get('button').trigger('mouseenter')
+    await flushPromises()
+
+    const tooltip = wrapper.get('[data-testid="usage-account-tooltip"]')
+    expect(tooltip.text()).toContain('-')
+    expect(tooltip.text()).not.toContain('1.50x')
+    expect(tooltip.text()).toContain('https://api.openai.com')
+  })
+})
+
+describe('admin UsageTable user notes', () => {
+  const TeleportStub = { template: '<div><slot /></div>' }
+
+  beforeEach(() => {
+    userApiMocks.getById.mockReset()
+    accountApiMocks.getById.mockReset()
+  })
+
+  it('shows notes instead of email when the user has notes', () => {
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [{
+          request_id: 'req-user-notes',
+          model: 'claude-3',
+          user_id: 8,
+          user: { id: 8, email: 'alice@example.com', notes: '张三' },
+        }],
+        loading: false,
+        columns: [{ key: 'user', label: 'User' }],
+      },
+      global: {
+        stubs: {
+          DataTable: DataTableStubWithUser,
+          EmptyState: true,
+          Icon: true,
+          Teleport: TeleportStub,
+        },
+      },
+    })
+
+    expect(wrapper.text()).toContain('张三')
+    expect(wrapper.text()).not.toContain('alice@example.com')
+    expect(userApiMocks.getById).not.toHaveBeenCalled()
+  })
+
+  it('keeps email when notes are empty', () => {
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [{
+          request_id: 'req-user-no-notes',
+          model: 'claude-3',
+          user_id: 9,
+          user: { id: 9, email: 'bob@example.com', notes: '' },
+        }],
+        loading: false,
+        columns: [{ key: 'user', label: 'User' }],
+      },
+      global: {
+        stubs: {
+          DataTable: DataTableStubWithUser,
+          EmptyState: true,
+          Icon: true,
+          Teleport: TeleportStub,
+        },
+      },
+    })
+
+    expect(wrapper.text()).toContain('bob@example.com')
+    expect(userApiMocks.getById).not.toHaveBeenCalled()
+  })
+
+  it('loads notes from the admin user API when the usage payload omits them', async () => {
+    userApiMocks.getById.mockResolvedValue({
+      id: 10,
+      email: 'carol@example.com',
+      notes: 'Carol 备注',
+    })
+
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [{
+          request_id: 'req-user-lookup',
+          model: 'claude-3',
+          user_id: 10,
+          user: { id: 10, email: 'carol@example.com' },
+        }],
+        loading: false,
+        columns: [{ key: 'user', label: 'User' }],
+      },
+      global: {
+        stubs: {
+          DataTable: DataTableStubWithUser,
+          EmptyState: true,
+          Icon: true,
+          Teleport: TeleportStub,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    expect(userApiMocks.getById).toHaveBeenCalledWith(10, true)
+    expect(wrapper.text()).toContain('Carol 备注')
+    expect(wrapper.text()).not.toContain('carol@example.com')
   })
 })

@@ -36,6 +36,12 @@ type User struct {
 
 	APIKeys       []APIKey           `json:"api_keys,omitempty"`
 	Subscriptions []UserSubscription `json:"subscriptions,omitempty"`
+
+	// Notes is admin-only. User-facing mappers must leave this nil so omitempty
+	// strips it. Admin usage logs copy it so operators can identify users by
+	// remark instead of email. AdminUser.Notes remains the field used by
+	// /admin/users JSON.
+	Notes *string `json:"notes,omitempty"`
 }
 
 // AdminUser 是管理员接口使用的 user DTO（包含敏感/内部字段）。
@@ -699,7 +705,7 @@ type AdminUsageLog struct {
 	// IPAddress 用户请求 IP
 	IPAddress *string `json:"ip_address,omitempty"`
 
-	// Account 最小账号信息（避免泄露敏感字段）
+	// Account 最小账号信息（避免泄露敏感凭证）
 	Account *AccountSummary `json:"account,omitempty"`
 }
 
@@ -732,10 +738,13 @@ type UsageCleanupTask struct {
 }
 
 // AccountSummary is a minimal account info for usage log display.
-// It intentionally excludes sensitive fields like Credentials, Proxy, etc.
+// UpstreamRateMultiplier is the probed 上游声明倍率, not accounts.rate_multiplier
+// (账号计费倍率). BaseURL is credentials.base_url (not sensitive).
 type AccountSummary struct {
-	ID   int64  `json:"id"`
-	Name string `json:"name"`
+	ID                     int64    `json:"id"`
+	Name                   string   `json:"name"`
+	UpstreamRateMultiplier *float64 `json:"upstream_rate_multiplier"`
+	BaseURL                string   `json:"base_url"`
 }
 
 type Setting struct {

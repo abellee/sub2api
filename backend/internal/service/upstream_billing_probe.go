@@ -900,6 +900,26 @@ func upstreamBillingRateAt(data map[string]any, now time.Time) (float64, bool) {
 	return base, true
 }
 
+// UpstreamDeclaredRate 返回 extra.upstream_billing_probe 里当前的上游声明倍率，
+// 与账户页「上游声明倍率」同一套计算。没有可用探测数据时 ok=false。
+func (a *Account) UpstreamDeclaredRate(now time.Time) (float64, bool) {
+	if a == nil {
+		return 0, false
+	}
+	snapshot := decodeUpstreamBillingProbeSnapshot(a.Extra)
+	if snapshot == nil || snapshot.Data == nil {
+		return 0, false
+	}
+	if rate, ok := upstreamBillingRateAt(snapshot.Data, now); ok {
+		return rate, true
+	}
+	if last, ok := resolveAccountExtraNumber(snapshot.Data, "effective_rate_multiplier"); ok && last >= 0 &&
+		!math.IsNaN(last) && !math.IsInf(last, 0) {
+		return last, true
+	}
+	return 0, false
+}
+
 // upstreamBillingProbeSyncRate converts the declared multiplier into the value
 // the automatic write-back may store in accounts.rate_multiplier, at the
 // precision that column supports (DECIMAL(10,4)).

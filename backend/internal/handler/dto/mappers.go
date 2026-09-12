@@ -663,19 +663,25 @@ func redeemCodeFromServiceBase(rc *service.RedeemCode) RedeemCode {
 }
 
 // AccountSummaryFromService returns a minimal AccountSummary for usage log display.
-// Only includes ID and Name - no sensitive fields like Credentials, Proxy, etc.
+// Includes the probed 上游声明倍率 and upstream API address (credentials.base_url is not sensitive).
+// It still omits tokens, API keys, proxies, and other account internals.
 func AccountSummaryFromService(a *service.Account) *AccountSummary {
 	if a == nil {
 		return nil
 	}
-	return &AccountSummary{
-		ID:   a.ID,
-		Name: a.Name,
+	summary := &AccountSummary{
+		ID:      a.ID,
+		Name:    a.Name,
+		BaseURL: strings.TrimSpace(a.GetCredential("base_url")),
 	}
+	if rate, ok := a.UpstreamDeclaredRate(time.Now()); ok {
+		summary.UpstreamRateMultiplier = &rate
+	}
+	return summary
 }
 
 func usageLogFromServiceUser(l *service.UsageLog) UsageLog {
-	// 普通用户 DTO：严禁包含管理员字段（例如 account_rate_multiplier、account、upstream_model）。
+	// 普通用户 DTO：严禁包含管理员字段（例如 account_rate_multiplier、account、upstream_model、notes）。
 	requestType := l.EffectiveRequestType()
 	stream, openAIWSMode := service.ApplyLegacyRequestFields(requestType, l.Stream, l.OpenAIWSMode)
 	requestedModel := l.RequestedModel
@@ -750,13 +756,18 @@ func UsageLogFromService(l *service.UsageLog) *UsageLog {
 }
 
 // UsageLogFromServiceAdmin converts a service UsageLog to DTO for admin users.
-// It includes minimal Account info (ID, Name only) and IP address.
+// It includes minimal Account info (id, name, 上游声明倍率, API address),
+// admin-only user notes, and IP address.
 func UsageLogFromServiceAdmin(l *service.UsageLog) *AdminUsageLog {
 	if l == nil {
 		return nil
 	}
 	usageLog := usageLogFromServiceUser(l)
 	usageLog.UpstreamEndpoint = l.UpstreamEndpoint
+	if usageLog.User != nil && l.User != nil {
+		notes := l.User.Notes
+		usageLog.User.Notes = &notes
+	}
 	return &AdminUsageLog{
 		UsageLog:                usageLog,
 		UpstreamModel:           l.UpstreamModel,

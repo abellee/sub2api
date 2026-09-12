@@ -567,6 +567,8 @@ export default {
 	  upstreamModelMismatchOnly: 'Mismatched only',
 	  upstreamModelMatchedOnly: 'Matched only',
       ipAddress: 'IP',
+      upstreamMultiplier: 'Upstream rate',
+      apiAddress: 'API URL',
       clickToViewBalance: 'Click to view balance history',
       failedToLoadUser: 'Failed to load user info',
       userDeletedBadge: 'Deleted',
