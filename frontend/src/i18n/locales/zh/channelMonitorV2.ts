@@ -165,9 +165,9 @@ export default {
       },
       status: {
         label: '当前状态',
-        healthy: '正常',
-        warning: '降级',
-        critical: '失败',
+        healthy: '健康',
+        warning: '波动',
+        critical: '异常',
         unknown: '样本不足',
       },
       faces: {

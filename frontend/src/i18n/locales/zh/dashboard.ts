@@ -18,19 +18,6 @@ export default {
     hour: '按小时',
     modelDistribution: '模型分布',
     groupDistribution: '分组使用分布',
-    platformBreakdown: '按平台拆分',
-    platformBreakdownEmpty: '暂无平台用量',
-    platformCount: '{count} 个平台',
-    platformOther: '其他',
-    platformQuota: {
-      title: '配额用量',
-      daily: '日',
-      weekly: '周',
-      monthly: '月（近30天）',
-      resetsAt: '{time} 重置',
-      noLimit: '不限制',
-      disabled: '已禁用',
-    },
     tokenUsageTrend: 'Token 使用趋势',
     noDataAvailable: '暂无数据',
     model: '模型',
@@ -48,6 +35,7 @@ export default {
     noUsageRecords: '暂无使用记录',
     startUsingApi: '开始使用 API 后，您的使用历史将显示在这里。',
     viewAllUsage: '查看全部',
+    viewAllChannelStatus: '查看全部渠道状态',
     quickActions: '快捷操作',
     createApiKey: '创建 API 密钥',
     generateNewKey: '生成新的 API 密钥',
@@ -471,9 +459,9 @@ export default {
   // Shared keys for channel monitor (admin + user views)
   monitorCommon: {
     status: {
-      operational: '正常',
-      degraded: '降级',
-      failed: '失败',
+      operational: '健康',
+      degraded: '波动',
+      failed: '异常',
       error: '错误',
       unknown: '-'
     },
@@ -1058,5 +1046,11 @@ export default {
     selectDateRange: '选择日期范围'
   },
 
-  // Admin
+  appCenter: {
+    title: '应用中心',
+    description: '浏览已收录的第三方应用',
+    empty: '暂无应用',
+    emptyHint: '管理员添加应用后会显示在这里。',
+    openDownloadPage: '跳转下载页',
+  },
 }

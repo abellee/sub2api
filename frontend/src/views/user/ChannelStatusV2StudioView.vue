@@ -120,8 +120,7 @@
           <section
             v-for="section in pageSections"
             :key="section.key"
-            class="studio-brand-section"
-            :class="section.kind === 'active' ? 'studio-active-section' : ''"
+            :class="section.kind === 'active' ? 'studio-active-section' : 'studio-brand-section'"
             :aria-label="
               section.kind === 'active'
                 ? t('channelMonitorV2.studio.groups.activeAria')
@@ -131,7 +130,11 @@
             <header class="studio-brand-heading mb-4 flex items-center gap-3 px-0.5">
               <span
                 class="studio-brand-heading-mark"
-                :style="{ '--studio-brand-color': section.kind === 'active' ? '#14B8A6' : studioBrandFill(section.platform) }"
+                :style="
+                  section.kind === 'brand'
+                    ? { '--studio-brand-color': studioBrandFill(section.platform) }
+                    : undefined
+                "
               >
                 <Icon
                   v-if="section.kind === 'active'"
@@ -212,7 +215,7 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
@@ -222,53 +225,16 @@ import StudioKpiCard from '@/features/channel-monitor-v2-studio/StudioKpiCard.vu
 import StudioStatusFaces from '@/features/channel-monitor-v2-studio/StudioStatusFaces.vue'
 import { studioBrandFill } from '@/features/channel-monitor-v2-studio/studioBrand'
 import {
-  asStudioGroupCatalog,
-  cacheTone,
-  collectStudioGroupRates,
-  errorRateTone,
-  formatStudioCacheRate,
-  formatStudioMultiplier,
-  formatStudioRateNumber,
-  formatStudioSuccessRate,
   groupStudioCardsByBrand,
-  lookupStudioGroupRate,
   pickStudioActiveGroups,
   sortStudioCardsByStatus,
-  mergeSelectedStudioGroups,
-  overallToneFromRow,
-  studioAccentFromState,
-  studioPlatform,
-  studioPlatformLabel,
-  ttftTone,
-  type StudioGroupRateCatalog,
-  type StudioGroupRateIndex,
 } from '@/features/channel-monitor-v2-studio/studioFormat'
-import { useAuthStore } from '@/stores/auth'
-import { useAppStore } from '@/stores/app'
-import { extractApiErrorMessage } from '@/utils/apiError'
-import { isChannelMonitorThroughputHidden } from '@/utils/featureFlags'
-import * as api from '@/api/channelMonitorV2'
-import { groupsAPI } from '@/api/admin/groups'
-import { userGroupsAPI } from '@/api/groups'
-import type {
-  MonitorFilter,
-  MonitorMatrixResponse,
-  MonitorMatrixRow,
-  MonitorRange,
-  MonitorSnapshot,
-} from '@/api/channelMonitorV2'
-import {
-  formatLatencyPrivacy,
-  formatMonitorMs,
-} from '@/features/channel-monitor-v2/monitorFormat'
+import { useStudioGroupCards } from '@/features/channel-monitor-v2-studio/useStudioGroupCards'
+import type { MonitorRange } from '@/api/channelMonitorV2'
 
 const route = useRoute()
 const router = useRouter()
-const authStore = useAuthStore()
-const appStore = useAppStore()
 const { t, locale } = useI18n()
-const isAdmin = computed(() => authStore.isAdmin)
-const showThroughput = computed(() => isAdmin.value || !isChannelMonitorThroughputHidden())
 
 const ranges = computed(() => [
   { value: '90m' as MonitorRange, label: t('channelMonitorV2.ranges.90m') },
@@ -278,127 +244,43 @@ const ranges = computed(() => [
 ])
 
 const range = ref<MonitorRange>(parseRange(route.query.range))
-const snapshot = ref<MonitorSnapshot | null>(null)
-const matrix = ref<MonitorMatrixResponse | null>(null)
-const EMPTY_GROUP_RATES: StudioGroupRateIndex = { byId: new Map(), byName: new Map() }
-const groupRates = ref<StudioGroupRateIndex>(EMPTY_GROUP_RATES)
-const groupCatalog = ref<StudioGroupRateCatalog[]>([])
-const loading = ref(false)
-const refreshing = ref(false)
-let controller: AbortController | null = null
-let sequence = 0
-let autoRefreshTimer: number | null = null
-
-const emptyFilter = computed<MonitorFilter>(() => ({
-  range: range.value,
-  platforms: [],
-  groupIds: [],
-  models: [],
-}))
-
-const bootstrapActive = computed(() => Boolean(snapshot.value?.coverage?.bootstrap?.active))
-const bootstrapPercent = computed(() => {
-  const raw = snapshot.value?.coverage?.bootstrap?.progress_percent
-  if (typeof raw !== 'number' || Number.isNaN(raw)) return 0
-  return Math.min(100, Math.max(0, Math.round(raw)))
-})
-
-const healthThresholds = computed(() => snapshot.value?.config?.health_thresholds || null)
-const faceCoverage = computed(() => matrix.value?.coverage || snapshot.value?.coverage || null)
-
-const groupRows = computed(() =>
-  mergeSelectedStudioGroups(
-    matrix.value?.items,
-    snapshot.value?.config?.group_ids,
-    groupCatalog.value,
-  ),
-)
-
-const groupCards = computed(() => {
-  const thresholds = healthThresholds.value
-  const rates = groupRates.value
-  const source = groupRows.value.map((row) => ({
-    key: groupKey(row),
-    platform: row.platform,
-    groupId: row.group_id,
-    label: groupTitle(row),
-    rate: undefined as number | undefined,
-    metrics: row.metrics,
-    health: row.health,
-    buckets: row.buckets ?? [],
-  }))
-  return source.map((row) => {
-    const state = overallToneFromRow(row.metrics, row.health, thresholds)
-    const rate = lookupStudioGroupRate(rates, row.groupId, row.label, row.rate)
-    const scored = state !== 'unknown'
-    return {
-      key: row.key,
-      label: row.label,
-      platform: studioPlatform(row.platform),
-      brandLabel: studioPlatformLabel(row.platform),
-      rateLabel: formatStudioMultiplier(rate, t('channelMonitorV2.studio.groups.userRate', { n: formatStudioRateNumber(rate) })),
-      successLabel: t('channelMonitorV2.metrics.successRate'),
-      successRate: formatStudioSuccessRate(row.metrics, row.health),
-      ttftLabel: t('channelMonitorV2.metrics.ttft'),
-      ttft: formatMonitorMs(row.metrics.ttft.p50_ms),
-      cacheLabel: t('channelMonitorV2.metrics.cacheRate'),
-      cacheRate: formatStudioCacheRate(row.metrics, row.health),
-      statusHeading: t('channelMonitorV2.studio.status.label'),
-      statusLabel: t(`channelMonitorV2.studio.status.${state}`),
-      title: formatLatencyPrivacy(
-        row.metrics.ttft.p50_ms,
-        row.metrics.ttft.p90_ms,
-        row.metrics.ttft.avg_ms,
-        row.metrics.ttft.p95_ms,
-      ),
-      state,
-      successState: scored ? errorRateTone(row.metrics.error_rate, thresholds) : 'unknown',
-      ttftState: scored ? ttftTone(row.metrics.ttft.p50_ms, thresholds, row.metrics.ttft) : 'unknown',
-      cacheState: scored ? cacheTone(row.metrics.cache_rate, thresholds) : 'unknown',
-      accent: studioAccentFromState(state),
-      buckets: row.buckets,
-      metrics: row.metrics,
-      health: row.health,
-    }
-  })
-})
+const {
+  loading,
+  refreshing,
+  snapshot,
+  groupCards,
+  healthThresholds,
+  coverage: faceCoverage,
+  bootstrapActive,
+  bootstrapPercent,
+  showThroughput,
+  reload,
+} = useStudioGroupCards({ range })
 
 const pageSections = computed(() => {
   let rowIndex = 0
   const withRowIndex = (cards: typeof groupCards.value) =>
     cards.map((card) => ({ ...card, rowIndex: rowIndex++ }))
-  const cards = groupCards.value
-  const sections = []
-  const active = pickStudioActiveGroups(cards)
-  if (active.length) {
-    sections.push({
+  const activeCards = withRowIndex(sortStudioCardsByStatus(pickStudioActiveGroups(groupCards.value)))
+  const brandSections = groupStudioCardsByBrand(groupCards.value).map((section) => ({
+    ...section,
+    kind: 'brand' as const,
+    cards: withRowIndex(section.cards),
+  }))
+  if (!activeCards.length) return brandSections
+  return [
+    {
       key: 'active',
       kind: 'active' as const,
-      platform: undefined as (typeof cards)[number]['platform'] | undefined,
       brandLabel: t('channelMonitorV2.studio.groups.active'),
-      cards: withRowIndex(sortStudioCardsByStatus(active)),
-    })
-  }
-  for (const section of groupStudioCardsByBrand(cards)) {
-    sections.push({
-      ...section,
-      kind: 'brand' as const,
-      cards: withRowIndex(section.cards),
-    })
-  }
-  return sections
+      cards: activeCards,
+    },
+    ...brandSections,
+  ]
 })
 
 function parseRange(value: unknown): MonitorRange {
   return ['90m', '24h', '7d', '30d'].includes(String(value)) ? (value as MonitorRange) : '90m'
-}
-
-function groupKey(row: MonitorMatrixRow) {
-  return `${row.platform}:${row.group_id}`
-}
-
-function groupTitle(row: MonitorMatrixRow) {
-  return row.group_name || (row.group_id != null ? `#${row.group_id}` : row.platform)
 }
 
 function syncQuery() {
@@ -409,74 +291,8 @@ function syncQuery() {
   })
 }
 
-async function loadGroupRates(signal?: AbortSignal) {
-  try {
-    const [groups, custom, adminGroups] = await Promise.all([
-      userGroupsAPI.getAvailable(),
-      userGroupsAPI.getUserGroupRates().catch(() => ({}) as Record<number, number>),
-      isAdmin.value ? groupsAPI.getAll().catch(() => []) : Promise.resolve([]),
-    ])
-    if (signal?.aborted) return
-    const catalog = [...asStudioGroupCatalog(groups), ...asStudioGroupCatalog(adminGroups)]
-    groupCatalog.value = catalog
-    groupRates.value = collectStudioGroupRates(catalog, custom)
-  } catch {
-    /* keep last known rates */
-  }
-}
-
-async function loadMetrics(signal?: AbortSignal, id = sequence) {
-  const snapshotPromise = api.getSnapshot(emptyFilter.value, isAdmin.value, signal)
-  const matrixPromise = api.getMatrix(emptyFilter.value, 'platform_group', isAdmin.value, signal)
-  const ratesPromise = loadGroupRates(signal)
-  const [nextSnapshot, nextMatrix] = await Promise.all([snapshotPromise, matrixPromise])
-  await ratesPromise
-  if (id !== sequence) return
-  snapshot.value = nextSnapshot
-  matrix.value = nextMatrix
-  scheduleAutoRefresh()
-}
-
-async function reload(silent = true) {
-  controller?.abort()
-  const request = new AbortController()
-  controller = request
-  const id = ++sequence
-  if (!silent) {
-    loading.value = true
-    refreshing.value = true
-  }
-  try {
-    await loadMetrics(request.signal, id)
-  } catch (error) {
-    if ((error as { name?: string }).name !== 'CanceledError') {
-      appStore.showError(extractApiErrorMessage(error, t('channelMonitorV2.loadFailed')))
-    }
-  } finally {
-    if (id === sequence) {
-      loading.value = false
-      refreshing.value = false
-    }
-  }
-}
-
 function setRange(value: MonitorRange) {
   range.value = value
-}
-
-function scheduleAutoRefresh() {
-  if (autoRefreshTimer) {
-    window.clearInterval(autoRefreshTimer)
-    autoRefreshTimer = null
-  }
-  const seconds = bootstrapActive.value
-    ? 10
-    : snapshot.value?.config?.refresh_interval_seconds || 300
-  autoRefreshTimer = window.setInterval(() => {
-    if (!loading.value && !refreshing.value) {
-      void reload(true)
-    }
-  }, Math.max(bootstrapActive.value ? 10 : 60, seconds) * 1000)
 }
 
 function formatTime(value: string) {
@@ -490,14 +306,6 @@ function formatTime(value: string) {
 
 watch(range, () => {
   syncQuery()
-  void reload(true)
-})
-onMounted(() => {
-  void reload(false)
-})
-onBeforeUnmount(() => {
-  controller?.abort()
-  if (autoRefreshTimer) window.clearInterval(autoRefreshTimer)
 })
 </script>
 
@@ -513,11 +321,11 @@ onBeforeUnmount(() => {
   color: var(--studio-brand-color, #14b8a6);
   background: color-mix(in srgb, var(--studio-brand-color, #14b8a6) 16%, white);
 }
-.studio-active-mark-icon {
-  color: inherit;
-}
 .dark .studio-brand-heading-mark {
   background: color-mix(in srgb, var(--studio-brand-color, #14b8a6) 24%, rgb(15 23 42));
+}
+.studio-active-mark-icon {
+  color: inherit;
 }
 .studio-model-row {
   --studio-faces-bg: rgb(241 245 249);

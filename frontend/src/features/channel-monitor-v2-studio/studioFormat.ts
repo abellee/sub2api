@@ -336,6 +336,7 @@ export type StudioActivitySource = {
   metrics?: MonitorMetric | null
   health?: MonitorHealth | null
   buckets?: Array<{ metrics?: MonitorMetric | null; health?: MonitorHealth | null }> | null
+  state?: StudioTone | string | null
 }
 
 /** Higher = currently busier. 0 means idle and should stay out of 活跃分组. */
@@ -363,20 +364,6 @@ export function studioGroupActivityScore(card: StudioActivitySource): number {
   )
 }
 
-/** Top currently-busy group cards, newest/highest RPM first. Idle rows are dropped. */
-export function pickStudioActiveGroups<T extends StudioActivitySource>(
-  cards: T[],
-  limit = STUDIO_ACTIVE_GROUP_LIMIT,
-): T[] {
-  const cap = Number.isFinite(limit) ? Math.max(0, Math.floor(limit)) : STUDIO_ACTIVE_GROUP_LIMIT
-  return cards
-    .map((card, index) => ({ card, index, score: studioGroupActivityScore(card) }))
-    .filter((item) => item.score > 0)
-    .sort((a, b) => b.score - a.score || a.index - b.index)
-    .slice(0, cap)
-    .map((item) => item.card)
-}
-
 const STUDIO_STATUS_RANK: Record<StudioTone, number> = {
   healthy: 0,
   warning: 1,
@@ -384,12 +371,54 @@ const STUDIO_STATUS_RANK: Record<StudioTone, number> = {
   unknown: 3,
 }
 
+export function studioActiveGroupState(card: StudioActivitySource): StudioTone {
+  const state = card.state
+  if (state === 'healthy' || state === 'warning' || state === 'critical' || state === 'unknown') return state
+  const overall = card.health?.overall
+  if (overall === 'healthy' || overall === 'warning' || overall === 'critical' || overall === 'unknown') return overall
+  return 'unknown'
+}
+
+function isStableActiveState(state: StudioTone): boolean {
+  return state === 'healthy' || state === 'warning'
+}
+
+/** Top currently-busy group cards. 健康/波动 fill first; 异常 can still take leftover slots. */
+export function pickStudioActiveGroups<T extends StudioActivitySource>(
+  cards: T[],
+  limit = STUDIO_ACTIVE_GROUP_LIMIT,
+): T[] {
+  const cap = Number.isFinite(limit) ? Math.max(0, Math.floor(limit)) : STUDIO_ACTIVE_GROUP_LIMIT
+  return cards
+    .map((card, index) => ({
+      card,
+      index,
+      score: studioGroupActivityScore(card),
+      state: studioActiveGroupState(card),
+    }))
+    .filter((item) => item.score > 0)
+    .sort(
+      (a, b) =>
+        studioStatusSortRank(a.state) - studioStatusSortRank(b.state) ||
+        b.score - a.score ||
+        a.index - b.index,
+    )
+    .slice(0, cap)
+    .map((item) => item.card)
+}
+
+/** Dashboard 活跃分组: 健康/波动 only. 5+ is capped at 4. */
+export function pickDashboardActiveGroups<T extends StudioActivitySource>(cards: T[]): T[] {
+  const stable = cards.filter((card) => isStableActiveState(studioActiveGroupState(card)))
+  return pickStudioActiveGroups(stable, STUDIO_ACTIVE_GROUP_LIMIT)
+}
+
 export function studioStatusSortRank(state?: StudioTone | string | null): number {
   if (state && state in STUDIO_STATUS_RANK) return STUDIO_STATUS_RANK[state as StudioTone]
   return 4
 }
 
-/** 正常 → 降级 → 失败 → 样本不足; same-status cards keep their original order. */
+/** 健康 → 波动 → 异常 → 样本不足; same-status cards keep their original order. */
 export function sortStudioCardsByStatus<T extends { state?: StudioTone | string | null }>(cards: T[]): T[] {
   return cards
     .map((card, index) => ({ card, index }))

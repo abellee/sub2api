@@ -5,7 +5,6 @@ import (
 	"errors"
 	"log/slog"
 	"math/rand/v2"
-	"strings"
 	"sync"
 	"time"
 
@@ -31,7 +30,6 @@ type MonitorScheduler interface {
 type monitorRunnerSvc interface {
 	ListEnabledMonitors(ctx context.Context) ([]*ChannelMonitor, error)
 	RunCheck(ctx context.Context, id int64) ([]*CheckResult, error)
-	ListHistory(ctx context.Context, id int64, model string, limit int) ([]*ChannelMonitorHistoryEntry, error)
 }
 
 // ChannelMonitorRunner 渠道监控调度器。
@@ -50,7 +48,6 @@ type monitorRunnerSvc interface {
 type ChannelMonitorRunner struct {
 	svc            monitorRunnerSvc
 	settingService *SettingService
-	notifier       channelMonitorCompletionNotifier
 
 	pool         pond.Pool
 	parentCtx    context.Context
@@ -70,13 +67,11 @@ type ChannelMonitorRunner struct {
 
 // scheduledMonitor 单个监控的运行时上下文。
 type scheduledMonitor struct {
-	id           int64
-	name         string
-	groupName    string
-	primaryModel string
-	interval     time.Duration
-	jitter       time.Duration // 每轮 ± [0, jitter] 的均匀随机偏移；0 = 固定间隔
-	cancel       context.CancelFunc
+	id       int64
+	name     string
+	interval time.Duration
+	jitter   time.Duration // 每轮 ± [0, jitter] 的均匀随机偏移；0 = 固定间隔
+	cancel   context.CancelFunc
 }
 
 // nextDelay 计算下一次触发的等待时长：interval ± [0, jitter] 的均匀随机偏移。
@@ -102,22 +97,19 @@ func (t *scheduledMonitor) nextDelay() time.Duration {
 func NewChannelMonitorRunner(
 	svc *ChannelMonitorService,
 	settingService *SettingService,
-	notifier channelMonitorCompletionNotifier,
 ) *ChannelMonitorRunner {
-	return newChannelMonitorRunner(svc, settingService, notifier)
+	return newChannelMonitorRunner(svc, settingService)
 }
 
 // newChannelMonitorRunner 内部构造，接受最小化接口，便于单元测试注入 stub。
 func newChannelMonitorRunner(
 	svc monitorRunnerSvc,
 	settingService *SettingService,
-	notifier channelMonitorCompletionNotifier,
 ) *ChannelMonitorRunner {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &ChannelMonitorRunner{
 		svc:            svc,
 		settingService: settingService,
-		notifier:       notifier,
 		pool:           pond.NewPool(monitorWorkerConcurrency),
 		parentCtx:      ctx,
 		parentCancel:   cancel,
@@ -198,13 +190,11 @@ func (r *ChannelMonitorRunner) Schedule(m *ChannelMonitor) {
 	}
 	ctx, cancel := context.WithCancel(r.parentCtx)
 	task := &scheduledMonitor{
-		id:           m.ID,
-		name:         m.Name,
-		groupName:    m.GroupName,
-		primaryModel: m.PrimaryModel,
-		interval:     interval,
-		jitter:       jitter,
-		cancel:       cancel,
+		id:       m.ID,
+		name:     m.Name,
+		interval: interval,
+		jitter:   jitter,
+		cancel:   cancel,
 	}
 	r.tasks[m.ID] = task
 	r.wg.Add(1)
@@ -329,93 +319,12 @@ func (r *ChannelMonitorRunner) runOne(task *scheduledMonitor) {
 		}
 	}()
 
-	results, err := r.svc.RunCheck(ctx, id)
+	_, err := r.svc.RunCheck(ctx, id)
 	if err != nil {
 		if errors.Is(err, ErrChannelMonitorAPIKeyDecryptFailed) {
 			r.Unschedule(id)
 		}
 		slog.Warn("channel_monitor: run check failed",
 			"monitor_id", id, "name", name, "error", err)
-		return
 	}
-	if r.notifier == nil {
-		return
-	}
-	model := strings.TrimSpace(task.primaryModel)
-	if model == "" && len(results) > 0 && results[0] != nil {
-		model = results[0].Model
-	}
-	currentStatus := ""
-	for _, result := range results {
-		if result != nil && (model == "" || result.Model == model) {
-			currentStatus = result.Status
-			break
-		}
-	}
-	groupName := strings.TrimSpace(task.groupName)
-	if groupName == "" {
-		groupName = name
-	}
-	r.notifyCheckCompletedAsync(id, name, groupName, model, currentStatus)
-}
-
-// notifyCheckCompletedAsync isolates history loading and push delivery from the
-// monitor worker. Notification failures must never delay subsequent checks.
-func (r *ChannelMonitorRunner) notifyCheckCompletedAsync(
-	id int64,
-	name string,
-	groupName string,
-	model string,
-	currentStatus string,
-) {
-	notifier := r.notifier
-	go func() {
-		defer func() {
-			if rec := recover(); rec != nil {
-				slog.Error("channel_monitor: completion push panic",
-					"monitor_id", id, "name", name, "panic", rec)
-			}
-		}()
-
-		notifyCtx, notifyCancel := context.WithTimeout(context.Background(), channelMonitorPushTimeout)
-		defer notifyCancel()
-		recentStatuses, resolvedStatus := r.recentCheckStatuses(notifyCtx, id, model, currentStatus)
-		if err := notifier.NotifyChannelCheckCompleted(
-			notifyCtx,
-			id,
-			groupName,
-			recentStatuses,
-			resolvedStatus,
-		); err != nil {
-			slog.Warn("channel_monitor: completion push failed",
-				"monitor_id", id, "name", name, "error", err)
-		}
-	}()
-}
-
-func (r *ChannelMonitorRunner) recentCheckStatuses(
-	ctx context.Context,
-	id int64,
-	model string,
-	currentStatus string,
-) ([]string, string) {
-	entries, err := r.svc.ListHistory(ctx, id, model, 5)
-	if err != nil {
-		slog.Warn("channel_monitor: load recent history for push failed",
-			"monitor_id", id, "model", model, "error", err)
-	}
-	statuses := make([]string, 0, len(entries))
-	for i := len(entries) - 1; i >= 0; i-- {
-		statuses = append(statuses, entries[i].Status)
-	}
-	if len(statuses) > 0 {
-		if currentStatus == "" {
-			currentStatus = statuses[len(statuses)-1]
-		}
-		return statuses, currentStatus
-	}
-	if currentStatus != "" {
-		return []string{currentStatus}, currentStatus
-	}
-	return []string{MonitorStatusError}, MonitorStatusError
 }

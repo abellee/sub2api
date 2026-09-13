@@ -21,6 +21,7 @@ import {
   lookupStudioGroupRate,
   mergeSelectedStudioGroups,
   pickStudioActiveGroups,
+  pickDashboardActiveGroups,
   studioGroupActivityScore,
   studioChartGap,
   studioChartDots,
@@ -235,7 +236,7 @@ describe('studioFormat', () => {
     expect(sections[0]?.brandLabel).toBe('OpenAI')
   })
 
-  it('sorts brand cards 正常 → 降级 → 失败 → 样本不足', () => {
+  it('sorts brand cards 健康 → 波动 → 异常 → 样本不足', () => {
     expect(
       sortStudioCardsByStatus([
         { key: 'idle', state: 'unknown' },
@@ -306,8 +307,74 @@ describe('studioFormat', () => {
       { ...live, key: 'ok', state: 'healthy' },
       { ...live, key: 'warn', state: 'warning', metrics: metric({ rpm: 12, request_count: 60 }) },
     ])
-    expect(mixed.map((card) => card.key)).toEqual(['bad', 'warn', 'ok'])
+    expect(mixed.map((card) => card.key)).toEqual(['ok', 'warn', 'bad'])
     expect(sortStudioCardsByStatus(mixed).map((card) => card.key)).toEqual(['ok', 'warn', 'bad'])
+  })
+
+  it('fills leftover active slots with 异常 after 健康/波动', () => {
+    const ok = {
+      key: 'ok',
+      state: 'healthy' as const,
+      metrics: metric({ rpm: 4, request_count: 20 }),
+      health: health({ overall: 'healthy', score: 90 }),
+      buckets: [{ metrics: metric({ rpm: 4 }), health: health({ overall: 'healthy', score: 90 }) }],
+    }
+    const badHot = {
+      key: 'bad-hot',
+      state: 'critical' as const,
+      metrics: metric({ rpm: 80, request_count: 400 }),
+      health: health({ overall: 'critical', score: 20 }),
+      buckets: [{ metrics: metric({ rpm: 80 }), health: health({ overall: 'critical', score: 20 }) }],
+    }
+    const badWarm = {
+      key: 'bad-warm',
+      state: 'critical' as const,
+      metrics: metric({ rpm: 8, request_count: 40 }),
+      health: health({ overall: 'critical', score: 25 }),
+      buckets: [{ metrics: metric({ rpm: 8 }), health: health({ overall: 'critical', score: 25 }) }],
+    }
+    expect(
+      pickStudioActiveGroups([badHot, ok, badWarm, { ...ok, key: 'ok-2' }], 4).map((card) => card.key),
+    ).toEqual(['ok', 'ok-2', 'bad-hot', 'bad-warm'])
+  })
+
+  it('shows dashboard active groups as any count of healthy/warning cards', () => {
+    const ok = {
+      key: 'ok',
+      state: 'healthy' as const,
+      metrics: metric({ rpm: 4, request_count: 20 }),
+      health: health({ overall: 'healthy', score: 90 }),
+      buckets: [{ metrics: metric({ rpm: 4 }), health: health({ overall: 'healthy', score: 90 }) }],
+    }
+    const warn = {
+      key: 'warn',
+      state: 'warning' as const,
+      metrics: metric({ rpm: 12, request_count: 60 }),
+      health: health({ overall: 'warning', score: 60 }),
+      buckets: [{ metrics: metric({ rpm: 12 }), health: health({ overall: 'warning', score: 60 }) }],
+    }
+    const bad = {
+      key: 'bad',
+      state: 'critical' as const,
+      metrics: metric({ rpm: 80, request_count: 400 }),
+      health: health({ overall: 'critical', score: 20 }),
+      buckets: [{ metrics: metric({ rpm: 80 }), health: health({ overall: 'critical', score: 20 }) }],
+    }
+    expect(pickDashboardActiveGroups([ok, bad]).map((card) => card.key)).toEqual(['ok'])
+    expect(pickDashboardActiveGroups([ok, warn, bad]).map((card) => card.key)).toEqual(['ok', 'warn'])
+    expect(
+      pickDashboardActiveGroups([ok, warn, { ...ok, key: 'ok-2' }, bad]).map((card) => card.key),
+    ).toEqual(['ok', 'ok-2', 'warn'])
+    expect(
+      pickDashboardActiveGroups([
+        ok,
+        warn,
+        { ...ok, key: 'ok-2' },
+        { ...warn, key: 'warn-2' },
+        { ...ok, key: 'ok-3' },
+        bad,
+      ]).map((card) => card.key),
+    ).toEqual(['ok', 'ok-2', 'ok-3', 'warn'])
   })
 
   it('sorts brand sections OpenAI → Anthropic → Grok even when cards arrive alphabetically', () => {

@@ -517,8 +517,6 @@
                   {{ t('nav.apiKeys') }}
                 </router-link>
 
-                <PushNotificationToggle variant="menu" />
-
                 <a
                   v-if="authStore.isAdmin"
                   href="https://github.com/Wei-Shaw/sub2api"
@@ -615,7 +613,6 @@ import { useAdminSettingsStore } from '@/stores/adminSettings'
 import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import SubscriptionProgressMini from '@/components/common/SubscriptionProgressMini.vue'
 import AnnouncementBell from '@/components/common/AnnouncementBell.vue'
-import PushNotificationToggle from '@/components/common/PushNotificationToggle.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { sanitizeUrl } from '@/utils/url'
 import { useClipboard } from '@/composables/useClipboard'

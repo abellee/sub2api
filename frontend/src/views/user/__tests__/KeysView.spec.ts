@@ -230,7 +230,10 @@ const mountView = async () => {
         SearchInput: SearchInputStub,
         Icon: IconStub,
         UseKeyModal: true,
-        EndpointPopover: true,
+        EndpointPopover: {
+          name: 'EndpointPopover',
+          template: '<div data-test="endpoint-popover" />',
+        },
         GroupBadge: true,
         GroupOptionItem: true,
         Teleport: true,
@@ -437,5 +440,18 @@ describe('user KeysView column settings', () => {
       },
       expect.objectContaining({ signal: expect.any(AbortSignal) })
     )
+  })
+
+  it('places the API endpoint on the right of the search row', async () => {
+    getPublicSettings.mockResolvedValue({
+      api_base_url: 'https://api.example.com/v1',
+      custom_endpoints: [],
+    })
+    const wrapper = await mountView()
+
+    const row = wrapper.get('[data-test="keys-filter-row"]')
+    expect(row.classes()).toContain('justify-between')
+    expect(row.findComponent({ name: 'SearchInput' }).exists()).toBe(true)
+    expect(row.get('[data-test="endpoint-popover"]').exists()).toBe(true)
   })
 })

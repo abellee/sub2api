@@ -287,6 +287,17 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/app-center',
+    name: 'AppCenter',
+    component: () => import('@/views/user/AppCenterView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'App Center',
+      titleKey: 'nav.appCenter'
+    }
+  },
+  {
     path: '/downgrade-radar',
     name: 'DowngradeRadar',
     component: () => import('@/views/user/DowngradeRadarView.vue'),
@@ -582,6 +593,18 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/app-catalog',
+    name: 'AdminAppCatalog',
+    component: () => import('@/views/admin/AppCatalogView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'App Catalog',
+      titleKey: 'admin.appCatalog.title',
+      descriptionKey: 'admin.appCatalog.description'
+    }
+  },
+  {
     path: '/admin/announcements',
     name: 'AdminAnnouncements',
     component: () => import('@/views/admin/AnnouncementsView.vue'),
@@ -591,18 +614,6 @@ const routes: RouteRecordRaw[] = [
       title: 'Announcements',
       titleKey: 'admin.announcements.title',
       descriptionKey: 'admin.announcements.description'
-    }
-  },
-  {
-    path: '/admin/push-notifications',
-    name: 'AdminPushNotifications',
-    component: () => import('@/views/admin/PushNotificationsView.vue'),
-    meta: {
-      requiresAuth: true,
-      requiresAdmin: true,
-      title: 'Push Notifications',
-      titleKey: 'admin.pushNotifications.title',
-      descriptionKey: 'admin.pushNotifications.description'
     }
   },
   {

@@ -104,6 +104,11 @@ type Config struct {
 	BatchImage              BatchImageConfig              `mapstructure:"batch_image"`
 	ImageStorage            ImageStorageConfig            `mapstructure:"image_storage"`
 	Plugins                 PluginConfig                  `mapstructure:"plugins"`
+	AppCatalog              AppCatalogConfig              `mapstructure:"app_catalog"`
+}
+
+type AppCatalogConfig struct {
+	BaseURL string `mapstructure:"base_url"`
 }
 
 // PluginConfig 控制管理员手动上传的本地进程插件。
@@ -1988,6 +1993,7 @@ func configureConfigSource(setConfigFile, addConfigPath func(string)) {
 
 func setDefaults() {
 	viper.SetDefault("run_mode", RunModeStandard)
+	viper.SetDefault("app_catalog.base_url", "http://127.0.0.1:18099")
 
 	// Server
 	viper.SetDefault("server.host", "0.0.0.0")

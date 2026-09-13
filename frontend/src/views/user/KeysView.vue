@@ -3,24 +3,32 @@
     <TablePageLayout>
       <template #filters>
         <div class="flex flex-col gap-3">
-          <div class="flex flex-wrap items-center gap-3">
-            <SearchInput
-              v-model="filterSearch"
-              :placeholder="t('keys.searchPlaceholder')"
-              class="w-full sm:w-64"
-              @search="onFilterChange"
-            />
-            <Select
-              :model-value="filterGroupId"
-              class="w-40"
-              :options="groupFilterOptions"
-              @update:model-value="onGroupFilterChange"
-            />
-            <Select
-              :model-value="filterStatus"
-              class="w-40"
-              :options="statusFilterOptions"
-              @update:model-value="onStatusFilterChange"
+          <div class="flex flex-wrap items-center justify-between gap-3" data-test="keys-filter-row">
+            <div class="flex min-w-0 flex-wrap items-center gap-3">
+              <SearchInput
+                v-model="filterSearch"
+                :placeholder="t('keys.searchPlaceholder')"
+                class="w-full sm:w-64"
+                @search="onFilterChange"
+              />
+              <Select
+                :model-value="filterGroupId"
+                class="w-40"
+                :options="groupFilterOptions"
+                @update:model-value="onGroupFilterChange"
+              />
+              <Select
+                :model-value="filterStatus"
+                class="w-40"
+                :options="statusFilterOptions"
+                @update:model-value="onStatusFilterChange"
+              />
+            </div>
+            <EndpointPopover
+              v-if="publicSettings?.api_base_url || (publicSettings?.custom_endpoints?.length ?? 0) > 0"
+              class="min-w-0 shrink-0"
+              :api-base-url="publicSettings?.api_base_url || ''"
+              :custom-endpoints="publicSettings?.custom_endpoints || []"
             />
           </div>
           <section v-if="recommendedGroupOptions.length" class="recommended-groups-strip">
@@ -48,11 +56,6 @@
               </button>
             </div>
           </section>
-          <EndpointPopover
-            v-if="publicSettings?.api_base_url || (publicSettings?.custom_endpoints?.length ?? 0) > 0"
-            :api-base-url="publicSettings?.api_base_url || ''"
-            :custom-endpoints="publicSettings?.custom_endpoints || []"
-          />
         </div>
       </template>
 

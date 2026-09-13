@@ -85,8 +85,6 @@ services:
       # Setup Configuration
       # =======================================================================
       - SETUP_MIGRATION_TIMEOUT_SECONDS=${SETUP_MIGRATION_TIMEOUT_SECONDS:-0}
-      - PUSH_NOTIFIER_INTERNAL_URL=${PUSH_NOTIFIER_INTERNAL_URL:-}
-      - PUSH_NOTIFIER_INTERNAL_TOKEN=${PUSH_NOTIFIER_INTERNAL_TOKEN:-}
 
       # =======================================================================
       # Timezone Configuration

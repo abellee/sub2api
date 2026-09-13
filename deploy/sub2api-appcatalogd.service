@@ -1,0 +1,21 @@
+[Unit]
+Description=Sub2API App Catalog Daemon
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=sub2api
+Group=sub2api
+WorkingDirectory=/opt/sub2api
+ExecStart=/opt/sub2api/appcatalogd \
+  -listen 127.0.0.1:18099 \
+  -sqlite-path /var/lib/sub2api/appcatalog/appcatalog.db
+Restart=always
+RestartSec=5s
+LimitNOFILE=65535
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
