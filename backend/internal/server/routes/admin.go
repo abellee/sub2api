@@ -59,6 +59,8 @@ func RegisterAdminRoutes(
 		// 微信群二维码管理
 		registerWechatGroupQRRoutes(admin, h)
 
+		registerAppCatalogRoutes(admin, h)
+
 		// OpenAI OAuth
 		registerOpenAIOAuthRoutes(admin, h)
 
@@ -140,6 +142,21 @@ func RegisterAdminRoutes(
 
 		// 操作审计日志
 		registerAuditLogRoutes(admin, h, stepUpAuth)
+	}
+}
+
+func registerAppCatalogRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	if h.Admin == nil || h.Admin.AppCatalog == nil {
+		return
+	}
+	apps := admin.Group("/app-catalog")
+	{
+		apps.GET("/agent/health", h.Admin.AppCatalog.GetAgentHealth)
+		apps.GET("", h.Admin.AppCatalog.List)
+		apps.POST("", h.Admin.AppCatalog.Create)
+		apps.POST("/fetch", h.Admin.AppCatalog.Fetch)
+		apps.PUT("/:id", h.Admin.AppCatalog.Update)
+		apps.DELETE("/:id", h.Admin.AppCatalog.Delete)
 	}
 }
 

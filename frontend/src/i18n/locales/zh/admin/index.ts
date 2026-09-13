@@ -7,8 +7,8 @@ import settings from './settings'
 import audit from './audit'
 import promptAudit from './promptAudit'
 import plugins from './plugins'
-import pushNotifications from './pushNotifications'
 import wechatGroupQR from './wechatGroupQR'
+import appCatalog from './appCatalog'
 
 export default {
   ...overview,
@@ -20,6 +20,6 @@ export default {
   ...audit,
   ...promptAudit,
   ...plugins,
-  ...pushNotifications,
   ...wechatGroupQR,
+  ...appCatalog,
 }

@@ -27,7 +27,7 @@ const base = {
   cacheLabel: '缓存率',
   cacheRate: '12.3%',
   statusHeading: '当前状态',
-  statusLabel: '正常',
+  statusLabel: '健康',
   state: 'healthy' as const,
   successState: 'healthy' as const,
   ttftState: 'healthy' as const,
@@ -55,7 +55,7 @@ describe('StudioKpiCard', () => {
     expect(wrapper.text()).toContain('400ms')
     expect(wrapper.text()).toContain('缓存率')
     expect(wrapper.text()).toContain('12.3%')
-    expect(wrapper.find('.studio-kpi-status').text()).toBe('正常')
+    expect(wrapper.find('.studio-kpi-status').text()).toBe('健康')
     expect(wrapper.find('.studio-kpi-status').attributes('aria-label')).toContain('当前状态')
     expect(wrapper.find('.studio-kpi-status').classes().join(' ')).toMatch(/ml-auto/)
     expect(wrapper.find('.studio-kpi-status').classes().join(' ')).toMatch(/text-right/)
@@ -86,8 +86,8 @@ describe('StudioKpiCard', () => {
 
   it('paints card wash from status accent', () => {
     expect(mount(StudioKpiCard, { props: { ...base, accent: 'teal' } }).classes().join(' ')).toContain('studio-kpi--teal')
-    expect(mount(StudioKpiCard, { props: { ...base, accent: 'amber', state: 'warning', statusLabel: '降级' } }).classes().join(' ')).toContain('studio-kpi--amber')
-    expect(mount(StudioKpiCard, { props: { ...base, accent: 'coral', state: 'critical', statusLabel: '失败' } }).classes().join(' ')).toContain('studio-kpi--coral')
+    expect(mount(StudioKpiCard, { props: { ...base, accent: 'amber', state: 'warning', statusLabel: '波动' } }).classes().join(' ')).toContain('studio-kpi--amber')
+    expect(mount(StudioKpiCard, { props: { ...base, accent: 'coral', state: 'critical', statusLabel: '异常' } }).classes().join(' ')).toContain('studio-kpi--coral')
     expect(mount(StudioKpiCard, { props: { ...base, accent: 'slate', state: 'unknown', statusLabel: '样本不足' } }).classes().join(' ')).toContain('studio-kpi--slate')
   })
 
@@ -99,7 +99,7 @@ describe('StudioKpiCard', () => {
         ttft: '-',
         ttftState: 'critical',
         state: 'critical',
-        statusLabel: '失败',
+        statusLabel: '异常',
         accent: 'coral',
       },
     })
@@ -116,12 +116,12 @@ describe('StudioKpiCard', () => {
         successRate: '90%',
         successState: 'warning',
         state: 'warning',
-        statusLabel: '降级',
+        statusLabel: '波动',
         accent: 'coral',
       },
     })
     expect(warning.find('.stat-value').classes().join(' ')).toMatch(/amber/)
-    expect(warning.find('.studio-kpi-status').text()).toBe('降级')
+    expect(warning.find('.studio-kpi-status').text()).toBe('波动')
 
     const critical = mount(StudioKpiCard, {
       props: {
@@ -129,12 +129,12 @@ describe('StudioKpiCard', () => {
         successRate: '50%',
         successState: 'critical',
         state: 'critical',
-        statusLabel: '失败',
+        statusLabel: '异常',
         accent: 'coral',
       },
     })
     expect(critical.find('.stat-value').classes().join(' ')).toMatch(/red/)
-    expect(critical.find('.studio-kpi-status').text()).toBe('失败')
+    expect(critical.find('.studio-kpi-status').text()).toBe('异常')
   })
 
   it('renders a bucket-synced chart with a dot per time slot', () => {

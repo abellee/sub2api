@@ -881,6 +881,7 @@ var ProviderSet = wire.NewSet(
 	ProvideOllamaCloudUsageService,
 	ProvideSettingService,
 	NewDataManagementService,
+	NewAppCatalogService,
 	ProvideBackupService,
 	ProvideOpsSystemLogSink,
 	ProvideOpsService,
@@ -1009,7 +1010,7 @@ func ProvideChannelMonitorRunner(
 	settingService *SettingService,
 	quotaFetcher *ChannelMonitorQuotaFetcher,
 ) *ChannelMonitorRunner {
-	r := NewChannelMonitorRunner(svc, settingService, newChannelMonitorPushNotifierFromEnv())
+	r := NewChannelMonitorRunner(svc, settingService)
 	if svc != nil {
 		// Ensure runtime reader is set even if ProvideChannelMonitorService
 		// was constructed without settings (tests / alternate providers).

@@ -254,6 +254,9 @@ func RegisterAuthRoutes(
 	if h.ModelPlaza != nil {
 		v1.GET("/model-plaza/public", panelRateLimiter.PublicIP(), h.ModelPlaza.GetPublic)
 	}
+	if h.Admin != nil && h.Admin.AppCatalog != nil {
+		v1.GET("/app-catalog", panelRateLimiter.PublicIP(), h.Admin.AppCatalog.ListPublic)
+	}
 	if h.Admin != nil && h.Admin.WechatGroupQR != nil {
 		community := v1.Group("/community/wechat-group-qr")
 		community.Use(panelRateLimiter.PublicIP())

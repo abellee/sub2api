@@ -18,19 +18,6 @@ export default {
     hour: 'Hour',
     modelDistribution: 'Model Distribution',
     groupDistribution: 'Group Usage Distribution',
-    platformBreakdown: 'Per-platform Breakdown',
-    platformBreakdownEmpty: 'No platform usage yet',
-    platformCount: '{count} platforms',
-    platformOther: 'Other',
-    platformQuota: {
-      title: 'Quota Usage',
-      daily: 'Daily',
-      weekly: 'Weekly',
-      monthly: 'Monthly (30-day rolling)',
-      resetsAt: 'Resets {time}',
-      noLimit: 'unlimited',
-      disabled: 'Disabled',
-    },
     tokenUsageTrend: 'Token Usage Trend',
     noDataAvailable: 'No data available',
     model: 'Model',
@@ -48,6 +35,7 @@ export default {
     noUsageRecords: 'No usage records',
     startUsingApi: 'Start using the API to see your usage history here.',
     viewAllUsage: 'View all usage',
+    viewAllChannelStatus: 'View all channel statuses',
     quickActions: 'Quick Actions',
     createApiKey: 'Create API Key',
     generateNewKey: 'Generate a new API key',
@@ -1054,5 +1042,11 @@ export default {
     selectDateRange: 'Select date range'
   },
 
-  // Admin
+  appCenter: {
+    title: 'App Center',
+    description: 'Browse third-party apps from the catalog',
+    empty: 'No apps yet',
+    emptyHint: 'Apps added by administrators will appear here.',
+    openDownloadPage: 'Go to download page',
+  },
 }
