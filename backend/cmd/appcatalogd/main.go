@@ -26,7 +26,7 @@ func main() {
 		logger.Error("open sqlite", "err", err)
 		os.Exit(1)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	srv := &appcatalog.Server{
 		Store:     store,

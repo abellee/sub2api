@@ -148,7 +148,7 @@ func (s *AppCatalogService) doJSON(ctx context.Context, method, path string, bod
 		return infraerrors.ServiceUnavailable(AppCatalogAgentUnavailableReason, err.Error()).
 			WithMetadata(map[string]string{"base_url": s.BaseURL()})
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if err != nil {
 		return err
