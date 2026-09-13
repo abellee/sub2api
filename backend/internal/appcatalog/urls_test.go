@@ -17,5 +17,3 @@ func TestNormalizeGitHubURL(t *testing.T) {
 		t.Fatalf("got %s", got)
 	}
 }
-
-

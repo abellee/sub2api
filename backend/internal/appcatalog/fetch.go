@@ -310,7 +310,7 @@ func (f *Fetcher) doGet(ctx context.Context, rawURL, accept string) ([]byte, str
 	if err != nil {
 		return nil, "", 0, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	limited := io.LimitReader(resp.Body, maxBodyBytes)
 	body, err := io.ReadAll(limited)
 	if err != nil {
@@ -503,21 +503,21 @@ type githubContent struct {
 }
 
 type htmlMeta struct {
-	Title          string
-	Description    string
-	OGTitle        string
-	OGDescription  string
-	OGImage        string
-	TwitterImage   string
-	Icon           string
-	AppleIcon      string
-	DownloadURL    string
-	Screenshots    []string
-	Lang           string
-	Locale         string
-	AlternateZH    string
-	Logo           string
-	GitHubURL      string
+	Title         string
+	Description   string
+	OGTitle       string
+	OGDescription string
+	OGImage       string
+	TwitterImage  string
+	Icon          string
+	AppleIcon     string
+	DownloadURL   string
+	Screenshots   []string
+	Lang          string
+	Locale        string
+	AlternateZH   string
+	Logo          string
+	GitHubURL     string
 }
 
 func parseHTMLMeta(body, pageURL string) htmlMeta {
@@ -1099,11 +1099,11 @@ func chineseReadmeScore(name string) int {
 }
 
 var (
-	reHTMLHeading = regexp.MustCompile(`(?is)<h([1-6])\b[^>]*>(.*?)</h[1-6]>`)
-	reHTMLBreak   = regexp.MustCompile(`(?i)<br\s*/?\s*>`)
-	reHTMLLiOpen  = regexp.MustCompile(`(?i)<li\b[^>]*>`)
-	reHTMLBlock   = regexp.MustCompile(`(?i)</(p|div|li|tr)>`)
-	reHTMLImage   = regexp.MustCompile(`(?is)<img\b[^>]*>`)
+	reHTMLHeading  = regexp.MustCompile(`(?is)<h([1-6])\b[^>]*>(.*?)</h[1-6]>`)
+	reHTMLBreak    = regexp.MustCompile(`(?i)<br\s*/?\s*>`)
+	reHTMLLiOpen   = regexp.MustCompile(`(?i)<li\b[^>]*>`)
+	reHTMLBlock    = regexp.MustCompile(`(?i)</(p|div|li|tr)>`)
+	reHTMLImage    = regexp.MustCompile(`(?is)<img\b[^>]*>`)
 	reHTMLTag      = regexp.MustCompile(`(?is)<[^>]+>`)
 	reMDLink       = regexp.MustCompile(`\[([^\]]+)\]\([^)]+\)`)
 	reMDWrap       = regexp.MustCompile(`[*_~` + "`" + `]{1,2}`)
@@ -1395,7 +1395,7 @@ func normalizeHeading(value string) string {
 	var b strings.Builder
 	for _, r := range strings.ToLower(value) {
 		if unicode.IsLetter(r) || unicode.IsNumber(r) || unicode.Is(unicode.Han, r) {
-			b.WriteRune(r)
+			_, _ = b.WriteRune(r)
 		}
 	}
 	return b.String()
