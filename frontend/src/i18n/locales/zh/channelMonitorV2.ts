@@ -172,8 +172,11 @@ export default {
       },
       faces: {
         title: '区间状态',
-        description: '每个表情对应一个统计区间，悬停查看明细',
+        description: '每个格子对应一个统计区间，悬停查看明细',
         forModel: '{label} 各区间状态，悬停查看明细',
+        recentCount: '最近 {count} 个区间',
+        past: '过去',
+        now: '现在',
         panHint: '按住 Shift 滚动可横向浏览；触控板可直接左右滑动',
         prev: '向左滚动',
         next: '向右滚动',

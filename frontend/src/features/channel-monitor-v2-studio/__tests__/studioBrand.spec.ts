@@ -17,4 +17,12 @@ describe('studioBrand', () => {
     expect(wrapper.findComponent(PlatformIcon).exists()).toBe(true)
     expect(wrapper.attributes('style') || '').toMatch(/rgb\(16,\s*163,\s*127\)|#10A37F/i)
   })
+
+  it('inverts the grok ink mark in dark mode', () => {
+    const grok = mount(StudioBrandIcon, { props: { platform: 'grok', size: 'md' } })
+    expect(grok.classes().join(' ')).toContain('studio-brand-icon--ink')
+    expect(grok.classes().join(' ')).toContain('dark:invert')
+    const openai = mount(StudioBrandIcon, { props: { platform: 'openai', size: 'md' } })
+    expect(openai.classes().join(' ')).not.toContain('dark:invert')
+  })
 })

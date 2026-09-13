@@ -292,11 +292,18 @@ watch(
   { flush: 'pre', immediate: true },
 )
 
-watch(trackWidth, (next, prev) => {
-  if (pageHidden.value) return
-  if (prev == null || next <= prev + 0.5) return
-  slideTrack(prev, next)
-})
+watch(
+  [() => values.value.length, trackWidth],
+  ([nextCount, nextWidth], prev) => {
+    const prevCount = prev?.[0]
+    const prevWidth = prev?.[1]
+    if (pageHidden.value) return
+    if (prevCount == null || prevWidth == null) return
+    if (nextCount <= prevCount) return
+    if (nextWidth <= prevWidth + 0.5) return
+    slideTrack(prevWidth, nextWidth)
+  },
+)
 
 function measure() {
   const width = rootRef.value?.clientWidth

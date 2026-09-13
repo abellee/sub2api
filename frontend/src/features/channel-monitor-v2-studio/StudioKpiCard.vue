@@ -1,6 +1,6 @@
 <template>
   <div
-    class="stat-card studio-kpi !min-h-[8.5rem] !flex-col !gap-2.5 !rounded-3xl !border-0 !p-4 shadow-sm ring-1 ring-gray-900/5 dark:ring-dark-700"
+    class="stat-card studio-kpi !min-h-[11.5rem] !flex-col !gap-2.5 !rounded-3xl !border-0 !p-4 shadow-sm ring-1 ring-gray-900/5 dark:ring-dark-700"
     :class="[accentClass, joined ? 'studio-kpi--joined' : '']"
     :title="title || undefined"
   >
@@ -17,7 +17,7 @@
               class="studio-kpi-name stat-label block min-w-0 text-[13px] font-black tracking-tight text-gray-900 dark:text-white"
               :title="label"
             >
-              {{ displayLabel }}
+              {{ label }}
             </span>
             <span
               class="studio-kpi-status ml-auto shrink-0 text-right whitespace-nowrap"
@@ -29,6 +29,7 @@
             <span
               v-if="brandLabel"
               class="studio-kpi-brand"
+              :class="inkBrand ? 'studio-kpi-brand--ink dark:invert' : ''"
               :style="{ '--studio-brand-color': brandColor }"
             >{{ brandLabel }}</span>
             <span
@@ -81,9 +82,9 @@ import type { MonitorCoverage } from '@/api/channelMonitorV2'
 import type { GroupPlatform } from '@/types'
 import StudioBrandIcon from './StudioBrandIcon.vue'
 import StudioSparkChart from './StudioSparkChart.vue'
-import { studioBrandFill } from './studioBrand'
+import { studioBrandFill, studioBrandIsInk } from './studioBrand'
 import type { StudioBucketPoint } from './studioBuckets'
-import { metricTextClass, truncateStudioGroupName, type StudioAccent, type StudioTone } from './studioFormat'
+import { metricTextClass, type StudioAccent, type StudioTone } from './studioFormat'
 
 const props = withDefaults(
   defineProps<{
@@ -125,7 +126,7 @@ function isMissing(value: string | undefined) {
 }
 
 const brandColor = computed(() => studioBrandFill(props.platform))
-const displayLabel = computed(() => truncateStudioGroupName(props.label))
+const inkBrand = computed(() => studioBrandIsInk(props.platform))
 
 const accentClass = computed(() => {
   if (props.accent === 'coral') return 'studio-kpi--coral'
@@ -160,6 +161,8 @@ const statusClass = computed(() => {
   z-index: 2;
   contain: layout style;
   background: linear-gradient(180deg, var(--studio-wash-from) 0%, var(--studio-wash-to) 78%);
+  /* .stat-card inherits transition-all; size must snap or every resize interpolates width. */
+  transition: none;
 }
 .studio-kpi--joined {
   height: 100%;
@@ -205,17 +208,6 @@ const statusClass = computed(() => {
   --studio-spark-deep: #475569;
   --studio-spark-fill: #64748b;
 }
-@container studio-row (min-width: 34rem) {
-  .studio-kpi--joined {
-    background: linear-gradient(
-      90deg,
-      var(--studio-wash-from) 0%,
-      var(--studio-wash-from) 42%,
-      var(--studio-wash-to) 82%,
-      var(--studio-wash-to) 100%
-    );
-  }
-}
 .dark .studio-kpi {
   --studio-faces-bg: rgb(30 41 59);
   --studio-wash-from: color-mix(in oklab, #2dd4bf 12%, rgb(15 23 42));
@@ -239,17 +231,6 @@ const statusClass = computed(() => {
 .dark .studio-kpi--slate {
   --studio-wash-from: color-mix(in oklab, #94a3b8 10%, rgb(15 23 42));
 }
-@container studio-row (min-width: 34rem) {
-  .dark .studio-kpi--joined {
-    background: linear-gradient(
-      90deg,
-      var(--studio-wash-from) 0%,
-      color-mix(in oklab, var(--studio-wash-from) 62%, var(--studio-wash-to)) 28%,
-      var(--studio-wash-to) 64%,
-      var(--studio-wash-to) 100%
-    );
-  }
-}
 
 .studio-kpi-head {
   gap: 0.85rem;
@@ -263,7 +244,8 @@ const statusClass = computed(() => {
   font-size: 13px;
 }
 .studio-kpi-name {
-  max-width: none;
+  flex: 0 1 66.666%;
+  max-width: 66.666%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

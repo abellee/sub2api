@@ -47,6 +47,7 @@ describe('StudioKpiCard', () => {
     expect(wrapper.find('.studio-kpi-brand').text()).toBe('OpenAI')
     expect(wrapper.find('.studio-kpi-name').classes().join(' ')).toContain('studio-kpi-name')
     expect(wrapper.find('.studio-kpi-brand').attributes('style')).toContain('--studio-brand-color')
+    expect(wrapper.find('.studio-kpi-brand').classes().join(' ')).not.toContain('dark:invert')
     expect(wrapper.find('.studio-kpi-rate').exists()).toBe(false)
     expect(wrapper.findComponent(StudioBrandIcon).exists()).toBe(true)
     expect(wrapper.text()).toContain('成功率')
@@ -64,12 +65,13 @@ describe('StudioKpiCard', () => {
     expect(wrapper.findAll('.studio-kpi-metric-label')).toHaveLength(3)
   })
 
-  it('shows eight Chinese-character widths and treats English letters as half', () => {
+  it('caps the group name at two-thirds of the row and keeps the full title', () => {
     const wrapper = mount(StudioKpiCard, {
       props: { ...base, label: 'GPT线路测试分组名称超长' },
     })
-    expect(wrapper.find('.studio-kpi-name').text()).toBe('GPT线路测试分组…')
+    expect(wrapper.find('.studio-kpi-name').text()).toBe('GPT线路测试分组名称超长')
     expect(wrapper.find('.studio-kpi-name').attributes('title')).toBe('GPT线路测试分组名称超长')
+    expect(wrapper.find('.studio-kpi-name').classes().join(' ')).toMatch(/min-w-0/)
   })
 
   it('shows the group multiplier beside the brand name', () => {
@@ -82,6 +84,14 @@ describe('StudioKpiCard', () => {
     expect(wrapper.find('.studio-kpi-brand-row').classes().join(' ')).toMatch(/flex/)
     expect(wrapper.find('.studio-kpi-name-row').find('.studio-kpi-status').exists()).toBe(true)
     expect(wrapper.classes().join(' ')).not.toContain('studio-kpi--active')
+  })
+
+  it('inverts the grok brand chip in dark mode', () => {
+    const grok = mount(StudioKpiCard, {
+      props: { ...base, platform: 'grok', brandLabel: 'Grok' },
+    })
+    expect(grok.find('.studio-kpi-brand').classes().join(' ')).toContain('studio-kpi-brand--ink')
+    expect(grok.find('.studio-kpi-brand').classes().join(' ')).toContain('dark:invert')
   })
 
   it('paints card wash from status accent', () => {

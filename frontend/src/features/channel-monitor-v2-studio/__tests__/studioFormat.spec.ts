@@ -21,7 +21,6 @@ import {
   lookupStudioGroupRate,
   mergeSelectedStudioGroups,
   pickStudioActiveGroups,
-  pickDashboardActiveGroups,
   studioGroupActivityScore,
   studioChartGap,
   studioChartDots,
@@ -30,8 +29,6 @@ import {
   studioFaceDepth,
   studioFacePalette,
   studioValueShade,
-  truncateStudioGroupName,
-  studioTextDisplayWidth,
   ttftTone,
 } from '../studioFormat'
 import type { MonitorHealth, MonitorMetric } from '@/api/channelMonitorV2'
@@ -65,16 +62,6 @@ function health(partial: Partial<MonitorHealth> = {}): MonitorHealth {
 }
 
 describe('studioFormat', () => {
-  it('truncates group names to 8 Chinese-character widths with English at half', () => {
-    expect(studioTextDisplayWidth('默认分组')).toBe(4)
-    expect(studioTextDisplayWidth('OpenAI')).toBe(3)
-    expect(truncateStudioGroupName('默认分组名称')).toBe('默认分组名称')
-    expect(truncateStudioGroupName('默认分组名称测试用字多')).toBe('默认分组名称测试…')
-    expect(truncateStudioGroupName('ABCDEFGHIJKLMNOP')).toBe('ABCDEFGHIJKLMNOP')
-    expect(truncateStudioGroupName('ABCDEFGHIJKLMNOPQ')).toBe('ABCDEFGHIJKLMNOP…')
-    expect(truncateStudioGroupName('GPT线路测试分组名称')).toBe('GPT线路测试分组…')
-  })
-
   it('maps success and cache rates onto 0–100 rings', () => {
     expect(metricRingProgress('success', metric({ error_rate: 0.02 }))).toBeCloseTo(98)
     expect(metricRingProgress('cache', metric({ cache_rate: 0.4 }))).toBeCloseTo(40)
@@ -296,6 +283,30 @@ describe('studioFormat', () => {
     }
     expect(studioGroupActivityScore(idle)).toBe(0)
     expect(pickStudioActiveGroups([idle, live, hot]).map((card) => card.key)).toEqual(['hot', 'live'])
+    const stale = {
+      key: 'stale',
+      metrics: metric({ rpm: 90, request_count: 900 }),
+      health: health({ overall: 'healthy', score: 95 }),
+      buckets: [
+        { metrics: metric({ rpm: 90, request_count: 90 }), health: health({ overall: 'healthy', score: 95 }) },
+        { metrics: metric(), health: health() },
+        { metrics: metric(), health: health() },
+      ],
+    }
+    expect(studioGroupActivityScore(stale)).toBe(0)
+    expect(pickStudioActiveGroups([stale, live, hot]).map((card) => card.key)).toEqual(['hot', 'live'])
+    const filling = {
+      key: 'filling',
+      metrics: metric(),
+      health: health(),
+      buckets: [
+        { metrics: metric(), health: health() },
+        { metrics: metric({ rpm: 6, request_count: 12 }), health: health({ overall: 'healthy', score: 88 }) },
+        { metrics: metric(), health: health() },
+      ],
+    }
+    expect(studioGroupActivityScore(filling)).toBeGreaterThan(0)
+    expect(pickStudioActiveGroups([stale, filling]).map((card) => card.key)).toEqual(['filling'])
     expect(pickStudioActiveGroups([live, hot, idle, { ...live, key: 'live-2' }, { ...hot, key: 'hot-2' }, { ...live, key: 'live-3' }], 4).map((card) => card.key)).toEqual([
       'hot',
       'hot-2',
@@ -336,45 +347,6 @@ describe('studioFormat', () => {
     expect(
       pickStudioActiveGroups([badHot, ok, badWarm, { ...ok, key: 'ok-2' }], 4).map((card) => card.key),
     ).toEqual(['ok', 'ok-2', 'bad-hot', 'bad-warm'])
-  })
-
-  it('shows dashboard active groups as any count of healthy/warning cards', () => {
-    const ok = {
-      key: 'ok',
-      state: 'healthy' as const,
-      metrics: metric({ rpm: 4, request_count: 20 }),
-      health: health({ overall: 'healthy', score: 90 }),
-      buckets: [{ metrics: metric({ rpm: 4 }), health: health({ overall: 'healthy', score: 90 }) }],
-    }
-    const warn = {
-      key: 'warn',
-      state: 'warning' as const,
-      metrics: metric({ rpm: 12, request_count: 60 }),
-      health: health({ overall: 'warning', score: 60 }),
-      buckets: [{ metrics: metric({ rpm: 12 }), health: health({ overall: 'warning', score: 60 }) }],
-    }
-    const bad = {
-      key: 'bad',
-      state: 'critical' as const,
-      metrics: metric({ rpm: 80, request_count: 400 }),
-      health: health({ overall: 'critical', score: 20 }),
-      buckets: [{ metrics: metric({ rpm: 80 }), health: health({ overall: 'critical', score: 20 }) }],
-    }
-    expect(pickDashboardActiveGroups([ok, bad]).map((card) => card.key)).toEqual(['ok'])
-    expect(pickDashboardActiveGroups([ok, warn, bad]).map((card) => card.key)).toEqual(['ok', 'warn'])
-    expect(
-      pickDashboardActiveGroups([ok, warn, { ...ok, key: 'ok-2' }, bad]).map((card) => card.key),
-    ).toEqual(['ok', 'ok-2', 'warn'])
-    expect(
-      pickDashboardActiveGroups([
-        ok,
-        warn,
-        { ...ok, key: 'ok-2' },
-        { ...warn, key: 'warn-2' },
-        { ...ok, key: 'ok-3' },
-        bad,
-      ]).map((card) => card.key),
-    ).toEqual(['ok', 'ok-2', 'ok-3', 'warn'])
   })
 
   it('sorts brand sections OpenAI → Anthropic → Grok even when cards arrive alphabetically', () => {

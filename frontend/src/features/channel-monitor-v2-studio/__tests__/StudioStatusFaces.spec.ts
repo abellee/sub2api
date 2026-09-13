@@ -69,12 +69,6 @@ const hourCoverage: MonitorCoverage = {
   bucket_seconds: 3600,
 }
 
-function waitPaint() {
-  return new Promise<void>((resolve) => {
-    requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
-  })
-}
-
 describe('StudioStatusFaces', () => {
   it('renders the native empty grid when a range has no traffic buckets', async () => {
     const wrapper = mount(StudioStatusFaces, {
@@ -86,9 +80,42 @@ describe('StudioStatusFaces', () => {
     await flushPromises()
     expect(wrapper.findAll('button.studio-face')).toHaveLength(24)
     expect(wrapper.findAll('.studio-face--empty')).toHaveLength(24)
+    expect(wrapper.find('.studio-faces').attributes('style') || '').toContain('--studio-face-cols: 24')
   })
 
-  it('renders SVG faces for time buckets and shows pulse-cell tooltip on hover', async () => {
+  it('lays 18 slots into one row of cells instead of face SVGs', async () => {
+    const wrapper = mount(StudioStatusFaces, {
+      props: {
+        coverage: {
+          ...coverage,
+          requested_start: '2026-09-10T09:00:00.000Z',
+          requested_end: '2026-09-10T10:30:00.000Z',
+          coverage_start: '2026-09-10T09:00:00.000Z',
+          data_through: '2026-09-10T10:30:00.000Z',
+        },
+        buckets: [
+          {
+            bucket_start: '2026-09-10T10:25:00.000Z',
+            metrics: metric(),
+            health: health({ score: 95 }),
+          },
+        ],
+      },
+    })
+    await flushPromises()
+    expect(wrapper.findAll('button.studio-face')).toHaveLength(18)
+    expect(wrapper.find('.studio-faces').attributes('style') || '').toContain('--studio-face-cols: 18')
+    expect(wrapper.text()).toContain('channelMonitorV2.studio.faces.recentCount')
+    expect(wrapper.text()).toContain('channelMonitorV2.bucket.minutes')
+    expect(wrapper.find('.studio-faces-axis').text()).toContain('channelMonitorV2.studio.faces.past')
+    expect(wrapper.find('.studio-faces-axis').text()).toContain('channelMonitorV2.studio.faces.now')
+    expect(wrapper.find('svg.studio-face-svg').exists()).toBe(false)
+    expect(wrapper.findAll('.studio-face-cell')).toHaveLength(18)
+    expect(wrapper.find('.studio-faces-scroller').exists()).toBe(false)
+    expect(wrapper.find('.studio-faces-nav').exists()).toBe(false)
+  })
+
+  it('renders colored cells for time buckets and shows pulse-cell tooltip on hover', async () => {
     const wrapper = mount(StudioStatusFaces, {
       props: {
         coverage,
@@ -106,10 +133,12 @@ describe('StudioStatusFaces', () => {
 
     expect(wrapper.find('.card').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('channelMonitorV2.studio.faces.title')
-    expect(wrapper.find('.studio-faces-scroller').classes()).toContain('overflow-x-auto')
-    expect(wrapper.find('svg.studio-face-svg').exists()).toBe(true)
+    expect(wrapper.find('svg.studio-face-svg').exists()).toBe(false)
+    expect(wrapper.find('.studio-face-cell').exists()).toBe(true)
     expect(wrapper.find('.studio-face--current').exists()).toBe(true)
     expect(wrapper.text()).not.toMatch(/[\u{1F600}-\u{1F64F}]/u)
+    const current = wrapper.find('button.studio-face--current')
+    expect(current.attributes('style') || '').toMatch(/--studio-cell:\s*#/i)
 
     await wrapper.find('button.studio-face').trigger('mouseenter')
     expect(wrapper.find('button.studio-face').classes()).toContain('studio-face--hot')
@@ -122,181 +151,7 @@ describe('StudioStatusFaces', () => {
     wrapper.unmount()
   })
 
-  it('maps Shift+vertical wheel to scrollLeft and leaves trackpad deltaX unprevented', async () => {
-    const wrapper = mount(StudioStatusFaces, {
-      props: {
-        coverage,
-        buckets: [
-          { bucket_start: '2026-09-10T10:00:00.000Z', metrics: metric(), health: health() },
-          { bucket_start: '2026-09-10T10:05:00.000Z', metrics: metric(), health: health({ score: 40 }) },
-        ],
-      },
-    })
-    await flushPromises()
-
-    const el = wrapper.find('.studio-faces-scroller').element as HTMLElement
-    Object.defineProperty(el, 'scrollWidth', { configurable: true, value: 800 })
-    Object.defineProperty(el, 'clientWidth', { configurable: true, value: 200 })
-    el.scrollLeft = 0
-
-    const shiftWheel = new WheelEvent('wheel', {
-      deltaX: 0,
-      deltaY: 40,
-      shiftKey: true,
-      cancelable: true,
-      bubbles: true,
-    })
-    el.dispatchEvent(shiftWheel)
-    expect(shiftWheel.defaultPrevented).toBe(true)
-    expect(el.scrollLeft).toBe(40)
-
-    const trackpad = new WheelEvent('wheel', {
-      deltaX: 30,
-      deltaY: 1,
-      shiftKey: false,
-      cancelable: true,
-      bubbles: true,
-    })
-    el.dispatchEvent(trackpad)
-    expect(trackpad.defaultPrevented).toBe(false)
-    expect(el.scrollLeft).toBe(40)
-  })
-
-  it('scrolls to the last face when buckets change', async () => {
-    const wrapper = mount(StudioStatusFaces, {
-      props: {
-        coverage,
-        buckets: [
-          { bucket_start: '2026-09-10T10:00:00.000Z', metrics: metric(), health: health() },
-        ],
-      },
-    })
-    await flushPromises()
-    const el = wrapper.find('.studio-faces-scroller').element as HTMLElement
-    Object.defineProperty(el, 'scrollWidth', { configurable: true, value: 800 })
-    Object.defineProperty(el, 'clientWidth', { configurable: true, value: 200 })
-    el.scrollLeft = 600
-
-    await wrapper.setProps({
-      coverage: {
-        ...coverage,
-        requested_end: '2026-09-10T10:15:00.000Z',
-        data_through: '2026-09-10T10:15:00.000Z',
-      },
-      buckets: [
-        { bucket_start: '2026-09-10T10:00:00.000Z', metrics: metric(), health: health() },
-        { bucket_start: '2026-09-10T10:05:00.000Z', metrics: metric(), health: health({ score: 40 }) },
-        { bucket_start: '2026-09-10T10:10:00.000Z', metrics: metric(), health: health({ score: 88 }) },
-      ],
-    })
-    await flushPromises()
-    expect(el.scrollLeft).toBe(800)
-  })
-
-  it('auto-scrolls new faces to the end when the user has not panned the row', async () => {
-    const wrapper = mount(StudioStatusFaces, {
-      props: {
-        coverage,
-        buckets: [
-          { bucket_start: '2026-09-10T10:00:00.000Z', metrics: metric(), health: health() },
-        ],
-      },
-    })
-    await flushPromises()
-    const el = wrapper.find('.studio-faces-scroller').element as HTMLElement
-    Object.defineProperty(el, 'scrollWidth', { configurable: true, value: 800 })
-    Object.defineProperty(el, 'clientWidth', { configurable: true, value: 200 })
-    el.scrollLeft = 0
-
-    await wrapper.setProps({
-      coverage: {
-        ...coverage,
-        requested_end: '2026-09-10T10:15:00.000Z',
-        data_through: '2026-09-10T10:15:00.000Z',
-      },
-      buckets: [
-        { bucket_start: '2026-09-10T10:00:00.000Z', metrics: metric(), health: health() },
-        { bucket_start: '2026-09-10T10:05:00.000Z', metrics: metric(), health: health({ score: 40 }) },
-        { bucket_start: '2026-09-10T10:10:00.000Z', metrics: metric(), health: health({ score: 88 }) },
-      ],
-    })
-    await flushPromises()
-    expect(el.scrollLeft).toBe(800)
-  })
-
-  it('does not steal scroll when the user has panned away from the end', async () => {
-    const wrapper = mount(StudioStatusFaces, {
-      props: {
-        coverage,
-        buckets: [
-          { bucket_start: '2026-09-10T10:00:00.000Z', metrics: metric(), health: health() },
-          { bucket_start: '2026-09-10T10:05:00.000Z', metrics: metric(), health: health({ score: 40 }) },
-        ],
-      },
-    })
-    await flushPromises()
-    const scroller = wrapper.find('.studio-faces-scroller')
-    const el = scroller.element as HTMLElement
-    Object.defineProperty(el, 'scrollWidth', { configurable: true, value: 800 })
-    Object.defineProperty(el, 'clientWidth', { configurable: true, value: 200 })
-    el.scrollLeft = 120
-    await scroller.trigger('scroll')
-
-    await wrapper.setProps({
-      coverage: {
-        ...coverage,
-        requested_end: '2026-09-10T10:15:00.000Z',
-        data_through: '2026-09-10T10:15:00.000Z',
-      },
-      buckets: [
-        { bucket_start: '2026-09-10T10:00:00.000Z', metrics: metric(), health: health() },
-        { bucket_start: '2026-09-10T10:05:00.000Z', metrics: metric(), health: health({ score: 40 }) },
-        { bucket_start: '2026-09-10T10:10:00.000Z', metrics: metric(), health: health({ score: 88 }) },
-      ],
-    })
-    await flushPromises()
-    expect(el.scrollLeft).toBe(120)
-  })
-
-  it('keeps the scroller pinned to the end when the window shrinks', async () => {
-    const wrapper = mount(StudioStatusFaces, {
-      props: {
-        coverage,
-        buckets: [
-          { bucket_start: '2026-09-10T10:00:00.000Z', metrics: metric(), health: health() },
-          { bucket_start: '2026-09-10T10:05:00.000Z', metrics: metric(), health: health({ score: 40 }) },
-        ],
-      },
-    })
-    await flushPromises()
-    const el = wrapper.find('.studio-faces-scroller').element as HTMLElement
-    Object.defineProperty(el, 'scrollWidth', { configurable: true, value: 800 })
-    Object.defineProperty(el, 'clientWidth', { configurable: true, value: 200 })
-    el.scrollLeft = 600
-    Object.defineProperty(el, 'clientWidth', { configurable: true, value: 120 })
-    window.dispatchEvent(new Event('resize'))
-    await flushPromises()
-    expect(el.scrollLeft).toBe(800)
-  })
-
-  it('keeps historical faces smaller than the current time slot', async () => {
-    const wrapper = mount(StudioStatusFaces, {
-      props: {
-        coverage,
-        buckets: [
-          { bucket_start: '2026-09-10T10:00:00.000Z', metrics: metric(), health: health() },
-          { bucket_start: '2026-09-10T10:05:00.000Z', metrics: metric(), health: health({ score: 40 }) },
-        ],
-      },
-    })
-    await flushPromises()
-    const buttons = wrapper.findAll('button.studio-face')
-    expect(buttons).toHaveLength(2)
-    expect(buttons[0].classes()).toContain('studio-face--past')
-    expect(buttons[1].classes()).toContain('studio-face--current')
-  })
-
-  it('colors faces from V2 thresholds when API overall is unknown', () => {
+  it('colors cells from V2 thresholds when API overall is unknown', () => {
     const wrapper = mount(StudioStatusFaces, {
       props: {
         coverage,
@@ -326,7 +181,7 @@ describe('StudioStatusFaces', () => {
     expect(wrapper.find('button.studio-face').classes()).toContain('studio-face--unknown')
   })
 
-  it('does not keep a green smile when true error rate is 100%', () => {
+  it('does not keep a green cell when true error rate is 100%', () => {
     const wrapper = mount(StudioStatusFaces, {
       props: {
         coverage,
@@ -373,212 +228,14 @@ describe('StudioStatusFaces', () => {
     const buttons = wrapper.findAll('button.studio-face')
     expect(buttons).toHaveLength(3)
     expect(buttons[0].classes()).not.toContain('studio-face--enter')
-    expect(buttons[0].classes()).not.toContain('studio-face--pending')
     expect(buttons[1].classes()).not.toContain('studio-face--enter')
-    expect(buttons[1].classes()).not.toContain('studio-face--pending')
-    expect(buttons[1].classes()).toContain('studio-face--current')
-    expect(buttons[2].classes()).toContain('studio-face--pending')
-    expect(buttons[2].classes()).toContain('studio-face--collapse')
-    expect(
-      buttons[2].classes().includes('studio-face--pending') || buttons[2].classes().includes('studio-face--enter'),
-    ).toBe(true)
-    expect(wrapper.find('.studio-faces').classes()).toContain('items-center')
-    expect(wrapper.find('.studio-faces-axis').exists()).toBe(true)
-    expect(wrapper.find('.studio-faces-canvas').exists()).toBe(true)
-    expect(wrapper.find('.studio-faces-scroller').classes()).toContain('overflow-x-auto')
-    expect(wrapper.find('.studio-faces-fade').exists()).toBe(true)
-    expect(wrapper.find('.studio-faces-nav--prev').exists()).toBe(true)
-    expect(wrapper.find('.studio-faces-nav--next').exists()).toBe(true)
+    expect(buttons[2].classes()).toContain('studio-face--enter')
+    expect(wrapper.find('.studio-faces').attributes('style') || '').toContain('--studio-face-cols: 3')
     expect(wrapper.find('.studio-faces-root').exists()).toBe(true)
     expect(wrapper.find('.studio-faces-wrap').exists()).toBe(true)
   })
 
-  it('enables the next arrow after scrolling away from the end', async () => {
-    const wrapper = mount(StudioStatusFaces, {
-      props: {
-        coverage,
-        buckets: [
-          { bucket_start: '2026-09-10T10:00:00.000Z', metrics: metric(), health: health() },
-          { bucket_start: '2026-09-10T10:05:00.000Z', metrics: metric(), health: health({ score: 40 }) },
-        ],
-      },
-    })
-    await flushPromises()
-    const el = wrapper.find('.studio-faces-scroller').element as HTMLElement
-    Object.defineProperty(el, 'scrollWidth', { configurable: true, value: 800 })
-    Object.defineProperty(el, 'clientWidth', { configurable: true, value: 200 })
-    el.scrollLeft = 800
-    el.dispatchEvent(new Event('scroll'))
-    await flushPromises()
-    expect(wrapper.find('.studio-faces-nav--next').attributes('disabled')).toBeDefined()
-
-    el.scrollLeft = 120
-    el.dispatchEvent(new Event('scroll'))
-    await flushPromises()
-    expect(wrapper.find('.studio-faces-nav--next').attributes('disabled')).toBeUndefined()
-    expect(wrapper.find('.studio-faces-nav--prev').attributes('disabled')).toBeUndefined()
-  })
-
-  it('keeps every face visible after the time window is replaced', async () => {
-    const OriginalIO = globalThis.IntersectionObserver
-    globalThis.IntersectionObserver = class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    } as typeof IntersectionObserver
-
-    const wrapper = mount(StudioStatusFaces, {
-      props: {
-        coverage,
-        buckets: [
-          { bucket_start: '2026-09-10T10:00:00.000Z', metrics: metric(), health: health() },
-          { bucket_start: '2026-09-10T10:05:00.000Z', metrics: metric(), health: health({ score: 40 }) },
-        ],
-      },
-    })
-    await flushPromises()
-    await wrapper.setProps({
-      coverage: {
-        ...coverage,
-        requested_start: '2026-09-09T21:00:00.000Z',
-        requested_end: '2026-09-10T00:00:00.000Z',
-        coverage_start: '2026-09-09T21:00:00.000Z',
-        data_through: '2026-09-10T00:00:00.000Z',
-        bucket_seconds: 3600,
-      },
-      buckets: [
-        { bucket_start: '2026-09-09T21:00:00.000Z', metrics: metric(), health: health({ score: 88 }) },
-        { bucket_start: '2026-09-09T22:00:00.000Z', metrics: metric(), health: health({ score: 55 }) },
-        { bucket_start: '2026-09-09T23:00:00.000Z', metrics: metric(), health: health({ score: 12 }) },
-      ],
-    })
-    await flushPromises()
-    await waitPaint()
-    const scroller = wrapper.find('.studio-faces-scroller').element as HTMLElement
-    scroller.dispatchEvent(new Event('scroll'))
-    await flushPromises()
-    const buttons = wrapper.findAll('button.studio-face')
-    expect(buttons).toHaveLength(3)
-    expect(wrapper.find('.studio-face--collapse').exists()).toBe(false)
-    expect(wrapper.findAll('svg.studio-face-svg')).toHaveLength(buttons.length)
-    wrapper.unmount()
-    globalThis.IntersectionObserver = OriginalIO
-  })
-
-  it('keeps the native 24h faces after switching from 90m even when scroll tries to cull', async () => {
-    const OriginalIO = globalThis.IntersectionObserver
-    globalThis.IntersectionObserver = class {
-      constructor(private cb: IntersectionObserverCallback) {}
-      observe(node: Element) {
-        this.cb(
-          [{
-            target: node,
-            isIntersecting: false,
-            intersectionRatio: 0,
-            boundingClientRect: node.getBoundingClientRect(),
-            intersectionRect: node.getBoundingClientRect(),
-            rootBounds: null,
-            time: 0,
-          } as IntersectionObserverEntry],
-          this as unknown as IntersectionObserver,
-        )
-      }
-      unobserve() {}
-      disconnect() {}
-    } as typeof IntersectionObserver
-
-    const wrapper = mount(StudioStatusFaces, {
-      props: {
-        coverage,
-        buckets: [
-          { bucket_start: '2026-09-10T10:00:00.000Z', metrics: metric(), health: health() },
-          { bucket_start: '2026-09-10T10:05:00.000Z', metrics: metric(), health: health({ score: 40 }) },
-        ],
-      },
-    })
-    await flushPromises()
-    const scroller = wrapper.find('.studio-faces-scroller').element as HTMLElement
-    Object.defineProperty(scroller, 'scrollWidth', { configurable: true, value: 800 })
-    Object.defineProperty(scroller, 'clientWidth', { configurable: true, value: 200 })
-    scroller.scrollLeft = 800
-    scroller.dispatchEvent(new Event('scroll'))
-    await wrapper.setProps({
-      coverage: hourCoverage,
-      buckets: [
-        { bucket_start: '2026-09-10T00:00:00.000Z', metrics: metric(), health: health({ score: 88 }) },
-        { bucket_start: '2026-09-10T10:00:00.000Z', metrics: metric(), health: health({ score: 55 }) },
-        { bucket_start: '2026-09-10T23:00:00.000Z', metrics: metric(), health: health({ score: 12 }) },
-      ],
-    })
-    await flushPromises()
-    await waitPaint()
-    scroller.dispatchEvent(new Event('scroll'))
-    await flushPromises()
-    const buttons = wrapper.findAll('button.studio-face')
-    expect(buttons).toHaveLength(24)
-    expect(wrapper.find('.studio-face--collapse').exists()).toBe(false)
-    expect(wrapper.findAll('svg.studio-face-svg')).toHaveLength(24)
-    wrapper.unmount()
-    globalThis.IntersectionObserver = OriginalIO
-  })
-
-  it('does not cull replaced faces when intersection data is still incomplete', async () => {
-    const OriginalIO = globalThis.IntersectionObserver
-    globalThis.IntersectionObserver = class {
-      constructor(private cb: IntersectionObserverCallback) {}
-      observe(node: Element) {
-        this.cb(
-          [{
-            target: node,
-            isIntersecting: (node as HTMLElement).dataset.faceKey?.endsWith('00:00.000Z') === true,
-            intersectionRatio: 1,
-            boundingClientRect: node.getBoundingClientRect(),
-            intersectionRect: node.getBoundingClientRect(),
-            rootBounds: null,
-            time: 0,
-          } as IntersectionObserverEntry],
-          this as unknown as IntersectionObserver,
-        )
-      }
-      unobserve() {}
-      disconnect() {}
-    } as typeof IntersectionObserver
-
-    const wrapper = mount(StudioStatusFaces, {
-      props: {
-        coverage,
-        buckets: [
-          { bucket_start: '2026-09-10T10:00:00.000Z', metrics: metric(), health: health() },
-          { bucket_start: '2026-09-10T10:05:00.000Z', metrics: metric(), health: health({ score: 40 }) },
-        ],
-      },
-    })
-    await flushPromises()
-    await wrapper.setProps({
-      coverage: {
-        ...coverage,
-        requested_start: '2026-09-09T21:00:00.000Z',
-        requested_end: '2026-09-10T00:00:00.000Z',
-        coverage_start: '2026-09-09T21:00:00.000Z',
-        data_through: '2026-09-10T00:00:00.000Z',
-        bucket_seconds: 3600,
-      },
-      buckets: [
-        { bucket_start: '2026-09-09T21:00:00.000Z', metrics: metric(), health: health({ score: 88 }) },
-        { bucket_start: '2026-09-09T22:00:00.000Z', metrics: metric(), health: health({ score: 55 }) },
-        { bucket_start: '2026-09-09T23:00:00.000Z', metrics: metric(), health: health({ score: 12 }) },
-      ],
-    })
-    await flushPromises()
-    await waitPaint()
-    const buttons = wrapper.findAll('button.studio-face')
-    expect(buttons).toHaveLength(3)
-    expect(wrapper.findAll('svg.studio-face-svg')).toHaveLength(buttons.length)
-    wrapper.unmount()
-    globalThis.IntersectionObserver = OriginalIO
-  })
-
-  it('reuses one tooltip panel and only updates its copy when moving between faces', async () => {
+  it('reuses one tooltip panel and only updates its copy when moving between cells', async () => {
     const wrapper = mount(StudioStatusFaces, {
       props: {
         coverage,
