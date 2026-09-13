@@ -106,9 +106,6 @@
               </button>
             </div>
           </div>
-          <span class="ml-auto hidden shrink-0 text-right text-[11px] leading-tight text-gray-400 sm:inline">
-            {{ t('channelMonitorV2.studio.faces.panHint') }}
-          </span>
         </div>
       </section>
 
@@ -127,7 +124,7 @@
                 : t('channelMonitorV2.studio.brands.sectionAria', { label: section.brandLabel })
             "
           >
-            <header class="studio-brand-heading mb-4 flex items-center gap-3 px-0.5">
+            <header class="studio-brand-heading mb-4 flex items-center gap-2 px-0.5">
               <span
                 class="studio-brand-heading-mark"
                 :style="
@@ -139,16 +136,16 @@
                 <Icon
                   v-if="section.kind === 'active'"
                   name="radar"
-                  size="md"
+                  size="xs"
                   class="studio-active-mark-icon"
                 />
-                <StudioBrandIcon v-else :platform="section.platform" size="lg" />
+                <StudioBrandIcon v-else :platform="section.platform" size="sm" />
               </span>
-              <h2 class="text-base font-extrabold tracking-tight text-gray-900 dark:text-white">
+              <h2 class="studio-brand-heading-title text-sm font-extrabold tracking-tight text-gray-900 dark:text-white">
                 {{ section.brandLabel }}
               </h2>
             </header>
-            <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <div class="studio-card-grid">
               <div
                 v-for="card in section.cards"
                 :key="card.key"
@@ -312,8 +309,8 @@ watch(range, () => {
 <style scoped>
 .studio-brand-heading-mark {
   display: inline-flex;
-  width: 2.5rem;
-  height: 2.5rem;
+  width: 1.25rem;
+  height: 1.25rem;
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
@@ -327,27 +324,26 @@ watch(range, () => {
 .studio-active-mark-icon {
   color: inherit;
 }
+.studio-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 20rem), 1fr));
+  gap: 1.5rem;
+}
 .studio-model-row {
   --studio-faces-bg: rgb(241 245 249);
   position: relative;
   display: flex;
-  flex-wrap: wrap;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
   align-items: stretch;
   background: var(--studio-faces-bg);
-  container: studio-row / inline-size;
   contain: layout style;
 }
 .studio-model-card {
   position: relative;
   z-index: 2;
   width: 100%;
-  flex: 1 1 100%;
-}
-@container studio-row (min-width: 34rem) {
-  .studio-model-card {
-    flex: 0 0 18rem;
-    width: 18rem;
-  }
 }
 .dark .studio-model-row {
   --studio-faces-bg: rgb(30 41 59);

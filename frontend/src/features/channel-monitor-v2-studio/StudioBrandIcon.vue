@@ -1,7 +1,7 @@
 <template>
   <span
     class="studio-brand-icon inline-flex shrink-0 items-center justify-center"
-    :class="ink ? 'studio-brand-icon--ink' : ''"
+    :class="ink ? 'studio-brand-icon--ink dark:invert' : ''"
     :style="ink ? undefined : { color: fill }"
     aria-hidden="true"
   >
@@ -30,8 +30,5 @@ const ink = computed(() => studioBrandIsInk(props.platform))
 <style scoped>
 .studio-brand-icon--ink {
   color: #111111;
-}
-:global(.dark) .studio-brand-icon--ink {
-  color: #f4f4f5;
 }
 </style>

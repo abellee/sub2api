@@ -79,37 +79,6 @@ export const STUDIO_DEFAULT_THRESHOLDS: Required<StudioThresholds> = {
   critical_cache_rate: 0.6,
 }
 
-/** KPI group names show 8 Chinese-character widths; ASCII letters count as half. */
-export const STUDIO_GROUP_NAME_WIDTH = 8
-
-export function studioCharDisplayWidth(char: string): number {
-  const code = char.codePointAt(0) || 0
-  if (code <= 0x7f) return 0.5
-  if (code >= 0xff61 && code <= 0xff9f) return 0.5
-  return 1
-}
-
-export function studioTextDisplayWidth(value: string): number {
-  let width = 0
-  for (const char of value) width += studioCharDisplayWidth(char)
-  return width
-}
-
-export function truncateStudioGroupName(value: string, max = STUDIO_GROUP_NAME_WIDTH): string {
-  const text = String(value || '')
-  if (max <= 0) return ''
-  if (studioTextDisplayWidth(text) <= max) return text
-  let width = 0
-  let out = ''
-  for (const char of text) {
-    const next = studioCharDisplayWidth(char)
-    if (width + next > max) break
-    out += char
-    width += next
-  }
-  return `${out}…`
-}
-
 export function clamp01(value: number): number {
   if (!Number.isFinite(value)) return 0
   return Math.min(1, Math.max(0, value))
@@ -330,6 +299,7 @@ export type StudioBrandSection<T extends { platform?: string | null; brandLabel?
 }
 
 export const STUDIO_ACTIVE_GROUP_LIMIT = 4
+/** Last 1–2 buckets only. Range totals must not put an idle group into 活跃分组. */
 const STUDIO_ACTIVE_RECENT_SLOTS = 2
 
 export type StudioActivitySource = {
@@ -339,28 +309,22 @@ export type StudioActivitySource = {
   state?: StudioTone | string | null
 }
 
-/** Higher = currently busier. 0 means idle and should stay out of 活跃分组. */
+/** Higher = currently busier. 0 means not live in the current buckets. */
 export function studioGroupActivityScore(card: StudioActivitySource): number {
   const buckets = card.buckets || []
   const recent = buckets.slice(-STUDIO_ACTIVE_RECENT_SLOTS)
   const recentLive = recent.filter((bucket) => studioMetricsHaveActivity(bucket.metrics, bucket.health))
-  const rowLive = studioMetricsHaveActivity(card.metrics, card.health)
-  if (!recentLive.length && !rowLive) return 0
+  if (!recentLive.length) return 0
 
   const latestLive = recentLive[recentLive.length - 1]
-  const currentRpm = Number(latestLive?.metrics?.rpm || card.metrics?.rpm) || 0
-  const rpm = Number(card.metrics?.rpm) || 0
-  const tpm = Number(card.metrics?.tpm) || 0
-  const requests = Number(card.metrics?.request_count) || 0
-  const liveCount = buckets.filter((bucket) => studioMetricsHaveActivity(bucket.metrics, bucket.health)).length
+  const currentRpm = Number(latestLive?.metrics?.rpm) || 0
+  const currentTpm = Number(latestLive?.metrics?.tpm) || 0
+  const currentRequests = Number(latestLive?.metrics?.request_count) || 0
   return (
     currentRpm * 1_000_000 +
-    rpm * 10_000 +
-    tpm * 10 +
-    requests +
-    recentLive.length * 1_000 +
-    liveCount * 10 +
-    (rowLive ? 1 : 0)
+    currentTpm * 10 +
+    currentRequests +
+    recentLive.length * 1_000
   )
 }
 
@@ -379,11 +343,7 @@ export function studioActiveGroupState(card: StudioActivitySource): StudioTone {
   return 'unknown'
 }
 
-function isStableActiveState(state: StudioTone): boolean {
-  return state === 'healthy' || state === 'warning'
-}
-
-/** Top currently-busy group cards. 健康/波动 fill first; 异常 can still take leftover slots. */
+/** Currently-live group cards only. 健康/波动 fill first; 异常 can still take leftover current slots. */
 export function pickStudioActiveGroups<T extends StudioActivitySource>(
   cards: T[],
   limit = STUDIO_ACTIVE_GROUP_LIMIT,
@@ -405,12 +365,6 @@ export function pickStudioActiveGroups<T extends StudioActivitySource>(
     )
     .slice(0, cap)
     .map((item) => item.card)
-}
-
-/** Dashboard 活跃分组: 健康/波动 only. 5+ is capped at 4. */
-export function pickDashboardActiveGroups<T extends StudioActivitySource>(cards: T[]): T[] {
-  const stable = cards.filter((card) => isStableActiveState(studioActiveGroupState(card)))
-  return pickStudioActiveGroups(stable, STUDIO_ACTIVE_GROUP_LIMIT)
 }
 
 export function studioStatusSortRank(state?: StudioTone | string | null): number {

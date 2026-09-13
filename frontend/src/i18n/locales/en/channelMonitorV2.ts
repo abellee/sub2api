@@ -175,8 +175,11 @@ export default {
       },
       faces: {
         title: 'Interval status',
-        description: 'Each face is one time bucket; hover for the same details as the old cells',
+        description: 'Each cell is one time bucket; hover for the same details as the old cells',
         forModel: 'Interval status for {label}; hover for details',
+        recentCount: 'Last {count} intervals',
+        past: 'Past',
+        now: 'Now',
         panHint: 'Hold Shift and scroll to pan; trackpads can swipe sideways',
         prev: 'Scroll left',
         next: 'Scroll right',
