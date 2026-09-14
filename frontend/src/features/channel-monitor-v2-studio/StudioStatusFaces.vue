@@ -302,34 +302,42 @@ onBeforeUnmount(() => {
   aspect-ratio: 3 / 4;
   padding: 0;
   border: 0;
-  background: transparent;
+  appearance: none;
+  border-radius: 0.16rem;
+  background: var(--studio-cell, #e5e7eb);
   cursor: help;
 }
 .studio-face:focus-visible {
   outline: 2px solid rgb(20 184 166 / 0.55);
   outline-offset: 1px;
-  border-radius: 0.22rem;
 }
 .studio-face-cell {
   display: block;
   width: 100%;
   height: 100%;
-  border-radius: 0.16rem;
+  border-radius: inherit;
   background: var(--studio-cell, #e5e7eb);
   transform-origin: 50% 50%;
   transition: transform 0.16s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.16s ease;
 }
+.studio-face--empty {
+  background: #d0d5dd;
+}
 .studio-face--empty .studio-face-cell {
+  background: #d0d5dd;
+}
+.dark .studio-face--empty {
   opacity: 0.45;
+  background: var(--studio-cell, #e5e7eb);
+}
+.dark .studio-face--empty .studio-face-cell {
+  background: var(--studio-cell, #e5e7eb);
 }
 .studio-face:hover:not(.studio-face--enter) .studio-face-cell,
 .studio-face--hot:not(.studio-face--enter) .studio-face-cell,
 .studio-face:focus-visible:not(.studio-face--enter) .studio-face-cell {
   transform: scale(1.08);
   box-shadow: 0 0 0 1px rgb(15 23 42 / 0.08);
-}
-.studio-face--current .studio-face-cell {
-  box-shadow: inset 0 0 0 1.5px rgb(255 255 255 / 0.72);
 }
 .studio-face--enter .studio-face-cell {
   animation: studio-face-pop var(--studio-face-pop-ms, 0.5s) cubic-bezier(0.33, 1, 0.68, 1) both;

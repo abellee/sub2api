@@ -34,6 +34,24 @@ const formatLocalDate = (date: Date): string => {
 }
 
 describe('DateRangePicker', () => {
+  it('recognizes today when start and end are today', () => {
+    const today = formatLocalDate(new Date())
+
+    const wrapper = mount(DateRangePicker, {
+      props: {
+        startDate: today,
+        endDate: today
+      },
+      global: {
+        stubs: {
+          Icon: true
+        }
+      }
+    })
+
+    expect(wrapper.text()).toContain('Today')
+  })
+
   it('uses last 24 hours as the default recognized preset', () => {
     const now = new Date()
     const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000)
