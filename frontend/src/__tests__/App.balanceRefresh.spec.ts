@@ -69,6 +69,12 @@ vi.mock('@/utils/branding', () => ({
   updateFavicon: vi.fn(),
 }))
 
+vi.mock('@/utils/featureFlags', () => ({
+  FeatureFlags: { subscription: {} },
+  isFeatureFlagEnabled: () => true,
+  resolveFeatureFlag: () => true,
+}))
+
 import App from '@/App.vue'
 
 describe('App navigation user refresh', () => {

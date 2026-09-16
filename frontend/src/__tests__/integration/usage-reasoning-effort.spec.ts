@@ -259,7 +259,7 @@ describe('usage reasoning effort page display', () => {
     expect(wrapper.text()).not.toContain('XHigh')
   })
 
-  it('admin usage page shows requested and mapped effort after the column is enabled', async () => {
+  it('admin usage page shows requested and mapped effort in the default columns', async () => {
     const wrapper = mount(AdminUsageView, {
       global: {
         stubs: {
@@ -274,12 +274,6 @@ describe('usage reasoning effort page display', () => {
         },
       },
     })
-    await flushPromises()
-
-    expect(wrapper.find('[data-testid="reasoning-effort-cell"]').exists()).toBe(false)
-
-    await wrapper.get('[data-testid="usage-column-settings"]').trigger('click')
-    await wrapper.get('[data-testid="usage-column-toggle-reasoning_effort"]').trigger('click')
     await flushPromises()
 
     const cell = reasoningCellText(wrapper)
@@ -309,10 +303,6 @@ describe('usage reasoning effort page display', () => {
         },
       },
     })
-    await flushPromises()
-
-    await wrapper.get('[data-testid="usage-column-settings"]').trigger('click')
-    await wrapper.get('[data-testid="usage-column-toggle-reasoning_effort"]').trigger('click')
     await flushPromises()
 
     const cell = reasoningCellText(wrapper)

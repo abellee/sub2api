@@ -187,6 +187,15 @@ func (s *RateLimitService) applyOllamaCloudUsageProbeReset(
 	if !valid || currentFingerprint != expectedFingerprint {
 		return
 	}
+	// The probe may persist a usage snapshot before this callback, so UpdatedAt
+	// alone cannot represent the generation captured when the probe was queued.
+	// Verify the rate-limit fields themselves before using the freshly read row
+	// version for the final atomic CAS.
+	if !sameOptionalTime(account.RateLimitedAt, expectedLimitedAt) ||
+		!sameOptionalTime(account.RateLimitResetAt, expectedResetAt) {
+		slog.Debug("ollama_cloud_usage_probe_reset_skipped_generation", "account_id", accountID)
+		return
+	}
 
 	setter, ok := s.accountRepo.(ollamaCloudUsageRateLimitSetterIfGeneration)
 	if !ok {
@@ -215,4 +224,11 @@ func (s *RateLimitService) applyOllamaCloudUsageProbeReset(
 		"reset_at", resetAt.UTC(),
 		"reset_in", time.Until(resetAt).Truncate(time.Second),
 	)
+}
+
+func sameOptionalTime(left, right *time.Time) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return left.Equal(*right)
 }
