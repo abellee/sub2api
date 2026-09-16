@@ -19,11 +19,14 @@
             >
               {{ label }}
             </span>
-            <span
-              class="studio-kpi-status ml-auto shrink-0 text-right whitespace-nowrap"
-              :class="statusClass"
-              :aria-label="`${statusHeading} ${statusLabel}`"
-            >{{ statusLabel }}</span>
+            <span class="studio-kpi-status-wrap ml-auto shrink-0 text-center whitespace-nowrap">
+              <span
+                class="studio-kpi-status ml-auto block text-right"
+                :class="statusClass"
+                :aria-label="`${statusHeading} ${statusLabel}`"
+              >{{ statusLabel }}</span>
+              <span v-if="statusNote" class="studio-kpi-status-note mt-0.5 block">{{ statusNote }}</span>
+            </span>
           </div>
           <div class="studio-kpi-brand-row mt-1 flex min-w-0 items-center gap-1">
             <span
@@ -99,6 +102,7 @@ const props = withDefaults(
     cacheRate: string
     statusHeading: string
     statusLabel: string
+    statusNote?: string
     state?: StudioTone
     successState?: StudioTone
     ttftState?: StudioTone
@@ -309,6 +313,15 @@ const statusClass = computed(() => {
   font-weight: 800;
   line-height: 1.3;
   letter-spacing: 0.01em;
+}
+.studio-kpi-status-note {
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: rgb(100 116 139 / 0.72);
+}
+.dark .studio-kpi-status-note {
+  color: rgb(148 163 184 / 0.68);
 }
 .studio-kpi-status--healthy {
   background: color-mix(in oklab, #34d399 22%, #ffffff);

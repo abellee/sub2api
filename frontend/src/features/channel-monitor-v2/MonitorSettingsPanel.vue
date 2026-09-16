@@ -413,6 +413,8 @@ async function load() {
   try {
     const [value, groupRows] = await Promise.all([getConfig(), adminAPI.groups.getAllIncludingInactive()])
     const normalized = normalizeConfig(value)
+    const existingGroupIds = new Set(groupRows.map((group) => group.id))
+    normalized.group_ids = normalized.group_ids.filter((id) => existingGroupIds.has(id))
     draft.value = structuredClone(normalized)
     groups.value = groupRows
     original.value = JSON.stringify(normalized)

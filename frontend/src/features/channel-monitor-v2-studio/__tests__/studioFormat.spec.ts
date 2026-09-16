@@ -198,17 +198,16 @@ describe('studioFormat', () => {
       [live],
       [2, 5, 7, 9, 11, 13],
       [
+        { id: 2, name: 'GPT 标准', platform: 'openai' },
         { id: 5, name: 'Claude 标准', platform: 'anthropic' },
         { id: 7, name: 'Grok 线路', platform: 'grok' },
       ],
+      true,
     )
-    expect(rows.map((row) => row.group_id)).toEqual([2, 5, 7, 9, 11, 13])
+    expect(rows.map((row) => row.group_id)).toEqual([2, 5, 7])
     expect(rows[0]).toEqual(live)
     expect(rows[1]).toMatchObject({ group_id: 5, group_name: 'Claude 标准', platform: 'anthropic', buckets: [] })
     expect(rows[2]?.group_name).toBe('Grok 线路')
-    expect(rows[3]?.group_name).toBe('#9')
-    expect(rows[3]?.metrics.request_count).toBe(0)
-    expect(rows[3]?.health.overall).toBe('unknown')
   })
 
   it('groups cards by model brand and keeps first-seen brand order', () => {
@@ -223,7 +222,7 @@ describe('studioFormat', () => {
     expect(sections[0]?.brandLabel).toBe('OpenAI')
   })
 
-  it('sorts brand cards 健康 → 波动 → 异常 → 样本不足', () => {
+  it('sorts brand cards 健康 → 波动 → 异常 → 未知', () => {
     expect(
       sortStudioCardsByStatus([
         { key: 'idle', state: 'unknown' },
@@ -241,6 +240,13 @@ describe('studioFormat', () => {
     ])
     expect(sections[0]?.cards.map((card) => card.key)).toEqual(['ok', 'bad', 'idle'])
     expect(sections[1]?.cards.map((card) => card.key)).toEqual(['warn'])
+    expect(
+      sortStudioCardsByStatus([
+        { key: 'normal', state: 'healthy', sampleInsufficient: true },
+        { key: 'bad', state: 'critical' },
+        { key: 'ok', state: 'healthy' },
+      ]).map((card) => card.key),
+    ).toEqual(['ok', 'bad', 'normal'])
   })
 
   it('paints each K-line from its own status accent', () => {
@@ -283,6 +289,9 @@ describe('studioFormat', () => {
     }
     expect(studioGroupActivityScore(idle)).toBe(0)
     expect(pickStudioActiveGroups([idle, live, hot]).map((card) => card.key)).toEqual(['hot', 'live'])
+    const insufficient = { ...hot, key: 'insufficient', sampleInsufficient: true }
+    expect(studioGroupActivityScore(insufficient)).toBe(0)
+    expect(pickStudioActiveGroups([insufficient, live, hot]).map((card) => card.key)).toEqual(['hot', 'live'])
     const stale = {
       key: 'stale',
       metrics: metric({ rpm: 90, request_count: 900 }),

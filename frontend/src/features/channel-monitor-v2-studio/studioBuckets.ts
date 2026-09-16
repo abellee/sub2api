@@ -16,6 +16,7 @@ let startsCache: string[] = []
 
 /** Extra appended slots FIFO once a range is already at its native length. */
 export const STUDIO_MAX_SLOTS = 18
+export const STUDIO_TRAFFIC_RECOVERY_SLOTS = 5
 
 /** Native face counts for 90m / 24h / 7d / 30d. FIFO must not shrink a range below this. */
 export function studioNativeSlotCount(bucketSeconds: number): number {
@@ -81,6 +82,31 @@ export function studioMetricsHaveActivity(
 export function isStudioBucketEmpty(bucket?: StudioBucketPoint | null): boolean {
   if (!bucket) return true
   return !studioMetricsHaveActivity(bucket.metrics, bucket.health)
+}
+
+/**
+ * Frontend-only active-user estimate using request volume as an upper-bound
+ * proxy. Admin responses expose request_count; user responses retain RPM
+ * unless fleet throughput privacy is enabled.
+ */
+export function estimateStudioBucketUsers(
+  bucket: StudioBucketPoint | null | undefined,
+  bucketSeconds: number,
+): number | null {
+  if (!bucket || isStudioBucketEmpty(bucket)) return 0
+
+  const requestCount = Number(bucket.metrics?.request_count)
+  if (Number.isFinite(requestCount) && requestCount > 0) {
+    return Math.max(1, Math.round(requestCount))
+  }
+
+  const rpm = Number(bucket.metrics?.rpm)
+  if (Number.isFinite(rpm) && rpm > 0) {
+    const bucketMinutes = Math.max(1, Number(bucketSeconds) / 60)
+    return Math.max(1, Math.round(rpm * bucketMinutes))
+  }
+
+  return null
 }
 
 /** K-line Y value: health score (0–100). Empty slots stay null. */
@@ -162,4 +188,29 @@ export function alignBuckets(starts: string[], buckets: StudioBucketPoint[] | un
     if (index != null) slots[index] = { start: starts[index], bucket: bucket as MonitorMatrixBucket }
   }
   return slots
+}
+
+/** Initial low-traffic state. A 50/50 split starts unlocked. */
+export function isStudioTrafficSampleInsufficient(slots: StudioAlignedSlot[]): boolean {
+  return resolveStudioTrafficSampleInsufficient(slots, false)
+}
+
+/**
+ * Empty-majority locks immediately. Traffic-majority unlocks only when the
+ * newest five slots all carry traffic; an exact split keeps the prior state.
+ */
+export function resolveStudioTrafficSampleInsufficient(
+  slots: StudioAlignedSlot[],
+  wasInsufficient: boolean,
+): boolean {
+  if (!slots.length) return wasInsufficient
+  const emptyCount = slots.filter((slot) => isStudioBucketEmpty(slot.bucket)).length
+  const liveCount = slots.length - emptyCount
+  if (emptyCount > slots.length / 2) return true
+  if (liveCount <= slots.length / 2) return wasInsufficient
+  if (slots.length < STUDIO_TRAFFIC_RECOVERY_SLOTS) return true
+  const recentAllLive = slots
+    .slice(-STUDIO_TRAFFIC_RECOVERY_SLOTS)
+    .every((slot) => !isStudioBucketEmpty(slot.bucket))
+  return !recentAllLive
 }

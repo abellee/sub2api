@@ -80,7 +80,13 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { MonitorCoverage } from '@/api/channelMonitorV2'
 import { healthModeScore } from '@/features/channel-monitor-v2/monitorFormat'
 import { STUDIO_FACE_POP_MS, studioPopIncomingKeys } from './studioDemo'
-import { alignBuckets, coverageBucketStarts, isStudioBucketEmpty, type StudioBucketPoint } from './studioBuckets'
+import {
+  alignBuckets,
+  coverageBucketStarts,
+  estimateStudioBucketUsers,
+  isStudioBucketEmpty,
+  type StudioBucketPoint,
+} from './studioBuckets'
 import { overallToneFromRow, statusFace, studioFacePalette, type StudioThresholds } from './studioFormat'
 import { bucketTooltipLines, emptyTooltipLines, formatSlotTime } from './studioTooltip'
 import { useStudioHoverTooltip } from './useStudioHoverTooltip'
@@ -136,18 +142,21 @@ function toneLabel(tone: ReturnType<typeof statusFace>['tone']) {
 const faces = computed(() =>
   slots.value.map((slot) => {
     const empty = isStudioBucketEmpty(slot.bucket)
+    const estimatedUsers = estimateStudioBucketUsers(slot.bucket, bucketSeconds.value)
     const score = empty ? null : healthModeScore(slot.bucket!.health, 'overall')
-    const tone = empty
+    const healthTone = empty
       ? 'unknown'
       : overallToneFromRow(slot.bucket!.metrics, slot.bucket!.health, props.thresholds)
+    const tone = estimatedUsers != null && estimatedUsers <= 10 ? 'healthy' : healthTone
     const face = statusFace(score, tone)
+    const palette = studioFacePalette(face.tone, score)
     const time = formatSlotTime(slot.start, locale.value)
     return {
       key: slot.start,
       time,
       tone: face.tone,
       score,
-      color: studioFacePalette(face.tone, score).skin,
+      color: palette.skin,
       toneClass: toneClass(face.tone),
       empty,
       bucket: empty ? undefined : slot.bucket,
@@ -321,13 +330,13 @@ onBeforeUnmount(() => {
   transition: transform 0.16s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.16s ease;
 }
 .studio-face--empty {
-  background: #d0d5dd;
+  background: var(--studio-cell, #6ee7b7);
 }
 .studio-face--empty .studio-face-cell {
-  background: #d0d5dd;
+  background: var(--studio-cell, #6ee7b7);
 }
 .dark .studio-face--empty {
-  opacity: 0.45;
+  opacity: 1;
   background: var(--studio-cell, #e5e7eb);
 }
 .dark .studio-face--empty .studio-face-cell {
