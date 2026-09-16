@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strconv"
 	"testing"
@@ -96,5 +97,35 @@ func TestHealth(t *testing.T) {
 	}
 	if payload["status"] != "ok" {
 		t.Fatalf("%+v", payload)
+	}
+}
+
+func TestProviderPricing(t *testing.T) {
+	pricingPath := filepath.Join(t.TempDir(), "prices.json")
+	body := `{"gpt-test":{"input_cost_per_token":0.000002,"mode":"chat"},"image-test":{"input_cost_per_token":0.000001,"mode":"image_generation"},"free-test":{"mode":"chat"}}`
+	if err := os.WriteFile(pricingPath, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	store, err := OpenStore(filepath.Join(t.TempDir(), "apps.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	srv := &Server{Store: store, ProviderPricing: NewProviderPricingService(pricingPath, 0.08), StartedAt: time.Now()}
+	req := httptest.NewRequest(http.MethodGet, "/api/provider/pricing", nil)
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var payload providerPricingResponse
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.SchemaVersion != "1.1" || !payload.Success || payload.Data.Currency != "CNY" || payload.Data.PriceUnit != "per_1m_tokens" {
+		t.Fatalf("unexpected envelope: %+v", payload)
+	}
+	if len(payload.Data.Models) != 1 || payload.Data.Models[0].ModelName != "gpt-test" || payload.Data.Models[0].GroupName != "福利" || payload.Data.Models[0].InputPrice != 0.16 {
+		t.Fatalf("unexpected models: %+v", payload.Data.Models)
 	}
 }

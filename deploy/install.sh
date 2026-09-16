@@ -660,9 +660,24 @@ download_and_extract() {
     cp "$TEMP_DIR/sub2api" "$INSTALL_DIR/sub2api"
     chmod +x "$INSTALL_DIR/sub2api"
 
+    # Copy the app catalog sidecar when the release archive includes it.
+    if [ -f "$TEMP_DIR/appcatalogd" ]; then
+        cp "$TEMP_DIR/appcatalogd" "$INSTALL_DIR/appcatalogd"
+        chmod +x "$INSTALL_DIR/appcatalogd"
+    fi
+
     # Copy deploy files if they exist in the archive
     if [ -d "$TEMP_DIR/deploy" ]; then
         cp -r "$TEMP_DIR/deploy/"* "$INSTALL_DIR/" 2>/dev/null || true
+    fi
+
+    # Copy bundled pricing resources used by appcatalogd.
+    if [ -d "$TEMP_DIR/resources" ]; then
+        mkdir -p "$INSTALL_DIR/resources"
+        cp -r "$TEMP_DIR/resources/." "$INSTALL_DIR/resources/"
+    elif [ -d "$TEMP_DIR/backend/resources" ]; then
+        mkdir -p "$INSTALL_DIR/resources"
+        cp -r "$TEMP_DIR/backend/resources/." "$INSTALL_DIR/resources/"
     fi
 
     print_success "$(msg 'binary_installed') $INSTALL_DIR/sub2api"
@@ -702,10 +717,12 @@ setup_directories() {
     mkdir -p "$INSTALL_DIR"
     mkdir -p "$INSTALL_DIR/data"
     mkdir -p "$CONFIG_DIR"
+    mkdir -p /var/lib/sub2api/appcatalog
 
     # Set ownership
     chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR"
     chown -R "$SERVICE_USER:$SERVICE_USER" "$CONFIG_DIR"
+    chown -R "$SERVICE_USER:$SERVICE_USER" /var/lib/sub2api/appcatalog
 
     print_success "$(msg 'dirs_configured')"
 }
@@ -720,7 +737,7 @@ install_service() {
 Description=Sub2API - AI API Gateway Platform
 Documentation=https://github.com/Wei-Shaw/sub2api
 After=network.target postgresql.service redis.service
-Wants=postgresql.service redis.service
+Wants=postgresql.service redis.service sub2api-appcatalogd.service
 
 [Service]
 Type=simple
@@ -753,7 +770,36 @@ EOF
     # Reload systemd
     systemctl daemon-reload
 
+    install_appcatalogd_service
+
     print_success "$(msg 'service_installed')"
+}
+
+# Install the optional app catalog sidecar as a sibling systemd unit.
+install_appcatalogd_service() {
+    if [ ! -f "$INSTALL_DIR/appcatalogd" ]; then
+        return 0
+    fi
+
+    mkdir -p /var/lib/sub2api/appcatalog
+    chown -R "$SERVICE_USER:$SERVICE_USER" /var/lib/sub2api/appcatalog
+    if [ -f "$INSTALL_DIR/resources" ] || [ -d "$INSTALL_DIR/resources" ]; then
+        chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR/resources"
+    fi
+
+    local unit_src=""
+    if [ -f "$INSTALL_DIR/sub2api-appcatalogd.service" ]; then
+        unit_src="$INSTALL_DIR/sub2api-appcatalogd.service"
+    elif [ -f "$TEMP_DIR/deploy/sub2api-appcatalogd.service" ]; then
+        unit_src="$TEMP_DIR/deploy/sub2api-appcatalogd.service"
+    fi
+    if [ -z "$unit_src" ]; then
+        print_warning "appcatalogd binary is present but the systemd unit was not found"
+        return 0
+    fi
+
+    cp "$unit_src" /etc/systemd/system/sub2api-appcatalogd.service
+    systemctl daemon-reload
 }
 
 # Prepare for setup wizard (no config file needed - setup wizard will create it)
@@ -788,6 +834,8 @@ get_public_ip() {
 start_service() {
     print_info "$(msg 'starting_service')"
 
+    start_appcatalogd_service || true
+
     if systemctl start sub2api; then
         print_success "$(msg 'service_started')"
         return 0
@@ -798,11 +846,25 @@ start_service() {
     fi
 }
 
+start_appcatalogd_service() {
+    if [ ! -f /etc/systemd/system/sub2api-appcatalogd.service ]; then
+        return 0
+    fi
+    if systemctl start sub2api-appcatalogd; then
+        return 0
+    fi
+    print_warning "appcatalogd failed to start; check: sudo journalctl -u sub2api-appcatalogd -n 50"
+    return 1
+}
+
 # Enable service auto-start
 enable_autostart() {
     print_info "$(msg 'enabling_autostart')"
 
     if systemctl enable sub2api 2>/dev/null; then
+        if [ -f /etc/systemd/system/sub2api-appcatalogd.service ]; then
+            systemctl enable sub2api-appcatalogd 2>/dev/null || true
+        fi
         print_success "$(msg 'autostart_enabled')"
         return 0
     else
@@ -847,6 +909,7 @@ print_completion() {
     echo "  $(msg 'cmd_logs'):     sudo journalctl -u sub2api -f"
     echo "  $(msg 'cmd_restart'):  sudo systemctl restart sub2api"
     echo "  $(msg 'cmd_stop'):     sudo systemctl stop sub2api"
+    echo "  appcatalogd:          sudo systemctl status sub2api-appcatalogd"
     echo ""
     echo "=============================================="
 }
@@ -871,10 +934,16 @@ upgrade() {
         print_info "$(msg 'stopping_service')"
         systemctl stop sub2api
     fi
+    if systemctl is-active --quiet sub2api-appcatalogd; then
+        systemctl stop sub2api-appcatalogd
+    fi
 
     # Backup current binary
     cp "$INSTALL_DIR/sub2api" "$INSTALL_DIR/sub2api.backup"
     print_info "$(msg 'backup_created'): $INSTALL_DIR/sub2api.backup"
+    if [ -f "$INSTALL_DIR/appcatalogd" ]; then
+        cp "$INSTALL_DIR/appcatalogd" "$INSTALL_DIR/appcatalogd.backup"
+    fi
 
     # Download and install new version
     get_latest_version
@@ -882,9 +951,14 @@ upgrade() {
 
     # Set permissions
     chown "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR/sub2api"
+    if [ -f "$INSTALL_DIR/appcatalogd" ]; then
+        chown "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR/appcatalogd"
+    fi
+    install_appcatalogd_service
 
     # Start service
     print_info "$(msg 'starting_service')"
+    start_appcatalogd_service || true
     systemctl start sub2api
 
     print_success "$(msg 'upgrade_complete')"
@@ -923,6 +997,9 @@ install_version() {
         print_info "$(msg 'stopping_service')"
         systemctl stop sub2api
     fi
+    if systemctl is-active --quiet sub2api-appcatalogd; then
+        systemctl stop sub2api-appcatalogd
+    fi
 
     # Backup current binary (for potential recovery)
     if [ -f "$INSTALL_DIR/sub2api" ]; then
@@ -934,6 +1011,9 @@ install_version() {
         fi
         cp "$INSTALL_DIR/sub2api" "$INSTALL_DIR/$backup_name"
         print_info "$(msg 'backup_created'): $INSTALL_DIR/$backup_name"
+        if [ -f "$INSTALL_DIR/appcatalogd" ]; then
+            cp "$INSTALL_DIR/appcatalogd" "$INSTALL_DIR/appcatalogd.backup.${backup_name#sub2api.backup.}"
+        fi
     fi
 
     # Set LATEST_VERSION to the target version for download_and_extract
@@ -944,9 +1024,14 @@ install_version() {
 
     # Set permissions
     chown "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR/sub2api"
+    if [ -f "$INSTALL_DIR/appcatalogd" ]; then
+        chown "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR/appcatalogd"
+    fi
+    install_appcatalogd_service
 
     # Start service
     print_info "$(msg 'starting_service')"
+    start_appcatalogd_service || true
     if systemctl start sub2api; then
         print_success "$(msg 'service_started')"
     else
@@ -988,9 +1073,12 @@ uninstall() {
     print_info "$(msg 'stopping_service')"
     systemctl stop sub2api 2>/dev/null || true
     systemctl disable sub2api 2>/dev/null || true
+    systemctl stop sub2api-appcatalogd 2>/dev/null || true
+    systemctl disable sub2api-appcatalogd 2>/dev/null || true
 
     print_info "$(msg 'removing_files')"
     rm -f /etc/systemd/system/sub2api.service
+    rm -f /etc/systemd/system/sub2api-appcatalogd.service
     systemctl daemon-reload
 
     print_info "$(msg 'removing_install_dir')"
@@ -1020,6 +1108,7 @@ uninstall() {
     if [ "$remove_config" = true ]; then
         print_info "$(msg 'removing_config_dir')"
         rm -rf "$CONFIG_DIR"
+        rm -rf /var/lib/sub2api/appcatalog
     else
         print_warning "$(msg 'config_not_removed'): $CONFIG_DIR"
         print_warning "$(msg 'remove_manually')"

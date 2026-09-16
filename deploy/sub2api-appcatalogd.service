@@ -2,6 +2,7 @@
 Description=Sub2API App Catalog Daemon
 After=network.target
 Wants=network.target
+Before=sub2api.service
 
 [Service]
 Type=simple
@@ -10,12 +11,14 @@ Group=sub2api
 WorkingDirectory=/opt/sub2api
 ExecStart=/opt/sub2api/appcatalogd \
   -listen 127.0.0.1:18099 \
-  -sqlite-path /var/lib/sub2api/appcatalog/appcatalog.db
+  -sqlite-path /var/lib/sub2api/appcatalog/appcatalog.db \
+  -pricing-path /opt/sub2api/resources/model-pricing/model_prices_and_context_window.json
 Restart=always
 RestartSec=5s
 LimitNOFILE=65535
 NoNewPrivileges=true
 PrivateTmp=true
+StateDirectory=sub2api/appcatalog
 
 [Install]
 WantedBy=multi-user.target

@@ -30,6 +30,27 @@ builds:
       - -X main.Commit={{.Commit}}
       - -X main.Date={{.Date}}
       - -X main.BuildType=release
+  - id: appcatalogd
+    dir: backend
+    main: ./cmd/appcatalogd
+    binary: appcatalogd
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X main.Version={{.Version}}
+      - -X main.Commit={{.Commit}}
+      - -X main.Date={{.Date}}
 
 archives:
   - id: default
@@ -43,6 +64,9 @@ archives:
       - LICENSE*
       - README*
       - deploy/*
+      - src: backend/resources
+        dst: resources
+        strip_parent: true
 
 checksum:
   name_template: 'checksums.txt'
@@ -63,6 +87,9 @@ dockers:
       - "{{ .Env.DOCKERHUB_USERNAME }}/sub2api:{{ .Version }}-amd64"
     dockerfile: Dockerfile.goreleaser
     use: buildx
+    ids:
+      - sub2api
+      - appcatalogd
     extra_files:
       - deploy/docker-entrypoint.sh
       - backend/resources
@@ -79,6 +106,9 @@ dockers:
       - "{{ .Env.DOCKERHUB_USERNAME }}/sub2api:{{ .Version }}-arm64"
     dockerfile: Dockerfile.goreleaser
     use: buildx
+    ids:
+      - sub2api
+      - appcatalogd
     extra_files:
       - deploy/docker-entrypoint.sh
       - backend/resources
@@ -95,6 +125,9 @@ dockers:
       - "ghcr.io/{{ .Env.GITHUB_REPO_OWNER_LOWER }}/sub2api:{{ .Version }}-amd64"
     dockerfile: Dockerfile.goreleaser
     use: buildx
+    ids:
+      - sub2api
+      - appcatalogd
     extra_files:
       - deploy/docker-entrypoint.sh
       - backend/resources
@@ -111,6 +144,9 @@ dockers:
       - "ghcr.io/{{ .Env.GITHUB_REPO_OWNER_LOWER }}/sub2api:{{ .Version }}-arm64"
     dockerfile: Dockerfile.goreleaser
     use: buildx
+    ids:
+      - sub2api
+      - appcatalogd
     extra_files:
       - deploy/docker-entrypoint.sh
       - backend/resources
