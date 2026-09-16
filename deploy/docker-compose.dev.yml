@@ -52,7 +52,8 @@ services:
       - HTTP_PROXY=${SUB2API_DEV_HTTP_PROXY:-http://host.docker.internal:7897}
       - HTTPS_PROXY=${SUB2API_DEV_HTTPS_PROXY:-http://host.docker.internal:7897}
       - ALL_PROXY=${SUB2API_DEV_ALL_PROXY:-socks5://host.docker.internal:7897}
-      - NO_PROXY=${SUB2API_DEV_NO_PROXY:-127.0.0.1,localhost,::1,postgres,redis,sub2api,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12,.local}
+      - NO_PROXY=${SUB2API_DEV_NO_PROXY:-127.0.0.1,localhost,::1,postgres,redis,sub2api,appcatalogd,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12,.local}
+      - APP_CATALOG_BASE_URL=${APP_CATALOG_BASE_URL:-http://appcatalogd:18099}
       # Gateway values come from Compose .env or the shell.
       # Fallbacks mirror Sub2API backend defaults so omitted values preserve behavior.
       - GATEWAY_FORCE_CODEX_CLI=${GATEWAY_FORCE_CODEX_CLI:-false}
@@ -117,6 +118,37 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+
+  appcatalogd:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      args:
+        NPM_CONFIG_REGISTRY: ${NPM_CONFIG_REGISTRY:-https://registry.npmmirror.com}
+    container_name: sub2api-appcatalogd-dev
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    command:
+      - /app/appcatalogd
+      - -listen
+      - 0.0.0.0:18099
+      - -sqlite-path
+      - /app/data/appcatalog/appcatalog.db
+      - -pricing-path
+      - /app/resources/model-pricing/model_prices_and_context_window.json
+    volumes:
+      - ./data:/app/data:Z
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+    networks:
+      - sub2api-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://127.0.0.1:18099/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
   postgres:
     image: postgres:18-alpine

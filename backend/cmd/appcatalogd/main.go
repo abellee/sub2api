@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -18,7 +19,15 @@ var Version = "dev"
 func main() {
 	listen := flag.String("listen", appcatalog.DefaultListen, "HTTP listen address")
 	sqlitePath := flag.String("sqlite-path", "data/appcatalog.db", "SQLite database path")
+	pricingPath := flag.String("pricing-path", appcatalog.DefaultProviderPricingPath, "LiteLLM model pricing JSON path")
+	pricingMultiplier := flag.Float64("pricing-multiplier", appcatalog.DefaultProviderPricingMultiplier, "Welfare pricing multiplier")
+	showVersion := flag.Bool("version", false, "Show version information")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Printf("appcatalogd %s\n", Version)
+		return
+	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	store, err := appcatalog.OpenStore(*sqlitePath)
@@ -29,10 +38,11 @@ func main() {
 	defer func() { _ = store.Close() }()
 
 	srv := &appcatalog.Server{
-		Store:     store,
-		Fetcher:   appcatalog.NewFetcher(),
-		StartedAt: time.Now().UTC(),
-		Version:   Version,
+		Store:           store,
+		Fetcher:         appcatalog.NewFetcher(),
+		ProviderPricing: appcatalog.NewProviderPricingService(*pricingPath, *pricingMultiplier),
+		StartedAt:       time.Now().UTC(),
+		Version:         Version,
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

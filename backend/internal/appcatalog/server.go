@@ -10,15 +10,17 @@ import (
 )
 
 type Server struct {
-	Store     *Store
-	Fetcher   *Fetcher
-	StartedAt time.Time
-	Version   string
+	Store           *Store
+	Fetcher         *Fetcher
+	ProviderPricing *ProviderPricingService
+	StartedAt       time.Time
+	Version         string
 }
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", s.handleHealth)
+	mux.HandleFunc("GET /api/provider/pricing", s.handleProviderPricing)
 	mux.HandleFunc("GET /v1/apps", s.handleListApps)
 	mux.HandleFunc("POST /v1/apps", s.handleCreateApp)
 	mux.HandleFunc("POST /v1/fetch", s.handleFetchPreview)
@@ -26,6 +28,16 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /v1/apps/{id}", s.handleUpdateApp)
 	mux.HandleFunc("DELETE /v1/apps/{id}", s.handleDeleteApp)
 	return mux
+}
+
+func (s *Server) handleProviderPricing(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Cache-Control", "no-store")
+	if s.ProviderPricing == nil {
+		writeJSON(w, http.StatusOK, NewProviderPricingService("", DefaultProviderPricingMultiplier).Snapshot())
+		return
+	}
+	writeJSON(w, http.StatusOK, s.ProviderPricing.Snapshot())
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {

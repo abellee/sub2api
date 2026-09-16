@@ -26,6 +26,7 @@ This directory contains files for deploying Sub2API on Linux servers and Apple-s
 | `sub2api.service` | Systemd service unit file |
 | `sub2api-datamanagementd.service` | datamanagementd systemd service unit file |
 | `sub2api-appcatalogd.service` | appcatalogd systemd service unit file (SQLite app catalog) |
+| `APPCATALOGD_CN.md` | appcatalogd 部署说明（与主服务同一套 install / upgrade / docker 流程） |
 | `DATAMANAGEMENTD_CN.md` | datamanagementd 部署与联动说明（中文） |
 | `config.example.yaml` | Example configuration file |
 | `EDGE_SECURITY.md` | Reverse proxy, CDN/WAF, trusted proxy, and ingress hardening guide |
@@ -192,6 +193,16 @@ SELECT
   (SELECT COUNT(*) FROM old_pairs)           AS old_pair_count,
   (SELECT COUNT(*) FROM user_allowed_groups) AS new_pair_count;
 ```
+
+### appcatalogd（应用中心）
+
+`appcatalogd` 随 Sub2API 一起发布和安装，不再需要单独编二进制。
+
+- GitHub Release 压缩包包含 `sub2api` 和 `appcatalogd`
+- `install.sh` 安装/升级/卸载时同步处理 `sub2api-appcatalogd.service`
+- Docker Compose 默认启动 `appcatalogd` 容器，主服务通过 `APP_CATALOG_BASE_URL=http://appcatalogd:18099` 访问
+
+详细步骤见：`deploy/APPCATALOGD_CN.md`
 
 ### datamanagementd（数据管理）联动
 
@@ -521,8 +532,13 @@ The main config file is at `/etc/sub2api/config.yaml` (created by Setup Wizard).
 ```
 /opt/sub2api/
 ├── sub2api              # Main binary
+├── appcatalogd          # App catalog sidecar
 ├── sub2api.backup       # Backup (after upgrade)
+├── resources/           # Bundled model pricing files
 └── data/                # Runtime data
+
+/var/lib/sub2api/appcatalog/
+└── appcatalog.db        # App catalog SQLite
 
 /etc/sub2api/
 └── config.yaml          # Configuration file

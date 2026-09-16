@@ -42,6 +42,7 @@ services:
       - ENABLE_SERVER_TIMING=${ENABLE_SERVER_TIMING:-false}
       - RUN_MODE=${RUN_MODE:-standard}
       - UPDATE_GITHUB_TOKEN=${UPDATE_GITHUB_TOKEN:-}
+      - APP_CATALOG_BASE_URL=${APP_CATALOG_BASE_URL:-http://appcatalogd:18099}
 
       # =======================================================================
       # Database Configuration (PostgreSQL) - Required
@@ -156,6 +157,31 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+
+  appcatalogd:
+    image: weishaw/sub2api:latest
+    container_name: sub2api-appcatalogd
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    command:
+      - /app/appcatalogd
+      - -listen
+      - 0.0.0.0:18099
+      - -sqlite-path
+      - /app/data/appcatalog/appcatalog.db
+      - -pricing-path
+      - /app/resources/model-pricing/model_prices_and_context_window.json
+    volumes:
+      - sub2api_data:/app/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://127.0.0.1:18099/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
 volumes:
   sub2api_data:
