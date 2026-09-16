@@ -102,7 +102,7 @@ func TestHealth(t *testing.T) {
 
 func TestProviderPricing(t *testing.T) {
 	pricingPath := filepath.Join(t.TempDir(), "prices.json")
-	body := `{"gpt-test":{"input_cost_per_token":0.000002,"mode":"chat"},"image-test":{"input_cost_per_token":0.000001,"mode":"image_generation"},"free-test":{"mode":"chat"}}`
+	body := `{"gpt-5.6-sol":{"input_cost_per_token":0.000002,"output_cost_per_token":0.000003,"cache_read_input_token_cost":0.0000005,"cache_creation_input_token_cost":0.000004,"cache_creation_input_token_cost_above_1hr":0.000005,"mode":"chat"},"gpt-test":{"input_cost_per_token":0.000002,"mode":"chat"},"grok-imagine-image":{"input_cost_per_token":0.000001,"mode":"image_generation"}}`
 	if err := os.WriteFile(pricingPath, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +125,33 @@ func TestProviderPricing(t *testing.T) {
 	if payload.SchemaVersion != "1.1" || !payload.Success || payload.Data.Currency != "CNY" || payload.Data.PriceUnit != "per_1m_tokens" {
 		t.Fatalf("unexpected envelope: %+v", payload)
 	}
-	if len(payload.Data.Models) != 1 || payload.Data.Models[0].ModelName != "gpt-test" || payload.Data.Models[0].GroupName != "福利" || payload.Data.Models[0].InputPrice != 0.16 {
+	if len(payload.Data.Models) != len(providerPricingFallbackCosts) {
 		t.Fatalf("unexpected models: %+v", payload.Data.Models)
 	}
+	models := make(map[string]providerPricingModel, len(payload.Data.Models))
+	for _, model := range payload.Data.Models {
+		models[model.ModelName] = model
+	}
+	if _, ok := models["gpt-test"]; ok {
+		t.Fatalf("unexpected non-curated model: %+v", models["gpt-test"])
+	}
+	if _, ok := models["grok-imagine-image"]; ok {
+		t.Fatalf("unexpected media model: %+v", models["grok-imagine-image"])
+	}
+	if model := models["gpt-5.6-sol"]; model.GroupName != "福利" || !model.Enabled || model.InputPrice != 0.16 || model.OutputPrice != 0.24 || priceValue(model.CacheInputPrice) != 0.04 || priceValue(model.CacheCreatePrice) != 0.32 || priceValue(model.CacheCreatePrice1Hr) != 0.4 {
+		t.Fatalf("unexpected source override: %+v", model)
+	}
+	if model := models["gpt-6-astra"]; model.GroupName != "福利" || model.InputPrice != 0.8 || model.OutputPrice != 4 || priceValue(model.CacheInputPrice) != 0.08 || priceValue(model.CacheCreatePrice) != 1 || model.CacheCreatePrice1Hr != nil {
+		t.Fatalf("unexpected built-in price: %+v", model)
+	}
+	if model := models["grok-4.6"]; model.GroupName != "福利" || model.InputPrice != 0.18 || model.OutputPrice != 0.54 || priceValue(model.CacheInputPrice) != 0.045 || model.CacheCreatePrice != nil || model.CacheCreatePrice1Hr != nil {
+		t.Fatalf("unexpected Grok price: %+v", model)
+	}
+}
+
+func priceValue(value *float64) float64 {
+	if value == nil {
+		return -1
+	}
+	return *value
 }
