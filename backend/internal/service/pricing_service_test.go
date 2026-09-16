@@ -615,6 +615,7 @@ func TestPricingService_GeminiFlashAliasesUseStaticFallbackWithStaleCache(t *tes
 		"gemini-3.5-flash-extra-low": {1.5e-6, 9e-6, 0.15e-6},
 		"gemini-3.5-flash-low":       {1.5e-6, 9e-6, 0.15e-6},
 		"gemini-3.7-flash-high":      {0.75e-6, 3.75e-6, 0.075e-6},
+		"gemini-3.8-flash-high":      {0.75e-6, 3.75e-6, 0.075e-6},
 	} {
 		t.Run(model, func(t *testing.T) {
 			pricing := svc.GetModelPricing(model)
@@ -622,6 +623,29 @@ func TestPricingService_GeminiFlashAliasesUseStaticFallbackWithStaleCache(t *tes
 			require.InDelta(t, expected[0], pricing.InputCostPerToken, 1e-12)
 			require.InDelta(t, expected[1], pricing.OutputCostPerToken, 1e-12)
 			require.InDelta(t, expected[2], pricing.CacheReadInputTokenCost, 1e-12)
+		})
+	}
+}
+
+func TestPricingService_Gemini37FlashThinkingTiersUseBasePricing(t *testing.T) {
+	basePricing := &LiteLLMModelPricing{
+		InputCostPerToken:       0.75e-6,
+		OutputCostPerToken:      3.75e-6,
+		CacheReadInputTokenCost: 0.075e-6,
+	}
+	svc := &PricingService{pricingData: map[string]*LiteLLMModelPricing{
+		"gemini-3.7-flash": basePricing,
+	}}
+
+	for _, model := range []string{
+		"gemini-3.7-flash",
+		"gemini-3.7-flash-high",
+		"gemini-3.7-flash-low",
+		"gemini-3.7-flash-medium",
+		"gemini-3.7-flash-tiered",
+	} {
+		t.Run(model, func(t *testing.T) {
+			require.Same(t, basePricing, svc.GetModelPricing(model))
 		})
 	}
 }
@@ -638,7 +662,16 @@ func TestBillingService_GeminiFlashThinkingTierFallbacksAreBillable(t *testing.T
 		"gemini-3.6-flash-low":       {1.5, 7.5, 0.15, 9.15},
 		"gemini-3.6-flash-medium":    {1.5, 7.5, 0.15, 9.15},
 		"gemini-3.6-flash-tiered":    {1.5, 7.5, 0.15, 9.15},
+		"gemini-3.7-flash":           {0.75, 3.75, 0.075, 4.575},
 		"gemini-3.7-flash-high":      {0.75, 3.75, 0.075, 4.575},
+		"gemini-3.7-flash-low":       {0.75, 3.75, 0.075, 4.575},
+		"gemini-3.7-flash-medium":    {0.75, 3.75, 0.075, 4.575},
+		"gemini-3.7-flash-tiered":    {0.75, 3.75, 0.075, 4.575},
+		"gemini-3.8-flash":           {0.75, 3.75, 0.075, 4.575},
+		"gemini-3.8-flash-high":      {0.75, 3.75, 0.075, 4.575},
+		"gemini-3.8-flash-low":       {0.75, 3.75, 0.075, 4.575},
+		"gemini-3.8-flash-medium":    {0.75, 3.75, 0.075, 4.575},
+		"gemini-3.8-flash-tiered":    {0.75, 3.75, 0.075, 4.575},
 	} {
 		t.Run(model, func(t *testing.T) {
 			cost, err := svc.CalculateCost(model, tokens, 1)
@@ -647,6 +680,29 @@ func TestBillingService_GeminiFlashThinkingTierFallbacksAreBillable(t *testing.T
 			require.InDelta(t, expected[1], cost.OutputCost, 1e-12)
 			require.InDelta(t, expected[2], cost.CacheReadCost, 1e-12)
 			require.InDelta(t, expected[3], cost.TotalCost, 1e-12)
+		})
+	}
+}
+
+func TestPricingService_Gemini38FlashThinkingTiersUseBasePricing(t *testing.T) {
+	basePricing := &LiteLLMModelPricing{
+		InputCostPerToken:       0.75e-6,
+		OutputCostPerToken:      3.75e-6,
+		CacheReadInputTokenCost: 0.075e-6,
+	}
+	svc := &PricingService{pricingData: map[string]*LiteLLMModelPricing{
+		"gemini-3.8-flash": basePricing,
+	}}
+
+	for _, model := range []string{
+		"gemini-3.8-flash",
+		"gemini-3.8-flash-high",
+		"gemini-3.8-flash-low",
+		"gemini-3.8-flash-medium",
+		"gemini-3.8-flash-tiered",
+	} {
+		t.Run(model, func(t *testing.T) {
+			require.Same(t, basePricing, svc.GetModelPricing(model))
 		})
 	}
 }
@@ -670,6 +726,8 @@ func TestDefaultPricingIncludesCurrentGeminiFlashRates(t *testing.T) {
 		"gemini-3.6-flash-high":      {1.5e-6, 7.5e-6, 0.15e-6},
 		"gemini-3.7-flash":           {0.75e-6, 3.75e-6, 0.075e-6},
 		"gemini-3.7-flash-high":      {0.75e-6, 3.75e-6, 0.075e-6},
+		"gemini-3.8-flash":           {0.75e-6, 3.75e-6, 0.075e-6},
+		"gemini-3.8-flash-high":      {0.75e-6, 3.75e-6, 0.075e-6},
 	} {
 		t.Run(model, func(t *testing.T) {
 			pricing, err := billingSvc.GetModelPricing(model)
