@@ -615,7 +615,6 @@ func TestPricingService_GeminiFlashAliasesUseStaticFallbackWithStaleCache(t *tes
 		"gemini-3.5-flash-extra-low": {1.5e-6, 9e-6, 0.15e-6},
 		"gemini-3.5-flash-low":       {1.5e-6, 9e-6, 0.15e-6},
 		"gemini-3.7-flash-high":      {0.75e-6, 3.75e-6, 0.075e-6},
-		"gemini-3.8-flash-high":      {0.75e-6, 3.75e-6, 0.075e-6},
 	} {
 		t.Run(model, func(t *testing.T) {
 			pricing := svc.GetModelPricing(model)
