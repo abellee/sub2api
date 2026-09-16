@@ -13,6 +13,8 @@ const {
   getDashboardApiKeysUsage,
   getAvailableGroups,
   getUserGroupRates,
+  getGroupRecommendations,
+  getGroupCategories,
   showError,
   showSuccess,
   copyToClipboard,
@@ -25,6 +27,8 @@ const {
   getDashboardApiKeysUsage: vi.fn(),
   getAvailableGroups: vi.fn(),
   getUserGroupRates: vi.fn(),
+  getGroupRecommendations: vi.fn(),
+  getGroupCategories: vi.fn(),
   showError: vi.fn(),
   showSuccess: vi.fn(),
   copyToClipboard: vi.fn(),
@@ -75,6 +79,8 @@ vi.mock('@/api', () => ({
   userGroupsAPI: {
     getAvailable: getAvailableGroups,
     getUserGroupRates,
+    getRecommendations: getGroupRecommendations,
+    getCategories: getGroupCategories,
   },
 }))
 
@@ -279,6 +285,8 @@ describe('user KeysView column settings', () => {
     getDashboardApiKeysUsage.mockReset()
     getAvailableGroups.mockReset()
     getUserGroupRates.mockReset()
+    getGroupRecommendations.mockReset()
+    getGroupCategories.mockReset()
     showError.mockReset()
     showSuccess.mockReset()
     copyToClipboard.mockReset()
@@ -296,6 +304,8 @@ describe('user KeysView column settings', () => {
     getDashboardApiKeysUsage.mockResolvedValue({ stats: {} })
     getAvailableGroups.mockResolvedValue([])
     getUserGroupRates.mockResolvedValue({})
+    getGroupRecommendations.mockResolvedValue([])
+    getGroupCategories.mockResolvedValue({ categories: [], assignments: {} })
     isCurrentStep.mockReturnValue(false)
   })
 
