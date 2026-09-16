@@ -307,10 +307,12 @@ export type StudioActivitySource = {
   health?: MonitorHealth | null
   buckets?: Array<{ metrics?: MonitorMetric | null; health?: MonitorHealth | null }> | null
   state?: StudioTone | string | null
+  sampleInsufficient?: boolean
 }
 
 /** Higher = currently busier. 0 means not live in the current buckets. */
 export function studioGroupActivityScore(card: StudioActivitySource): number {
+  if (card.sampleInsufficient) return 0
   const buckets = card.buckets || []
   const recent = buckets.slice(-STUDIO_ACTIVE_RECENT_SLOTS)
   const recentLive = recent.filter((bucket) => studioMetricsHaveActivity(bucket.metrics, bucket.health))
@@ -336,6 +338,7 @@ const STUDIO_STATUS_RANK: Record<StudioTone, number> = {
 }
 
 export function studioActiveGroupState(card: StudioActivitySource): StudioTone {
+  if (card.sampleInsufficient) return 'unknown'
   const state = card.state
   if (state === 'healthy' || state === 'warning' || state === 'critical' || state === 'unknown') return state
   const overall = card.health?.overall
@@ -372,16 +375,21 @@ export function studioStatusSortRank(state?: StudioTone | string | null): number
   return 4
 }
 
-/** 健康 → 波动 → 异常 → 样本不足; same-status cards keep their original order. */
-export function sortStudioCardsByStatus<T extends { state?: StudioTone | string | null }>(cards: T[]): T[] {
+/** 健康 → 波动 → 异常 → 未知; same-status cards keep their original order. */
+export function sortStudioCardsByStatus<T extends { state?: StudioTone | string | null; sampleInsufficient?: boolean }>(cards: T[]): T[] {
   return cards
     .map((card, index) => ({ card, index }))
-    .sort((a, b) => studioStatusSortRank(a.card.state) - studioStatusSortRank(b.card.state) || a.index - b.index)
+    .sort(
+      (a, b) =>
+        studioStatusSortRank(studioActiveGroupState(a.card)) -
+          studioStatusSortRank(studioActiveGroupState(b.card)) ||
+        a.index - b.index,
+    )
     .map((item) => item.card)
 }
 
 /** Cluster group cards by model brand. Brand sections follow STUDIO_BRAND_ORDER. */
-export function groupStudioCardsByBrand<T extends { platform?: string | null; brandLabel?: string; state?: StudioTone | string | null }>(
+export function groupStudioCardsByBrand<T extends { platform?: string | null; brandLabel?: string; state?: StudioTone | string | null; sampleInsufficient?: boolean }>(
   cards: T[],
 ): StudioBrandSection<T>[] {
   const sections: StudioBrandSection<T>[] = []
@@ -702,13 +710,8 @@ export function mergeSelectedStudioGroups(
   items: MonitorMatrixRow[] | null | undefined,
   selectedIds: Array<number | string> | null | undefined,
   catalog: Iterable<StudioGroupRateCatalog> | StudioGroupRateCatalog[] | null | undefined,
+  catalogLoaded = false,
 ): MonitorMatrixRow[] {
-  const rows = (items || []).filter((row) => Number.isFinite(studioGroupId(row)) && studioGroupId(row) > 0)
-  const selected = [...new Set((selectedIds || []).map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0))]
-  if (!selected.length) {
-    return [...rows].sort((a, b) => (b.metrics?.rpm || 0) - (a.metrics?.rpm || 0))
-  }
-
   const catalogById = new Map<number, StudioGroupRateCatalog>()
   const list = Array.isArray(catalog)
     ? catalog
@@ -718,6 +721,22 @@ export function mergeSelectedStudioGroups(
   for (const group of list) {
     const id = Number(group?.id)
     if (Number.isFinite(id) && id > 0 && !catalogById.has(id)) catalogById.set(id, group)
+  }
+
+  const exists = (id: number) => !catalogLoaded || catalogById.has(id)
+  const rows = (items || []).filter((row) => {
+    const id = studioGroupId(row)
+    return Number.isFinite(id) && id > 0 && exists(id)
+  })
+  const selected = [
+    ...new Set(
+      (selectedIds || [])
+        .map((id) => Number(id))
+        .filter((id) => Number.isFinite(id) && id > 0 && exists(id)),
+    ),
+  ]
+  if (!selected.length) {
+    return [...rows].sort((a, b) => (b.metrics?.rpm || 0) - (a.metrics?.rpm || 0))
   }
 
   const rowsByGroupId = new Map<number, MonitorMatrixRow[]>()

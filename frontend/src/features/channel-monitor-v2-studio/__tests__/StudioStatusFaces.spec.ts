@@ -80,6 +80,8 @@ describe('StudioStatusFaces', () => {
     await flushPromises()
     expect(wrapper.findAll('button.studio-face')).toHaveLength(24)
     expect(wrapper.findAll('.studio-face--empty')).toHaveLength(24)
+    expect(wrapper.findAll('.studio-face--healthy')).toHaveLength(24)
+    expect(wrapper.find('.studio-face-count').exists()).toBe(false)
     expect(wrapper.find('.studio-faces').attributes('style') || '').toContain('--studio-face-cols: 24')
   })
 
@@ -151,7 +153,7 @@ describe('StudioStatusFaces', () => {
     wrapper.unmount()
   })
 
-  it('colors cells from V2 thresholds when API overall is unknown', () => {
+  it('uses V2 thresholds above the low-user green range when API overall is unknown', () => {
     const wrapper = mount(StudioStatusFaces, {
       props: {
         coverage,
@@ -163,10 +165,10 @@ describe('StudioStatusFaces', () => {
               success_requests: 0,
               error_requests: 0,
               request_count: 0,
-              rpm: 0,
+              rpm: 4,
               tpm: 0,
-              error_rate: 0,
-              success_rate: 0,
+              error_rate: 0.3,
+              success_rate: 0.7,
               cache_rate: 0,
               cache_rate_numerator: 0,
               cache_rate_denominator: 0,
@@ -178,7 +180,7 @@ describe('StudioStatusFaces', () => {
         ],
       },
     })
-    expect(wrapper.find('button.studio-face').classes()).toContain('studio-face--unknown')
+    expect(wrapper.find('button.studio-face').classes()).toContain('studio-face--critical')
   })
 
   it('does not keep a green cell when true error rate is 100%', () => {
@@ -197,6 +199,31 @@ describe('StudioStatusFaces', () => {
     const face = wrapper.find('button.studio-face')
     expect(face.classes()).toContain('studio-face--critical')
     expect(face.classes()).not.toContain('studio-face--healthy')
+  })
+
+  it('keeps estimated buckets up to ten green without exposing the estimate', () => {
+    const wrapper = mount(StudioStatusFaces, {
+      props: {
+        coverage,
+        buckets: [
+          {
+            bucket_start: '2026-09-10T10:00:00.000Z',
+            metrics: metric({
+              request_count: 0,
+              rpm: 1.4,
+              error_rate: 0.5,
+              success_rate: 0.5,
+            }),
+            health: health({ overall: 'critical', error_rate: 'critical', score: 20 }),
+          },
+        ],
+      },
+    })
+    const face = wrapper.find('button.studio-face')
+    expect(face.classes()).toContain('studio-face--healthy')
+    expect(face.classes()).not.toContain('studio-face--critical')
+    expect(face.find('.studio-face-count').exists()).toBe(false)
+    expect(face.attributes('aria-label')).not.toContain('estimatedUsers')
   })
 
   it('pops in only newly arrived time slots', async () => {

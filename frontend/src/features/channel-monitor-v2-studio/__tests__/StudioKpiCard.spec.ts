@@ -98,7 +98,13 @@ describe('StudioKpiCard', () => {
     expect(mount(StudioKpiCard, { props: { ...base, accent: 'teal' } }).classes().join(' ')).toContain('studio-kpi--teal')
     expect(mount(StudioKpiCard, { props: { ...base, accent: 'amber', state: 'warning', statusLabel: '波动' } }).classes().join(' ')).toContain('studio-kpi--amber')
     expect(mount(StudioKpiCard, { props: { ...base, accent: 'coral', state: 'critical', statusLabel: '异常' } }).classes().join(' ')).toContain('studio-kpi--coral')
-    expect(mount(StudioKpiCard, { props: { ...base, accent: 'slate', state: 'unknown', statusLabel: '样本不足' } }).classes().join(' ')).toContain('studio-kpi--slate')
+    const normal = mount(StudioKpiCard, { props: { ...base, accent: 'teal', state: 'healthy', statusLabel: '正常' } })
+    expect(normal.classes().join(' ')).toContain('studio-kpi--teal')
+    expect(normal.find('.studio-kpi-status').classes().join(' ')).toContain('studio-kpi-status--healthy')
+    const frozen = mount(StudioKpiCard, {
+      props: { ...base, accent: 'teal', state: 'healthy', statusLabel: '正常', statusNote: '冻结' },
+    })
+    expect(frozen.find('.studio-kpi-status-note').text()).toBe('冻结')
   })
 
   it('does not paint missing first-token dash as critical red', () => {
