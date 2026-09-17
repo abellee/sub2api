@@ -11,6 +11,8 @@ import (
 const (
 	providerPricingSchemaVersion  = "1.1"
 	providerPricingGrokMultiplier = 0.09
+	providerPricingGroupName      = "福利"
+	providerPricingGrokGroupName  = "Grok - Heavy"
 )
 
 var providerPricingFallbackCosts = map[string]providerPricingCosts{
@@ -161,12 +163,14 @@ func (s *ProviderPricingService) Snapshot() providerPricingResponse {
 
 	for modelName, cost := range costs {
 		multiplier := s.multiplier
+		groupName := providerPricingGroupName
 		if strings.HasPrefix(modelName, "grok-") {
 			multiplier = providerPricingGrokMultiplier
+			groupName = providerPricingGrokGroupName
 		}
 		response.Data.Models = append(response.Data.Models, providerPricingModel{
 			ModelName:           modelName,
-			GroupName:           "福利",
+			GroupName:           groupName,
 			InputPrice:          cost.Input * 1_000_000 * multiplier,
 			OutputPrice:         cost.Output * 1_000_000 * multiplier,
 			CacheInputPrice:     scaleProviderPrice(cost.CacheInput, multiplier),
