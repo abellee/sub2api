@@ -144,7 +144,10 @@ func TestProviderPricing(t *testing.T) {
 	if model := models["gpt-6-astra"]; model.GroupName != "福利" || model.InputPrice != 0.8 || model.OutputPrice != 4 || priceValue(model.CacheInputPrice) != 0.08 || priceValue(model.CacheCreatePrice) != 1 || model.CacheCreatePrice1Hr != nil {
 		t.Fatalf("unexpected built-in price: %+v", model)
 	}
-	if model := models["grok-4.6"]; model.GroupName != "福利" || model.InputPrice != 0.18 || model.OutputPrice != 0.54 || priceValue(model.CacheInputPrice) != 0.045 || model.CacheCreatePrice != nil || model.CacheCreatePrice1Hr != nil {
+	if model := models["grok-4.5"]; model.GroupName != "Grok - Heavy" || model.InputPrice != 0.18 || model.OutputPrice != 0.54 || priceValue(model.CacheInputPrice) != 0.027 || model.CacheCreatePrice != nil || model.CacheCreatePrice1Hr != nil {
+		t.Fatalf("unexpected Grok 4.5 price: %+v", model)
+	}
+	if model := models["grok-4.6"]; model.GroupName != "Grok - Heavy" || model.InputPrice != 0.18 || model.OutputPrice != 0.54 || priceValue(model.CacheInputPrice) != 0.045 || model.CacheCreatePrice != nil || model.CacheCreatePrice1Hr != nil {
 		t.Fatalf("unexpected Grok price: %+v", model)
 	}
 }
