@@ -80,7 +80,8 @@ describe('StudioStatusFaces', () => {
     await flushPromises()
     expect(wrapper.findAll('button.studio-face')).toHaveLength(24)
     expect(wrapper.findAll('.studio-face--empty')).toHaveLength(24)
-    expect(wrapper.findAll('.studio-face--healthy')).toHaveLength(24)
+    expect(wrapper.findAll('.studio-face--unknown')).toHaveLength(24)
+    expect(wrapper.findAll('.studio-face--healthy')).toHaveLength(0)
     expect(wrapper.find('.studio-face-count').exists()).toBe(false)
     expect(wrapper.find('.studio-faces').attributes('style') || '').toContain('--studio-face-cols: 24')
   })
@@ -153,11 +154,10 @@ describe('StudioStatusFaces', () => {
     wrapper.unmount()
   })
 
-  it('uses V2 thresholds above the low-user green range when API overall is unknown', () => {
+  it('paints the API overall state even when local metrics look worse', () => {
     const wrapper = mount(StudioStatusFaces, {
       props: {
         coverage,
-        thresholds: { warning_error_rate: 0.05, critical_error_rate: 0.2, warning_cache_rate: 0.85, critical_cache_rate: 0.6 },
         buckets: [
           {
             bucket_start: '2026-09-10T10:00:00.000Z',
@@ -180,10 +180,10 @@ describe('StudioStatusFaces', () => {
         ],
       },
     })
-    expect(wrapper.find('button.studio-face').classes()).toContain('studio-face--critical')
+    expect(wrapper.find('button.studio-face').classes()).toContain('studio-face--unknown')
   })
 
-  it('does not keep a green cell when true error rate is 100%', () => {
+  it('keeps the API overall color when success_rate is 0', () => {
     const wrapper = mount(StudioStatusFaces, {
       props: {
         coverage,
@@ -197,11 +197,11 @@ describe('StudioStatusFaces', () => {
       },
     })
     const face = wrapper.find('button.studio-face')
-    expect(face.classes()).toContain('studio-face--critical')
-    expect(face.classes()).not.toContain('studio-face--healthy')
+    expect(face.classes()).toContain('studio-face--healthy')
+    expect(face.classes()).not.toContain('studio-face--critical')
   })
 
-  it('keeps estimated buckets up to ten green without exposing the estimate', () => {
+  it('paints low-traffic buckets with the real health tone', () => {
     const wrapper = mount(StudioStatusFaces, {
       props: {
         coverage,
@@ -220,10 +220,9 @@ describe('StudioStatusFaces', () => {
       },
     })
     const face = wrapper.find('button.studio-face')
-    expect(face.classes()).toContain('studio-face--healthy')
-    expect(face.classes()).not.toContain('studio-face--critical')
+    expect(face.classes()).toContain('studio-face--critical')
+    expect(face.classes()).not.toContain('studio-face--healthy')
     expect(face.find('.studio-face-count').exists()).toBe(false)
-    expect(face.attributes('aria-label')).not.toContain('estimatedUsers')
   })
 
   it('pops in only newly arrived time slots', async () => {

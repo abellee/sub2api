@@ -69,6 +69,7 @@
  * `AppSidebar.NavItem.featureFlag`, where `false` hides the menu entry.
  */
 import { useAppStore } from '@/stores/app'
+import { useAuthStore } from '@/stores/auth'
 import type { PublicSettings } from '@/types'
 import { DEFAULT_INTERVAL_SECONDS } from '@/constants/channelMonitor'
 
@@ -98,6 +99,12 @@ export const FeatureFlags = {
     key: 'channel_monitor_enabled',
     mode: 'opt-out',
     label: 'Channel Monitor',
+  }),
+  /** Per-caller result of the user-facing allow-list. Missing (old backends) fails closed. */
+  channelMonitorVisible: defineFlag({
+    key: 'channel_monitor_visible',
+    mode: 'opt-in',
+    label: 'Channel Monitor Visible To User',
   }),
   availableChannels: defineFlag({
     key: 'available_channels_enabled',
@@ -176,6 +183,22 @@ export function makeSidebarFlag(flag: FeatureFlagDefinition): () => boolean {
 /** True when channel monitor feature flag is enabled. */
 export function isChannelMonitorRouteEnabled(): boolean {
   return isFeatureFlagEnabled(FeatureFlags.channelMonitor)
+}
+
+/**
+ * True when the signed-in caller may see user-facing Channel Status.
+ * Requires the global enabled switch AND the per-caller visibility result.
+ * Admins bypass the allow-list while the feature is enabled.
+ * Missing mode/flag (old backends, empty settings) is treated as selected:
+ * non-admins are hidden; only an explicit `all` opens the user surface.
+ */
+export function isChannelMonitorVisibleToUser(): boolean {
+  if (!isChannelMonitorRouteEnabled()) return false
+  if (useAuthStore().isAdmin) return true
+  const appStore = useAppStore()
+  const visible = appStore.cachedPublicSettings?.channel_monitor_visible
+  if (typeof visible === 'boolean') return visible
+  return appStore.cachedPublicSettings?.channel_monitor_visibility === 'all'
 }
 
 export type ChannelMonitorMode = 'v1' | 'v2'

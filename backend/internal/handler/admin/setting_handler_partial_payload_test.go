@@ -66,6 +66,26 @@ func TestUpdateSettingsSMTPFromAliasIsWritable(t *testing.T) {
 	require.Equal(t, "new@example.com", repo.values[service.SettingKeySMTPFrom])
 }
 
+func TestUpdateSettingsChannelMonitorVisibilityIsWritable(t *testing.T) {
+	h, repo := newStepUpSwitchTestHandler(t, map[string]string{
+		service.SettingKeyChannelMonitorVisibility:     service.ChannelMonitorVisibilityAll,
+		service.SettingKeyChannelMonitorVisibleUserIDs: "[]",
+	})
+
+	rec := doUpdateSettings(t, h, map[string]any{
+		"channel_monitor_visibility":       service.ChannelMonitorVisibilitySelected,
+		"channel_monitor_visible_user_ids": []int64{11, 7, 7},
+	}, nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, service.ChannelMonitorVisibilitySelected, repo.values[service.SettingKeyChannelMonitorVisibility])
+	require.Equal(t, "[7,11]", repo.values[service.SettingKeyChannelMonitorVisibleUserIDs])
+
+	keep := doUpdateSettings(t, h, map[string]any{"site_name": "Keep Visibility"}, nil)
+	require.Equal(t, http.StatusOK, keep.Code)
+	require.Equal(t, service.ChannelMonitorVisibilitySelected, repo.values[service.SettingKeyChannelMonitorVisibility])
+	require.Equal(t, "[7,11]", repo.values[service.SettingKeyChannelMonitorVisibleUserIDs])
+}
+
 func TestUpdateSettingsGrokDefaultBaseURLModeIsWritable(t *testing.T) {
 	h, repo := newStepUpSwitchTestHandler(t, map[string]string{
 		service.SettingKeyGrokDefaultBaseURLMode: service.GrokDefaultBaseURLModeCLI,

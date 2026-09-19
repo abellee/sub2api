@@ -269,6 +269,10 @@ export interface PublicSettings {
   account_quota_notify_enabled: boolean
   balance_low_notify_threshold: number
   channel_monitor_enabled: boolean
+  /** Public mode without allow-list IDs. Missing is treated as selected (admins only until listed). */
+  channel_monitor_visibility?: 'all' | 'selected'
+  /** Per-caller: whether user-facing Channel Status is visible. Missing fails closed unless mode is all. */
+  channel_monitor_visible?: boolean
   /** Exclusive mode: v1 active probes or v2 passive aggregation. Default v2. */
   channel_monitor_mode?: 'v1' | 'v2'
   channel_monitor_default_interval_seconds: number

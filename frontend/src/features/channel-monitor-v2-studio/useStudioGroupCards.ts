@@ -14,31 +14,25 @@ import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 import { extractApiErrorMessage } from '@/utils/apiError'
 import { isChannelMonitorThroughputHidden } from '@/utils/featureFlags'
-import {
-  formatLatencyPrivacy,
-  formatMonitorMs,
-} from '@/features/channel-monitor-v2/monitorFormat'
-import {
-  alignBuckets,
-  coverageBucketStarts,
-  resolveStudioTrafficSampleInsufficient,
-} from './studioBuckets'
+import { formatLatencyPrivacy } from '@/features/channel-monitor-v2/monitorFormat'
 import {
   asStudioGroupCatalog,
-  cacheTone,
   collectStudioGroupRates,
-  errorRateTone,
   formatStudioCacheRate,
   formatStudioMultiplier,
   formatStudioRateNumber,
   formatStudioSuccessRate,
+  formatStudioTtft,
+  healthTone,
   lookupStudioGroupRate,
   mergeSelectedStudioGroups,
-  overallToneFromRow,
   studioAccentFromState,
+  studioCacheTone,
   studioPlatform,
   studioPlatformLabel,
-  ttftTone,
+  studioSampleInsufficient,
+  studioSuccessTone,
+  studioTtftTone,
   type StudioAccent,
   type StudioGroupRateCatalog,
   type StudioGroupRateIndex,
@@ -59,10 +53,8 @@ export type StudioGroupCard = {
   cacheRate: string
   statusHeading: string
   statusLabel: string
-  statusNote: string
   title: string
   state: StudioTone
-  sampleInsufficient: boolean
   successState: StudioTone
   ttftState: StudioTone
   cacheState: StudioTone
@@ -98,7 +90,6 @@ export function useStudioGroupCards(options: {
   let controller: AbortController | null = null
   let sequence = 0
   let autoRefreshTimer: number | null = null
-  const insufficientByRangeAndGroup = new Map<string, boolean>()
 
   const emptyFilter = computed<MonitorFilter>(() => ({
     range: range.value,
@@ -126,25 +117,14 @@ export function useStudioGroupCards(options: {
   )
 
   const groupCards = computed<StudioGroupCard[]>(() => {
-    const thresholds = healthThresholds.value
     const rates = groupRates.value
-    const starts = coverage.value ? coverageBucketStarts(coverage.value) : []
-    const presentStateKeys = new Set<string>()
-    const cards = groupRows.value.map((row) => {
-      const key = groupKey(row)
-      const stateKey = `${range.value}:${key}`
-      presentStateKeys.add(stateKey)
-      const aggregateState = overallToneFromRow(row.metrics, row.health, thresholds)
-      const insufficientSample = resolveStudioTrafficSampleInsufficient(
-        alignBuckets(starts, row.buckets),
-        insufficientByRangeAndGroup.get(stateKey) || false,
-      )
-      insufficientByRangeAndGroup.set(stateKey, insufficientSample)
-      const state: StudioTone = insufficientSample ? 'healthy' : aggregateState
+    const thresholds = healthThresholds.value
+    return groupRows.value.map((row) => {
+      const state = healthTone(row.health?.overall)
+      const insufficient = studioSampleInsufficient(row.health)
       const rate = lookupStudioGroupRate(rates, row.group_id, groupTitle(row))
-      const scored = !insufficientSample && state !== 'unknown'
       return {
-        key,
+        key: groupKey(row),
         label: groupTitle(row),
         platform: studioPlatform(row.platform),
         brandLabel: studioPlatformLabel(row.platform),
@@ -152,35 +132,29 @@ export function useStudioGroupCards(options: {
         successLabel: t('channelMonitorV2.metrics.successRate'),
         successRate: formatStudioSuccessRate(row.metrics, row.health),
         ttftLabel: t('channelMonitorV2.metrics.ttft'),
-        ttft: formatMonitorMs(row.metrics.ttft.p50_ms),
+        ttft: formatStudioTtft(row.metrics, row.health),
         cacheLabel: t('channelMonitorV2.metrics.cacheRate'),
         cacheRate: formatStudioCacheRate(row.metrics, row.health),
         statusHeading: t('channelMonitorV2.studio.status.label'),
-        statusLabel: t(`channelMonitorV2.studio.status.${insufficientSample ? 'unknown' : state}`),
-        statusNote: insufficientSample ? t('channelMonitorV2.studio.status.frozen') : '',
-        title: formatLatencyPrivacy(
-          row.metrics.ttft.p50_ms,
-          row.metrics.ttft.p90_ms,
-          row.metrics.ttft.avg_ms,
-          row.metrics.ttft.p95_ms,
-        ),
+        statusLabel: t(`channelMonitorV2.studio.status.${state}`),
+        title: insufficient
+          ? ''
+          : formatLatencyPrivacy(
+              row.metrics.ttft.p50_ms,
+              row.metrics.ttft.p90_ms,
+              row.metrics.ttft.avg_ms,
+              row.metrics.ttft.p95_ms,
+            ),
         state,
-        sampleInsufficient: insufficientSample,
-        successState: scored ? errorRateTone(row.metrics.error_rate, thresholds) : 'unknown',
-        ttftState: scored ? ttftTone(row.metrics.ttft.p50_ms, thresholds, row.metrics.ttft) : 'unknown',
-        cacheState: scored ? cacheTone(row.metrics.cache_rate, thresholds) : 'unknown',
+        successState: studioSuccessTone(row.metrics, row.health, thresholds),
+        ttftState: studioTtftTone(row.metrics, thresholds, row.health),
+        cacheState: studioCacheTone(row.metrics, row.health, thresholds),
         accent: studioAccentFromState(state),
         buckets: row.buckets ?? [],
         metrics: row.metrics,
         health: row.health,
       }
     })
-    for (const stateKey of insufficientByRangeAndGroup.keys()) {
-      if (stateKey.startsWith(`${range.value}:`) && !presentStateKeys.has(stateKey)) {
-        insufficientByRangeAndGroup.delete(stateKey)
-      }
-    }
-    return cards
   })
 
   async function loadGroupRates(signal?: AbortSignal) {

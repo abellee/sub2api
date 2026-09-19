@@ -332,9 +332,11 @@ type UpdateSettingsRequest struct {
 	ChannelMonitorEnabled                *bool   `json:"channel_monitor_enabled"`
 	ChannelMonitorMode                   *string `json:"channel_monitor_mode"`
 	ChannelMonitorDefaultIntervalSeconds *int    `json:"channel_monitor_default_interval_seconds"`
-	ChannelMonitorHideThroughput         *bool   `json:"channel_monitor_hide_throughput"`
-	ChannelMonitorShowQuota              *bool   `json:"channel_monitor_show_quota"`
-	ChannelMonitorHideUserRanking        *bool   `json:"channel_monitor_hide_user_ranking"`
+	ChannelMonitorHideThroughput         *bool    `json:"channel_monitor_hide_throughput"`
+	ChannelMonitorShowQuota              *bool    `json:"channel_monitor_show_quota"`
+	ChannelMonitorHideUserRanking        *bool    `json:"channel_monitor_hide_user_ranking"`
+	ChannelMonitorVisibility             *string  `json:"channel_monitor_visibility"`
+	ChannelMonitorVisibleUserIDs         *[]int64 `json:"channel_monitor_visible_user_ids"`
 
 	// Grok model mapping policy
 	GrokDefaultTextModel           *string `json:"grok_default_text_model"`
@@ -1916,6 +1918,18 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.ChannelMonitorHideUserRanking
 		}(),
+		ChannelMonitorVisibility: func() string {
+			if req.ChannelMonitorVisibility != nil {
+				return *req.ChannelMonitorVisibility
+			}
+			return previousSettings.ChannelMonitorVisibility
+		}(),
+		ChannelMonitorVisibleUserIDs: func() []int64 {
+			if req.ChannelMonitorVisibleUserIDs != nil {
+				return *req.ChannelMonitorVisibleUserIDs
+			}
+			return previousSettings.ChannelMonitorVisibleUserIDs
+		}(),
 		GrokDefaultTextModel: func() string {
 			if req.GrokDefaultTextModel != nil {
 				return *req.GrokDefaultTextModel
@@ -2383,6 +2397,8 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		ChannelMonitorHideThroughput:         updatedSettings.ChannelMonitorHideThroughput,
 		ChannelMonitorShowQuota:              updatedSettings.ChannelMonitorShowQuota,
 		ChannelMonitorHideUserRanking:        updatedSettings.ChannelMonitorHideUserRanking,
+		ChannelMonitorVisibility:             updatedSettings.ChannelMonitorVisibility,
+		ChannelMonitorVisibleUserIDs:         updatedSettings.ChannelMonitorVisibleUserIDs,
 
 		GrokDefaultTextModel:           updatedSettings.GrokDefaultTextModel,
 		GrokCrossClientModelMapEnabled: updatedSettings.GrokCrossClientModelMapEnabled,

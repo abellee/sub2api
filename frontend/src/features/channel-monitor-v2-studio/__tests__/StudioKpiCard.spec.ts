@@ -98,16 +98,29 @@ describe('StudioKpiCard', () => {
     expect(mount(StudioKpiCard, { props: { ...base, accent: 'teal' } }).classes().join(' ')).toContain('studio-kpi--teal')
     expect(mount(StudioKpiCard, { props: { ...base, accent: 'amber', state: 'warning', statusLabel: '波动' } }).classes().join(' ')).toContain('studio-kpi--amber')
     expect(mount(StudioKpiCard, { props: { ...base, accent: 'coral', state: 'critical', statusLabel: '异常' } }).classes().join(' ')).toContain('studio-kpi--coral')
-    const normal = mount(StudioKpiCard, { props: { ...base, accent: 'teal', state: 'healthy', statusLabel: '正常' } })
+    const normal = mount(StudioKpiCard, { props: { ...base, accent: 'teal', state: 'healthy', statusLabel: '健康' } })
     expect(normal.classes().join(' ')).toContain('studio-kpi--teal')
     expect(normal.find('.studio-kpi-status').classes().join(' ')).toContain('studio-kpi-status--healthy')
-    const frozen = mount(StudioKpiCard, {
-      props: { ...base, accent: 'teal', state: 'healthy', statusLabel: '正常', statusNote: '冻结' },
+    const unknown = mount(StudioKpiCard, {
+      props: {
+        ...base,
+        accent: 'slate',
+        state: 'unknown',
+        statusLabel: '样本不足',
+        successRate: '-',
+        ttft: '-',
+        cacheRate: '-',
+        successState: 'unknown',
+        ttftState: 'unknown',
+        cacheState: 'unknown',
+      },
     })
-    expect(frozen.find('.studio-kpi-status-note').text()).toBe('冻结')
+    expect(unknown.find('.studio-kpi-status').text()).toBe('样本不足')
+    expect(unknown.find('.studio-kpi-status-note').exists()).toBe(false)
+    expect(unknown.findAll('dd').map((node) => node.text())).toEqual(['-', '-', '-'])
   })
 
-  it('does not paint missing first-token dash as critical red', () => {
+  it('paints metric color from the API health state even when the value is a dash', () => {
     const wrapper = mount(StudioKpiCard, {
       props: {
         ...base,
@@ -121,8 +134,7 @@ describe('StudioKpiCard', () => {
     })
     const values = wrapper.findAll('dd')
     const ttft = values[1]
-    expect(ttft.classes().join(' ')).not.toMatch(/rose|red/)
-    expect(ttft.classes().join(' ')).toMatch(/gray|dark/)
+    expect(ttft.classes().join(' ')).toMatch(/red/)
   })
 
   it('maps warning and critical metric states to distinct colors', () => {

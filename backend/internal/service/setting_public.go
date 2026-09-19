@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -234,6 +235,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyChannelMonitorHideThroughput,
 		SettingKeyChannelMonitorShowQuota,
 		SettingKeyChannelMonitorHideUserRanking,
+		SettingKeyChannelMonitorVisibility,
 		SettingKeyAvailableChannelsEnabled,
 		SettingKeySubscriptionEnabled,
 		SettingKeyModelPlazaEnabled,
@@ -363,6 +365,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		ChannelMonitorHideThroughput:         !isFalseSettingValue(settings[SettingKeyChannelMonitorHideThroughput]),
 		ChannelMonitorShowQuota:              settings[SettingKeyChannelMonitorShowQuota] == "true",
 		ChannelMonitorHideUserRanking:        isTrueSettingValue(settings[SettingKeyChannelMonitorHideUserRanking]),
+		ChannelMonitorVisibility:             normalizeChannelMonitorVisibility(settings[SettingKeyChannelMonitorVisibility]),
 
 		AvailableChannelsEnabled: settings[SettingKeyAvailableChannelsEnabled] == "true",
 
@@ -440,6 +443,10 @@ type ChannelMonitorRuntime struct {
 	// HideUserRanking: when true, user-facing V2 views hide the user ranking tab
 	// and the /users payload. Parsed fail-open (only literal "true" hides it).
 	HideUserRanking bool
+	// Visibility is "all" (default) or "selected". Admins ignore this.
+	Visibility string
+	// VisibleUserIDs is the allow-list used when Visibility is "selected".
+	VisibleUserIDs []int64
 }
 
 // ActiveProbesAllowed reports whether V1 active provider probes may run.
@@ -452,8 +459,83 @@ func (r ChannelMonitorRuntime) PassiveAggregationAllowed() bool {
 	return r.Enabled && r.Mode == ChannelMonitorModeV2
 }
 
+// VisibleToUser reports whether the user-facing channel status surface should
+// be shown to this caller. Admins always pass when the feature is enabled.
+func (r ChannelMonitorRuntime) VisibleToUser(userID int64, isAdmin bool) bool {
+	if !r.Enabled {
+		return false
+	}
+	if isAdmin {
+		return true
+	}
+	if r.Visibility == ChannelMonitorVisibilityAll {
+		return true
+	}
+	if userID <= 0 {
+		return false
+	}
+	for _, id := range r.VisibleUserIDs {
+		if id == userID {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeChannelMonitorVisibility(raw string) string {
+	if strings.EqualFold(strings.TrimSpace(raw), ChannelMonitorVisibilityAll) {
+		return ChannelMonitorVisibilityAll
+	}
+	return ChannelMonitorVisibilitySelected
+}
+
+func parseChannelMonitorVisibleUserIDs(raw string) []int64 {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || raw == "[]" {
+		return []int64{}
+	}
+	var ids []int64
+	if err := json.Unmarshal([]byte(raw), &ids); err != nil {
+		return []int64{}
+	}
+	return normalizeChannelMonitorVisibleUserIDs(ids)
+}
+
+func normalizeChannelMonitorVisibleUserIDs(ids []int64) []int64 {
+	if len(ids) == 0 {
+		return []int64{}
+	}
+	seen := make(map[int64]struct{}, len(ids))
+	out := make([]int64, 0, len(ids))
+	for _, id := range ids {
+		if id <= 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+		if len(out) >= ChannelMonitorVisibleUserIDsMax {
+			break
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out
+}
+
+func marshalChannelMonitorVisibleUserIDs(ids []int64) string {
+	normalized := normalizeChannelMonitorVisibleUserIDs(ids)
+	payload, err := json.Marshal(normalized)
+	if err != nil {
+		return "[]"
+	}
+	return string(payload)
+}
+
 // GetChannelMonitorRuntime reads the channel monitor feature flags directly from
-// the settings store. Fail-open: on error returns Enabled=true, Mode=v1, default interval.
+// the settings store. On error returns Enabled=true, Mode=v1, default interval,
+// and Visibility=selected so the user-facing surface stays fail-closed.
 func (s *SettingService) GetChannelMonitorRuntime(ctx context.Context) ChannelMonitorRuntime {
 	if s == nil || s.settingRepo == nil {
 		return ChannelMonitorRuntime{
@@ -461,6 +543,7 @@ func (s *SettingService) GetChannelMonitorRuntime(ctx context.Context) ChannelMo
 			Mode:                   defaultChannelMonitorMode,
 			DefaultIntervalSeconds: channelMonitorIntervalFallback,
 			HideThroughput:         true,
+			Visibility:             ChannelMonitorVisibilitySelected,
 		}
 	}
 	vals, err := s.settingRepo.GetMultiple(ctx, []string{
@@ -470,6 +553,8 @@ func (s *SettingService) GetChannelMonitorRuntime(ctx context.Context) ChannelMo
 		SettingKeyChannelMonitorHideThroughput,
 		SettingKeyChannelMonitorShowQuota,
 		SettingKeyChannelMonitorHideUserRanking,
+		SettingKeyChannelMonitorVisibility,
+		SettingKeyChannelMonitorVisibleUserIDs,
 	})
 	if err != nil {
 		return ChannelMonitorRuntime{
@@ -477,6 +562,7 @@ func (s *SettingService) GetChannelMonitorRuntime(ctx context.Context) ChannelMo
 			Mode:                   defaultChannelMonitorMode,
 			DefaultIntervalSeconds: channelMonitorIntervalFallback,
 			HideThroughput:         true,
+			Visibility:             ChannelMonitorVisibilitySelected,
 		}
 	}
 	return ChannelMonitorRuntime{
@@ -486,7 +572,19 @@ func (s *SettingService) GetChannelMonitorRuntime(ctx context.Context) ChannelMo
 		HideThroughput:         !isFalseSettingValue(vals[SettingKeyChannelMonitorHideThroughput]),
 		ShowQuota:              vals[SettingKeyChannelMonitorShowQuota] == "true",
 		HideUserRanking:        isTrueSettingValue(vals[SettingKeyChannelMonitorHideUserRanking]),
+		Visibility:             normalizeChannelMonitorVisibility(vals[SettingKeyChannelMonitorVisibility]),
+		VisibleUserIDs:         parseChannelMonitorVisibleUserIDs(vals[SettingKeyChannelMonitorVisibleUserIDs]),
 	}
+}
+
+// ApplyChannelMonitorPublicVisibility sets the per-caller channel_monitor_visible
+// flag. The global channel_monitor_enabled switch is left unchanged so admin
+// nav and feature-on semantics stay independent of the user allow-list.
+func (s *SettingService) ApplyChannelMonitorPublicVisibility(ctx context.Context, settings *PublicSettings, userID int64, isAdmin bool) {
+	if settings == nil {
+		return
+	}
+	settings.ChannelMonitorVisible = s.GetChannelMonitorRuntime(ctx).VisibleToUser(userID, isAdmin)
 }
 
 // AvailableChannelsRuntime is the lightweight view of the available-channels feature
@@ -635,14 +733,19 @@ type PublicSettingsInjectionPayload struct {
 	// from non-admin channel-monitor v2 viewers; default false (visible).
 	ChannelMonitorHideUserRanking bool `json:"channel_monitor_hide_user_ranking"`
 	ChannelMonitorShowQuota       bool `json:"channel_monitor_show_quota"`
-	AvailableChannelsEnabled      bool `json:"available_channels_enabled"`
-	SubscriptionEnabled           bool `json:"subscription_enabled"`
-	ModelPlazaEnabled             bool `json:"model_plaza_enabled"`
-	ModelPlazaRequireAuth         bool `json:"model_plaza_require_auth"`
-	PluginManagementEnabled       bool `json:"plugin_management_enabled"`
-	AffiliateEnabled              bool `json:"affiliate_enabled"`
-	RiskControlEnabled            bool `json:"risk_control_enabled"`
-	AllowUserViewErrorRequests    bool `json:"allow_user_view_error_requests"`
+	// ChannelMonitorVisibility is the public mode without allow-list IDs.
+	ChannelMonitorVisibility string `json:"channel_monitor_visibility"`
+	// ChannelMonitorVisible is the per-caller result of VisibleToUser.
+	// SSR injection is anonymous, so selected-mode is false until /settings/public is fetched with a JWT.
+	ChannelMonitorVisible      bool `json:"channel_monitor_visible"`
+	AvailableChannelsEnabled   bool `json:"available_channels_enabled"`
+	SubscriptionEnabled        bool `json:"subscription_enabled"`
+	ModelPlazaEnabled          bool `json:"model_plaza_enabled"`
+	ModelPlazaRequireAuth      bool `json:"model_plaza_require_auth"`
+	PluginManagementEnabled    bool `json:"plugin_management_enabled"`
+	AffiliateEnabled           bool `json:"affiliate_enabled"`
+	RiskControlEnabled         bool `json:"risk_control_enabled"`
+	AllowUserViewErrorRequests bool `json:"allow_user_view_error_requests"`
 }
 
 // GetPublicSettingsForInjection returns public settings in a format suitable for HTML injection.
@@ -652,6 +755,10 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 	if err != nil {
 		return nil, err
 	}
+	// SSR HTML is anonymous and cached; selected-mode sets
+	// channel_monitor_visible=false so the user nav does not flash.
+	// channel_monitor_enabled stays the global switch.
+	s.ApplyChannelMonitorPublicVisibility(ctx, settings, 0, false)
 
 	return &PublicSettingsInjectionPayload{
 		RegistrationEnabled:                 settings.RegistrationEnabled,
@@ -719,6 +826,8 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		ChannelMonitorHideThroughput:         settings.ChannelMonitorHideThroughput,
 		ChannelMonitorShowQuota:              settings.ChannelMonitorShowQuota,
 		ChannelMonitorHideUserRanking:        settings.ChannelMonitorHideUserRanking,
+		ChannelMonitorVisibility:             settings.ChannelMonitorVisibility,
+		ChannelMonitorVisible:                settings.ChannelMonitorVisible,
 		AvailableChannelsEnabled:             settings.AvailableChannelsEnabled,
 		SubscriptionEnabled:                  settings.SubscriptionEnabled,
 		ModelPlazaEnabled:                    settings.ModelPlazaEnabled,

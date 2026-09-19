@@ -25,7 +25,6 @@
                 :class="statusClass"
                 :aria-label="`${statusHeading} ${statusLabel}`"
               >{{ statusLabel }}</span>
-              <span v-if="statusNote" class="studio-kpi-status-note mt-0.5 block">{{ statusNote }}</span>
             </span>
           </div>
           <div class="studio-kpi-brand-row mt-1 flex min-w-0 items-center gap-1">
@@ -102,7 +101,6 @@ const props = withDefaults(
     cacheRate: string
     statusHeading: string
     statusLabel: string
-    statusNote?: string
     state?: StudioTone
     successState?: StudioTone
     ttftState?: StudioTone
@@ -124,11 +122,6 @@ const props = withDefaults(
   },
 )
 
-function isMissing(value: string | undefined) {
-  const next = (value || '').trim()
-  return next === '' || next === '-' || next === '—'
-}
-
 const brandColor = computed(() => studioBrandFill(props.platform))
 const inkBrand = computed(() => studioBrandIsInk(props.platform))
 
@@ -141,9 +134,9 @@ const accentClass = computed(() => {
   return 'studio-kpi--teal'
 })
 
-const successClass = computed(() => metricTextClass(props.successState, isMissing(props.successRate)))
-const ttftClass = computed(() => metricTextClass(props.ttftState, isMissing(props.ttft)))
-const cacheClass = computed(() => metricTextClass(props.cacheState, isMissing(props.cacheRate)))
+const successClass = computed(() => metricTextClass(props.successState))
+const ttftClass = computed(() => metricTextClass(props.ttftState))
+const cacheClass = computed(() => metricTextClass(props.cacheState))
 
 const statusClass = computed(() => {
   if (props.state === 'healthy') return 'studio-kpi-status--healthy'
@@ -314,15 +307,6 @@ const statusClass = computed(() => {
   line-height: 1.3;
   letter-spacing: 0.01em;
 }
-.studio-kpi-status-note {
-  font-size: 9px;
-  font-weight: 600;
-  line-height: 1.2;
-  color: rgb(100 116 139 / 0.72);
-}
-.dark .studio-kpi-status-note {
-  color: rgb(148 163 184 / 0.68);
-}
 .studio-kpi-status--healthy {
   background: color-mix(in oklab, #34d399 22%, #ffffff);
   color: rgb(4 120 87);
@@ -352,8 +336,8 @@ const statusClass = computed(() => {
   color: rgb(252 165 165);
 }
 .dark .studio-kpi-status--unknown {
-  background: color-mix(in oklab, #94a3b8 16%, rgb(15 23 42));
-  color: rgb(148 163 184);
+  background: color-mix(in oklab, #94a3b8 10%, rgb(15 23 42));
+  color: rgb(148 163 184 / 0.78);
 }
 
 .studio-kpi-spark {

@@ -6,6 +6,7 @@
 import type { HealthState, MonitorHealth, MonitorMatrixRow, MonitorMetric } from '@/api/channelMonitorV2'
 import { GROUP_PLATFORM_OPTIONS } from '@/constants/platforms'
 import {
+  formatMonitorMs,
   formatMonitorPercent,
   formatMonitorSuccessRate,
   formatMonitorSuccessRateFromError,
@@ -232,41 +233,57 @@ export function cacheTone(
   return 'healthy'
 }
 
-export function worstTone(tones: StudioTone[]): StudioTone {
-  if (tones.includes('critical')) return 'critical'
-  if (tones.includes('warning')) return 'warning'
-  if (tones.includes('healthy')) return 'healthy'
-  return 'unknown'
+/** Overall unknown means 样本不足: hide the three KPI numbers. */
+export function studioSampleInsufficient(health?: MonitorHealth | null): boolean {
+  return health != null && healthTone(health.overall) === 'unknown'
 }
 
-function hasStudioCacheSignal(metrics?: MonitorMetric): boolean {
-  return (metrics?.cache_rate_denominator || 0) > 0 || (metrics?.cache_rate || 0) > 0
-}
-
-/** Prefer API health when the backend already applied thresholds; otherwise compare metrics to V2 settings. */
-export function overallToneFromRow(
-  metrics: MonitorMetric | undefined,
-  health?: MonitorHealth,
+/** Color the printed success % from the metric, not API health.error_rate (often unknown). */
+export function studioSuccessTone(
+  metrics?: MonitorMetric | null,
+  health?: MonitorHealth | null,
   thresholds?: StudioThresholds | null,
 ): StudioTone {
-  if (!metrics || !studioMetricsHaveActivity(metrics, health)) return 'unknown'
-  const observed = errorRateTone(displayedErrorRate(metrics), thresholds)
-  const api = healthTone(health?.overall || health?.error_rate)
-  if (api !== 'unknown') return worstTone([api, observed])
-  const tones: StudioTone[] = [
-    observed,
-    errorRateTone(metrics.error_rate, thresholds),
-    ttftTone(metrics.ttft?.p50_ms, thresholds, metrics.ttft),
-  ]
-  if (hasStudioCacheSignal(metrics)) tones.push(cacheTone(metrics.cache_rate, thresholds))
-  return worstTone(tones)
+  if (formatStudioSuccessRate(metrics, health) === '-') return 'unknown'
+  if (metrics?.success_rate != null && Number.isFinite(metrics.success_rate)) {
+    return errorRateTone(1 - metrics.success_rate, thresholds)
+  }
+  return errorRateTone(metrics?.error_rate, thresholds)
+}
+
+/** Color the printed TTFT from p50, not API health.ttft (often unknown). */
+export function studioTtftTone(
+  metrics?: MonitorMetric | null,
+  thresholds?: StudioThresholds | null,
+  health?: MonitorHealth | null,
+): StudioTone {
+  if (formatStudioTtft(metrics, health) === '-') return 'unknown'
+  return ttftTone(metrics?.ttft?.p50_ms, thresholds, metrics?.ttft)
+}
+
+/** Color the printed cache % from the metric, not API health.cache (often unknown). */
+export function studioCacheTone(
+  metrics?: MonitorMetric | null,
+  health?: MonitorHealth | null,
+  thresholds?: StudioThresholds | null,
+): StudioTone {
+  if (formatStudioCacheRate(metrics, health) === '-') return 'unknown'
+  return cacheTone(metrics?.cache_rate, thresholds)
+}
+
+/** Card / face status follows the API overall field. */
+export function overallToneFromRow(
+  _metrics: MonitorMetric | undefined,
+  health?: MonitorHealth,
+): StudioTone {
+  return healthTone(health?.overall)
 }
 
 export function metricTextClass(tone: StudioTone | undefined, missing = false): string {
-  if (missing || !tone || tone === 'unknown') return 'text-gray-500 dark:text-dark-400'
-  if (tone === 'healthy') return 'text-emerald-600 dark:text-emerald-400'
-  if (tone === 'warning') return 'text-amber-600 dark:text-amber-400'
-  return 'text-red-600 dark:text-red-400'
+  if (missing || !tone || tone === 'unknown') return '!text-gray-500 dark:!text-dark-400/70'
+  if (tone === 'healthy') return '!text-emerald-600 dark:!text-emerald-400'
+  if (tone === 'warning') return '!text-amber-600 dark:!text-amber-400'
+  return '!text-red-600 dark:!text-red-400'
 }
 
 export function studioPlatformLabel(platform: string): string {
@@ -307,12 +324,10 @@ export type StudioActivitySource = {
   health?: MonitorHealth | null
   buckets?: Array<{ metrics?: MonitorMetric | null; health?: MonitorHealth | null }> | null
   state?: StudioTone | string | null
-  sampleInsufficient?: boolean
 }
 
 /** Higher = currently busier. 0 means not live in the current buckets. */
 export function studioGroupActivityScore(card: StudioActivitySource): number {
-  if (card.sampleInsufficient) return 0
   const buckets = card.buckets || []
   const recent = buckets.slice(-STUDIO_ACTIVE_RECENT_SLOTS)
   const recentLive = recent.filter((bucket) => studioMetricsHaveActivity(bucket.metrics, bucket.health))
@@ -338,7 +353,6 @@ const STUDIO_STATUS_RANK: Record<StudioTone, number> = {
 }
 
 export function studioActiveGroupState(card: StudioActivitySource): StudioTone {
-  if (card.sampleInsufficient) return 'unknown'
   const state = card.state
   if (state === 'healthy' || state === 'warning' || state === 'critical' || state === 'unknown') return state
   const overall = card.health?.overall
@@ -376,7 +390,7 @@ export function studioStatusSortRank(state?: StudioTone | string | null): number
 }
 
 /** 健康 → 波动 → 异常 → 未知; same-status cards keep their original order. */
-export function sortStudioCardsByStatus<T extends { state?: StudioTone | string | null; sampleInsufficient?: boolean }>(cards: T[]): T[] {
+export function sortStudioCardsByStatus<T extends { state?: StudioTone | string | null }>(cards: T[]): T[] {
   return cards
     .map((card, index) => ({ card, index }))
     .sort(
@@ -389,7 +403,7 @@ export function sortStudioCardsByStatus<T extends { state?: StudioTone | string 
 }
 
 /** Cluster group cards by model brand. Brand sections follow STUDIO_BRAND_ORDER. */
-export function groupStudioCardsByBrand<T extends { platform?: string | null; brandLabel?: string; state?: StudioTone | string | null; sampleInsufficient?: boolean }>(
+export function groupStudioCardsByBrand<T extends { platform?: string | null; brandLabel?: string; state?: StudioTone | string | null }>(
   cards: T[],
 ): StudioBrandSection<T>[] {
   const sections: StudioBrandSection<T>[] = []
@@ -610,7 +624,6 @@ export function emptyStudioMetrics(): MonitorMetric {
     rpm: 0,
     tpm: 0,
     error_rate: 0,
-    success_rate: 0,
     cache_rate: 0,
     cache_rate_numerator: 0,
     cache_rate_denominator: 0,
@@ -624,9 +637,8 @@ export function formatStudioSuccessRate(
   metrics?: MonitorMetric | null,
   health?: MonitorHealth | null,
 ): string {
-  if (!metrics) return '-'
+  if (!metrics || studioSampleInsufficient(health)) return '-'
   if (metrics.success_rate != null && Number.isFinite(metrics.success_rate)) {
-    if (!studioMetricsHaveActivity(metrics, health) && metrics.success_rate <= 0) return '-'
     return formatMonitorPercent(metrics.success_rate)
   }
   if ((metrics.request_count || 0) > 0) {
@@ -638,38 +650,28 @@ export function formatStudioSuccessRate(
   return '-'
 }
 
-/** True failure share, including ignored categories. */
-export function displayedErrorRate(metrics?: MonitorMetric | null): number | null {
-  if (!metrics) return null
-  if (metrics.success_rate != null && Number.isFinite(metrics.success_rate)) {
-    return Math.max(0, Math.min(1, 1 - metrics.success_rate))
-  }
-  if ((metrics.request_count || 0) > 0) {
-    return (metrics.error_requests || 0) / metrics.request_count
-  }
-  if (metrics.error_rate != null && Number.isFinite(metrics.error_rate)) return metrics.error_rate
-  return null
+export function formatStudioTtft(
+  metrics?: MonitorMetric | null,
+  health?: MonitorHealth | null,
+): string {
+  if (!metrics || studioSampleInsufficient(health)) return '-'
+  return formatMonitorMs(metrics.ttft?.p50_ms)
 }
 
-/**
- * Displayed error share is 1 − success_rate (true failures, including ignored
- * categories). Faces and card status use this so a 100% fail bucket cannot stay green.
- */
 export function formatStudioErrorRate(
   metrics?: MonitorMetric | null,
   health?: MonitorHealth | null,
 ): string {
-  if (!metrics || !studioMetricsHaveActivity(metrics, health)) return '-'
-  const rate = displayedErrorRate(metrics)
-  if (rate == null) return '-'
-  return formatMonitorPercent(rate)
+  if (!metrics || studioSampleInsufficient(health) || !studioMetricsHaveActivity(metrics, health)) return '-'
+  if (metrics.error_rate == null || !Number.isFinite(metrics.error_rate)) return '-'
+  return formatMonitorPercent(metrics.error_rate)
 }
 
 export function formatStudioCacheRate(
   metrics?: MonitorMetric | null,
   health?: MonitorHealth | null,
 ): string {
-  if (!metrics) return '-'
+  if (!metrics || studioSampleInsufficient(health)) return '-'
   if ((metrics.cache_rate_denominator || 0) > 0 || studioMetricsHaveActivity(metrics, health)) {
     return formatMonitorPercent(metrics.cache_rate || 0)
   }

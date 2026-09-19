@@ -5,7 +5,7 @@ import {
   formatMonitorTokensPerSecond,
   healthModeScore,
 } from '@/features/channel-monitor-v2/monitorFormat'
-import { formatStudioCacheRate, formatStudioErrorRate, formatStudioSuccessRate } from './studioFormat'
+import { formatStudioCacheRate, formatStudioErrorRate, formatStudioSuccessRate, formatStudioTtft } from './studioFormat'
 
 type Translate = (key: string, params?: Record<string, unknown>) => string
 
@@ -82,7 +82,7 @@ export function bucketTooltipLines(
     formatBucketRange(bucket.bucket_start, options.bucketSeconds, options.locale),
     t('channelMonitorV2.matrix.scoreLine', { score: formatScore(bucket.health) }),
     t('channelMonitorV2.metrics.successRateValue', { value: successRate(metrics, bucket.health, options.showThroughput) }),
-    t('channelMonitorV2.metrics.ttftValue', { value: latencyPrivacy(metrics.ttft) }),
+    t('channelMonitorV2.metrics.ttftValue', { value: formatStudioTtft(metrics, bucket.health) }),
   ]
   if (options.showThroughput) {
     lines.push(t('channelMonitorV2.metrics.tpsValue', { value: formatMonitorTokensPerSecond(metrics.tpm) }))

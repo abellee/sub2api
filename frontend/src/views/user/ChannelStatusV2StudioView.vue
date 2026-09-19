@@ -166,7 +166,6 @@
                     :cache-rate="card.cacheRate"
                     :status-heading="card.statusHeading"
                     :status-label="card.statusLabel"
-                    :status-note="card.statusNote"
                     :title="card.title"
                     :state="card.state"
                     :success-state="card.successState"
