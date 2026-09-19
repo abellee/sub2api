@@ -83,11 +83,10 @@ import { STUDIO_FACE_POP_MS, studioPopIncomingKeys } from './studioDemo'
 import {
   alignBuckets,
   coverageBucketStarts,
-  estimateStudioBucketUsers,
   isStudioBucketEmpty,
   type StudioBucketPoint,
 } from './studioBuckets'
-import { overallToneFromRow, statusFace, studioFacePalette, type StudioThresholds } from './studioFormat'
+import { healthTone, statusFace, studioFacePalette, type StudioThresholds } from './studioFormat'
 import { bucketTooltipLines, emptyTooltipLines, formatSlotTime } from './studioTooltip'
 import { useStudioHoverTooltip } from './useStudioHoverTooltip'
 
@@ -142,12 +141,8 @@ function toneLabel(tone: ReturnType<typeof statusFace>['tone']) {
 const faces = computed(() =>
   slots.value.map((slot) => {
     const empty = isStudioBucketEmpty(slot.bucket)
-    const estimatedUsers = estimateStudioBucketUsers(slot.bucket, bucketSeconds.value)
     const score = empty ? null : healthModeScore(slot.bucket!.health, 'overall')
-    const healthTone = empty
-      ? 'unknown'
-      : overallToneFromRow(slot.bucket!.metrics, slot.bucket!.health, props.thresholds)
-    const tone = estimatedUsers != null && estimatedUsers <= 10 ? 'healthy' : healthTone
+    const tone = empty ? 'unknown' : healthTone(slot.bucket!.health?.overall)
     const face = statusFace(score, tone)
     const palette = studioFacePalette(face.tone, score)
     const time = formatSlotTime(slot.start, locale.value)

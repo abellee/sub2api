@@ -921,6 +921,30 @@ func channelMonitorAdminFeatureGuard(settingService *service.SettingService) gin
 	}
 }
 
+// channelMonitorUserVisibilityGuard blocks user-facing channel-status APIs when
+// the caller is outside the allow-list. Admins always pass when the feature is on.
+func channelMonitorUserVisibilityGuard(settingService *service.SettingService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if settingService == nil {
+			response.ErrorFrom(c, service.ErrChannelMonitorDisabled)
+			c.Abort()
+			return
+		}
+		rt := settingService.GetChannelMonitorRuntime(c.Request.Context())
+		userID := int64(0)
+		if subject, ok := middleware.GetAuthSubjectFromContext(c); ok {
+			userID = subject.UserID
+		}
+		role, _ := middleware.GetUserRoleFromContext(c)
+		if rt.VisibleToUser(userID, role == service.RoleAdmin) {
+			c.Next()
+			return
+		}
+		response.ErrorFrom(c, service.ErrChannelMonitorDisabled)
+		c.Abort()
+	}
+}
+
 // channelMonitorModeV2Guard requires feature enabled and channel_monitor_mode=v2.
 func channelMonitorModeV2Guard(settingService *service.SettingService) gin.HandlerFunc {
 	return func(c *gin.Context) {

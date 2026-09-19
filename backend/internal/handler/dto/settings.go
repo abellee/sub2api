@@ -303,12 +303,14 @@ type SystemSettings struct {
 	AccountQuotaNotifyEmails        []NotifyEmailEntry `json:"account_quota_notify_emails"`
 
 	// Channel Monitor feature switch
-	ChannelMonitorEnabled                bool   `json:"channel_monitor_enabled"`
-	ChannelMonitorMode                   string `json:"channel_monitor_mode"`
-	ChannelMonitorDefaultIntervalSeconds int    `json:"channel_monitor_default_interval_seconds"`
-	ChannelMonitorHideThroughput         bool   `json:"channel_monitor_hide_throughput"`
-	ChannelMonitorShowQuota              bool   `json:"channel_monitor_show_quota"`
-	ChannelMonitorHideUserRanking        bool   `json:"channel_monitor_hide_user_ranking"`
+	ChannelMonitorEnabled                bool    `json:"channel_monitor_enabled"`
+	ChannelMonitorMode                   string  `json:"channel_monitor_mode"`
+	ChannelMonitorDefaultIntervalSeconds int     `json:"channel_monitor_default_interval_seconds"`
+	ChannelMonitorHideThroughput         bool    `json:"channel_monitor_hide_throughput"`
+	ChannelMonitorShowQuota              bool    `json:"channel_monitor_show_quota"`
+	ChannelMonitorHideUserRanking        bool    `json:"channel_monitor_hide_user_ranking"`
+	ChannelMonitorVisibility             string  `json:"channel_monitor_visibility"`
+	ChannelMonitorVisibleUserIDs         []int64 `json:"channel_monitor_visible_user_ids"`
 
 	// Grok model mapping policy (admin settings; empty account mapping falls back to these).
 	GrokDefaultTextModel           string `json:"grok_default_text_model"`
@@ -428,6 +430,10 @@ type PublicSettings struct {
 	ChannelMonitorHideThroughput         bool   `json:"channel_monitor_hide_throughput"`
 	ChannelMonitorShowQuota              bool   `json:"channel_monitor_show_quota"`
 	ChannelMonitorHideUserRanking        bool   `json:"channel_monitor_hide_user_ranking"`
+	// ChannelMonitorVisibility is the public mode ("all" | "selected") without allow-list IDs.
+	ChannelMonitorVisibility string `json:"channel_monitor_visibility"`
+	// ChannelMonitorVisible is personalized per caller and never includes allow-list IDs.
+	ChannelMonitorVisible bool `json:"channel_monitor_visible"`
 
 	AvailableChannelsEnabled bool `json:"available_channels_enabled"`
 

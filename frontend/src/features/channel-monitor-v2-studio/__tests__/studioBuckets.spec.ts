@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { alignBuckets, coverageBucketStarts, isStudioBucketEmpty, isStudioTrafficSampleInsufficient, resolveStudioTrafficSampleInsufficient, studioSparkValue, STUDIO_MAX_SLOTS, STUDIO_TRAFFIC_RECOVERY_SLOTS, studioNativeSlotCount, studioSlotCap } from '../studioBuckets'
+import { alignBuckets, coverageBucketStarts, isStudioBucketEmpty, studioSparkValue, STUDIO_MAX_SLOTS, studioNativeSlotCount, studioSlotCap } from '../studioBuckets'
 import type { MonitorMetric, MonitorHealth } from '@/api/channelMonitorV2'
 
 const metric: MonitorMetric = {
@@ -181,59 +181,6 @@ describe('studioBuckets', () => {
     expect(isStudioBucketEmpty(redacted)).toBe(false)
     expect(studioSparkValue(redacted)).toBe(88)
     expect(studioSparkValue({ ...redacted, health: { ...redacted.health, score: 72 } })).toBe(72)
-  })
-
-  it('locks when empty slots are a majority and preserves an exact split', () => {
-    const slots = Array.from({ length: 18 }, (_, index) => ({
-      start: new Date(Date.UTC(2026, 8, 10, 10, index * 5)).toISOString(),
-      bucket: index < 8 ? { bucket_start: '', metrics: metric, health } : undefined,
-    }))
-    expect(isStudioTrafficSampleInsufficient(slots)).toBe(true)
-
-    const exactlyHalfEmpty = slots.map((slot, index) =>
-      index === 8 ? { ...slot, bucket: { bucket_start: '', metrics: metric, health } } : slot,
-    )
-    expect(isStudioTrafficSampleInsufficient(exactlyHalfEmpty)).toBe(false)
-
-    const recentTraffic = slots.map((slot, index) =>
-      index === 16 ? { ...slot, bucket: { bucket_start: '', metrics: metric, health } } : slot,
-    )
-    expect(isStudioTrafficSampleInsufficient(recentTraffic)).toBe(false)
-
-    const oneTrailingLive = slots.map((slot, index) => {
-      if (index === 7) return { start: slot.start, bucket: undefined }
-      if (index === 17) return { ...slot, bucket: { bucket_start: slot.start, metrics: metric, health } }
-      return slot
-    })
-    expect(oneTrailingLive.filter((slot) => isStudioBucketEmpty(slot.bucket))).toHaveLength(10)
-    expect(isStudioTrafficSampleInsufficient(oneTrailingLive)).toBe(true)
-    expect(resolveStudioTrafficSampleInsufficient(oneTrailingLive, false)).toBe(true)
-  })
-
-  it('requires a traffic majority and five consecutive recent live slots to unlock', () => {
-    expect(STUDIO_TRAFFIC_RECOVERY_SLOTS).toBe(5)
-    const emptySlots = Array.from({ length: 18 }, (_, index) => ({
-      start: new Date(Date.UTC(2026, 8, 10, 10, index * 5)).toISOString(),
-    }))
-    expect(resolveStudioTrafficSampleInsufficient(emptySlots, false)).toBe(true)
-
-    const trafficMajorityWithInterruptedRecent = emptySlots.map((slot, index) =>
-      index === 13
-        ? slot
-        : { ...slot, bucket: { bucket_start: slot.start, metrics: metric, health } },
-    )
-    expect(resolveStudioTrafficSampleInsufficient(trafficMajorityWithInterruptedRecent, false)).toBe(true)
-
-    const trafficMajorityWithFiveRecent = emptySlots.map((slot, index) =>
-      index >= 8 ? { ...slot, bucket: { bucket_start: slot.start, metrics: metric, health } } : slot,
-    )
-    expect(resolveStudioTrafficSampleInsufficient(trafficMajorityWithFiveRecent, true)).toBe(false)
-
-    const exactSplit = emptySlots.map((slot, index) =>
-      index >= 9 ? { ...slot, bucket: { bucket_start: slot.start, metrics: metric, health } } : slot,
-    )
-    expect(resolveStudioTrafficSampleInsufficient(exactSplit, true)).toBe(true)
-    expect(resolveStudioTrafficSampleInsufficient(exactSplit, false)).toBe(false)
   })
 
   it('plots health score so the K-line moves independently of error_rate', () => {

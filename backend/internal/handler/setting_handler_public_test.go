@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -154,4 +155,68 @@ func TestSettingHandler_GetPublicSettings_ExposesWeChatOAuthModeCapabilities(t *
 	require.True(t, resp.Data.WeChatOAuthEnabled)
 	require.True(t, resp.Data.WeChatOAuthOpenEnabled)
 	require.True(t, resp.Data.WeChatOAuthMPEnabled)
+}
+
+func TestSettingHandler_GetPublicSettings_PersonalizesChannelMonitorVisibility(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := NewSettingHandler(service.NewSettingService(&settingHandlerPublicRepoStub{
+		values: map[string]string{
+			service.SettingKeyChannelMonitorEnabled:        "true",
+			service.SettingKeyChannelMonitorVisibility:     service.ChannelMonitorVisibilitySelected,
+			service.SettingKeyChannelMonitorVisibleUserIDs: "[7]",
+		},
+	}, &config.Config{}), "test-version")
+
+	decode := func(recorder *httptest.ResponseRecorder) (enabled bool, visible bool) {
+		t.Helper()
+		var resp struct {
+			Data struct {
+				ChannelMonitorEnabled    bool   `json:"channel_monitor_enabled"`
+				ChannelMonitorVisibility string `json:"channel_monitor_visibility"`
+				ChannelMonitorVisible    bool   `json:"channel_monitor_visible"`
+			} `json:"data"`
+		}
+		require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &resp))
+		require.Equal(t, service.ChannelMonitorVisibilitySelected, resp.Data.ChannelMonitorVisibility)
+		return resp.Data.ChannelMonitorEnabled, resp.Data.ChannelMonitorVisible
+	}
+
+	anonymous := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(anonymous)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/settings/public", nil)
+	h.GetPublicSettings(c)
+	require.Equal(t, http.StatusOK, anonymous.Code)
+	enabled, visible := decode(anonymous)
+	require.True(t, enabled)
+	require.False(t, visible)
+
+	allowlisted := httptest.NewRecorder()
+	c, _ = gin.CreateTestContext(allowlisted)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/settings/public", nil)
+	c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 7})
+	c.Set(string(middleware.ContextKeyUserRole), service.RoleUser)
+	h.GetPublicSettings(c)
+	enabled, visible = decode(allowlisted)
+	require.True(t, enabled)
+	require.True(t, visible)
+
+	blocked := httptest.NewRecorder()
+	c, _ = gin.CreateTestContext(blocked)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/settings/public", nil)
+	c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 8})
+	c.Set(string(middleware.ContextKeyUserRole), service.RoleUser)
+	h.GetPublicSettings(c)
+	enabled, visible = decode(blocked)
+	require.True(t, enabled)
+	require.False(t, visible)
+
+	admin := httptest.NewRecorder()
+	c, _ = gin.CreateTestContext(admin)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/settings/public", nil)
+	c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 99})
+	c.Set(string(middleware.ContextKeyUserRole), service.RoleAdmin)
+	h.GetPublicSettings(c)
+	enabled, visible = decode(admin)
+	require.True(t, enabled)
+	require.True(t, visible)
 }

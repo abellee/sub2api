@@ -518,6 +518,24 @@ const (
 	// Default false (keep the current ranking tab). Admin endpoints always keep it.
 	SettingKeyChannelMonitorHideUserRanking = "channel_monitor_hide_user_ranking"
 
+	// SettingKeyChannelMonitorVisibility controls who can see the user-facing
+	// channel status page (/monitor) and its APIs.
+	// "all" = every logged-in user; "selected" = only listed user IDs.
+	// Admins always have access. Default "selected" so missing/unknown values
+	// hide the user surface (empty allow-list = admins only).
+	SettingKeyChannelMonitorVisibility = "channel_monitor_visibility"
+
+	// ChannelMonitorVisibilityAll/Selected are the only accepted visibility values.
+	ChannelMonitorVisibilityAll      = "all"
+	ChannelMonitorVisibilitySelected = "selected"
+
+	// SettingKeyChannelMonitorVisibleUserIDs stores the JSON int64 array of
+	// user IDs allowed when visibility is "selected". Default "[]".
+	SettingKeyChannelMonitorVisibleUserIDs = "channel_monitor_visible_user_ids"
+
+	// ChannelMonitorVisibleUserIDsMax is the cap on stored allow-list IDs.
+	ChannelMonitorVisibleUserIDsMax = 500
+
 	// SettingKeyGrokDefaultTextModel is the fallback Grok text model for empty
 	// request models and built-in Grok aliases (e.g. "grok" → this id). Default grok-4.5.
 	SettingKeyGrokDefaultTextModel = "grok_default_text_model"

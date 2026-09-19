@@ -13,6 +13,8 @@ import {
   formatStudioErrorRate,
   formatStudioMultiplier,
   formatStudioSuccessRate,
+  formatStudioTtft,
+  studioSampleInsufficient,
   groupStudioCardsByBrand,
   sortStudioCardsByStatus,
   studioAccentFromState,
@@ -28,6 +30,9 @@ import {
   studioChartTrackWidth,
   studioFaceDepth,
   studioFacePalette,
+  studioCacheTone,
+  studioSuccessTone,
+  studioTtftTone,
   studioValueShade,
   ttftTone,
 } from '../studioFormat'
@@ -119,6 +124,46 @@ describe('studioFormat', () => {
     expect(ttftTone(4500)).toBe('warning')
     expect(ttftTone(12000)).toBe('critical')
     expect(ttftTone(null, null, { p50_ms: null, sample_count: 0 })).toBe('unknown')
+  })
+
+  it('dashes success, TTFT, and cache when overall is 样本不足', () => {
+    const unknown = health({ overall: 'unknown', error_rate: 'unknown', ttft: 'unknown', cache: 'unknown' })
+    const live = metric({
+      rpm: 4,
+      success_rate: 0.667,
+      error_rate: 0.333,
+      cache_rate: 0.9,
+      cache_rate_denominator: 10,
+      ttft: { sample_count: 8, p50_ms: 400, p95_ms: 800, avg_ms: 500 },
+    })
+    expect(studioSampleInsufficient(unknown)).toBe(true)
+    expect(formatStudioSuccessRate(live, unknown)).toBe('-')
+    expect(formatStudioTtft(live, unknown)).toBe('-')
+    expect(formatStudioCacheRate(live, unknown)).toBe('-')
+    expect(studioSuccessTone(live, unknown)).toBe('unknown')
+    expect(studioTtftTone(live, null, unknown)).toBe('unknown')
+    expect(studioCacheTone(live, unknown)).toBe('unknown')
+  })
+
+  it('colors printed success and TTFT from metrics even when API sub-health is unknown', () => {
+    const scored = health({ overall: 'healthy', error_rate: 'unknown', ttft: 'unknown', cache: 'unknown' })
+    const live = metric({
+      rpm: 4,
+      success_rate: 0.98,
+      error_rate: 0,
+      cache_rate: 0.9,
+      cache_rate_denominator: 10,
+      ttft: { sample_count: 8, p50_ms: 400, p95_ms: 800, avg_ms: 500 },
+    })
+    expect(formatStudioSuccessRate(live, scored)).toBe('98.0%')
+    expect(formatStudioTtft(live, scored)).toBe('400ms')
+    expect(formatStudioCacheRate(live, scored)).toBe('90.0%')
+    expect(studioSuccessTone(live, scored)).toBe('healthy')
+    expect(studioTtftTone(live, null, scored)).toBe('healthy')
+    expect(studioCacheTone(live, scored)).toBe('healthy')
+    expect(studioSuccessTone(metric({ rpm: 2, success_rate: 0.5 }), scored)).toBe('critical')
+    expect(studioTtftTone(metric({ ttft: { sample_count: 4, p50_ms: 4500, p95_ms: 8000, avg_ms: 5000 } }))).toBe('warning')
+    expect(studioTtftTone(metric())).toBe('unknown')
   })
 
   it('darkens face skin as the score rises', () => {
@@ -242,11 +287,11 @@ describe('studioFormat', () => {
     expect(sections[1]?.cards.map((card) => card.key)).toEqual(['warn'])
     expect(
       sortStudioCardsByStatus([
-        { key: 'normal', state: 'healthy', sampleInsufficient: true },
+        { key: 'normal', state: 'healthy' },
         { key: 'bad', state: 'critical' },
         { key: 'ok', state: 'healthy' },
       ]).map((card) => card.key),
-    ).toEqual(['ok', 'bad', 'normal'])
+    ).toEqual(['normal', 'ok', 'bad'])
   })
 
   it('paints each K-line from its own status accent', () => {
@@ -289,9 +334,6 @@ describe('studioFormat', () => {
     }
     expect(studioGroupActivityScore(idle)).toBe(0)
     expect(pickStudioActiveGroups([idle, live, hot]).map((card) => card.key)).toEqual(['hot', 'live'])
-    const insufficient = { ...hot, key: 'insufficient', sampleInsufficient: true }
-    expect(studioGroupActivityScore(insufficient)).toBe(0)
-    expect(pickStudioActiveGroups([insufficient, live, hot]).map((card) => card.key)).toEqual(['hot', 'live'])
     const stale = {
       key: 'stale',
       metrics: metric({ rpm: 90, request_count: 900 }),
@@ -380,27 +422,26 @@ describe('studioFormat', () => {
     })
     const live = health({ overall: 'healthy', score: 90 })
     expect(formatStudioSuccessRate(redacted, live)).toBe('92.0%')
-    expect(formatStudioErrorRate(redacted, live)).toBe('8.0%')
+    expect(formatStudioErrorRate(redacted, live)).toBe('0.00%')
     expect(formatStudioCacheRate(redacted, live)).toBe('40.0%')
     expect(formatStudioSuccessRate(metric(), health())).toBe('-')
     expect(formatStudioErrorRate(metric(), health())).toBe('-')
   })
 
-  it('falls back to metric thresholds when API overall is unknown', () => {
+  it('uses the API overall health state as the row tone', () => {
     const unknown = health({ overall: 'unknown', error_rate: 'unknown', ttft: 'unknown' })
-    expect(overallToneFromRow(metric({ error_rate: 0, cache_rate: 0.9, ttft: { sample_count: 10, p50_ms: 200, p95_ms: 300, avg_ms: 220 } }), unknown)).toBe('healthy')
-    expect(overallToneFromRow(metric({ error_rate: 0, cache_rate: 0, ttft: { sample_count: 0, p50_ms: null, p95_ms: null, avg_ms: null } }), unknown)).toBe('unknown')
-    expect(overallToneFromRow(metric({ error_rate: 0.08, cache_rate: 0.9 }), unknown)).toBe('warning')
-    expect(
-      overallToneFromRow(
-        metric({ error_rate: 0, success_rate: 0.99, cache_rate: 0, rpm: 3 }),
-        unknown,
-      ),
-    ).toBe('healthy')
+    expect(overallToneFromRow(metric({ error_rate: 0, cache_rate: 0.9, ttft: { sample_count: 10, p50_ms: 200, p95_ms: 300, avg_ms: 220 } }), unknown)).toBe('unknown')
+    expect(overallToneFromRow(metric({ error_rate: 0.08, cache_rate: 0.9 }), unknown)).toBe('unknown')
     expect(
       overallToneFromRow(
         metric({ error_rate: 0, success_rate: 0, rpm: 4 }),
         health({ overall: 'healthy', error_rate: 'healthy', score: 92 }),
+      ),
+    ).toBe('healthy')
+    expect(
+      overallToneFromRow(
+        metric({ error_rate: 0.3 }),
+        health({ overall: 'critical' }),
       ),
     ).toBe('critical')
   })

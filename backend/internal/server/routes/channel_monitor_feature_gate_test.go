@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -119,6 +120,94 @@ func TestChannelMonitorAdminFeatureGuard(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestChannelMonitorUserVisibilityGuard(t *testing.T) {
+	tests := []struct {
+		name       string
+		svc        *service.SettingService
+		userID     int64
+		role       string
+		wantStatus int
+	}{
+		{
+			name:       "nil setting service blocks",
+			wantStatus: http.StatusForbidden,
+		},
+		{
+			name:       "missing visibility hides non-admins",
+			svc:        newChannelMonitorRouteSettings(true),
+			userID:     7,
+			role:       service.RoleUser,
+			wantStatus: http.StatusForbidden,
+		},
+		{
+			name:       "missing visibility still lets admins through",
+			svc:        newChannelMonitorRouteSettings(true),
+			userID:     99,
+			role:       service.RoleAdmin,
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "selected hides users outside the list",
+			svc:        newChannelMonitorVisibilitySettings(true, service.ChannelMonitorVisibilitySelected, "[7]"),
+			userID:     8,
+			role:       service.RoleUser,
+			wantStatus: http.StatusForbidden,
+		},
+		{
+			name:       "selected allows listed users",
+			svc:        newChannelMonitorVisibilitySettings(true, service.ChannelMonitorVisibilitySelected, "[7]"),
+			userID:     7,
+			role:       service.RoleUser,
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "admins bypass selected allow-list",
+			svc:        newChannelMonitorVisibilitySettings(true, service.ChannelMonitorVisibilitySelected, "[7]"),
+			userID:     99,
+			role:       service.RoleAdmin,
+			wantStatus: http.StatusOK,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gin.SetMode(gin.TestMode)
+			router := gin.New()
+			router.Use(func(c *gin.Context) {
+				if tt.userID > 0 {
+					c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: tt.userID})
+				}
+				if tt.role != "" {
+					c.Set(string(middleware.ContextKeyUserRole), tt.role)
+				}
+				c.Next()
+			})
+			router.Use(channelMonitorUserVisibilityGuard(tt.svc))
+			router.GET("/test", func(c *gin.Context) {
+				c.JSON(http.StatusOK, gin.H{"ok": true})
+			})
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/test", nil)
+			router.ServeHTTP(rec, req)
+			require.Equal(t, tt.wantStatus, rec.Code)
+		})
+	}
+}
+
+func newChannelMonitorVisibilitySettings(enabled bool, visibility, ids string) *service.SettingService {
+	enabledVal := "false"
+	if enabled {
+		enabledVal = "true"
+	}
+	return service.NewSettingService(&channelMonitorRouteSettingRepoStub{
+		values: map[string]string{
+			service.SettingKeyChannelMonitorEnabled:        enabledVal,
+			service.SettingKeyChannelMonitorVisibility:     visibility,
+			service.SettingKeyChannelMonitorVisibleUserIDs: ids,
+		},
+	}, &config.Config{})
 }
 
 func TestChannelMonitorModeV2Guard(t *testing.T) {
