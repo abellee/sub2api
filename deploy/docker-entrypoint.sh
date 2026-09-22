@@ -19,9 +19,5 @@ fi
 if [ "${1#-}" != "$1" ]; then
     set -- /app/sub2api "$@"
 fi
-if [ "$1" = "appcatalogd" ]; then
-    shift
-    set -- /app/appcatalogd "$@"
-fi
 
 exec "$@"

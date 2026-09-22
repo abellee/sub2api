@@ -19,8 +19,8 @@ var Version = "dev"
 func main() {
 	listen := flag.String("listen", appcatalog.DefaultListen, "HTTP listen address")
 	sqlitePath := flag.String("sqlite-path", "data/appcatalog.db", "SQLite database path")
-	pricingPath := flag.String("pricing-path", appcatalog.DefaultProviderPricingPath, "LiteLLM model pricing JSON path")
-	pricingMultiplier := flag.Float64("pricing-multiplier", appcatalog.DefaultProviderPricingMultiplier, "Welfare pricing multiplier")
+	pricingPath := flag.String("pricing-path", appcatalog.DefaultProviderPricingPath, "Provider pricing JSON path, read on each request")
+	flag.Float64("pricing-multiplier", appcatalog.DefaultProviderPricingMultiplier, "Deprecated and ignored; edit the pricing JSON instead")
 	showVersion := flag.Bool("version", false, "Show version information")
 	flag.Parse()
 
@@ -40,7 +40,7 @@ func main() {
 	srv := &appcatalog.Server{
 		Store:           store,
 		Fetcher:         appcatalog.NewFetcher(),
-		ProviderPricing: appcatalog.NewProviderPricingService(*pricingPath, *pricingMultiplier),
+		ProviderPricing: appcatalog.NewProviderPricingService(*pricingPath),
 		StartedAt:       time.Now().UTC(),
 		Version:         Version,
 	}

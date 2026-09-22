@@ -782,6 +782,11 @@ install_appcatalogd_service() {
     fi
 
     mkdir -p /var/lib/sub2api/appcatalog
+    pricing_dest="/var/lib/sub2api/appcatalog/provider_pricing.json"
+    pricing_src="$INSTALL_DIR/resources/model-pricing/provider_pricing.json"
+    if [ ! -f "$pricing_dest" ] && [ -f "$pricing_src" ]; then
+        cp "$pricing_src" "$pricing_dest"
+    fi
     chown -R "$SERVICE_USER:$SERVICE_USER" /var/lib/sub2api/appcatalog
     if [ -f "$INSTALL_DIR/resources" ] || [ -d "$INSTALL_DIR/resources" ]; then
         chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR/resources"

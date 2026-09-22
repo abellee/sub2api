@@ -120,25 +120,24 @@ services:
       start_period: 30s
 
   appcatalogd:
+    image: sub2api-appcatalogd:dev
     build:
       context: ..
-      dockerfile: Dockerfile
-      args:
-        NPM_CONFIG_REGISTRY: ${NPM_CONFIG_REGISTRY:-https://registry.npmmirror.com}
+      dockerfile: Dockerfile.appcatalogd
     container_name: sub2api-appcatalogd-dev
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
     command:
-      - /app/appcatalogd
       - -listen
       - 0.0.0.0:18099
       - -sqlite-path
       - /app/data/appcatalog/appcatalog.db
       - -pricing-path
-      - /app/resources/model-pricing/model_prices_and_context_window.json
+      - /app/config/provider_pricing.json
     volumes:
       - ./data:/app/data:Z
+      - ${APP_CATALOG_PRICING_FILE:-./provider-pricing.json}:/app/config/provider_pricing.json:ro
     environment:
       - TZ=${TZ:-Asia/Shanghai}
     networks:

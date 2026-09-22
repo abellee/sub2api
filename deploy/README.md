@@ -26,7 +26,7 @@ This directory contains files for deploying Sub2API on Linux servers and Apple-s
 | `sub2api.service` | Systemd service unit file |
 | `sub2api-datamanagementd.service` | datamanagementd systemd service unit file |
 | `sub2api-appcatalogd.service` | appcatalogd systemd service unit file (SQLite app catalog) |
-| `APPCATALOGD_CN.md` | appcatalogd 部署说明（与主服务同一套 install / upgrade / docker 流程） |
+| `APPCATALOGD_CN.md` | appcatalogd 部署说明（Docker 镜像独立发布；二进制仍随 install.sh） |
 | `DATAMANAGEMENTD_CN.md` | datamanagementd 部署与联动说明（中文） |
 | `config.example.yaml` | Example configuration file |
 | `EDGE_SECURITY.md` | Reverse proxy, CDN/WAF, trusted proxy, and ingress hardening guide |
@@ -196,11 +196,12 @@ SELECT
 
 ### appcatalogd（应用中心）
 
-`appcatalogd` 随 Sub2API 一起发布和安装，不再需要单独编二进制。
+`appcatalogd` 的 Docker 镜像和主服务分开。镜像名是 `weishaw/sub2api-appcatalogd`，用 tag `appcatalogd-v*` 或手动跑 Release appcatalogd 发布。Compose 用 `APP_CATALOG_IMAGE` 指定版本，`docker compose up -d appcatalogd` 只更新 sidecar。
 
-- GitHub Release 压缩包包含 `sub2api` 和 `appcatalogd`
-- `install.sh` 安装/升级/卸载时同步处理 `sub2api-appcatalogd.service`
-- Docker Compose 默认启动 `appcatalogd` 容器，主服务通过 `APP_CATALOG_BASE_URL=http://appcatalogd:18099` 访问
+二进制安装仍把 `appcatalogd` 放进主 Release 压缩包。`install.sh` 会一起安装两个 systemd 单元，但 `systemctl restart sub2api-appcatalogd` 可以单独重启 sidecar。
+
+- 主服务通过 `APP_CATALOG_BASE_URL=http://appcatalogd:18099` 访问 sidecar
+- 价格在 `provider-pricing.json`，每次请求重新读取。改这个文件即可，不用发布或重启
 
 详细步骤见：`deploy/APPCATALOGD_CN.md`
 

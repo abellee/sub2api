@@ -34,7 +34,7 @@ func (s *Server) handleProviderPricing(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Cache-Control", "no-store")
 	if s.ProviderPricing == nil {
-		writeJSON(w, http.StatusOK, NewProviderPricingService("", DefaultProviderPricingMultiplier).Snapshot())
+		writeJSON(w, http.StatusOK, NewProviderPricingService("").Snapshot())
 		return
 	}
 	writeJSON(w, http.StatusOK, s.ProviderPricing.Snapshot())
