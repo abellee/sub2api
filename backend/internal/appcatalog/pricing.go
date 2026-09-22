@@ -8,70 +8,39 @@ import (
 	"time"
 )
 
-const (
-	providerPricingSchemaVersion  = "1.1"
-	providerPricingGrokMultiplier = 0.09
-	providerPricingGroupName      = "福利"
-	providerPricingGrokGroupName  = "Grok - Heavy"
-)
+const providerPricingSchemaVersion = "1.1"
 
-var providerPricingFallbackCosts = map[string]providerPricingCosts{
-	"gpt-5.6-sol": {
-		Input:       0.000005,
-		Output:      0.000030,
-		CacheInput:  providerPricingCost(0.0000005),
-		CacheCreate: providerPricingCost(0.00000625),
-	},
-	"gpt-6-astra": {
-		Input:       0.000010,
-		Output:      0.000050,
-		CacheInput:  providerPricingCost(0.000001),
-		CacheCreate: providerPricingCost(0.0000125),
-	},
-	"grok-4.5": {
-		Input:      0.000002,
-		Output:     0.000006,
-		CacheInput: providerPricingCost(0.0000003),
-	},
-	"grok-4.6": {
-		Input:      0.000002,
-		Output:     0.000006,
-		CacheInput: providerPricingCost(0.0000005),
-	},
-}
-
-// ProviderPricingService adapts the local LiteLLM price catalog to Hvoy's
-// minimal provider-pricing schema. The source prices are USD per token.
+// ProviderPricingService serves the Hvoy provider-pricing document from a JSON
+// file. Snapshot reads that file on every call, so price edits show up without
+// a restart or a new image.
 type ProviderPricingService struct {
-	path       string
-	multiplier float64
+	path string
 }
 
-func NewProviderPricingService(path string, multiplier float64) *ProviderPricingService {
+func NewProviderPricingService(path string) *ProviderPricingService {
 	if strings.TrimSpace(path) == "" {
 		path = DefaultProviderPricingPath
 	}
-	if multiplier < 0 {
-		multiplier = DefaultProviderPricingMultiplier
-	}
-	return &ProviderPricingService{path: path, multiplier: multiplier}
+	return &ProviderPricingService{path: path}
 }
 
-type providerPricingSource struct {
-	InputCostPerToken                *float64 `json:"input_cost_per_token"`
-	OutputCostPerToken               *float64 `json:"output_cost_per_token"`
-	CacheReadInputTokenCost          *float64 `json:"cache_read_input_token_cost"`
-	CacheCreationInputTokenCost      *float64 `json:"cache_creation_input_token_cost"`
-	CacheCreationInputTokenCostAbove *float64 `json:"cache_creation_input_token_cost_above_1hr"`
-	Mode                             string   `json:"mode"`
+type providerPricingFile struct {
+	SchemaVersion string                     `json:"schema_version"`
+	Currency      string                     `json:"currency"`
+	PriceUnit     string                     `json:"price_unit"`
+	Models        []providerPricingFileModel `json:"models"`
 }
 
-type providerPricingCosts struct {
-	Input          float64
-	Output         float64
-	CacheInput     *float64
-	CacheCreate    *float64
-	CacheCreate1Hr *float64
+type providerPricingFileModel struct {
+	ModelName           string   `json:"model_name"`
+	GroupName           string   `json:"group_name"`
+	InputPrice          float64  `json:"input_price"`
+	OutputPrice         float64  `json:"output_price"`
+	CacheInputPrice     *float64 `json:"cache_input_price"`
+	CacheCreatePrice    *float64 `json:"cache_create_price"`
+	CacheCreatePrice1Hr *float64 `json:"cache_create_price_1h"`
+	Enabled             *bool    `json:"enabled"`
+	Note                string   `json:"note"`
 }
 
 type providerPricingModel struct {
@@ -113,96 +82,54 @@ func (s *ProviderPricingService) Snapshot() providerPricingResponse {
 		},
 	}
 
-	costs := make(map[string]providerPricingCosts, len(providerPricingFallbackCosts))
-	for modelName, cost := range providerPricingFallbackCosts {
-		costs[modelName] = cost
-	}
-
 	body, err := os.ReadFile(s.path)
 	if err != nil {
-		response.Message = "pricing source unavailable; using built-in prices"
+		response.Success = false
+		response.Message = "pricing source unavailable"
+		return response
 	}
-	var source map[string]providerPricingSource
-	if err == nil {
-		if err := json.Unmarshal(body, &source); err != nil {
-			response.Message = "pricing source invalid; using built-in prices"
-			source = nil
-		} else if info, statErr := os.Stat(s.path); statErr == nil {
-			response.Data.UpdatedAt = info.ModTime().UTC().Format(time.RFC3339)
-		}
+	var file providerPricingFile
+	if err := json.Unmarshal(body, &file); err != nil {
+		response.Success = false
+		response.Message = "pricing source invalid"
+		return response
 	}
-
-	for modelName, pricing := range source {
-		modelName = strings.ToLower(strings.TrimSpace(modelName))
-		if !isProviderPricingModel(modelName) {
-			continue
-		}
-		// Image-only entries can carry a zero token price and are not valid
-		// token rows for this endpoint.
-		if strings.EqualFold(strings.TrimSpace(pricing.Mode), "image_generation") {
-			continue
-		}
-		cost := costs[modelName]
-		if isValidProviderPrice(pricing.InputCostPerToken) {
-			cost.Input = *pricing.InputCostPerToken
-		}
-		if isValidProviderPrice(pricing.OutputCostPerToken) {
-			cost.Output = *pricing.OutputCostPerToken
-		}
-		if isValidProviderPrice(pricing.CacheReadInputTokenCost) {
-			cost.CacheInput = pricing.CacheReadInputTokenCost
-		}
-		if isValidProviderPrice(pricing.CacheCreationInputTokenCost) {
-			cost.CacheCreate = pricing.CacheCreationInputTokenCost
-		}
-		if isValidProviderPrice(pricing.CacheCreationInputTokenCostAbove) {
-			cost.CacheCreate1Hr = pricing.CacheCreationInputTokenCostAbove
-		}
-		costs[modelName] = cost
+	if info, statErr := os.Stat(s.path); statErr == nil {
+		response.Data.UpdatedAt = info.ModTime().UTC().Format(time.RFC3339)
+	}
+	if strings.TrimSpace(file.SchemaVersion) != "" {
+		response.SchemaVersion = strings.TrimSpace(file.SchemaVersion)
+	}
+	if strings.TrimSpace(file.Currency) != "" {
+		response.Data.Currency = strings.TrimSpace(file.Currency)
+	}
+	if strings.TrimSpace(file.PriceUnit) != "" {
+		response.Data.PriceUnit = strings.TrimSpace(file.PriceUnit)
 	}
 
-	for modelName, cost := range costs {
-		multiplier := s.multiplier
-		groupName := providerPricingGroupName
-		if strings.HasPrefix(modelName, "grok-") {
-			multiplier = providerPricingGrokMultiplier
-			groupName = providerPricingGrokGroupName
+	for _, model := range file.Models {
+		modelName := strings.ToLower(strings.TrimSpace(model.ModelName))
+		if modelName == "" {
+			continue
+		}
+		enabled := true
+		if model.Enabled != nil {
+			enabled = *model.Enabled
 		}
 		response.Data.Models = append(response.Data.Models, providerPricingModel{
 			ModelName:           modelName,
-			GroupName:           groupName,
-			InputPrice:          cost.Input * 1_000_000 * multiplier,
-			OutputPrice:         cost.Output * 1_000_000 * multiplier,
-			CacheInputPrice:     scaleProviderPrice(cost.CacheInput, multiplier),
-			CacheCreatePrice:    scaleProviderPrice(cost.CacheCreate, multiplier),
-			CacheCreatePrice1Hr: scaleProviderPrice(cost.CacheCreate1Hr, multiplier),
-			Enabled:             true,
-			Note:                "",
+			GroupName:           model.GroupName,
+			InputPrice:          model.InputPrice,
+			OutputPrice:         model.OutputPrice,
+			CacheInputPrice:     model.CacheInputPrice,
+			CacheCreatePrice:    model.CacheCreatePrice,
+			CacheCreatePrice1Hr: model.CacheCreatePrice1Hr,
+			Enabled:             enabled,
+			Note:                model.Note,
 		})
 	}
 	sort.Slice(response.Data.Models, func(i, j int) bool {
 		return response.Data.Models[i].ModelName < response.Data.Models[j].ModelName
 	})
 	return response
-}
-
-func isProviderPricingModel(modelName string) bool {
-	_, ok := providerPricingFallbackCosts[modelName]
-	return ok
-}
-
-func providerPricingCost(value float64) *float64 {
-	return &value
-}
-
-func isValidProviderPrice(value *float64) bool {
-	return value != nil && *value >= 0
-}
-
-func scaleProviderPrice(value *float64, multiplier float64) *float64 {
-	if value == nil {
-		return nil
-	}
-	scaled := *value * 1_000_000 * multiplier
-	return &scaled
 }
