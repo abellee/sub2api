@@ -116,17 +116,14 @@ func TestListConfiguredPlazaGroups_UsesGroupModelListWithoutChannelIntersection(
 	require.Nil(t, out[0].Models[5].OfficialPricing, "missing price must not remove a configured model")
 }
 
-func TestWithDefaultMaxReasoningEffortMultiplier_Fable51(t *testing.T) {
-	base := &ChannelModelPricing{BillingMode: BillingModeToken}
-	got := withDefaultMaxReasoningEffortMultiplier(base, "claude-fable-5-1")
-	require.NotSame(t, base, got)
-	require.NotNil(t, got.MaxReasoningEffortMultiplier)
-	require.Equal(t, 3.0, *got.MaxReasoningEffortMultiplier)
-	require.Nil(t, base.MaxReasoningEffortMultiplier)
-
-	configured := 1.25
-	custom := &ChannelModelPricing{MaxReasoningEffortMultiplier: &configured}
-	require.Same(t, custom, withDefaultMaxReasoningEffortMultiplier(custom, "claude-fable-5-1"))
+func TestListPlazaGroups_Fable51HasNoImplicitReasoningMultiplier(t *testing.T) {
+	ch := plazaPricedChannel(1, "ch", []int64{10}, "anthropic", "claude-fable-5-1")
+	svc := newPlazaService([]Channel{ch}, []Group{{ID: 10, Platform: "anthropic"}}, nil)
+	groups, err := svc.ListGroups(context.Background())
+	require.NoError(t, err)
+	require.Len(t, groups, 1)
+	require.Len(t, groups[0].Models, 1)
+	require.Empty(t, groups[0].Models[0].Pricing.ReasoningEffortMultipliers)
 }
 
 func TestListPlazaGroups_DedupFirstWinsWithPricingUpgrade(t *testing.T) {
@@ -812,7 +809,7 @@ func TestListConfiguredPlazaGroups_HidesCatalogLongContextWithoutChannelInterval
 	groups := []Group{{
 		ID: 10, Name: "g", Platform: PlatformAnthropic, RateMultiplier: 1,
 		LongContextPricingEnabled: true,
-		ModelAllowlist:          GroupModelAllowlist{Models: []string{"claude-flat"}},
+		ModelAllowlist:            GroupModelAllowlist{Models: []string{"claude-flat"}},
 	}}
 	catalog := &PricingService{pricingData: map[string]*LiteLLMModelPricing{
 		"claude-flat": {
@@ -885,7 +882,7 @@ func TestListConfiguredPlazaGroups_NoMediaPricesDoesNotInjectGrokModels(t *testi
 	groups := []Group{{
 		ID: 18, Name: "Grok Heavy", Platform: PlatformGrok, RateMultiplier: 0.11,
 		AllowImageGeneration: true,
-		ModelAllowlist:     GroupModelAllowlist{Models: []string{"grok-4.5"}},
+		ModelAllowlist:       GroupModelAllowlist{Models: []string{"grok-4.5"}},
 	}}
 	svc := newPlazaService(nil, groups, nil)
 	out, err := svc.ListConfiguredGroups(context.Background())
