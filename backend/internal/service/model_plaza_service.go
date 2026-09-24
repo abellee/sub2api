@@ -312,6 +312,9 @@ func (s *ModelPlazaService) ListConfiguredGroups(ctx context.Context) ([]PlazaGr
 // 图片/视频/按次模型优先用渠道价卡，分组档位价只覆盖已配置项。
 // 公开页模型最初可能没有渠道定价指针，因此这里会再走一遍 Resolver。
 func (s *ModelPlazaService) fillDisplayPricing(ctx context.Context, m *PlazaModel, g *Group) {
+	if groupPricing := matchGroupModelPricing(g, m.Name); groupPricing != nil {
+		m.Pricing = groupPricing
+	}
 	m.HasChannelContextPricing = false
 	if s.resolver != nil {
 		if requestPricing := plazaResolvedRequestPricing(ctx, s.resolver, m, g); requestPricing != nil {
@@ -343,7 +346,7 @@ func (s *ModelPlazaService) fillDisplayPricing(ctx context.Context, m *PlazaMode
 			Platform: m.Platform,
 		})
 		if err == nil && sched != nil && len(sched.Tiers) > 0 {
-			m.Pricing = withDefaultMaxReasoningEffortMultiplier(plazaPricingFromSchedule(m.Pricing, sched), m.Name)
+			m.Pricing = plazaPricingFromSchedule(m.Pricing, sched)
 			// Catalog ladders are not channel pricing. Only expose context tiers
 			// when the resolved channel explicitly configures token intervals.
 			// This keeps the model plaza from advertising official/catalog tiers
@@ -363,7 +366,7 @@ func (s *ModelPlazaService) fillDisplayPricing(ctx context.Context, m *PlazaMode
 			return
 		}
 	}
-	m.Pricing = withDefaultMaxReasoningEffortMultiplier(plazaImageDisplayPricing(m.Pricing, g), m.Name)
+	m.Pricing = plazaImageDisplayPricing(m.Pricing, g)
 	m.Pricing = plazaVideoDisplayPricing(m.Name, m.Pricing, g)
 	m.Pricing = plazaApplyGroupMediaDisplayPricing(m.Name, m.Pricing, g)
 	if m.Pricing != nil && len(m.Pricing.Intervals) > 0 {
@@ -371,19 +374,6 @@ func (s *ModelPlazaService) fillDisplayPricing(ctx context.Context, m *PlazaMode
 		// the model are the only available channel-owned pricing source.
 		m.HasChannelContextPricing = true
 	}
-}
-
-func withDefaultMaxReasoningEffortMultiplier(pricing *ChannelModelPricing, model string) *ChannelModelPricing {
-	if pricing == nil || pricing.MaxReasoningEffortMultiplier != nil {
-		return pricing
-	}
-	multiplier := defaultMaxReasoningEffortMultiplier(model)
-	if multiplier == nil {
-		return pricing
-	}
-	cloned := pricing.Clone()
-	cloned.MaxReasoningEffortMultiplier = multiplier
-	return &cloned
 }
 
 func plazaIsGrokImagineImage(model string) bool {
@@ -510,7 +500,7 @@ func plazaPricingFromSchedule(raw *ChannelModelPricing, sched *ContextPricingSch
 		out.ImageInputPrice = raw.ImageInputPrice
 		out.ImageOutputPrice = raw.ImageOutputPrice
 		out.PerRequestPrice = raw.PerRequestPrice
-		out.MaxReasoningEffortMultiplier = raw.MaxReasoningEffortMultiplier
+		out.ReasoningEffortMultipliers = reasoningEffortMultipliersFromPricing(raw)
 	}
 	first := sched.Tiers[0]
 	out.InputPrice = first.Input
