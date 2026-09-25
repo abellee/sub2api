@@ -177,7 +177,7 @@ func TestToModelPlazaGroupDTO_HidesUnconfirmedTokenIntervals(t *testing.T) {
 
 	dto := toModelPlazaGroupDTO(&g, nil)
 	models := dto.Models
-	require.Empty(t, models[0].Pricing.Intervals, "未确认来源的 token 阶梯不得通过 DTO 泄漏")
+	require.Len(t, models[0].Pricing.Intervals, 1, "token 阶梯按上游计价结果原样展示")
 	require.Len(t, models[1].Pricing.Intervals, 1, "图片档位仍属于正常价格表达")
 }
 

@@ -48,7 +48,6 @@ import MonitorCardGrid from '@/components/user/monitor/MonitorCardGrid.vue'
 import MonitorDetailDialog from '@/components/user/MonitorDetailDialog.vue'
 import { DEFAULT_INTERVAL_SECONDS, STATUS_OPERATIONAL } from '@/constants/channelMonitor'
 import { useAutoRefresh } from '@/composables/useAutoRefresh'
-import { isChannelMonitorVisibleToUser } from '@/utils/featureFlags'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -154,19 +153,16 @@ watch(items, () => {
 })
 
 watch(
-  () => [
-    appStore.cachedPublicSettings?.channel_monitor_enabled,
-    appStore.cachedPublicSettings?.channel_monitor_visible,
-  ],
-  () => {
-    if (!isChannelMonitorVisibleToUser()) autoRefresh.stop()
+  () => appStore.cachedPublicSettings?.channel_monitor_enabled,
+  (enabled) => {
+    if (enabled === false) autoRefresh.stop()
     else if (autoRefresh.enabled.value) autoRefresh.start()
   },
 )
 
 onMounted(() => {
   void reload(false)
-  if (isChannelMonitorVisibleToUser()) {
+  if (appStore.cachedPublicSettings?.channel_monitor_enabled !== false) {
     autoRefresh.setEnabled(autoRefresh.enabled.value)
   }
 })
