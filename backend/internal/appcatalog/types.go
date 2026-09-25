@@ -4,7 +4,7 @@ import "time"
 
 const (
 	DefaultListen                    = "127.0.0.1:18099"
-	DefaultProviderPricingPath       = "resources/model-pricing/model_prices_and_context_window.json"
+	DefaultProviderPricingPath       = "resources/model-pricing/provider_pricing.json"
 	DefaultProviderPricingMultiplier = 0.08
 )
 

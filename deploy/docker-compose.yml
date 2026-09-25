@@ -233,21 +233,21 @@ services:
   # App Catalog Daemon
   # ===========================================================================
   appcatalogd:
-    image: weishaw/sub2api:latest
+    image: ${APP_CATALOG_IMAGE:-weishaw/sub2api-appcatalogd:latest}
     container_name: sub2api-appcatalogd
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
     command:
-      - /app/appcatalogd
       - -listen
       - 0.0.0.0:18099
       - -sqlite-path
       - /app/data/appcatalog/appcatalog.db
       - -pricing-path
-      - /app/resources/model-pricing/model_prices_and_context_window.json
+      - /app/config/provider_pricing.json
     volumes:
       - sub2api_data:/app/data
+      - ${APP_CATALOG_PRICING_FILE:-./provider-pricing.json}:/app/config/provider_pricing.json:ro
     networks:
       - sub2api-network
     healthcheck:

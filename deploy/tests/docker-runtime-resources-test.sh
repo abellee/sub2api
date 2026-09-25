@@ -25,8 +25,11 @@ assert_count() {
 
 test -s backend/resources/model-pricing/model_prices_and_context_window.json || \
   fail 'fallback pricing data is missing or empty'
+cmp -s backend/resources/model-pricing/provider_pricing.json deploy/provider-pricing.json || \
+  fail 'provider pricing JSON copies differ'
 
-assert_line Dockerfile.goreleaser 'COPY appcatalogd /app/appcatalogd'
+assert_line Dockerfile.appcatalogd 'COPY --from=backend-builder --chown=sub2api:sub2api /out/appcatalogd /app/appcatalogd'
+assert_line Dockerfile.appcatalogd 'COPY --chown=sub2api:sub2api backend/resources/model-pricing /app/resources/model-pricing'
 assert_line Dockerfile.goreleaser 'COPY --chown=sub2api:sub2api backend/resources /app/resources'
 assert_line deploy/Dockerfile 'COPY --from=backend-builder --chown=sub2api:sub2api /app/backend/resources /app/resources'
 assert_count .goreleaser.yaml '      - backend/resources' 4
