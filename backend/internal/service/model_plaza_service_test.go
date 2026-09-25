@@ -425,13 +425,7 @@ func TestListGroups_TokenLadderFollowsGroupToggle(t *testing.T) {
 	// 同一渠道挂开启/关闭阶梯的两个分组：实付档位随分组开关，官方阶梯不受影响。
 	channels := []Channel{{
 		ID: 1, Name: "ch", Status: StatusActive, GroupIDs: []int64{10, 20},
-		ModelPricing: []ChannelModelPricing{{
-			Platform: PlatformOpenAI, Models: []string{"gpt-5.4"}, BillingMode: BillingModeToken,
-			Intervals: []PricingInterval{
-				{MinTokens: 0, MaxTokens: testPtrInt(272000), InputPrice: testPtrFloat64(2.5e-6), OutputPrice: testPtrFloat64(10e-6), CacheWritePrice: testPtrFloat64(2.5e-6), CacheReadPrice: testPtrFloat64(0.3e-6)},
-				{MinTokens: 272000, MaxTokens: nil, InputPrice: testPtrFloat64(5e-6), OutputPrice: testPtrFloat64(22.5e-6), CacheWritePrice: testPtrFloat64(5e-6), CacheReadPrice: testPtrFloat64(0.5e-6)},
-			},
-		}},
+		ModelPricing: []ChannelModelPricing{{Platform: PlatformOpenAI, Models: []string{"gpt-5.4"}, BillingMode: BillingModeToken}},
 	}}
 	groups := []Group{
 		{ID: 10, Name: "on", Platform: PlatformOpenAI, RateMultiplier: 1, LongContextPricingEnabled: true},
@@ -449,19 +443,16 @@ func TestListGroups_TokenLadderFollowsGroupToggle(t *testing.T) {
 
 	onModel := on.Models[0]
 	require.Equal(t, ContextPricingBasisWholeRequest, onModel.LongContextBasis)
-	require.True(t, onModel.HasChannelContextPricing)
-	// The base tier is represented by Pricing's scalar fields; only additional
-	// channel-defined context tiers are emitted in Intervals.
-	require.Len(t, onModel.Pricing.Intervals, 1)
-	require.Equal(t, ">272K", onModel.Pricing.Intervals[0].TierLabel)
+	require.Len(t, onModel.Pricing.Intervals, 2)
+	require.Equal(t, "≤272K", onModel.Pricing.Intervals[0].TierLabel)
+	require.Equal(t, ">272K", onModel.Pricing.Intervals[1].TierLabel)
 	require.InDelta(t, 2.5e-6, *onModel.Pricing.InputPrice, 1e-15)
-	require.InDelta(t, 5e-6, *onModel.Pricing.Intervals[0].InputPrice, 1e-15)
-	require.InDelta(t, 22.5e-6, *onModel.Pricing.Intervals[0].OutputPrice, 1e-15)
-	require.InDelta(t, 5e-6, *onModel.Pricing.Intervals[0].CacheWritePrice, 1e-15)
-	require.InDelta(t, 0.5e-6, *onModel.Pricing.Intervals[0].CacheReadPrice, 1e-15)
+	require.InDelta(t, 5e-6, *onModel.Pricing.Intervals[1].InputPrice, 1e-15)
+	require.InDelta(t, 22.5e-6, *onModel.Pricing.Intervals[1].OutputPrice, 1e-15)
+	require.InDelta(t, 5e-6, *onModel.Pricing.Intervals[1].CacheWritePrice, 1e-15)
+	require.InDelta(t, 0.5e-6, *onModel.Pricing.Intervals[1].CacheReadPrice, 1e-15)
 
 	offModel := off.Models[0]
-	require.False(t, offModel.HasChannelContextPricing)
 	require.Empty(t, offModel.LongContextBasis)
 	require.Empty(t, offModel.Pricing.Intervals)
 	require.InDelta(t, 2.5e-6, *offModel.Pricing.InputPrice, 1e-15)
@@ -513,9 +504,8 @@ func TestListGroups_CompositeUsesModelPlatformForChannelContextPricing(t *testin
 		}
 	}
 	require.NotNil(t, grokModel)
-	require.True(t, grokModel.HasChannelContextPricing)
-	require.Len(t, grokModel.Pricing.Intervals, 1)
-	require.InDelta(t, 1e-6, *grokModel.Pricing.Intervals[0].CacheReadPrice, 1e-15)
+	require.Len(t, grokModel.Pricing.Intervals, 2)
+	require.InDelta(t, 1e-6, *grokModel.Pricing.Intervals[1].CacheReadPrice, 1e-15)
 }
 
 func TestListGroups_GeminiLegacyRuleShownAsMarginal(t *testing.T) {
@@ -795,10 +785,10 @@ func TestListGroups_GrokHeavyChannelMediaPricingWithBilling(t *testing.T) {
 	text := byName["grok-4"]
 	require.Equal(t, BillingModeToken, text.Pricing.BillingMode)
 	require.InDelta(t, 3e-6, *text.Pricing.InputPrice, 1e-15)
-	require.Len(t, text.Pricing.Intervals, 1)
-	require.Equal(t, ">128K", text.Pricing.Intervals[0].TierLabel)
-	require.InDelta(t, 6e-6, *text.Pricing.Intervals[0].InputPrice, 1e-15)
-	require.InDelta(t, 3e-5, *text.Pricing.Intervals[0].OutputPrice, 1e-15)
+	require.Len(t, text.Pricing.Intervals, 2)
+	require.Equal(t, ">128K", text.Pricing.Intervals[1].TierLabel)
+	require.InDelta(t, 6e-6, *text.Pricing.Intervals[1].InputPrice, 1e-15)
+	require.InDelta(t, 3e-5, *text.Pricing.Intervals[1].OutputPrice, 1e-15)
 }
 
 func TestListConfiguredPlazaGroups_HidesCatalogLongContextWithoutChannelIntervals(t *testing.T) {

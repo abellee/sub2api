@@ -356,8 +356,6 @@ import {
 } from '@/constants/channel'
 import type { PlazaModel, PlazaTimePricingPeriod } from '@/api/modelPlaza'
 import type { UserPricingInterval } from '@/api/channels'
-import { hasModelPlazaChannelContextPricing } from '@/components/model-plaza/modelPlaza'
-
 function reasoningEffortMultipliers(model: PlazaModel): [string, number][] {
   const multipliers = model.pricing?.reasoning_effort_multipliers
   return REASONING_EFFORT_LEVELS.flatMap(effort => {
@@ -677,7 +675,7 @@ function requestIntervals(m: PlazaModel): UserPricingInterval[] {
 /** token 模式的整单上下文档位；后端不会在此契约中输出边际计价规则。 */
 function tokenIntervals(m: PlazaModel): UserPricingInterval[] {
   if (billingMode(m) !== BILLING_MODE_TOKEN || !m.pricing) return []
-  const intervals = hasModelPlazaChannelContextPricing(m) ? m.pricing.intervals ?? [] : []
+  const intervals = m.pricing.intervals ?? []
   return sortByContext(intervals)
     .map((iv) => resolveIntervalPrices(iv, m.pricing!))
     .filter((iv) =>

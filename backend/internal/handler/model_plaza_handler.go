@@ -211,14 +211,6 @@ func toModelPlazaGroupDTO(g *service.PlazaGroup, userRates map[int64]float64) mo
 	for i := range g.Models {
 		m := &g.Models[i]
 		pricing := toUserPricing(m.Pricing)
-		// Token intervals are context ladders and are only part of the public
-		// contract when the service explicitly confirms channel ownership. Keep
-		// request/image/video tiers intact because those use intervals as their
-		// normal price representation.
-		if pricing != nil && !m.HasChannelContextPricing &&
-			(pricing.BillingMode == string(service.BillingModeToken) || pricing.BillingMode == "") {
-			pricing.Intervals = []userPricingIntervalDTO{}
-		}
 		models = append(models, modelPlazaModel{
 			Name:                     m.Name,
 			Platform:                 m.Platform,

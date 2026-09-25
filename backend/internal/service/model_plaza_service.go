@@ -286,10 +286,9 @@ func (s *ModelPlazaService) ListConfiguredGroups(ctx context.Context) ([]PlazaGr
 			continue
 		}
 		for j := range pg.Models {
-			// Configured models are intentionally kept even without an active
-			// channel, but when a channel exists use the same billing resolver as
-			// ListGroups so channel interval pricing is visible on the public page.
-			s.fillDisplayPricing(ctx, &pg.Models[j], g)
+			// Configured models stay visible without an active channel. Pricing
+			// enrichment is fork-only and does not change upstream ListGroups.
+			s.fillConfiguredDisplayPricing(ctx, &pg.Models[j], g)
 			pg.Models[j].OfficialPricing = s.lookupOfficialPricing(ctx, pg.Models[j].Name, officialMemo)
 		}
 		sort.SliceStable(pg.Models, func(i, j int) bool {
@@ -308,10 +307,35 @@ func (s *ModelPlazaService) ListConfiguredGroups(ctx context.Context) ([]PlazaGr
 }
 
 // fillDisplayPricing 把模型的展示定价换成实收口径：
+// token 模型取计费阶梯表（单价与档位均由真实计费函数得出），
+// 图片/按次模型（或阶梯表不可用时）沿用渠道定价与分组图片档位价。
+func (s *ModelPlazaService) fillDisplayPricing(ctx context.Context, m *PlazaModel, g *Group) {
+	if groupPricing := matchGroupModelPricing(g, m.Name); groupPricing != nil {
+		m.Pricing = groupPricing
+	}
+	if s.billingService != nil && s.resolver != nil {
+		sched, err := s.billingService.ResolveContextPricingSchedule(ctx, s.resolver, ContextPricingScheduleInput{
+			Model:    m.Name,
+			Group:    g,
+			Platform: m.Platform,
+		})
+		if err == nil && sched != nil && len(sched.Tiers) > 0 {
+			m.Pricing = plazaPricingFromSchedule(m.Pricing, sched)
+			if len(sched.Tiers) > 1 {
+				m.LongContextBasis = sched.Basis
+			}
+			m.TimePricing = sched.TimePricing
+			return
+		}
+	}
+	m.Pricing = plazaImageDisplayPricing(m.Pricing, g)
+}
+
+// fillConfiguredDisplayPricing 是分组白名单广场的展示定价，不改变上游 ListGroups 的 fillDisplayPricing：
 // token 模型取计费阶梯表（单价与档位均由真实计费函数得出）；
 // 图片/视频/按次模型优先用渠道价卡，分组档位价只覆盖已配置项。
 // 公开页模型最初可能没有渠道定价指针，因此这里会再走一遍 Resolver。
-func (s *ModelPlazaService) fillDisplayPricing(ctx context.Context, m *PlazaModel, g *Group) {
+func (s *ModelPlazaService) fillConfiguredDisplayPricing(ctx context.Context, m *PlazaModel, g *Group) {
 	if groupPricing := matchGroupModelPricing(g, m.Name); groupPricing != nil {
 		m.Pricing = groupPricing
 	}
