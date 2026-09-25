@@ -142,19 +142,12 @@ def contexts(args):
         dest = Path(args.output) / target['goarch']
         dest.mkdir(parents=True, exist_ok=True)
         with tarfile.open(Path(args.input) / archive_name(args.version, target), 'r:gz') as archive:
-            def extract_binary(name, required):
-                members = [member for member in archive.getmembers() if member.name in (name, './' + name)]
-                if len(members) != 1 or not members[0].isfile():
-                    if required:
-                        raise ValueError(f'archive must contain one regular {name} binary')
-                    return
-                with archive.extractfile(members[0]) as source, (dest / name).open('wb') as output:
-                    shutil.copyfileobj(source, output)
-                (dest / name).chmod(0o755)
-
-            extract_binary('sub2api', True)
-            # Fork image also ships appcatalogd when the archive contains it.
-            extract_binary('appcatalogd', False)
+            members = [member for member in archive.getmembers() if member.name in ('sub2api', './sub2api')]
+            if len(members) != 1 or not members[0].isfile():
+                raise ValueError('archive must contain one regular sub2api binary')
+            with archive.extractfile(members[0]) as source, (dest / 'sub2api').open('wb') as output:
+                shutil.copyfileobj(source, output)
+        (dest / 'sub2api').chmod(0o755)
         shutil.copy2('Dockerfile.goreleaser', dest / 'Dockerfile')
         (dest / 'deploy').mkdir(exist_ok=True)
         shutil.copy2('deploy/docker-entrypoint.sh', dest / 'deploy/docker-entrypoint.sh')
