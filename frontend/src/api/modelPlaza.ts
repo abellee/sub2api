@@ -55,8 +55,11 @@ export interface ModelPlazaGroup {
   is_exclusive: boolean
   image_rate_independent: boolean
   image_rate_multiplier: number
+  /** 视频独立倍率开启时，覆盖视频模型的分组/用户专属倍率。 */
   video_rate_independent: boolean
   video_rate_multiplier: number
+  /** 分组是否启用长上下文阶梯计费；false 时实付列只展示最低档，官方阶梯仅供参考。旧后端可能缺省。 */
+  long_context_pricing_enabled?: boolean
   models: PlazaModel[]
 }
 
