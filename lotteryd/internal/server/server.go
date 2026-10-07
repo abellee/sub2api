@@ -234,7 +234,7 @@ func pathID(r *http.Request) (int64, error) {
 // ---- User handlers ----
 
 func (s *Server) handleListActivities(w http.ResponseWriter, r *http.Request, claims *Claims) {
-	views, err := s.App.ListUserActivities(r.Context(), claims.UserID, claims.Email, claims.RegisteredAt)
+	views, err := s.App.ListUserActivities(r.Context(), claims.UserID, claims.Email, claims.Role, claims.RegisteredAt)
 	if err != nil {
 		internalError(w, err)
 		return
@@ -258,8 +258,18 @@ func (s *Server) handleActivityWinners(w http.ResponseWriter, r *http.Request, c
 		fail(w, http.StatusBadRequest, 400, "invalid activity id")
 		return
 	}
-	// 用户侧显隐：部分人可见模式下，白名单外用户不返回任何中奖数据
+	// 用户侧显隐：部分人可见模式下，白名单外用户不返回任何中奖数据。
+	// 未满足参与条件、且未参与/未中奖的场次同样不返回名单。
 	if !s.App.IsUserAllowed(claims.Role, claims.Email) {
+		ok(w, map[string]any{"winners": []lottery.Winner{}})
+		return
+	}
+	canSee, err := s.App.UserCanSeeActivity(r.Context(), id, claims.UserID, claims.Email, claims.Role, claims.RegisteredAt)
+	if err != nil {
+		mapStoreError(w, err)
+		return
+	}
+	if !canSee {
 		ok(w, map[string]any{"winners": []lottery.Winner{}})
 		return
 	}
@@ -285,11 +295,12 @@ func (s *Server) handleActivityWinners(w http.ResponseWriter, r *http.Request, c
 }
 
 // handleMyVisibility 用户侧显隐结果 + 当前抽奖状态（供侧边栏入口显隐与状态角标）。
+// 角标只反映该用户可参与（或已参与/已中奖）的场次。
 func (s *Server) handleMyVisibility(w http.ResponseWriter, r *http.Request, claims *Claims) {
 	visible := s.App.IsUserAllowed(claims.Role, claims.Email)
 	phase := ""
 	if visible {
-		phase = s.App.CurrentLotteryPhase()
+		phase = s.App.UserLotteryPhase(r.Context(), claims.UserID, claims.Email, claims.Role, claims.RegisteredAt)
 	}
 	ok(w, map[string]any{"visible": visible, "phase": phase})
 }
@@ -362,16 +373,17 @@ func internalError(w http.ResponseWriter, err error) {
 // ---- Admin handlers ----
 
 type activityInput struct {
-	Name             string                 `json:"name"`
-	Description      string                 `json:"description"`
-	StartsAt         time.Time              `json:"starts_at"`
-	DrawsAt          time.Time              `json:"draws_at"`
-	MaxParticipants  int64                  `json:"max_participants"`
-	ConditionMatch   string                 `json:"condition_match"`
-	AutoBonusPercent float64                `json:"auto_bonus_percent"`
-	DailyConfigID    int64                  `json:"daily_config_id"`
-	Conditions       []lottery.ConditionDef `json:"conditions"`
-	Prizes           []prizeInput           `json:"prizes"`
+	Name                 string                 `json:"name"`
+	Description          string                 `json:"description"`
+	StartsAt             time.Time              `json:"starts_at"`
+	DrawsAt              time.Time              `json:"draws_at"`
+	MaxParticipants      int64                  `json:"max_participants"`
+	ShowParticipantCount bool                   `json:"show_participant_count"`
+	ConditionMatch       string                 `json:"condition_match"`
+	AutoBonusPercent     float64                `json:"auto_bonus_percent"`
+	DailyConfigID        int64                  `json:"daily_config_id"`
+	Conditions           []lottery.ConditionDef `json:"conditions"`
+	Prizes               []prizeInput           `json:"prizes"`
 }
 
 type prizeInput struct {
@@ -385,15 +397,16 @@ type prizeInput struct {
 
 func (in *activityInput) toActivity() *lottery.Activity {
 	a := &lottery.Activity{
-		Name:             in.Name,
-		Description:      in.Description,
-		StartsAt:         in.StartsAt,
-		DrawsAt:          in.DrawsAt,
-		MaxParticipants:  in.MaxParticipants,
-		ConditionMatch:   in.ConditionMatch,
-		AutoBonusPercent: in.AutoBonusPercent,
-		DailyConfigID:    in.DailyConfigID,
-		Conditions:       in.Conditions,
+		Name:                 in.Name,
+		Description:          in.Description,
+		StartsAt:             in.StartsAt,
+		DrawsAt:              in.DrawsAt,
+		MaxParticipants:      in.MaxParticipants,
+		ShowParticipantCount: in.ShowParticipantCount,
+		ConditionMatch:       in.ConditionMatch,
+		AutoBonusPercent:     in.AutoBonusPercent,
+		DailyConfigID:        in.DailyConfigID,
+		Conditions:           in.Conditions,
 	}
 	for _, p := range in.Prizes {
 		a.Prizes = append(a.Prizes, lottery.Prize{

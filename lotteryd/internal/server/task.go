@@ -54,7 +54,7 @@ func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request, claims 
 		ok(w, map[string]any{"tasks": []any{}})
 		return
 	}
-	tasks, err := s.App.ListUserTasks(claims.Email, time.Now())
+	tasks, err := s.App.ListUserTasks(r.Context(), claims.UserID, claims.Email, claims.Role, claims.RegisteredAt, time.Now())
 	if err != nil {
 		internalError(w, err)
 		return
@@ -72,13 +72,13 @@ func (s *Server) handleTaskPrompts(w http.ResponseWriter, r *http.Request, claim
 	ok(w, map[string]any{"tasks": tasks})
 }
 
-// handleMyTasksPhase 用户侧角标探测：该用户有可见的进行中任务 → active。
+// handleMyTasksPhase 用户侧角标探测：该用户有可参与的进行中任务 → active。
 func (s *Server) handleMyTasksPhase(w http.ResponseWriter, r *http.Request, claims *Claims) {
 	if !s.App.IsUserAllowedTask(claims.Role, claims.Email) {
 		ok(w, map[string]any{"phase": "none"})
 		return
 	}
-	phase, err := s.App.TasksPhase(claims.Email, time.Now())
+	phase, err := s.App.TasksPhase(r.Context(), claims.UserID, claims.Email, claims.Role, claims.RegisteredAt, time.Now())
 	if err != nil {
 		internalError(w, err)
 		return

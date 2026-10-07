@@ -65,7 +65,11 @@ func (s *Store) migrate() error {
 	if err := s.ensureColumn("activities", "daily_config_id", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
-	return s.ensureColumn("activities", "visible_users_json", "TEXT NOT NULL DEFAULT '[]'")
+	if err := s.ensureColumn("activities", "visible_users_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
+		return err
+	}
+	// 旧活动默认继续向用户显示参与人数。
+	return s.ensureColumn("activities", "show_participant_count", "INTEGER NOT NULL DEFAULT 0")
 }
 
 // ensureColumn 若表缺少指定列则 ALTER TABLE 补上。
@@ -106,6 +110,7 @@ CREATE TABLE IF NOT EXISTS activities (
 	starts_at TEXT NOT NULL,
 	draws_at TEXT NOT NULL,
 	max_participants INTEGER NOT NULL DEFAULT 0,
+	show_participant_count INTEGER NOT NULL DEFAULT 0,
 	condition_match TEXT NOT NULL DEFAULT 'all',
 	auto_bonus_percent REAL NOT NULL DEFAULT 25,
 	status TEXT NOT NULL DEFAULT 'active',
@@ -210,10 +215,10 @@ func (s *Store) CreateActivity(a *lottery.Activity) (int64, error) {
 		return 0, err
 	}
 	res, err := tx.Exec(
-		`INSERT INTO activities (name, description, starts_at, draws_at, max_participants, condition_match, auto_bonus_percent, status, visible_to_all, visible_users_json, daily_config_id, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?)`,
+		`INSERT INTO activities (name, description, starts_at, draws_at, max_participants, show_participant_count, condition_match, auto_bonus_percent, status, visible_to_all, visible_users_json, daily_config_id, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?)`,
 		a.Name, a.Description, fmtTime(a.StartsAt), fmtTime(a.DrawsAt),
-		a.MaxParticipants, a.ConditionMatch, a.AutoBonusPercent, a.VisibleToAll, string(visibleUsersJSON), a.DailyConfigID, fmtTime(now), fmtTime(now),
+		a.MaxParticipants, a.ShowParticipantCount, a.ConditionMatch, a.AutoBonusPercent, a.VisibleToAll, string(visibleUsersJSON), a.DailyConfigID, fmtTime(now), fmtTime(now),
 	)
 	if err != nil {
 		return 0, err
@@ -290,9 +295,9 @@ func (s *Store) UpdateActivity(a *lottery.Activity) error {
 		return err
 	}
 	res, err := tx.Exec(
-		`UPDATE activities SET name=?, description=?, starts_at=?, draws_at=?, max_participants=?, condition_match=?, auto_bonus_percent=?, visible_to_all=?, visible_users_json=?, updated_at=? WHERE id=?`,
+		`UPDATE activities SET name=?, description=?, starts_at=?, draws_at=?, max_participants=?, show_participant_count=?, condition_match=?, auto_bonus_percent=?, visible_to_all=?, visible_users_json=?, updated_at=? WHERE id=?`,
 		a.Name, a.Description, fmtTime(a.StartsAt), fmtTime(a.DrawsAt),
-		a.MaxParticipants, a.ConditionMatch, a.AutoBonusPercent, a.VisibleToAll, string(visibleUsersJSON), fmtTime(time.Now().UTC()), a.ID,
+		a.MaxParticipants, a.ShowParticipantCount, a.ConditionMatch, a.AutoBonusPercent, a.VisibleToAll, string(visibleUsersJSON), fmtTime(time.Now().UTC()), a.ID,
 	)
 	if err != nil {
 		return err
@@ -337,7 +342,7 @@ func scanActivities(rows *sql.Rows) ([]lottery.Activity, error) {
 		var a lottery.Activity
 		var startsAt, drawsAt, createdAt, updatedAt, drawnAt string
 		var visibleUsersJSON string
-		if err := rows.Scan(&a.ID, &a.Name, &a.Description, &startsAt, &drawsAt, &a.MaxParticipants,
+		if err := rows.Scan(&a.ID, &a.Name, &a.Description, &startsAt, &drawsAt, &a.MaxParticipants, &a.ShowParticipantCount,
 			&a.ConditionMatch, &a.AutoBonusPercent, &a.Status, &drawnAt, &a.VisibleToAll, &visibleUsersJSON, &a.DailyConfigID, &createdAt, &updatedAt); err != nil {
 			return nil, err
 		}
@@ -354,7 +359,7 @@ func scanActivities(rows *sql.Rows) ([]lottery.Activity, error) {
 	return out, rows.Err()
 }
 
-const activityColumns = `id, name, description, starts_at, draws_at, max_participants, condition_match, auto_bonus_percent, status, drawn_at, visible_to_all, visible_users_json, daily_config_id, created_at, updated_at`
+const activityColumns = `id, name, description, starts_at, draws_at, max_participants, show_participant_count, condition_match, auto_bonus_percent, status, drawn_at, visible_to_all, visible_users_json, daily_config_id, created_at, updated_at`
 
 // ListActivities returns all activities ordered by draws_at.
 func (s *Store) ListActivities() ([]lottery.Activity, error) {

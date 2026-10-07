@@ -69,26 +69,28 @@ type PrizeView struct {
 
 // ActivityView 用户/管理侧的活动视图。
 type ActivityView struct {
-	ID               int64                `json:"id"`
-	Name             string               `json:"name"`
-	Description      string               `json:"description"`
-	StartsAt         time.Time            `json:"starts_at"`
-	DrawsAt          time.Time            `json:"draws_at"`
-	MaxParticipants  int64                `json:"max_participants"`
-	ParticipantCount int64                `json:"participant_count"`
-	ConditionMatch   string               `json:"condition_match"`
-	Phase            string               `json:"phase"`
-	Conditions       []lottery.EvalResult `json:"conditions,omitempty"`
-	Eligible         bool                 `json:"eligible"`
-	EligibleReason   string               `json:"eligible_reason,omitempty"`
-	Weight           float64              `json:"weight,omitempty"`
-	Joined           bool                 `json:"joined"`
-	Won              *lottery.Winner      `json:"won,omitempty"`
-	Prizes           []PrizeView          `json:"prizes"`
-	DrawnAt          *time.Time           `json:"drawn_at,omitempty"`
-	Winners          []lottery.Winner     `json:"winners,omitempty"`
-	Status           string               `json:"status"`
-	CreatedAt        time.Time            `json:"created_at"`
+	ID              int64     `json:"id"`
+	Name            string    `json:"name"`
+	Description     string    `json:"description"`
+	StartsAt        time.Time `json:"starts_at"`
+	DrawsAt         time.Time `json:"draws_at"`
+	MaxParticipants int64     `json:"max_participants"`
+	// ParticipantCount 关闭“显示参与人数”时为 nil，用户侧 JSON 不包含该字段。
+	ParticipantCount     *int64               `json:"participant_count,omitempty"`
+	ShowParticipantCount bool                 `json:"show_participant_count"`
+	ConditionMatch       string               `json:"condition_match"`
+	Phase                string               `json:"phase"`
+	Conditions           []lottery.EvalResult `json:"conditions,omitempty"`
+	Eligible             bool                 `json:"eligible"`
+	EligibleReason       string               `json:"eligible_reason,omitempty"`
+	Weight               float64              `json:"weight,omitempty"`
+	Joined               bool                 `json:"joined"`
+	Won                  *lottery.Winner      `json:"won,omitempty"`
+	Prizes               []PrizeView          `json:"prizes"`
+	DrawnAt              *time.Time           `json:"drawn_at,omitempty"`
+	Winners              []lottery.Winner     `json:"winners,omitempty"`
+	Status               string               `json:"status"`
+	CreatedAt            time.Time            `json:"created_at"`
 	// 来源日常定时抽奖配置 ID（0 = 手动创建；仅管理端视图填充）。
 	DailyConfigID int64                  `json:"daily_config_id,omitempty"`
 	Extra         map[string]interface{} `json:"-"`
@@ -166,16 +168,18 @@ func (ap *App) usageWindow(ctx context.Context, maxDays int) (map[int64]*lottery
 
 // ---- User endpoints ----
 
-// ListUserActivities returns all active activities with the user's
-// eligibility, participation and winnings.
-func (ap *App) ListUserActivities(ctx context.Context, userID int64, email string, registeredAt *time.Time) ([]ActivityView, error) {
+// ListUserActivities 返回该用户可见的活动。
+// 全局显隐（部分人可见）之外，未满足参与条件、且未参与/未中奖的场次不下发。
+// 管理员不受显隐白名单和参与条件限制，用户侧能看到全部未归档场次。
+func (ap *App) ListUserActivities(ctx context.Context, userID int64, email, role string, registeredAt *time.Time) ([]ActivityView, error) {
 	acts, err := ap.Store.ListActivities()
 	if err != nil {
 		return nil, err
 	}
 	now := time.Now()
-	out := make([]ActivityView, 0, len(acts))
-	visAllowed := ap.IsUserAllowed("user", email) // 角色无关：非管理员按配置过滤
+	admin := role == "admin"
+	visAllowed := admin || ap.IsUserAllowed("user", email)
+	candidates := make([]*lottery.Activity, 0, len(acts))
 	for i := range acts {
 		a := &acts[i]
 		if a.Status != "active" && a.DrawnAt.IsZero() {
@@ -185,9 +189,24 @@ func (ap *App) ListUserActivities(ctx context.Context, userID int64, email strin
 		if !visAllowed {
 			continue
 		}
-		v, err := ap.buildActivityView(ctx, a, userID, email, registeredAt, now, false)
+		candidates = append(candidates, a)
+	}
+	var usages map[int64]*lottery.UserUsage
+	if len(candidates) > 0 {
+		usages, err = ap.usageWindow(ctx, maxWindowDays(acts))
 		if err != nil {
 			return nil, err
+		}
+		applyRegistered(usages, userID, email, ap.registeredAt(ctx, userID, email, registeredAt))
+	}
+	out := make([]ActivityView, 0, len(candidates))
+	for _, a := range candidates {
+		v, err := ap.buildActivityView(ctx, a, userID, email, registeredAt, now, usages, false)
+		if err != nil {
+			return nil, err
+		}
+		if !admin && !userCanSeeActivity(v) {
+			continue
 		}
 		out = append(out, *v)
 	}
@@ -195,7 +214,37 @@ func (ap *App) ListUserActivities(ctx context.Context, userID int64, email strin
 	return out, nil
 }
 
-func (ap *App) buildActivityView(ctx context.Context, a *lottery.Activity, userID int64, email string, registeredAt *time.Time, now time.Time, withWinners bool) (*ActivityView, error) {
+// userCanSeeActivity 已参与或已中奖的场次始终可见；其余场次只有当前满足参与条件才可见。
+func userCanSeeActivity(v *ActivityView) bool {
+	if v.Joined || v.Won != nil {
+		return true
+	}
+	return v.Eligible
+}
+
+// UserCanSeeActivity 用户侧中奖名单等单场接口：与活动列表同一套可见性。管理员始终可见。
+func (ap *App) UserCanSeeActivity(ctx context.Context, activityID, userID int64, email, role string, registeredAt *time.Time) (bool, error) {
+	a, err := ap.Store.GetActivity(activityID)
+	if err != nil {
+		return false, err
+	}
+	if role == "admin" {
+		return true, nil
+	}
+	if a.Status != "active" && a.DrawnAt.IsZero() {
+		return false, nil
+	}
+	if !ap.IsUserAllowed("user", email) {
+		return false, nil
+	}
+	v, err := ap.buildActivityView(ctx, a, userID, email, registeredAt, time.Now(), nil, false)
+	if err != nil {
+		return false, err
+	}
+	return userCanSeeActivity(v), nil
+}
+
+func (ap *App) buildActivityView(ctx context.Context, a *lottery.Activity, userID int64, email string, registeredAt *time.Time, now time.Time, usages map[int64]*lottery.UserUsage, withWinners bool) (*ActivityView, error) {
 	joined, err := ap.Store.HasParticipant(a.ID, userID)
 	if err != nil {
 		return nil, err
@@ -212,13 +261,18 @@ func (ap *App) buildActivityView(ctx context.Context, a *lottery.Activity, userI
 	v := &ActivityView{
 		ID: a.ID, Name: a.Name, Description: a.Description,
 		StartsAt: a.StartsAt, DrawsAt: a.DrawsAt,
-		MaxParticipants: a.MaxParticipants, ParticipantCount: count,
-		ConditionMatch: a.ConditionMatch,
-		Phase:          a.Phase(now),
-		Joined:         joined,
-		Prizes:         prizeViews(a.Prizes),
-		Status:         a.Status,
-		CreatedAt:      a.CreatedAt,
+		MaxParticipants:      a.MaxParticipants,
+		ShowParticipantCount: a.ShowParticipantCount,
+		ConditionMatch:       a.ConditionMatch,
+		Phase:                a.Phase(now),
+		Joined:               joined,
+		Prizes:               prizeViews(a.Prizes),
+		Status:               a.Status,
+		CreatedAt:            a.CreatedAt,
+	}
+	if a.ShowParticipantCount {
+		n := count
+		v.ParticipantCount = &n
 	}
 	if !a.DrawnAt.IsZero() {
 		t := a.DrawnAt
@@ -238,13 +292,16 @@ func (ap *App) buildActivityView(ctx context.Context, a *lottery.Activity, userI
 			}
 		}
 	}
-	// 只有参与中/未参与的活动才需要资格评估明细。
-	if v.Phase == lottery.ActivityJoining && !joined && !won {
-		usages, err := ap.usageWindow(ctx, maxWindowDays([]lottery.Activity{*a}))
-		if err != nil {
-			return nil, err
+	// 未参与的场次都评估资格：不符合条件的场次对用户隐藏，角标也不计入。
+	if !joined && !won && phaseNeedsEligibility(v.Phase) {
+		if usages == nil {
+			var loadErr error
+			usages, loadErr = ap.usageWindow(ctx, maxWindowDays([]lottery.Activity{*a}))
+			if loadErr != nil {
+				return nil, loadErr
+			}
+			applyRegistered(usages, userID, email, ap.registeredAt(ctx, userID, email, registeredAt))
 		}
-		applyRegistered(usages, userID, email, ap.registeredAt(ctx, userID, email, registeredAt))
 		el := a.Evaluate(usages[userID], now)
 		v.Eligible = el.Eligible
 		v.EligibleReason = el.Reason
@@ -405,7 +462,17 @@ func (ap *App) Participate(ctx context.Context, activityID, userID int64, identi
 	if err := ap.Store.AddParticipant(a.ID, userID, identity.Email, el.Weight, a.MaxParticipants); err != nil {
 		return nil, err
 	}
-	return ap.buildActivityView(ctx, a, userID, identity.Email, identity.RegisteredAt, now, false)
+	return ap.buildActivityView(ctx, a, userID, identity.Email, identity.RegisteredAt, now, nil, false)
+}
+
+// phaseNeedsEligibility 这些阶段需要知道用户当前是否满足参与条件。
+func phaseNeedsEligibility(phase string) bool {
+	switch phase {
+	case lottery.ActivityJoining, lottery.ActivityUpcoming, lottery.ActivityDrawn, lottery.ActivityFulfilled:
+		return true
+	default:
+		return false
+	}
 }
 
 // MyWinnings 用户的中奖记录（兑换码仅本人可见）。
@@ -439,16 +506,19 @@ func (ap *App) AdminListActivities(ctx context.Context) ([]ActivityView, error) 
 		if err != nil {
 			return nil, err
 		}
+		n := count
 		v := &ActivityView{
 			ID: a.ID, Name: a.Name, Description: a.Description,
 			StartsAt: a.StartsAt, DrawsAt: a.DrawsAt,
-			MaxParticipants: a.MaxParticipants, ParticipantCount: count,
-			ConditionMatch: a.ConditionMatch,
-			Phase:          a.Phase(now),
-			Prizes:         prizeViews(a.Prizes),
-			Status:         a.Status,
-			CreatedAt:      a.CreatedAt,
-			DailyConfigID:  a.DailyConfigID,
+			MaxParticipants:      a.MaxParticipants,
+			ParticipantCount:     &n,
+			ShowParticipantCount: a.ShowParticipantCount,
+			ConditionMatch:       a.ConditionMatch,
+			Phase:                a.Phase(now),
+			Prizes:               prizeViews(a.Prizes),
+			Status:               a.Status,
+			CreatedAt:            a.CreatedAt,
+			DailyConfigID:        a.DailyConfigID,
 		}
 		if !a.DrawnAt.IsZero() {
 			t := a.DrawnAt
@@ -705,8 +775,37 @@ func (ap *App) DeleteDailyConfig(id int64) error {
 	return ap.Store.SetState(stateDailyConfigs, string(raw))
 }
 
-// CurrentLotteryPhase 当前活动状态（joining/upcoming/drawn，无活动返回空串）。
-// 供侧边栏菜单角标等轻量场景使用；仅统计 status=active 的场次。
+// UserLotteryPhase 侧边栏角标：只统计该用户可见的场次（可参与，或已参与/已中奖）。
+// 管理员统计全部场次。优先级 joining > upcoming > drawn。没有可见场次时返回空串。
+func (ap *App) UserLotteryPhase(ctx context.Context, userID int64, email, role string, registeredAt *time.Time) string {
+	views, err := ap.ListUserActivities(ctx, userID, email, role, registeredAt)
+	if err != nil || len(views) == 0 {
+		return ""
+	}
+	joining, upcoming, drawn := false, false, false
+	for i := range views {
+		switch views[i].Phase {
+		case lottery.ActivityJoining:
+			joining = true
+		case lottery.ActivityUpcoming:
+			upcoming = true
+		case lottery.ActivityDrawn, lottery.ActivityFulfilled:
+			drawn = true
+		}
+	}
+	switch {
+	case joining:
+		return lottery.ActivityJoining
+	case upcoming:
+		return lottery.ActivityUpcoming
+	case drawn:
+		return lottery.ActivityDrawn
+	}
+	return ""
+}
+
+// CurrentLotteryPhase 全部进行中场次的全局状态（joining/upcoming/drawn，无活动返回空串）。
+// 用户侧角标用 UserLotteryPhase，不把该用户不可参与的场次算进去。
 func (ap *App) CurrentLotteryPhase() string {
 	acts, err := ap.Store.ListActivities()
 	if err != nil {
@@ -854,15 +953,16 @@ func (ap *App) ensureNextDailyRound(cfg lottery.DailyConfig, now time.Time) erro
 // dailyActivityFromConfig 按配置构建一场活动（开启时刻由调用方决定）。
 func dailyActivityFromConfig(cfg lottery.DailyConfig, start time.Time) *lottery.Activity {
 	a := &lottery.Activity{
-		Name:             cfg.Name,
-		Description:      cfg.Description,
-		StartsAt:         start,
-		DrawsAt:          start.Add(time.Duration(cfg.DurationHours * float64(time.Hour))),
-		MaxParticipants:  cfg.MaxParticipants,
-		ConditionMatch:   cfg.ConditionMatch,
-		AutoBonusPercent: cfg.AutoBonusPercent,
-		Conditions:       cfg.Conditions,
-		DailyConfigID:    cfg.ID,
+		Name:                 cfg.Name,
+		Description:          cfg.Description,
+		StartsAt:             start,
+		DrawsAt:              start.Add(time.Duration(cfg.DurationHours * float64(time.Hour))),
+		MaxParticipants:      cfg.MaxParticipants,
+		ShowParticipantCount: cfg.ShowsParticipants(),
+		ConditionMatch:       cfg.ConditionMatch,
+		AutoBonusPercent:     cfg.AutoBonusPercent,
+		Conditions:           cfg.Conditions,
+		DailyConfigID:        cfg.ID,
 	}
 	if a.ConditionMatch == "" {
 		a.ConditionMatch = lottery.MatchAll

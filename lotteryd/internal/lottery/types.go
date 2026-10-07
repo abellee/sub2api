@@ -115,16 +115,18 @@ func (c ConditionDef) validate() error {
 
 // Activity 一场抽奖活动。
 type Activity struct {
-	ID               int64     `json:"id"`
-	Name             string    `json:"name"`
-	Description      string    `json:"description"`
-	StartsAt         time.Time `json:"starts_at"`          // 参与开始时间
-	DrawsAt          time.Time `json:"draws_at"`           // 开奖时间
-	MaxParticipants  int64     `json:"max_participants"`   // 0 = 不限
-	ConditionMatch   string    `json:"condition_match"`    // all | any
-	AutoBonusPercent float64   `json:"auto_bonus_percent"` // auto 加成默认百分比
-	Status           string    `json:"status"`             // active | archived（管理员手动停用）
-	DrawnAt          time.Time `json:"drawn_at"`           // 已开奖时间；零值 = 未开奖
+	ID              int64     `json:"id"`
+	Name            string    `json:"name"`
+	Description     string    `json:"description"`
+	StartsAt        time.Time `json:"starts_at"`        // 参与开始时间
+	DrawsAt         time.Time `json:"draws_at"`         // 开奖时间
+	MaxParticipants int64     `json:"max_participants"` // 0 = 不限
+	// ShowParticipantCount 为 false 时，用户侧响应不带参与人数。
+	ShowParticipantCount bool      `json:"show_participant_count"`
+	ConditionMatch       string    `json:"condition_match"`    // all | any
+	AutoBonusPercent     float64   `json:"auto_bonus_percent"` // auto 加成默认百分比
+	Status               string    `json:"status"`             // active | archived（管理员手动停用）
+	DrawnAt              time.Time `json:"drawn_at"`           // 已开奖时间；零值 = 未开奖
 	// 来源：日常定时抽奖配置 ID（0 = 手动创建）。
 	DailyConfigID int64 `json:"daily_config_id,omitempty"`
 	// 用户侧可见性：全员可见，或仅 VisibleUsers 中的用户可见（管理员不受限）。
@@ -360,16 +362,19 @@ type DailyConfig struct {
 	// 重复参与策略：unlimited 每期独立 / join_once 该系列限参与一次 / win_once 该系列中奖后不能再参与。
 	RepeatPolicy string `json:"repeat_policy"`
 	// SkipDate 手动关闭场次时记录的跳过日期（该日期不再自动补建）。
-	SkipDate         string         `json:"skip_date,omitempty"`
-	StartTime        string         `json:"start_time"`     // 每日开启时刻，"HH:MM"（北京时间）
-	DurationHours    float64        `json:"duration_hours"` // 开奖时刻 = 开启 + 时长（小时）
-	Name             string         `json:"name"`
-	Description      string         `json:"description,omitempty"`
-	MaxParticipants  int64          `json:"max_participants"` // 0 = 不限
-	ConditionMatch   string         `json:"condition_match"`  // all | any
-	AutoBonusPercent float64        `json:"auto_bonus_percent"`
-	Conditions       []ConditionDef `json:"conditions"`
-	Prizes           []PrizeSpec    `json:"prizes"`
+	SkipDate        string  `json:"skip_date,omitempty"`
+	StartTime       string  `json:"start_time"`     // 每日开启时刻，"HH:MM"（北京时间）
+	DurationHours   float64 `json:"duration_hours"` // 开奖时刻 = 开启 + 时长（小时）
+	Name            string  `json:"name"`
+	Description     string  `json:"description,omitempty"`
+	MaxParticipants int64   `json:"max_participants"` // 0 = 不限
+	// ShowParticipantCount 为 true 时，该配置生成的场次向用户下发参与人数。
+	// 缺省（旧配置没有该字段）为 false：不显示。
+	ShowParticipantCount bool           `json:"show_participant_count"`
+	ConditionMatch       string         `json:"condition_match"` // all | any
+	AutoBonusPercent     float64        `json:"auto_bonus_percent"`
+	Conditions           []ConditionDef `json:"conditions"`
+	Prizes               []PrizeSpec    `json:"prizes"`
 }
 
 // PrizeSpec 日常活动配置里的奖品（无 ID，创建活动时落库生成）。
@@ -380,6 +385,12 @@ type PrizeSpec struct {
 	Weight    float64  `json:"weight"`
 	Stock     int64    `json:"stock"`
 	Codes     []string `json:"codes,omitempty"`
+}
+
+// ShowsParticipants 报告该配置生成的场次是否向用户下发参与人数。
+// 未写入该字段的旧配置按不显示处理。
+func (c DailyConfig) ShowsParticipants() bool {
+	return c.ShowParticipantCount
 }
 
 // Validate 校验日常配置。

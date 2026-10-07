@@ -141,21 +141,51 @@ func userTaskView(t lottery.Task, now time.Time) UserTaskView {
 }
 
 // ListUserTasks 用户侧进行中的任务列表（status=active，含未开始）。
-// 白名单外 / 黑名单内的用户看不到对应任务。
-func (ap *App) ListUserTasks(email string, now time.Time) ([]UserTaskView, error) {
+// 白名单外 / 黑名单内，以及未满足可参与条件的用户看不到对应任务。
+// 管理员不受白名单、黑名单和参与条件限制。
+func (ap *App) ListUserTasks(ctx context.Context, userID int64, email, role string, registeredAt *time.Time, now time.Time) ([]UserTaskView, error) {
 	tasks, err := ap.Store.ListTasks()
 	if err != nil {
 		return nil, err
 	}
-	out := []UserTaskView{}
+	admin := role == "admin"
+	candidates := make([]lottery.Task, 0, len(tasks))
+	maxWindow := 0
+	needsUsage := false
 	for _, t := range tasks {
 		if t.Status != lottery.TaskActive {
 			continue
 		}
-		if !t.UserAllowed(email) {
+		if !admin && !t.UserAllowed(email) {
 			continue
 		}
-		out = append(out, userTaskView(t, now))
+		if !admin && len(t.Conditions) > 0 {
+			needsUsage = true
+		}
+		for _, c := range t.Conditions {
+			if c.WindowDays > maxWindow {
+				maxWindow = c.WindowDays
+			}
+		}
+		candidates = append(candidates, t)
+	}
+	if len(candidates) == 0 {
+		return []UserTaskView{}, nil
+	}
+	var usage *lottery.UserUsage
+	if needsUsage {
+		usage, err = ap.loadUserUsage(ctx, userID, email, registeredAt, maxWindow)
+		if err != nil {
+			return nil, err
+		}
+	}
+	out := make([]UserTaskView, 0, len(candidates))
+	for i := range candidates {
+		t := &candidates[i]
+		if !admin && needsUsage && !taskConditionsMet(t, usage, now) {
+			continue
+		}
+		out = append(out, userTaskView(*t, now))
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].StartDate < out[j].StartDate })
 	return out, nil
@@ -200,21 +230,10 @@ func (ap *App) TaskPromptList(ctx context.Context, userID int64, email, role str
 	if len(candidates) == 0 {
 		return []TaskPromptView{}, nil
 	}
-	var window map[int64]*lottery.UserUsage
-	if maxWindow > 0 {
-		window, err = ap.usageWindow(ctx, maxWindow)
-		if err != nil {
-			return nil, err
-		}
+	usage, err := ap.loadUserUsage(ctx, userID, email, registeredAt, maxWindow)
+	if err != nil {
+		return nil, err
 	}
-	usage := (*lottery.UserUsage)(nil)
-	if window != nil {
-		usage = window[userID]
-	}
-	if usage == nil {
-		usage = &lottery.UserUsage{UserID: userID, Email: email}
-	}
-	usage.RegisteredAt = ap.registeredAt(ctx, userID, email, registeredAt)
 
 	out := make([]TaskPromptView, 0, len(candidates))
 	for _, t := range candidates {
@@ -229,6 +248,25 @@ func (ap *App) TaskPromptList(ctx context.Context, userID int64, email, role str
 	return out, nil
 }
 
+// loadUserUsage 拉取条件评估所需的用量与注册时间。maxWindow <= 0 时不查用量窗口。
+func (ap *App) loadUserUsage(ctx context.Context, userID int64, email string, registeredAt *time.Time, maxWindow int) (*lottery.UserUsage, error) {
+	usage := &lottery.UserUsage{UserID: userID, Email: email}
+	if maxWindow > 0 {
+		window, err := ap.usageWindow(ctx, maxWindow)
+		if err != nil {
+			return nil, err
+		}
+		if u := window[userID]; u != nil {
+			usage = u
+			if usage.Email == "" {
+				usage.Email = email
+			}
+		}
+	}
+	usage.RegisteredAt = ap.registeredAt(ctx, userID, email, registeredAt)
+	return usage, nil
+}
+
 // taskConditionsMet 可参与条件全部满足。未配置条件时任何人可参与。
 func taskConditionsMet(t *lottery.Task, usage *lottery.UserUsage, now time.Time) bool {
 	for _, c := range t.Conditions {
@@ -240,9 +278,10 @@ func taskConditionsMet(t *lottery.Task, usage *lottery.UserUsage, now time.Time)
 	return true
 }
 
-// TasksPhase 用户侧角标：该用户有可见的进行中任务返回 "active"，否则 "none"。
-func (ap *App) TasksPhase(email string, now time.Time) (string, error) {
-	tasks, err := ap.ListUserTasks(email, now)
+// TasksPhase 用户侧角标：该用户有可参与的进行中任务返回 "active"，否则 "none"。
+// 管理员只要存在进行中任务就返回 "active"。
+func (ap *App) TasksPhase(ctx context.Context, userID int64, email, role string, registeredAt *time.Time, now time.Time) (string, error) {
+	tasks, err := ap.ListUserTasks(ctx, userID, email, role, registeredAt, now)
 	if err != nil {
 		return "", err
 	}
