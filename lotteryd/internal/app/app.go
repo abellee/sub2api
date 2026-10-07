@@ -123,7 +123,7 @@ func maxWindowDays(acts []lottery.Activity) int {
 	return maxDays
 }
 
-func dateStr(t time.Time) string { return t.Format("2006-01-02") }
+func dateStr(t time.Time) string { return lottery.InBeijing(t).Format("2006-01-02") }
 
 // registeredAt 解析用户注册时间：优先取缓存，其次用 identity 种子（introspect 带回的
 // created_at），最后回退查主服务单用户接口。注册时间不可变，查到即缓存。
@@ -159,7 +159,7 @@ func applyRegistered(usages map[int64]*lottery.UserUsage, userID int64, email st
 
 // usageWindow 拉取评估窗口（含 maxDays 个完整天，终点为昨天）内的用量。
 func (ap *App) usageWindow(ctx context.Context, maxDays int) (map[int64]*lottery.UserUsage, error) {
-	end := time.Now().AddDate(0, 0, -1)
+	end := time.Now().In(lottery.Beijing()).AddDate(0, 0, -1)
 	start := end.AddDate(0, 0, -(maxDays - 1))
 	return ap.Store.DailyTokensWindow(dateStr(start), dateStr(end))
 }
@@ -741,6 +741,7 @@ func (ap *App) CurrentLotteryPhase() string {
 
 // clearDailyRoundKeys 清空配置的全部日期推进记录（启用时重置计算起点用）。
 func (ap *App) clearDailyRoundKeys(cfgID int64, now time.Time) {
+	now = now.In(lottery.Beijing())
 	for i := -30; i <= 30; i++ {
 		key := fmt.Sprintf("daily_created:%d:%s", cfgID, now.AddDate(0, 0, i).Format("2006-01-02"))
 		if v, err := ap.Store.GetState(key); err == nil && v != "" {
@@ -760,7 +761,7 @@ func (ap *App) MarkDailySkip(activityID int64) {
 		if list[i].ID != a.DailyConfigID {
 			continue
 		}
-		list[i].SkipDate = a.StartsAt.Format("2006-01-02")
+		list[i].SkipDate = lottery.InBeijing(a.StartsAt).Format("2006-01-02")
 		if raw, merr := json.Marshal(list); merr == nil {
 			_ = ap.Store.SetState(stateDailyConfigs, string(raw))
 		}
@@ -789,7 +790,8 @@ func (ap *App) CreateDueDailyActivity(now time.Time) error {
 //     无任何记录时以 start_time 的下一次出现为准；
 //  3. 若该场开启时刻已过（如隔天 tick），顺延一天。
 func (ap *App) ensureNextDailyRound(cfg lottery.DailyConfig, now time.Time) error {
-	st, err := time.ParseInLocation("15:04", cfg.StartTime, now.Location())
+	now = now.In(lottery.Beijing())
+	st, err := time.ParseInLocation("15:04", cfg.StartTime, lottery.Beijing())
 	if err != nil {
 		return fmt.Errorf("daily config %d start_time: %w", cfg.ID, err)
 	}
@@ -817,7 +819,7 @@ func (ap *App) ensureNextDailyRound(cfg lottery.DailyConfig, now time.Time) erro
 		}
 	}
 	// 3) 下一场日期
-	todayStart := time.Date(now.Year(), now.Month(), now.Day(), st.Hour(), st.Minute(), 0, 0, now.Location())
+	todayStart := time.Date(now.Year(), now.Month(), now.Day(), st.Hour(), st.Minute(), 0, 0, lottery.Beijing())
 	var base time.Time
 	if lastKeyDate.IsZero() {
 		base = now
@@ -827,7 +829,7 @@ func (ap *App) ensureNextDailyRound(cfg lottery.DailyConfig, now time.Time) erro
 	} else {
 		base = lastKeyDate.AddDate(0, 0, 1)
 	}
-	start := time.Date(base.Year(), base.Month(), base.Day(), st.Hour(), st.Minute(), 0, 0, now.Location())
+	start := time.Date(base.Year(), base.Month(), base.Day(), st.Hour(), st.Minute(), 0, 0, lottery.Beijing())
 	// 场次开启时刻已过（隔天 tick 等场景）→ 顺延一天，避免创建即开奖
 	if !start.After(now) {
 		start = start.AddDate(0, 0, 1)
@@ -913,11 +915,12 @@ func (ap *App) RegenerateDailyRound(cfgID int64, now time.Time) error {
 	}
 	ap.clearDailyRoundKeys(cfgID, now)
 
-	st, err := time.ParseInLocation("15:04", cfg.StartTime, now.Location())
+	now = now.In(lottery.Beijing())
+	st, err := time.ParseInLocation("15:04", cfg.StartTime, lottery.Beijing())
 	if err != nil {
 		return fmt.Errorf("daily config %d start_time: %w", cfg.ID, err)
 	}
-	start := time.Date(now.Year(), now.Month(), now.Day(), st.Hour(), st.Minute(), 0, 0, now.Location())
+	start := time.Date(now.Year(), now.Month(), now.Day(), st.Hour(), st.Minute(), 0, 0, lottery.Beijing())
 	if !start.After(now) {
 		start = now // 今日开启时刻已过：立即开启
 	}
@@ -942,6 +945,7 @@ func (ap *App) RegenerateDailyRound(cfgID int64, now time.Time) error {
 // SyncTokens 把水位之后（含今天）的每用户每日 token 总量拉回本地快照。
 // 幂等：按天 upsert，宕机后从水位续拉。
 func (ap *App) SyncTokens(ctx context.Context, now time.Time) error {
+	now = now.In(lottery.Beijing())
 	last, err := ap.Store.GetState(stateTokensLastDate)
 	if err != nil {
 		return err
@@ -953,7 +957,7 @@ func (ap *App) SyncTokens(ctx context.Context, now time.Time) error {
 	} else if last >= today {
 		return nil // 已同步到今天
 	} else {
-		t, err := time.ParseInLocation("2006-01-02", last, now.Location())
+		t, err := time.ParseInLocation("2006-01-02", last, lottery.Beijing())
 		if err != nil {
 			start = now.AddDate(0, 0, -(ap.Cfg.BackfillDays - 1))
 		} else {

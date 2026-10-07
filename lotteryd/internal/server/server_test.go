@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"lotteryd/internal/app"
+	"lotteryd/internal/lottery"
 	"lotteryd/internal/store"
 	"lotteryd/internal/sub2api"
 )
@@ -228,8 +229,8 @@ func TestLotteryEndToEnd(t *testing.T) {
 	activityID := int64(data["id"].(float64))
 	require.Greater(t, activityID, int64(0))
 
-	// 2. 喂 7 天达标用量（终点为昨天，与评估窗口一致；日期按本地日对齐）并同步。
-	localNow := time.Now()
+	// 2. 喂 7 天达标用量（终点为昨天，与评估窗口一致；日期按北京时间对齐）并同步。
+	localNow := time.Now().In(lottery.Beijing())
 	for i := 1; i <= 8; i++ {
 		date := localNow.AddDate(0, 0, -i).Format("2006-01-02")
 		e.fake.dailyTokens[date] = map[int64]float64{7: 110e6, 8: 10e6}
@@ -331,7 +332,7 @@ func TestEligibilityPromptFlow(t *testing.T) {
 	data := mustJSON(t, resp)
 	_ = data["id"].(float64)
 
-	localNow := time.Now()
+	localNow := time.Now().In(lottery.Beijing())
 	for i := 1; i <= 8; i++ {
 		date := localNow.AddDate(0, 0, -i).Format("2006-01-02")
 		e.fake.dailyTokens[date] = map[int64]float64{7: 110e6}
@@ -430,6 +431,29 @@ func TestDailyRegenerate(t *testing.T) {
 	require.Equal(t, 1, archivedCount, "old round archived")
 }
 
+func TestDailyStartUsesBeijing(t *testing.T) {
+	e := newTestEnv(t)
+	cfg, err := e.app.SaveDailyConfig(lottery.DailyConfig{
+		Enabled: true, StartTime: "18:30", DurationHours: 5, Name: "晚间场",
+		Prizes: []lottery.PrizeSpec{{Name: "奖", PrizeType: "balance", Value: 1, Weight: 1, Stock: 1}},
+	})
+	require.NoError(t, err)
+	// 北京时间上午，当天 18:30 还没到，应生成当天 18:30，而不是把 18:30 当成 UTC。
+	now := time.Date(2026, 10, 8, 9, 0, 0, 0, lottery.Beijing())
+	require.NoError(t, e.app.CreateDueDailyActivity(now))
+	acts, err := e.app.Store.ListActivities()
+	require.NoError(t, err)
+	var found *lottery.Activity
+	for i := range acts {
+		if acts[i].DailyConfigID == cfg.ID {
+			found = &acts[i]
+		}
+	}
+	require.NotNil(t, found)
+	require.Equal(t, "2026-10-08T10:30:00Z", found.StartsAt.UTC().Format(time.RFC3339))
+	require.Equal(t, "2026-10-08T15:30:00Z", found.DrawsAt.UTC().Format(time.RFC3339))
+}
+
 func sampleTask(name, startDate string, durationDays int, rewardType string) map[string]any {
 	return map[string]any{
 		"name":             name,
@@ -454,7 +478,7 @@ func TestTaskEndToEnd(t *testing.T) {
 	mustJSON(t, e.req(t, http.MethodPut, "/v1/admin/task-settings", adminToken,
 		map[string]any{"visibility": map[string]any{"mode": "all"}}))
 	userToken := signJWT(e.secret, 101, "user")
-	today := time.Now()
+	today := time.Now().In(lottery.Beijing())
 	yesterday := today.AddDate(0, 0, -1)
 	dayBefore := today.AddDate(0, 0, -2)
 
@@ -554,7 +578,7 @@ func TestTaskVisibility(t *testing.T) {
 		map[string]any{"visibility": map[string]any{"mode": "all"}}))
 	user101 := signJWT(e.secret, 101, "user")
 	user102 := signJWT(e.secret, 102, "user")
-	today := time.Now().Format("2006-01-02")
+	today := time.Now().In(lottery.Beijing()).Format("2006-01-02")
 
 	// 白名单任务：仅 user101 可见
 	task := sampleTask("白名单任务", today, 7, "balance")
@@ -599,7 +623,7 @@ func TestTaskPromptFlow(t *testing.T) {
 	adminToken := signJWT(e.secret, 1, "admin")
 	user7 := signJWT(e.secret, 7, "user")
 	user8 := signJWT(e.secret, 8, "user")
-	today := time.Now().Format("2006-01-02")
+	today := time.Now().In(lottery.Beijing()).Format("2006-01-02")
 
 	// 默认 partial：引导弹窗按普通用户显隐，白名单空时谁都不弹。
 	hidden := sampleTask("未开放任务", today, 7, "balance")
@@ -660,7 +684,7 @@ func TestTaskPromptFlow(t *testing.T) {
 	condID := int64(data["id"].(float64))
 	require.NotContains(t, promptNames(t, e, user7), "条件任务")
 
-	localNow := time.Now()
+	localNow := time.Now().In(lottery.Beijing())
 	for i := 1; i <= 8; i++ {
 		date := localNow.AddDate(0, 0, -i).Format("2006-01-02")
 		e.fake.dailyTokens[date] = map[int64]float64{7: 110e6}

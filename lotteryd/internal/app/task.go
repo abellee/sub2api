@@ -289,11 +289,12 @@ func (ap *App) settleTaskDueDays(ctx context.Context, t *lottery.Task, now time.
 		slog.Error("task settle: bad start_date", "task", t.ID, "start", t.StartDate)
 		return
 	}
-	end := now.AddDate(0, 0, -1) // 最多结算到昨天
-	if endTs, err := lottery.ParseDate(t.EndDate()); err == nil && endTs.Before(end) {
-		end = endTs
+	// 最多结算到北京时间的昨天；任务日期是日历日，不跟容器时区走。
+	last := dateStr(lottery.InBeijing(now).AddDate(0, 0, -1))
+	if end := t.EndDate(); end < last {
+		last = end
 	}
-	for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {
+	for d := start; lottery.FormatDate(d) <= last; d = d.AddDate(0, 0, 1) {
 		date := lottery.FormatDate(d)
 		settleAt, err := t.SettleMomentFor(date)
 		if err != nil {

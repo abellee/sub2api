@@ -25,13 +25,13 @@ type Eligibility struct {
 	Reason   string       `json:"reason,omitempty"` // 不合格时的原因
 }
 
-// dateRange 返回窗口内 [today-N+1 .. today] 的日期串（升序，本地时区）。
+// dateRange 返回窗口内 [today-N+1 .. today] 的日期串（升序，北京时间）。
 // 条件评估只用完整天：窗口以「昨天」为终点，避免当天进行中的数据造成误判。
 func windowDates(now time.Time, windowDays int) []string {
 	if windowDays <= 0 {
 		windowDays = 1
 	}
-	today := now.In(now.Location())
+	today := InBeijing(now)
 	dates := make([]string, 0, windowDays)
 	for i := windowDays; i >= 1; i-- {
 		dates = append(dates, today.AddDate(0, 0, -i).Format("2006-01-02"))
@@ -98,11 +98,11 @@ func EvaluateCondition(c ConditionDef, usage *UserUsage, now time.Time) (bool, s
 		if usage == nil || usage.RegisteredAt == nil || usage.RegisteredAt.IsZero() {
 			return false, "注册时间未知"
 		}
-		// 注册天数按自然日计算：注册当天 = 第 1 天，当天注册的用户即可满足「注册满 1 天」。
-		regDate := usage.RegisteredAt.Local()
-		nowDate := now.Local()
-		dayDiff := int(time.Date(nowDate.Year(), nowDate.Month(), nowDate.Day(), 0, 0, 0, 0, nowDate.Location()).
-			Sub(time.Date(regDate.Year(), regDate.Month(), regDate.Day(), 0, 0, 0, 0, regDate.Location())).Hours() / 24)
+		// 注册天数按北京时间自然日计算：注册当天 = 第 1 天，当天注册的用户即可满足「注册满 1 天」。
+		regDate := InBeijing(*usage.RegisteredAt)
+		nowDate := InBeijing(now)
+		dayDiff := int(time.Date(nowDate.Year(), nowDate.Month(), nowDate.Day(), 0, 0, 0, 0, Beijing()).
+			Sub(time.Date(regDate.Year(), regDate.Month(), regDate.Day(), 0, 0, 0, 0, Beijing())).Hours() / 24)
 		days := dayDiff + 1
 		if days < 1 {
 			days = 1

@@ -39,7 +39,7 @@ type Task struct {
 	// StartDate 起始日（YYYY-MM-DD，第 1 天）；持续 DurationDays 天。
 	StartDate    string `json:"start_date"`
 	DurationDays int    `json:"duration_days"`
-	// SettleTime 每日结算时刻 "HH:MM"（次日该时刻结算前一天）。
+	// SettleTime 每日结算时刻 "HH:MM"（北京时间，次日该时刻结算前一天）。
 	SettleTime string `json:"settle_time"`
 	// ThresholdTokens 达成条件：每个结算日的 token 消耗量（原始 token 数）。
 	ThresholdTokens float64 `json:"threshold_tokens"`
@@ -113,7 +113,7 @@ func (t *Task) CoversDate(date string) bool {
 	return date >= t.StartDate && date <= t.EndDate()
 }
 
-// SettleMomentFor 计算结算日 D 的结算时间点：D+1 日的 SettleTime（本地时区）。
+// SettleMomentFor 计算结算日 D 的结算时间点：D+1 日的 SettleTime（北京时间）。
 func (t *Task) SettleMomentFor(date string) (time.Time, error) {
 	d, err := ParseDate(date)
 	if err != nil {
@@ -124,7 +124,7 @@ func (t *Task) SettleMomentFor(date string) (time.Time, error) {
 		return time.Time{}, fmt.Errorf("task: bad settle_time %q", t.SettleTime)
 	}
 	next := d.AddDate(0, 0, 1)
-	return time.Date(next.Year(), next.Month(), next.Day(), hour, min, 0, 0, time.Local), nil
+	return time.Date(next.Year(), next.Month(), next.Day(), hour, min, 0, 0, Beijing()), nil
 }
 
 // UserAllowed 白名单/黑名单过滤（邮箱小写比较；名单空表示不限制）。

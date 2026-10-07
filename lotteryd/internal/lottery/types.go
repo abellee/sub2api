@@ -10,8 +10,8 @@ import (
 
 // Condition dimensions.
 const (
-	DimensionTokenUsage   = "token_usage"     // Token 消耗量
-	DimensionActiveDays   = "activity_days"   // 活跃度
+	DimensionTokenUsage     = "token_usage"     // Token 消耗量
+	DimensionActiveDays     = "activity_days"   // 活跃度
 	DimensionRegisteredDays = "registered_days" // 注册时长
 )
 
@@ -43,16 +43,16 @@ const (
 
 // Activity 状态（派生）。
 const (
-	ActivityUpcoming  = "upcoming"   // 未到参与开始时间
-	ActivityJoining   = "joining"    // 参与中
-	ActivityDrawn     = "drawn"      // 已开奖
-	ActivityFulfilled = "fulfilled"  // 已开奖且发放完成
+	ActivityUpcoming  = "upcoming"  // 未到参与开始时间
+	ActivityJoining   = "joining"   // 参与中
+	ActivityDrawn     = "drawn"     // 已开奖
+	ActivityFulfilled = "fulfilled" // 已开奖且发放完成
 )
 
 // ConditionDef 是一条可参与条件的定义。
 type ConditionDef struct {
-	Dimension  string  `json:"dimension"`
-	WindowDays int     `json:"window_days"`
+	Dimension  string `json:"dimension"`
+	WindowDays int    `json:"window_days"`
 	// Token 消耗量维度：
 	//   Mode=per_day 时窗口内每天 total_tokens 都要 >= Threshold；
 	//   Mode=total   时窗口内累计 >= Threshold。
@@ -115,23 +115,23 @@ func (c ConditionDef) validate() error {
 
 // Activity 一场抽奖活动。
 type Activity struct {
-	ID               int64          `json:"id"`
-	Name             string         `json:"name"`
-	Description      string         `json:"description"`
-	StartsAt         time.Time      `json:"starts_at"`   // 参与开始时间
-	DrawsAt          time.Time      `json:"draws_at"`    // 开奖时间
-	MaxParticipants  int64          `json:"max_participants"` // 0 = 不限
-	ConditionMatch   string         `json:"condition_match"`  // all | any
-	AutoBonusPercent float64        `json:"auto_bonus_percent"` // auto 加成默认百分比
-	Status           string         `json:"status"`        // active | archived（管理员手动停用）
-	DrawnAt          time.Time      `json:"drawn_at"`      // 已开奖时间；零值 = 未开奖
+	ID               int64     `json:"id"`
+	Name             string    `json:"name"`
+	Description      string    `json:"description"`
+	StartsAt         time.Time `json:"starts_at"`          // 参与开始时间
+	DrawsAt          time.Time `json:"draws_at"`           // 开奖时间
+	MaxParticipants  int64     `json:"max_participants"`   // 0 = 不限
+	ConditionMatch   string    `json:"condition_match"`    // all | any
+	AutoBonusPercent float64   `json:"auto_bonus_percent"` // auto 加成默认百分比
+	Status           string    `json:"status"`             // active | archived（管理员手动停用）
+	DrawnAt          time.Time `json:"drawn_at"`           // 已开奖时间；零值 = 未开奖
 	// 来源：日常定时抽奖配置 ID（0 = 手动创建）。
 	DailyConfigID int64 `json:"daily_config_id,omitempty"`
 	// 用户侧可见性：全员可见，或仅 VisibleUsers 中的用户可见（管理员不受限）。
-	VisibleToAll bool    `json:"visible_to_all"`
-	VisibleUsers []int64 `json:"visible_users,omitempty"`
-	CreatedAt        time.Time      `json:"created_at"`
-	UpdatedAt        time.Time      `json:"updated_at"`
+	VisibleToAll bool      `json:"visible_to_all"`
+	VisibleUsers []int64   `json:"visible_users,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 
 	Conditions []ConditionDef `json:"conditions"`
 	Prizes     []Prize        `json:"prizes"`
@@ -197,14 +197,14 @@ func (a *Activity) allFulfilled() bool {
 
 // Prize 奖池中的一项奖品。
 type Prize struct {
-	ID           int64    `json:"id"`
-	ActivityID   int64    `json:"activity_id,omitempty"`
-	Name         string   `json:"name"`
-	PrizeType    string   `json:"prize_type"` // redeem_code | balance
-	Value        float64  `json:"value"`      // 面额
-	Weight       float64  `json:"weight"`     // 相对概率权重；0 表示未设置（随机均等）
-	Stock        int64    `json:"stock"`
-	GrantedCount int64    `json:"granted_count"`
+	ID           int64   `json:"id"`
+	ActivityID   int64   `json:"activity_id,omitempty"`
+	Name         string  `json:"name"`
+	PrizeType    string  `json:"prize_type"` // redeem_code | balance
+	Value        float64 `json:"value"`      // 面额
+	Weight       float64 `json:"weight"`     // 相对概率权重；0 表示未设置（随机均等）
+	Stock        int64   `json:"stock"`
+	GrantedCount int64   `json:"granted_count"`
 	// Codes 预存的兑换码池（仅 redeem_code）：管理员录入，开奖时按序发放；
 	// 为空时回退为调用主服务实时生成。
 	Codes []string `json:"codes,omitempty"`
@@ -355,13 +355,13 @@ type Visibility struct {
 
 // DailyConfig 日常定时抽奖配置：调度器每天到达 StartTime 后自动创建一场活动。
 type DailyConfig struct {
-	ID               int64          `json:"id"`
-	Enabled          bool           `json:"enabled"`
+	ID      int64 `json:"id"`
+	Enabled bool  `json:"enabled"`
 	// 重复参与策略：unlimited 每期独立 / join_once 该系列限参与一次 / win_once 该系列中奖后不能再参与。
-	RepeatPolicy     string         `json:"repeat_policy"`
+	RepeatPolicy string `json:"repeat_policy"`
 	// SkipDate 手动关闭场次时记录的跳过日期（该日期不再自动补建）。
 	SkipDate         string         `json:"skip_date,omitempty"`
-	StartTime        string         `json:"start_time"`     // 每日开启时刻，"HH:MM"（本地时区）
+	StartTime        string         `json:"start_time"`     // 每日开启时刻，"HH:MM"（北京时间）
 	DurationHours    float64        `json:"duration_hours"` // 开奖时刻 = 开启 + 时长（小时）
 	Name             string         `json:"name"`
 	Description      string         `json:"description,omitempty"`
