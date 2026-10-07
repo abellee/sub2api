@@ -1,0 +1,73 @@
+# syntax=docker/dockerfile:1.7
+# =============================================================================
+# lotteryd image
+# =============================================================================
+# Published separately from the main gateway image. A lottery release does not
+# rebuild or replace ghcr.io/abellee/sub2api.
+# =============================================================================
+
+ARG GOLANG_IMAGE=golang:1.27.0-alpine
+ARG ALPINE_IMAGE=alpine:3.21
+ARG GOPROXY=https://goproxy.cn,direct
+ARG GOSUMDB=sum.golang.google.cn
+
+FROM --platform=${BUILDPLATFORM} ${GOLANG_IMAGE} AS backend-builder
+
+ARG VERSION=dev
+ARG COMMIT=unknown
+ARG GOPROXY
+ARG GOSUMDB
+ARG TARGETOS
+ARG TARGETARCH
+
+ENV GOPROXY=${GOPROXY}
+ENV GOSUMDB=${GOSUMDB}
+
+RUN apk add --no-cache git ca-certificates tzdata
+
+WORKDIR /src
+COPY lotteryd/go.mod lotteryd/go.sum ./
+RUN --mount=type=cache,id=sub2api-lotteryd-gomod,target=/go/pkg/mod \
+    go mod download
+
+COPY lotteryd/ ./
+
+RUN --mount=type=cache,id=sub2api-lotteryd-gomod,target=/go/pkg/mod \
+    --mount=type=cache,id=sub2api-lotteryd-gobuild,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build \
+    -ldflags="-s -w -X main.Version=${VERSION}" \
+    -trimpath \
+    -o /out/lotteryd \
+    ./cmd/lotteryd
+
+FROM ${ALPINE_IMAGE}
+
+LABEL org.opencontainers.image.source="https://github.com/abellee/sub2api"
+LABEL org.opencontainers.image.title="sub2api-lotteryd"
+LABEL org.opencontainers.image.description="Sub2API lottery and task sidecar"
+
+RUN apk add --no-cache \
+    ca-certificates \
+    tzdata \
+    su-exec \
+    && rm -rf /var/cache/apk/*
+
+RUN addgroup -g 1000 sub2api && \
+    adduser -u 1000 -G sub2api -s /bin/sh -D sub2api
+
+WORKDIR /app
+
+COPY --from=backend-builder --chown=sub2api:sub2api /out/lotteryd /app/lotteryd
+
+RUN mkdir -p /app/data/lottery && chown -R sub2api:sub2api /app/data
+
+COPY deploy/lotteryd-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh /app/lotteryd
+
+EXPOSE 18100
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD wget -q -T 5 -O /dev/null http://127.0.0.1:18100/health || exit 1
+
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
+CMD ["-listen", "0.0.0.0:18100", "-sqlite-path", "/app/data/lottery/lottery.db", "-sub2api-url", "http://127.0.0.1:8080", "-auth-mode", "introspect"]
