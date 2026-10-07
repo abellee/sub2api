@@ -1082,7 +1082,8 @@ watch(
 // 抽奖菜单显隐：partial 模式下白名单外用户看不到「抽奖活动」菜单项。
 // undefined = 未加载（宽容语义，菜单不闪烁消失）；接口失败保持 undefined（服务端仍强制校验）。
 const lotteryUserVisible = ref<boolean | undefined>(undefined)
-// 当前抽奖状态角标（待开始/进行中/已开奖；进行中最显眼）
+// 当前抽奖状态角标（待开始/进行中/已开奖；进行中最显眼）。
+// phase 只统计该用户可参与或已参与的场次。
 const lotteryStatus = ref<{ text: string; cls: string; dot: string } | null>(null)
 // 角标所有页面都显示；但「已开奖」只在用户侧页面显示（管理员侧只显示进行中/待开始）
 const lotteryBadge = computed(() => {
@@ -1091,7 +1092,7 @@ const lotteryBadge = computed(() => {
   return lotteryStatus.value
 })
 
-// 任务中心角标：有进行中任务时显示「进行中」（与抽奖角标同款视觉）。
+// 任务中心角标：该用户有可参与的进行中任务时显示「进行中」（与抽奖角标同款视觉）。
 const taskPhase = ref<'active' | 'none' | undefined>(undefined)
 const taskBadge = computed(() =>
   taskPhase.value === 'active'

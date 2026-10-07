@@ -152,6 +152,7 @@ function emptyForm(): {
   startsAt: string
   drawsAt: string
   maxParticipants: number
+  showParticipantCount: boolean
   conditionMatch: 'all' | 'any'
   autoBonusPercent: number
   conditions: ConditionDraft[]
@@ -170,6 +171,7 @@ function emptyForm(): {
     startsAt: '',
     drawsAt: '',
     maxParticipants: 0,
+    showParticipantCount: false,
     conditionMatch: 'all',
     autoBonusPercent: 25,
     conditions: [
@@ -204,6 +206,7 @@ function editDaily(c: DailyConfig) {
   form.value.name = c.name
   form.value.description = c.description
   form.value.maxParticipants = c.max_participants
+  form.value.showParticipantCount = c.show_participant_count === true
   form.value.conditionMatch = c.condition_match
   form.value.autoBonusPercent = c.auto_bonus_percent
   form.value.conditions = c.conditions.map((x) => ({ ...x }))
@@ -326,7 +329,7 @@ const statCards = computed(() => [
   },
   {
     label: '累计参与人次',
-    value: activities.value.reduce((s, a) => s + a.participant_count, 0),
+    value: activities.value.reduce((s, a) => s + (a.participant_count ?? 0), 0),
     icon: '👥',
     hint: ''
   },
@@ -343,6 +346,8 @@ function toLocalInput(iso: string): string {
 }
 
 function fillForm(a: ActivityView) {
+  const activityId = a.id
+  const loadedShow = a.show_participant_count === true
   editingId.value = a.id
   editingDailyId.value = null
   editingConfigId.value = a.daily_config_id ?? 0
@@ -352,6 +357,7 @@ function fillForm(a: ActivityView) {
     startsAt: toLocalInput(a.starts_at),
     drawsAt: toLocalInput(a.draws_at),
     maxParticipants: a.max_participants,
+    showParticipantCount: loadedShow,
     conditionMatch: a.condition_match,
     autoBonusPercent: 25,
     repeatPolicy: 'unlimited',
@@ -370,6 +376,10 @@ function fillForm(a: ActivityView) {
   }
   // 条件定义与兑换码码池需要从详情接口取（列表接口不含）。
   adminGetActivity(props.client, a.id).then((detail) => {
+    if (!dialogOpen.value || editingId.value !== activityId) return
+    if (form.value.showParticipantCount === loadedShow) {
+      form.value.showParticipantCount = detail.activity.show_participant_count === true
+    }
     form.value.conditions = detail.activity.conditions.map((c) => ({ ...c }))
     form.value.autoBonusPercent = detail.activity.auto_bonus_percent
     form.value.prizes = detail.activity.prizes.map((p) => ({
@@ -388,16 +398,12 @@ async function refresh() {
   error.value = ''
   try {
     activities.value = await adminListActivities(props.client)
-    adminListDailyConfigs(props.client)
-      .then((list) => { dailyConfigs.value = list })
-      .catch(() => undefined)
-    void loadCurrentParticipants()
-    if (current.value) {
-      fillForm(current.value)
-    } else if (editingId.value != null) {
-      editingId.value = null
-      form.value = emptyForm()
+    try {
+      dailyConfigs.value = await adminListDailyConfigs(props.client)
+    } catch {
+      // 日常配置读取失败时保留上一次的列表，避免编辑时丢字段。
     }
+    void loadCurrentParticipants()
   } catch (e) {
     error.value = (e as Error).message
   } finally {
@@ -511,6 +517,7 @@ function buildInput(): ActivityInput {
     starts_at: form.value.startsAt ? beijingInputToISO(form.value.startsAt) : new Date(0).toISOString(),
     draws_at: form.value.drawsAt ? beijingInputToISO(form.value.drawsAt) : new Date(0).toISOString(),
     max_participants: Number(form.value.maxParticipants) || 0,
+    show_participant_count: form.value.showParticipantCount === true,
     condition_match: form.value.conditionMatch,
     auto_bonus_percent: Number(form.value.autoBonusPercent) || 0,
     ...buildSharedParts()
@@ -548,6 +555,7 @@ async function submit(regenerate = false) {
         name: form.value.name,
         description: form.value.description,
         max_participants: Number(form.value.maxParticipants) || 0,
+        show_participant_count: form.value.showParticipantCount === true,
         condition_match: form.value.conditionMatch,
         auto_bonus_percent: Number(form.value.autoBonusPercent) || 0,
         ...buildSharedParts()
@@ -1055,6 +1063,18 @@ onMounted(refresh)
             <label>
               <span class="input-label">最多参与人数（0 = 不限）</span>
               <input v-model.number="form.maxParticipants" type="number" min="0" class="input" />
+            </label>
+            <label class="sm:col-span-2 flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
+              <input
+                type="checkbox"
+                class="h-4 w-4 accent-primary-600"
+                :checked="form.showParticipantCount"
+                @change="form.showParticipantCount = ($event.target as HTMLInputElement).checked"
+              />
+              是否显示参与人数
+              <span class="text-xs font-normal text-gray-400 dark:text-dark-500">
+                关闭后不向用户下发参与人数，用户侧只显示最多可参与人数
+              </span>
             </label>
             <label v-if="form.isDaily" class="sm:col-span-2">
               <FieldHint

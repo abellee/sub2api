@@ -8,7 +8,6 @@
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import {
-  fetchActivityWinners,
   fetchMyVisibility,
   fetchMyWinnings,
   formatValue,
@@ -31,11 +30,9 @@ const userVisible = ref<boolean | null>(null)
 
 const activities = ref<ActivityView[]>([])
 const myWinnings = ref<WinnerRecord[]>([])
-const winnersOfCurrent = ref<WinnerRecord[]>([])
 const loading = ref(true)
 const error = ref('')
 const joiningId = ref<number | null>(null)
-const resultTab = ref<'mine' | 'winners'>('winners')
 
 /** 展示的场次：进行中（最早开奖优先）→ 未开始（最早开始优先）；
  * 都没有时回落最近一场已开奖（倒计时显示「-」），完全无数据为空。 */
@@ -115,15 +112,20 @@ function phaseBadgeOf(a: ActivityView) {
   return { text: '已开奖', cls: 'bg-gray-100 text-gray-500 dark:bg-dark-700 dark:text-dark-400' }
 }
 
-function slotsLeftOf(a: ActivityView): number | null {
-  if (a.max_participants <= 0) return null
-  return Math.max(0, a.max_participants - a.participant_count)
+/** 服务端没下发 participant_count 时，用户侧不展示当前人数。 */
+function showsParticipantCount(a: ActivityView): boolean {
+  return typeof a.participant_count === 'number'
 }
 
-/** 参与人数进度（0-100）；不限名额时不展示进度条。 */
+function slotsLeftOf(a: ActivityView): number | null {
+  if (!showsParticipantCount(a) || a.max_participants <= 0) return null
+  return Math.max(0, a.max_participants - (a.participant_count ?? 0))
+}
+
+/** 参与人数进度（0-100）；不限名额或不显示人数时不展示进度条。 */
 function participationPctOf(a: ActivityView): number {
-  if (a.max_participants <= 0) return 0
-  return Math.min(100, Math.round((a.participant_count / a.max_participants) * 100))
+  if (!showsParticipantCount(a) || a.max_participants <= 0) return 0
+  return Math.min(100, Math.round(((a.participant_count ?? 0) / a.max_participants) * 100))
 }
 
 async function refresh() {
@@ -131,9 +133,6 @@ async function refresh() {
   try {
     activities.value = await listActivities(props.client)
     myWinnings.value = await fetchMyWinnings(props.client)
-    if (lastDrawn.value && !winnersOfCurrent.value.length) {
-      winnersOfCurrent.value = await fetchActivityWinners(props.client, lastDrawn.value.id)
-    }
   } catch (e) {
     error.value = (e as Error).message
   } finally {
@@ -224,10 +223,15 @@ onMounted(async () => {
             <div class="min-w-0 flex-1">
               <h1 class="text-xl font-bold leading-snug">{{ a.name }}</h1>
               <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-sm text-primary-50/90">
-                <span>{{ a.phase === 'upcoming' ? '开始' : '开奖' }} · {{ fmtDate(a.phase === 'upcoming' ? a.starts_at : a.draws_at) }}</span>
-                <span>
+                <span>开始 · {{ fmtDate(a.starts_at) }}</span>
+                <span>开奖 · {{ fmtDate(a.draws_at) }}</span>
+                <span v-if="showsParticipantCount(a)">
                   已有 <b class="font-semibold text-white">{{ a.participant_count }}</b> 人参与
                   <template v-if="slotsLeftOf(a) != null"> · 剩余 {{ slotsLeftOf(a) }} 名额</template>
+                </span>
+                <span v-else>
+                  <template v-if="a.max_participants > 0">最多可参与 {{ a.max_participants }} 人</template>
+                  <template v-else>最多可参与人数：不限</template>
                 </span>
               </div>
             </div>
@@ -242,8 +246,8 @@ onMounted(async () => {
             </div>
           </div>
 
-          <!-- 参与人数进度条（仅限名额活动显示；不限名额只显示文案） -->
-          <div class="mt-5">
+          <!-- 参与人数进度条：仅在服务端下发了人数、且限名额时显示 -->
+          <div v-if="showsParticipantCount(a)" class="mt-5">
             <div v-if="a.max_participants > 0" class="h-2.5 w-full overflow-hidden rounded-full bg-white/25">
               <div
                 class="h-2.5 rounded-full bg-white transition-all duration-500"
@@ -405,26 +409,13 @@ onMounted(async () => {
       </div>
     </div>
 
-    <!-- 中奖记录：我的中奖记录（默认）/ 上期中奖名单，tab 切换 -->
+    <!-- 我的中奖记录（跨活动；兑换码仅本人可见）。上期中奖名单不在用户侧展示。 -->
     <section v-if="myWinnings.length || lastDrawn" class="card">
-      <div class="card-header flex items-center gap-2">
-        <button
-          :class="['btn btn-sm', resultTab === 'mine' ? 'btn-primary' : 'btn-ghost']"
-          @click="resultTab = 'mine'"
-        >
-          我的中奖记录
-        </button>
-        <button
-          v-if="lastDrawn"
-          :class="['btn btn-sm', resultTab === 'winners' ? 'btn-primary' : 'btn-ghost']"
-          @click="resultTab = 'winners'"
-        >
-          上期中奖名单
-        </button>
+      <div class="card-header">
+        <h2 class="text-sm font-semibold text-gray-900 dark:text-white">我的中奖记录</h2>
       </div>
       <div class="card-body">
-        <!-- 我的中奖记录（跨活动；兑换码仅本人可见） -->
-        <div v-if="resultTab === 'mine'" class="space-y-3">
+        <div class="space-y-3">
           <p v-if="!myWinnings.length" class="text-center text-sm text-gray-400 dark:text-dark-500">
             暂无中奖记录，参与抽奖试试手气吧
           </p>
@@ -470,25 +461,6 @@ onMounted(async () => {
             </div>
           </div>
         </div>
-        </div>
-
-        <!-- 上期中奖名单（后端已脱敏） -->
-        <div v-else>
-          <p v-if="!winnersOfCurrent.length" class="text-center text-sm text-gray-400 dark:text-dark-500">
-            本期无人中奖
-          </p>
-          <ul class="divide-y divide-gray-100 dark:divide-dark-700">
-            <li v-for="w in winnersOfCurrent" :key="w.id" class="flex items-center justify-between py-2.5 text-sm">
-              <span class="font-medium text-gray-700 dark:text-gray-300">{{ w.email }}</span>
-              <span class="flex items-center gap-1.5 text-gray-500 dark:text-dark-400">
-                <PrizeIcon
-                  :type="w.prize_type"
-                  :class="['h-4 w-4', w.prize_type === 'balance' ? 'text-amber-500' : 'text-primary-500']"
-                />
-                {{ w.prize_name }} · {{ formatValue(w.value) }} {{ w.prize_type === 'balance' ? '余额' : '（兑换码）' }}
-              </span>
-            </li>
-          </ul>
         </div>
       </div>
     </section>

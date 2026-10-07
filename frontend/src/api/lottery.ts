@@ -76,7 +76,9 @@ export interface ActivityView {
   starts_at: string
   draws_at: string
   max_participants: number
-  participant_count: number
+  /** 关闭显示时服务端不下发该字段。 */
+  participant_count?: number
+  show_participant_count?: boolean
   condition_match: ConditionMatch
   phase: ActivityPhase
   conditions?: ConditionEvalResult[]
@@ -103,6 +105,7 @@ export interface AdminActivityDetail {
     starts_at: string
     draws_at: string
     max_participants: number
+    show_participant_count?: boolean
     condition_match: ConditionMatch
     auto_bonus_percent: number
     status: string
@@ -120,6 +123,7 @@ export interface ActivityInput {
   starts_at: string
   draws_at: string
   max_participants: number
+  show_participant_count: boolean
   condition_match: ConditionMatch
   auto_bonus_percent: number
   conditions: ConditionDef[]
@@ -327,6 +331,8 @@ export interface DailyConfig {
   name: string
   description: string
   max_participants: number
+  /** 缺省为不显示。为 true 时才向用户下发参与人数。 */
+  show_participant_count?: boolean
   condition_match: ConditionMatch
   auto_bonus_percent: number
   conditions: ConditionDef[]
