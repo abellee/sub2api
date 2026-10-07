@@ -19,6 +19,9 @@
         <slot />
       </main>
     </div>
+
+    <!-- 抽奖资格引导弹窗：后台所有页面全局可用 -->
+    <LotteryPromptHost />
   </div>
 </template>
 
@@ -31,6 +34,7 @@ import { useOnboardingTour } from '@/composables/useOnboardingTour'
 import { useOnboardingStore } from '@/stores/onboarding'
 import AppSidebar from './AppSidebar.vue'
 import AppHeader from './AppHeader.vue'
+import LotteryPromptHost from '@/components/lottery/LotteryPromptHost.vue'
 
 const appStore = useAppStore()
 const authStore = useAuthStore()

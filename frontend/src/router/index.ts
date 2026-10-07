@@ -241,6 +241,28 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/lottery',
+    name: 'Lottery',
+    component: () => import('@/views/user/LotteryView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'Lottery',
+      titleKey: 'nav.lottery'
+    }
+  },
+  {
+    path: '/tasks',
+    name: 'TaskCenter',
+    component: () => import('@/views/user/TaskCenterView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'Task Center',
+      titleKey: 'nav.tasks'
+    }
+  },
+  {
     path: '/redeem',
     name: 'Redeem',
     component: () => import('@/views/user/RedeemView.vue'),
@@ -665,6 +687,28 @@ const routes: RouteRecordRaw[] = [
       title: 'Redeem Code Management',
       titleKey: 'admin.redeem.title',
       descriptionKey: 'admin.redeem.description'
+    }
+  },
+  {
+    path: '/admin/lottery',
+    name: 'AdminLottery',
+    component: () => import('@/views/admin/LotteryAdminView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Lottery Management',
+      titleKey: 'nav.lotteryAdmin'
+    }
+  },
+  {
+    path: '/admin/tasks',
+    name: 'AdminTasks',
+    component: () => import('@/views/admin/TaskAdminView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Task Management',
+      titleKey: 'nav.tasksAdmin'
     }
   },
   {

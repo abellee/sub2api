@@ -277,6 +277,12 @@ export default defineConfig(({ mode }) => {
       host: '0.0.0.0',
       port: devPort,
       proxy: {
+        '/lotteryd': {
+          target: env.VITE_LOTTERYD_PROXY_TARGET || 'http://127.0.0.1:18100',
+          changeOrigin: true,
+          ws: true,
+          rewrite: (path: string) => path.replace(/^\/lotteryd/, '')
+        },
         '/api': {
           target: backendUrl,
           changeOrigin: true

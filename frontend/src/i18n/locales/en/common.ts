@@ -163,6 +163,10 @@ export default {
 
   // Navigation
   nav: {
+    lottery: 'Lottery',
+    lotteryAdmin: 'Lottery Admin',
+    tasks: 'Task Center',
+    tasksAdmin: 'Task Management',
     dashboard: 'Dashboard',
     announcements: 'Announcements',
     wechatGroupQR: 'WeChat Group QR',

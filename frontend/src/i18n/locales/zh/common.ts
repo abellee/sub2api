@@ -163,6 +163,10 @@ export default {
 
   // Navigation
   nav: {
+    lottery: '抽奖活动',
+    lotteryAdmin: '抽奖管理',
+    tasks: '任务中心',
+    tasksAdmin: '任务管理',
     dashboard: '仪表盘',
     announcements: '公告',
     wechatGroupQR: '微信群二维码',
