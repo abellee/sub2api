@@ -785,7 +785,7 @@ onMounted(refresh)
           <div>
             <dt class="text-xs text-gray-400 dark:text-dark-500">参与人数</dt>
             <dd class="mt-0.5 text-sm font-medium text-gray-900 dark:text-gray-100">
-              {{ current.participant_count }}<template v-if="current.max_participants > 0"> / {{ current.max_participants }}</template>
+              {{ current.participant_count ?? 0 }}<template v-if="current.max_participants > 0"> / {{ current.max_participants }}</template>
             </dd>
           </div>
           <div>
@@ -801,11 +801,11 @@ onMounted(refresh)
           <div class="h-2 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-dark-700">
             <div
               class="h-2 rounded-full bg-gradient-primary transition-all duration-500"
-              :style="{ width: (current.max_participants > 0 ? Math.min(100, Math.round((current.participant_count / current.max_participants) * 100)) : Math.min(100, current.participant_count * 10)) + '%' }"
+              :style="{ width: (current.max_participants > 0 ? Math.min(100, Math.round(((current.participant_count ?? 0) / current.max_participants) * 100)) : Math.min(100, (current.participant_count ?? 0) * 10)) + '%' }"
             ></div>
           </div>
           <div class="mt-1 flex justify-between text-[11px] text-gray-400 dark:text-dark-500">
-            <span>已参与 {{ current.participant_count }} 人</span>
+            <span>已参与 {{ current.participant_count ?? 0 }} 人</span>
             <span>{{ current.max_participants > 0 ? '上限 ' + current.max_participants + ' 人' : '不限名额' }}</span>
           </div>
         </div>
@@ -935,7 +935,7 @@ onMounted(refresh)
             <div class="min-w-0 flex-1">
               <p class="truncate text-sm font-medium text-gray-900 dark:text-gray-100">{{ a.name }}</p>
               <p class="mt-0.5 text-xs text-gray-400 dark:text-dark-500">
-                {{ fmtDate(a.starts_at) }} → {{ fmtDate(a.draws_at) }} · {{ a.participant_count }} 人参与
+                {{ fmtDate(a.starts_at) }} → {{ fmtDate(a.draws_at) }} · {{ a.participant_count ?? 0 }} 人参与
               </p>
             </div>
             <button class="btn btn-secondary btn-sm" @click="toggleWinners(a)">
