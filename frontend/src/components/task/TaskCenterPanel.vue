@@ -159,7 +159,7 @@ onMounted(() => { void fetchTaskPhase(props.client).catch(() => {}) })
             </div>
             <div>
               <dt class="text-xs text-gray-400 dark:text-dark-500">结算时间</dt>
-              <dd class="mt-0.5 text-sm font-medium text-gray-900 dark:text-gray-100">每日 {{ t.settle_time }} 结算前一天</dd>
+              <dd class="mt-0.5 text-sm font-medium text-gray-900 dark:text-gray-100">每日 {{ t.settle_time }}（北京时间）结算前一天</dd>
             </div>
             <div>
               <dt class="text-xs text-gray-400 dark:text-dark-500">参与条件</dt>

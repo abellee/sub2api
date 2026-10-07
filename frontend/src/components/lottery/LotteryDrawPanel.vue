@@ -21,6 +21,7 @@ import type { LotteryClient } from '../../api/lotteryClient'
 import LotteryFlipCountdown from './LotteryFlipCountdown.vue'
 import LotteryMarkdownCard from './LotteryMarkdownCard.vue'
 import PrizeIcon from './PrizeIcon.vue'
+import { formatBeijingDateTime } from '../../utils/beijingTime'
 
 const props = defineProps<{ client: LotteryClient }>()
 
@@ -154,7 +155,7 @@ async function join(a: ActivityView) {
 }
 
 function fmtDate(v: string): string {
-  return new Date(v).toLocaleString('zh-CN', { hour12: false })
+  return formatBeijingDateTime(v)
 }
 
 onMounted(async () => {

@@ -24,6 +24,7 @@ import {
 } from '../../api/lottery'
 import type { LotteryClient } from '../../api/lotteryClient'
 import PrizeIcon from './PrizeIcon.vue'
+import { beijingInputToISO, formatBeijingDateTime, isoToBeijingInput } from '../../utils/beijingTime'
 import {
   adminCloseActivity,
   adminCreateDailyConfig,
@@ -338,9 +339,7 @@ const statCards = computed(() => [
 ])
 
 function toLocalInput(iso: string): string {
-  const d = new Date(iso)
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  return isoToBeijingInput(iso)
 }
 
 function fillForm(a: ActivityView) {
@@ -509,8 +508,8 @@ function buildInput(): ActivityInput {
     name: form.value.name,
     description: form.value.description,
     // 普通模式必填（canSubmit 已校验）；每日定时模式不会走到这里
-    starts_at: form.value.startsAt ? new Date(form.value.startsAt).toISOString() : new Date(0).toISOString(),
-    draws_at: form.value.drawsAt ? new Date(form.value.drawsAt).toISOString() : new Date(0).toISOString(),
+    starts_at: form.value.startsAt ? beijingInputToISO(form.value.startsAt) : new Date(0).toISOString(),
+    draws_at: form.value.drawsAt ? beijingInputToISO(form.value.drawsAt) : new Date(0).toISOString(),
     max_participants: Number(form.value.maxParticipants) || 0,
     condition_match: form.value.conditionMatch,
     auto_bonus_percent: Number(form.value.autoBonusPercent) || 0,
@@ -700,7 +699,7 @@ function runConfirm() {
 }
 
 function fmtDate(v: string): string {
-  return new Date(v).toLocaleString('zh-CN', { hour12: false })
+  return formatBeijingDateTime(v)
 }
 
 onMounted(refresh)
@@ -886,7 +885,7 @@ onMounted(refresh)
           <div class="min-w-0 flex-1">
             <p class="truncate text-sm font-medium text-gray-900 dark:text-gray-100">{{ c.name }}</p>
             <p class="mt-0.5 text-xs text-gray-400 dark:text-dark-500">
-              每天 {{ c.start_time }} 开启，{{ c.duration_hours }} 小时后开奖
+              每天 {{ c.start_time }}（北京时间）开启，{{ c.duration_hours }} 小时后开奖
               <template v-if="c.enabled"> · 到点自动创建场次</template>
             </p>
             <p class="mt-0.5 truncate text-xs" :class="c.conditions.length ? 'text-primary-600 dark:text-primary-400' : 'text-gray-400 dark:text-dark-500'">
@@ -1030,15 +1029,15 @@ onMounted(refresh)
               <textarea v-model="form.description" class="input" rows="2" placeholder="展示给用户的说明文字，支持 **加粗**、列表、标题等"></textarea>
             </label>
             <label v-if="!form.isDaily">
-              <span class="input-label">抽奖开始时间</span>
+              <span class="input-label">抽奖开始时间（北京时间）</span>
               <input v-model="form.startsAt" type="datetime-local" class="input" />
             </label>
             <label v-if="!form.isDaily">
-              <span class="input-label">开奖时间</span>
+              <span class="input-label">开奖时间（北京时间）</span>
               <input v-model="form.drawsAt" type="datetime-local" class="input" />
             </label>
             <label v-if="form.isDaily" class="sm:col-span-2">
-              <span class="input-label">每日开启时刻（到点自动创建当天活动）</span>
+              <span class="input-label">每日开启时刻（北京时间，到点自动创建当天活动）</span>
               <div class="flex flex-wrap items-center gap-3">
                 <input v-model="form.dailyStartTime" type="time" class="input !w-32" />
                 <span class="text-xs text-gray-500 dark:text-dark-400">持续</span>

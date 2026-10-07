@@ -2,6 +2,7 @@
 /** 任务管理面板：任务 CRUD、码池维护、发放记录与重试。 */
 import { computed, onMounted, ref, watch } from 'vue'
 import type { LotteryClient } from '@/api/lotteryClient'
+import { addCalendarDays, beijingToday } from '@/utils/beijingTime'
 import { adminSearchUsers, formatValue, type SearchedUser } from '@/api/lottery'
 import type { ConditionDef } from '@/api/lottery'
 import {
@@ -51,10 +52,7 @@ interface TaskForm {
   conditions: ConditionDef[]
 }
 
-const todayStr = () => {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
+const todayStr = () => beijingToday()
 
 function emptyForm(): TaskForm {
   return {
@@ -145,14 +143,17 @@ function fmtDate(s: string): string {
 /** 任务周期展示：起 ~ 止（剩余 N 天） */
 function periodText(t: AdminTaskView): string {
   const end = endDate(t)
-  const daysLeft = Math.max(0, Math.round((new Date(end).getTime() - new Date(todayStr()).getTime()) / 86400000))
-  return `${fmtDate(t.start_date)} ~ ${fmtDate(end)}（剩 ${daysLeft} 天）`
+  return `${fmtDate(t.start_date)} ~ ${fmtDate(end)}（剩 ${calendarDaysLeft(end)} 天）`
+}
+
+function calendarDaysLeft(end: string): number {
+  const later = Date.parse(`${end.slice(0, 10)}T00:00:00Z`)
+  const earlier = Date.parse(`${todayStr()}T00:00:00Z`)
+  return Math.max(0, Math.round((later - earlier) / 86400000))
 }
 
 function endDate(t: { start_date: string; duration_days: number }): string {
-  const d = new Date(t.start_date + 'T00:00:00')
-  d.setDate(d.getDate() + t.duration_days - 1)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return addCalendarDays(t.start_date, t.duration_days - 1)
 }
 
 const repeatPolicyLabel: Record<RepeatPolicy, string> = {
@@ -571,7 +572,7 @@ onMounted(refresh)
           </div>
           <div>
             <dt class="text-xs text-gray-400 dark:text-dark-500">结算时间</dt>
-            <dd class="mt-0.5 text-sm font-medium text-gray-900 dark:text-gray-100">每日 {{ t.settle_time }}（结算前一天）</dd>
+            <dd class="mt-0.5 text-sm font-medium text-gray-900 dark:text-gray-100">每日 {{ t.settle_time }}（北京时间，结算前一天）</dd>
           </div>
           <div>
             <dt class="text-xs text-gray-400 dark:text-dark-500">达成条件</dt>
@@ -646,7 +647,7 @@ onMounted(refresh)
                 <input v-else class="input" value="不限模型" disabled />
               </label>
               <label>
-                <span class="input-label">起始日期（第 1 天）</span>
+                <span class="input-label">起始日期（北京时间，第 1 天）</span>
                 <input v-model="form.startDate" type="date" class="input" />
               </label>
               <label>
@@ -654,7 +655,7 @@ onMounted(refresh)
                 <input v-model.number="form.durationDays" type="number" min="1" class="input" />
               </label>
               <label>
-                <FieldHint label="结算时间" hint="最终结算的时间点：次日凌晨该时刻结算前一天的消耗量，如 00:10。" />
+                <FieldHint label="结算时间（北京时间）" hint="最终结算的时间点：次日该时刻（北京时间）结算前一天的消耗量，如 00:10。" />
                 <input v-model="form.settleTime" type="time" class="input" />
               </label>
               <label>
