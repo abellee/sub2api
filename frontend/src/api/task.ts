@@ -101,6 +101,20 @@ export async function listTasks(client: LotteryClient): Promise<TaskView[]> {
   return data.tasks ?? []
 }
 
+/** 引导弹窗载荷：封面、名称、说明。 */
+export interface TaskPrompt {
+  id: number
+  name: string
+  cover?: string
+  description?: string
+}
+
+/** 符合可参与条件的进行中任务（供全局引导弹窗）。 */
+export async function fetchTaskPrompts(client: LotteryClient): Promise<TaskPrompt[]> {
+  const data = await unwrap<{ tasks: TaskPrompt[] }>(client.http.get('/v1/task-prompts'))
+  return data.tasks ?? []
+}
+
 /** 用户侧角标探测：有进行中任务 → 'active'。 */
 export async function fetchTaskPhase(client: LotteryClient): Promise<'active' | 'none'> {
   const data = await unwrap<{ phase: 'active' | 'none' }>(client.http.get('/v1/me/tasks/phase'))

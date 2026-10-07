@@ -1,40 +1,76 @@
 <script setup lang="ts">
 /**
- * LotteryPromptHost —— 全局抽奖资格引导弹窗宿主。
+ * LotteryPromptHost —— 全局抽奖 / 任务资格引导弹窗宿主。
  * 挂在 AppLayout 内，覆盖后台所有页面：
- *  - 主通道：WebSocket（lotteryd /v1/ws?token=）实时推送，活动创建/资格变化立即弹窗；
- *    连接携带用户凭证，由 lotteryd 经主服务 introspect 校验，校验失败服务端直接拒绝升级。
+ *  - 主通道：WebSocket（lotteryd /v1/ws?token=）实时推送。活动或任务发布且用户符合
+ *    可参与条件时立即弹窗。同一时刻只显示一个，其余排队。
  *  - 断线重连：连续尝试 5 次（间隔 3s），仍未成功则停 30s 后再来一轮，依次循环；
  *    页面失活导致定时器被节流时，依赖「重新可见/聚焦/网络恢复」事件立即补偿重连。
  *  - 回退：WS 断开期间退回轮询（路由切换 / 每 60s），双通道共用 localStorage 去重。
  */
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { createDefaultLotteryClient } from '../../api/lotteryClient'
 import { useLotteryPrompt } from '../../composables/useLotteryPrompt'
+import { useTaskPrompt } from '../../composables/useTaskPrompt'
 import type { ActivityView } from '../../api/lottery'
+import type { TaskPrompt } from '../../api/task'
 import LotteryPromptModal from './LotteryPromptModal.vue'
+import TaskPromptModal from '../task/TaskPromptModal.vue'
 
 const route = useRoute()
 const router = useRouter()
 const client = createDefaultLotteryClient()
 const prompt = useLotteryPrompt(client)
-const pendingActivity = ref<ActivityView | null>(null)
+const taskPrompt = useTaskPrompt(client)
+
+type PromptItem =
+  | { kind: 'lottery'; id: number; activity: ActivityView }
+  | { kind: 'task'; id: number; task: TaskPrompt }
+
+const queue = ref<PromptItem[]>([])
+const current = computed(() => queue.value[0] ?? null)
+const currentActivity = computed(() => (current.value?.kind === 'lottery' ? current.value.activity : null))
+const currentTask = computed(() => (current.value?.kind === 'task' ? current.value.task : null))
+
+function enqueue(item: PromptItem) {
+  const prompted = item.kind === 'lottery' ? prompt.promptedIds() : taskPrompt.promptedIds()
+  if (prompted.includes(item.id)) return
+  if (queue.value.some((queued) => queued.kind === item.kind && queued.id === item.id)) return
+  queue.value = [...queue.value, item]
+}
+
+function drop(kind: PromptItem['kind'], id: number) {
+  queue.value = queue.value.filter((item) => !(item.kind === kind && item.id === id))
+}
 
 async function runPromptCheck() {
-  pendingActivity.value = await prompt.check()
+  const activity = await prompt.check()
+  if (activity) enqueue({ kind: 'lottery', id: activity.id, activity })
+  const task = await taskPrompt.check()
+  if (task) enqueue({ kind: 'task', id: task.id, task })
 }
 
 function onConfirm(activityId: number) {
   prompt.acknowledge(activityId)
-  pendingActivity.value = null
-  // 「去参与」：跳转到抽奖活动页
+  drop('lottery', activityId)
   void router.push('/lottery')
 }
 
 function onDismiss(activityId: number) {
   prompt.acknowledge(activityId)
-  pendingActivity.value = null
+  drop('lottery', activityId)
+}
+
+function onConfirmTask(taskId: number) {
+  taskPrompt.acknowledge(taskId)
+  drop('task', taskId)
+  void router.push('/tasks')
+}
+
+function onDismissTask(taskId: number) {
+  taskPrompt.acknowledge(taskId)
+  drop('task', taskId)
 }
 
 // ---- WebSocket 实时通道 ----
@@ -109,12 +145,11 @@ function wsConnect() {
   ws.onmessage = (ev) => {
     awaitingPong = false
     try {
-      const msg = JSON.parse(ev.data) as { type?: string; activity?: ActivityView }
-      if (msg.type === 'lottery_prompt' && msg.activity && !pendingActivity.value) {
-        const prompted = prompt.promptedIds()
-        if (!prompted.includes(msg.activity.id)) {
-          pendingActivity.value = msg.activity
-        }
+      const msg = JSON.parse(ev.data) as { type?: string; activity?: ActivityView; task?: TaskPrompt }
+      if (msg.type === 'lottery_prompt' && msg.activity) {
+        enqueue({ kind: 'lottery', id: msg.activity.id, activity: msg.activity })
+      } else if (msg.type === 'task_prompt' && msg.task) {
+        enqueue({ kind: 'task', id: msg.task.id, task: msg.task })
       }
     } catch {
       // 忽略非法消息
@@ -177,7 +212,7 @@ function stopHeartbeat() {
 function schedulePolling() {
   if (pollTimer) return
   pollTimer = window.setInterval(() => {
-    if (!pendingActivity.value) void runPromptCheck()
+    if (!current.value) void runPromptCheck()
   }, 60_000)
 }
 
@@ -192,12 +227,12 @@ function onVisibilityChange() {
   if (document.hidden) return
   // 页面重新可见：立即补偿重连/检查（后台标签页的定时器可能被浏览器节流）
   if (!ws || ws.readyState !== WebSocket.OPEN) reconnectNow()
-  if (!pendingActivity.value) void runPromptCheck()
+  if (!current.value) void runPromptCheck()
 }
 
 function onWindowFocus() {
   reconnectNow()
-  if (!pendingActivity.value) void runPromptCheck()
+  if (!current.value) void runPromptCheck()
 }
 
 function onOnline() {
@@ -226,11 +261,12 @@ onBeforeUnmount(() => {
 watch(() => route.path, () => {
   if (!ws || ws.readyState !== WebSocket.OPEN) {
     reconnectNow()
-    if (!pendingActivity.value) void runPromptCheck()
+    if (!current.value) void runPromptCheck()
   }
 })
 </script>
 
 <template>
-  <LotteryPromptModal :activity="pendingActivity" @confirm="onConfirm" @dismiss="onDismiss" />
+  <LotteryPromptModal :activity="currentActivity" @confirm="onConfirm" @dismiss="onDismiss" />
+  <TaskPromptModal :task="currentTask" @confirm="onConfirmTask" @dismiss="onDismissTask" />
 </template>
