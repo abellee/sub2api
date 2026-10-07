@@ -97,6 +97,14 @@
               <span v-if="item.iconSvg" class="h-5 w-5 flex-shrink-0 sidebar-svg-icon" v-html="sanitizeSvg(item.iconSvg)"></span>
               <component v-else :is="item.icon" class="h-5 w-5 flex-shrink-0" />
               <span class="sidebar-label" :class="{ 'sidebar-label-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">{{ item.label }}</span>
+              <!-- 状态角标（如抽奖的进行中/待开始/已开奖） -->
+              <span
+                v-if="item.badge"
+                :class="['flex-shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none flex items-center gap-1', item.badge.cls]"
+              >
+                <i v-if="item.badge.dot" :class="['h-1.5 w-1.5 rounded-full', item.badge.dot]"></i>
+                {{ item.badge.text }}
+              </span>
             </router-link>
           </template>
         </div>
@@ -122,6 +130,14 @@
             <span v-if="item.iconSvg" class="h-5 w-5 flex-shrink-0 sidebar-svg-icon" v-html="sanitizeSvg(item.iconSvg)"></span>
             <component v-else :is="item.icon" class="h-5 w-5 flex-shrink-0" />
             <span class="sidebar-label" :class="{ 'sidebar-label-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">{{ item.label }}</span>
+            <!-- 状态角标（如抽奖的进行中/待开始/已开奖） -->
+            <span
+              v-if="item.badge"
+              :class="['flex-shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none flex items-center gap-1', item.badge.cls]"
+            >
+              <i v-if="item.badge.dot" :class="['h-1.5 w-1.5 rounded-full', item.badge.dot]"></i>
+              {{ item.badge.text }}
+            </span>
           </router-link>
         </div>
       </template>
@@ -142,6 +158,14 @@
             <span v-if="item.iconSvg" class="h-5 w-5 flex-shrink-0 sidebar-svg-icon" v-html="sanitizeSvg(item.iconSvg)"></span>
             <component v-else :is="item.icon" class="h-5 w-5 flex-shrink-0" />
             <span class="sidebar-label" :class="{ 'sidebar-label-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">{{ item.label }}</span>
+            <!-- 状态角标（如抽奖的进行中/待开始/已开奖） -->
+            <span
+              v-if="item.badge"
+              :class="['flex-shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none flex items-center gap-1', item.badge.cls]"
+            >
+              <i v-if="item.badge.dot" :class="['h-1.5 w-1.5 rounded-full', item.badge.dot]"></i>
+              {{ item.badge.text }}
+            </span>
           </router-link>
         </div>
       </template>
@@ -206,6 +230,9 @@ import { sanitizeSvg } from '@/utils/sanitize'
 import { sanitizeUrl } from '@/utils/url'
 import { FeatureFlags, isChannelMonitorVisibleToUser, makeSidebarFlag } from '@/utils/featureFlags'
 import { resolveSiteBillingMode } from '@/utils/siteBillingMode'
+import { fetchMyVisibility } from '@/api/lottery'
+import { fetchTaskPhase, fetchTaskVisibility } from '@/api/task'
+import { createDefaultLotteryClient } from '@/api/lotteryClient'
 
 interface NavItem {
   path: string
@@ -226,6 +253,8 @@ interface NavItem {
    * 开关切换时菜单自动更新。
    */
   featureFlag?: () => boolean | undefined
+  /** 可选的状态角标（如抽奖的「进行中/待开始/已开奖」），为 null/undefined 时不显示。 */
+  badge?: { text: string; cls: string; dot?: string } | null
 }
 
 // applyFeatureFlags 递归过滤掉 featureFlag() === false 的节点（含子节点）。
@@ -367,6 +396,30 @@ const UserIcon = {
         })
       ]
     )
+}
+
+// 摩天轮图标：抽奖入口专用（轮盘 + 六辐条 + 三个吊舱 + A 字支架）
+const LotteryIcon = {
+  render: () =>
+    h('svg', { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.8', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }, [
+      h('circle', { cx: '12', cy: '10', r: '7' }),
+      h('path', { d: 'M12 3v14M5.94 6.5l12.12 7M18.06 6.5l-12.12 7' }),
+      h('circle', { cx: '12', cy: '17', r: '1.3' }),
+      h('circle', { cx: '5.94', cy: '13.5', r: '1.3' }),
+      h('circle', { cx: '18.06', cy: '13.5', r: '1.3' }),
+      h('path', { d: 'M12 10L9 21M12 10l3 11M7 21h10' })
+    ])
+}
+
+// 任务中心图标：清单板 + 勾选项
+const TaskIcon = {
+  render: () =>
+    h('svg', { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.8', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }, [
+      h('rect', { x: '4', y: '3.5', width: '16', height: '17', rx: '2.5' }),
+      h('path', { d: 'M8.5 8.5l1.6 1.6 3-3.2' }),
+      h('path', { d: 'M8.5 15.5h7' }),
+      h('path', { d: 'M8.5 12h7' })
+    ])
 }
 
 const UsersIcon = {
@@ -772,6 +825,22 @@ function buildSelfNavItems(withDashboard: boolean): NavItem[] {
     { path: '/purchase', label: purchaseNavLabel.value, icon: RechargeSubscriptionIcon, hideInSimpleMode: true, featureFlag: flagPayment },
     { path: '/orders', label: t('nav.myOrders'), icon: OrderListIcon, hideInSimpleMode: true, featureFlag: flagPayment },
     { path: '/redeem', label: t('nav.redeem'), icon: GiftIcon, hideInSimpleMode: true },
+    {
+      path: '/lottery',
+      label: t('nav.lottery'),
+      icon: LotteryIcon,
+      hideInSimpleMode: true,
+      featureFlag: () => lotteryUserVisible.value,
+      badge: lotteryUserVisible.value !== false ? lotteryBadge.value : null
+    },
+    {
+      path: '/tasks',
+      label: t('nav.tasks'),
+      icon: TaskIcon,
+      hideInSimpleMode: true,
+      featureFlag: () => taskUserVisible.value,
+      badge: taskUserVisible.value !== false ? taskBadge.value : null
+    },
     { path: '/affiliate', label: t('nav.affiliate'), icon: UsersIcon, hideInSimpleMode: true, featureFlag: flagAffiliate },
     { path: '/profile', label: t('nav.profile'), icon: UserIcon },
     { path: '/model-plaza', label: t('nav.modelPlaza'), icon: ChannelIcon },
@@ -864,6 +933,8 @@ const adminNavItems = computed((): NavItem[] => {
     },
     { path: '/admin/redeem', label: t('nav.redeemCodes'), icon: TicketIcon, hideInSimpleMode: true },
     { path: '/admin/promo-codes', label: t('nav.promoCodes'), icon: GiftIcon, hideInSimpleMode: true },
+      { path: '/admin/lottery', label: t('nav.lotteryAdmin'), icon: LotteryIcon, hideInSimpleMode: true },
+      { path: '/admin/tasks', label: t('nav.tasksAdmin'), icon: TaskIcon, hideInSimpleMode: true },
     {
       path: '/admin/affiliates',
       label: t('nav.affiliateManagement'),
@@ -1008,10 +1079,58 @@ watch(
   { immediate: true }
 )
 
+// 抽奖菜单显隐：partial 模式下白名单外用户看不到「抽奖活动」菜单项。
+// undefined = 未加载（宽容语义，菜单不闪烁消失）；接口失败保持 undefined（服务端仍强制校验）。
+const lotteryUserVisible = ref<boolean | undefined>(undefined)
+// 当前抽奖状态角标（待开始/进行中/已开奖；进行中最显眼）
+const lotteryStatus = ref<{ text: string; cls: string; dot: string } | null>(null)
+// 角标所有页面都显示；但「已开奖」只在用户侧页面显示（管理员侧只显示进行中/待开始）
+const lotteryBadge = computed(() => {
+  if (!lotteryStatus.value) return null
+  if (route.path.startsWith('/admin') && lotteryStatus.value.text === '已开奖') return null
+  return lotteryStatus.value
+})
+
+// 任务中心角标：有进行中任务时显示「进行中」（与抽奖角标同款视觉）。
+const taskPhase = ref<'active' | 'none' | undefined>(undefined)
+const taskBadge = computed(() =>
+  taskPhase.value === 'active'
+    ? { text: '进行中', cls: 'bg-emerald-500 text-white', dot: 'bg-white animate-pulse' }
+    : null
+)
+// 任务中心菜单显隐：partial 模式白名单外用户看不到入口（undefined = 未加载，宽容语义）
+const taskUserVisible = ref<boolean | undefined>(undefined)
+
 onMounted(() => {
   if (isAdmin.value) {
     adminSettingsStore.fetch()
   }
+  // 抽奖菜单显隐探测（管理员由 lotteryd 直接返回可见）
+  fetchMyVisibility(createDefaultLotteryClient())
+    .then((r) => {
+      lotteryUserVisible.value = r.visible
+      lotteryStatus.value =
+        r.phase === 'joining'
+          ? { text: '进行中', cls: 'bg-emerald-500 text-white', dot: 'bg-white animate-pulse' }
+          : r.phase === 'upcoming'
+            ? { text: '待开始', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300', dot: '' }
+            : r.phase === 'drawn'
+              ? { text: '已开奖', cls: 'bg-gray-100 text-gray-500 dark:bg-dark-700 dark:text-dark-400', dot: '' }
+              : null
+    })
+    .catch(() => {})
+  // 任务中心角标与显隐探测：partial 白名单外隐藏入口；失败保持宽容
+  const taskClient = createDefaultLotteryClient()
+  fetchTaskVisibility(taskClient)
+    .then((visible) => {
+      taskUserVisible.value = visible
+    })
+    .catch(() => {})
+  fetchTaskPhase(taskClient)
+    .then((phase) => {
+      taskPhase.value = phase
+    })
+    .catch(() => {})
   // Restore sidebar scroll position after route change re-mounts the component
   if (appStore.sidebarScrollTop > 0 && sidebarNavRef.value) {
     void nextTick(() => {
