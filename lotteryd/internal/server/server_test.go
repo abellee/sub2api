@@ -593,3 +593,95 @@ func TestTaskVisibility(t *testing.T) {
 	data = mustJSON(t, e.req(t, http.MethodGet, "/v1/me/task-visibility", user102, nil))
 	require.Equal(t, false, data["visible"].(bool))
 }
+
+func TestTaskPromptFlow(t *testing.T) {
+	e := newTestEnv(t)
+	adminToken := signJWT(e.secret, 1, "admin")
+	user7 := signJWT(e.secret, 7, "user")
+	user8 := signJWT(e.secret, 8, "user")
+	today := time.Now().Format("2006-01-02")
+
+	// 默认 partial：引导弹窗按普通用户显隐，白名单空时谁都不弹。
+	hidden := sampleTask("未开放任务", today, 7, "balance")
+	hidden["cover"] = "https://example.com/cover.png"
+	hidden["description"] = "说明"
+	mustJSON(t, e.req(t, http.MethodPost, "/v1/admin/tasks", adminToken, hidden))
+	data := mustJSON(t, e.req(t, http.MethodGet, "/v1/task-prompts", user7, nil))
+	require.Empty(t, data["tasks"].([]any))
+	// 管理员与任务列表一样不受 partial 显隐限制，WebSocket 用同一份结果推送。
+	require.Contains(t, promptNames(t, e, adminToken), "未开放任务")
+
+	mustJSON(t, e.req(t, http.MethodPut, "/v1/admin/task-settings", adminToken,
+		map[string]any{"visibility": map[string]any{"mode": "all"}}))
+
+	// 无条件任务：封面、名称、说明都返回。
+	open := sampleTask("开放任务", today, 7, "balance")
+	open["cover"] = "https://example.com/open.png"
+	open["description"] = "完成每日消耗即可领奖"
+	mustJSON(t, e.req(t, http.MethodPost, "/v1/admin/tasks", adminToken, open))
+	data = mustJSON(t, e.req(t, http.MethodGet, "/v1/task-prompts", user7, nil))
+	rows := data["tasks"].([]any)
+	require.NotEmpty(t, rows)
+	found := false
+	for _, row := range rows {
+		m := row.(map[string]any)
+		if m["name"] == "开放任务" {
+			found = true
+			require.Equal(t, "https://example.com/open.png", m["cover"])
+			require.Equal(t, "完成每日消耗即可领奖", m["description"])
+		}
+	}
+	require.True(t, found)
+
+	// 白名单外不弹；黑名单不弹。
+	wl := sampleTask("仅7", today, 7, "balance")
+	wl["whitelist"] = []string{"user7@test.com"}
+	wl["description"] = "只给 7"
+	mustJSON(t, e.req(t, http.MethodPost, "/v1/admin/tasks", adminToken, wl))
+	bl := sampleTask("排除7", today, 7, "balance")
+	bl["blacklist"] = []string{"user7@test.com"}
+	mustJSON(t, e.req(t, http.MethodPost, "/v1/admin/tasks", adminToken, bl))
+
+	names := promptNames(t, e, user7)
+	require.Contains(t, names, "仅7")
+	require.NotContains(t, names, "排除7")
+	names8 := promptNames(t, e, user8)
+	require.NotContains(t, names8, "仅7")
+	require.Contains(t, names8, "排除7")
+
+	// 可参与条件（近 7 天每日 token）不满足则不弹。
+	cond := sampleTask("条件任务", today, 7, "balance")
+	cond["cover"] = "data:image/png;base64,abc"
+	cond["description"] = "需要连续消耗"
+	cond["conditions"] = []map[string]any{
+		{"dimension": "token_usage", "window_days": 7, "mode": "per_day", "threshold": 100000000, "bonus_mode": "none"},
+	}
+	data = mustJSON(t, e.req(t, http.MethodPost, "/v1/admin/tasks", adminToken, cond))
+	condID := int64(data["id"].(float64))
+	require.NotContains(t, promptNames(t, e, user7), "条件任务")
+
+	localNow := time.Now()
+	for i := 1; i <= 8; i++ {
+		date := localNow.AddDate(0, 0, -i).Format("2006-01-02")
+		e.fake.dailyTokens[date] = map[int64]float64{7: 110e6}
+	}
+	require.NoError(t, e.app.SyncTokens(context.Background(), localNow))
+	require.Contains(t, promptNames(t, e, user7), "条件任务")
+	require.NotContains(t, promptNames(t, e, user8), "条件任务")
+
+	// 结束后不再提示。
+	cond["status"] = "ended"
+	mustJSON(t, e.req(t, http.MethodPut, fmt.Sprintf("/v1/admin/tasks/%d", condID), adminToken, cond))
+	require.NotContains(t, promptNames(t, e, user7), "条件任务")
+}
+
+func promptNames(t *testing.T, e *testEnv, token string) []string {
+	t.Helper()
+	data := mustJSON(t, e.req(t, http.MethodGet, "/v1/task-prompts", token, nil))
+	raw, _ := data["tasks"].([]any)
+	names := make([]string, 0, len(raw))
+	for _, row := range raw {
+		names = append(names, row.(map[string]any)["name"].(string))
+	}
+	return names
+}

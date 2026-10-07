@@ -175,6 +175,7 @@ func (s *Server) Handler() http.Handler {
 
 	// 任务模块（用户侧）。
 	mux.Handle("GET /v1/tasks", s.requireUser(s.handleListTasks))
+	mux.Handle("GET /v1/task-prompts", s.requireUser(s.handleTaskPrompts))
 	mux.Handle("GET /v1/me/tasks/phase", s.requireUser(s.handleMyTasksPhase))
 	mux.Handle("GET /v1/me/task-visibility", s.requireUser(s.handleMyTaskVisibility))
 	mux.Handle("GET /v1/me/task-rewards", s.requireUser(s.handleMyTaskRewards))
@@ -219,9 +220,9 @@ func (s *Server) Handler() http.Handler {
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	ok(w, map[string]any{
-		"status":       "ok",
-		"version":      s.Version,
-		"started_at":   s.StartedAt,
+		"status":         "ok",
+		"version":        s.Version,
+		"started_at":     s.StartedAt,
 		"uptime_seconds": int64(time.Since(s.StartedAt).Seconds()),
 	})
 }
@@ -361,16 +362,16 @@ func internalError(w http.ResponseWriter, err error) {
 // ---- Admin handlers ----
 
 type activityInput struct {
-	Name             string                  `json:"name"`
-	Description      string                  `json:"description"`
-	StartsAt         time.Time               `json:"starts_at"`
-	DrawsAt          time.Time               `json:"draws_at"`
-	MaxParticipants  int64                   `json:"max_participants"`
-	ConditionMatch   string                  `json:"condition_match"`
-	AutoBonusPercent float64                 `json:"auto_bonus_percent"`
-	DailyConfigID    int64                   `json:"daily_config_id"`
-	Conditions       []lottery.ConditionDef  `json:"conditions"`
-	Prizes           []prizeInput            `json:"prizes"`
+	Name             string                 `json:"name"`
+	Description      string                 `json:"description"`
+	StartsAt         time.Time              `json:"starts_at"`
+	DrawsAt          time.Time              `json:"draws_at"`
+	MaxParticipants  int64                  `json:"max_participants"`
+	ConditionMatch   string                 `json:"condition_match"`
+	AutoBonusPercent float64                `json:"auto_bonus_percent"`
+	DailyConfigID    int64                  `json:"daily_config_id"`
+	Conditions       []lottery.ConditionDef `json:"conditions"`
+	Prizes           []prizeInput           `json:"prizes"`
 }
 
 type prizeInput struct {
@@ -535,7 +536,7 @@ func (s *Server) handleAdminGetSettings(w http.ResponseWriter, r *http.Request, 
 // handleAdminSaveSettings 保存管理员 API Key，立即生效。
 func (s *Server) handleAdminSaveSettings(w http.ResponseWriter, r *http.Request, _ *Claims) {
 	var body struct {
-		AdminAPIKey string             `json:"admin_api_key"`
+		AdminAPIKey string              `json:"admin_api_key"`
 		Visibility  *lottery.Visibility `json:"visibility,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {

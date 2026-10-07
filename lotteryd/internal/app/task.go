@@ -161,6 +161,85 @@ func (ap *App) ListUserTasks(email string, now time.Time) ([]UserTaskView, error
 	return out, nil
 }
 
+// TaskPromptView 任务引导弹窗载荷：只带封面、名称和说明。
+type TaskPromptView struct {
+	ID          int64  `json:"id"`
+	Name        string `json:"name"`
+	Cover       string `json:"cover,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
+// TaskPromptList 返回该用户当前可参与、进行中的任务，供 WebSocket 引导弹窗。
+// 显隐与任务列表一致（管理员可见）；任务白/黑名单和可参与条件
+// （全部满足，空条件视为可参与）都要过。
+func (ap *App) TaskPromptList(ctx context.Context, userID int64, email, role string, registeredAt *time.Time) ([]TaskPromptView, error) {
+	if !ap.IsUserAllowedTask(role, email) {
+		return []TaskPromptView{}, nil
+	}
+	tasks, err := ap.Store.ListTasks()
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	candidates := make([]lottery.Task, 0)
+	maxWindow := 0
+	for _, t := range tasks {
+		if t.Status != lottery.TaskActive || !t.UserAllowed(email) {
+			continue
+		}
+		if dateStr(now) > t.EndDate() {
+			continue
+		}
+		for _, c := range t.Conditions {
+			if c.WindowDays > maxWindow {
+				maxWindow = c.WindowDays
+			}
+		}
+		candidates = append(candidates, t)
+	}
+	if len(candidates) == 0 {
+		return []TaskPromptView{}, nil
+	}
+	var window map[int64]*lottery.UserUsage
+	if maxWindow > 0 {
+		window, err = ap.usageWindow(ctx, maxWindow)
+		if err != nil {
+			return nil, err
+		}
+	}
+	usage := (*lottery.UserUsage)(nil)
+	if window != nil {
+		usage = window[userID]
+	}
+	if usage == nil {
+		usage = &lottery.UserUsage{UserID: userID, Email: email}
+	}
+	usage.RegisteredAt = ap.registeredAt(ctx, userID, email, registeredAt)
+
+	out := make([]TaskPromptView, 0, len(candidates))
+	for _, t := range candidates {
+		if !taskConditionsMet(&t, usage, now) {
+			continue
+		}
+		out = append(out, TaskPromptView{
+			ID: t.ID, Name: t.Name, Cover: t.Cover, Description: t.Description,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID > out[j].ID })
+	return out, nil
+}
+
+// taskConditionsMet 可参与条件全部满足。未配置条件时任何人可参与。
+func taskConditionsMet(t *lottery.Task, usage *lottery.UserUsage, now time.Time) bool {
+	for _, c := range t.Conditions {
+		ok, _ := lottery.EvaluateCondition(c, usage, now)
+		if !ok {
+			return false
+		}
+	}
+	return true
+}
+
 // TasksPhase 用户侧角标：该用户有可见的进行中任务返回 "active"，否则 "none"。
 func (ap *App) TasksPhase(email string, now time.Time) (string, error) {
 	tasks, err := ap.ListUserTasks(email, now)

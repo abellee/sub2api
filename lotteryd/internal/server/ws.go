@@ -16,10 +16,10 @@ import (
 //
 // 客户端连接 GET /v1/ws?token=<jwt>（浏览器 WS 无法携带 Authorization 头，
 // 走 query 参数，鉴权与 HTTP 接口同一套 local/introspect 逻辑）。
-// 连接建立即推送一次当前符合条件且未参与的活动；此后每当活动发生变化
-// （创建/更新/启停/开奖/关闭，由各 handler 调 hub.Wake()）或每 30s 兜底
-// tick 时，重新计算资格，发现新的可参与活动才推送（已推过的活动 ID 不重发，
-// 前端另有 localStorage 活动级去重）。
+// 连接建立即推送一次当前符合条件且未参与的活动，以及符合可参与条件的进行中任务；
+// 此后每当活动或任务发生变化（由各 handler 调 hub.Wake()）或每 30s 兜底 tick 时，
+// 重新计算资格，发现新的可参与活动/任务才推送（已推过的 ID 不重发，
+// 前端另有 localStorage 去重）。
 
 const (
 	wsWriteWait  = 10 * time.Second
@@ -29,25 +29,27 @@ const (
 )
 
 type wsOutMessage struct {
-	Type     string             `json:"type"` // lottery_prompt
-	Activity *app.ActivityView  `json:"activity,omitempty"`
+	Type     string              `json:"type"` // lottery_prompt | task_prompt | pong
+	Activity *app.ActivityView   `json:"activity,omitempty"`
+	Task     *app.TaskPromptView `json:"task,omitempty"`
 }
 
 type wsClient struct {
-	conn    *websocket.Conn
-	userID  int64
-	email   string
-	role    string
-	regAt   *time.Time
-	send    chan wsOutMessage
-	lastIDs map[int64]bool // 已推送过的活动 ID
+	conn        *websocket.Conn
+	userID      int64
+	email       string
+	role        string
+	regAt       *time.Time
+	send        chan wsOutMessage
+	lastIDs     map[int64]bool // 已推送过的活动 ID
+	lastTaskIDs map[int64]bool // 已推送过的任务 ID
 }
 
 type wsHub struct {
-	sv  *Server
-	mu  sync.Mutex
+	sv      *Server
+	mu      sync.Mutex
 	clients map[*wsClient]struct{}
-	wake chan struct{}
+	wake    chan struct{}
 }
 
 func newWSHub(sv *Server) *wsHub {
@@ -104,13 +106,30 @@ func (h *wsHub) broadcastEligibility(ctx context.Context) {
 	}
 }
 
-// pushIfNew 计算该用户当前符合条件的活动，发现新增（未推过的）就推送。
+// pushIfNew 计算该用户当前符合条件的活动和任务，发现新增（未推过的）就推送。
 func (h *wsHub) pushIfNew(ctx context.Context, c *wsClient) {
-	views, err := h.sv.App.EligibilityList(ctx, c.userID, c.email, c.regAt)
-	if err != nil {
+	if !h.pushLottery(ctx, c) {
 		return
 	}
-	fresh := make([]*app.ActivityView, 0)
+	h.pushTasks(ctx, c)
+}
+
+func (h *wsHub) trySend(c *wsClient, msg wsOutMessage) bool {
+	select {
+	case c.send <- msg:
+		return true
+	default:
+		// 发送队列满视为连接僵死，丢弃连接
+		h.remove(c)
+		return false
+	}
+}
+
+func (h *wsHub) pushLottery(ctx context.Context, c *wsClient) bool {
+	views, err := h.sv.App.EligibilityList(ctx, c.userID, c.email, c.regAt)
+	if err != nil {
+		return true
+	}
 	for i := range views {
 		v := &views[i]
 		if v.Phase != "joining" && v.Phase != "upcoming" {
@@ -120,17 +139,29 @@ func (h *wsHub) pushIfNew(ctx context.Context, c *wsClient) {
 			continue
 		}
 		c.lastIDs[v.ID] = true
-		fresh = append(fresh, v)
-	}
-	for _, v := range fresh {
-		select {
-		case c.send <- wsOutMessage{Type: "lottery_prompt", Activity: v}:
-		default:
-			// 发送队列满视为连接僵死，丢弃连接
-			h.remove(c)
-			return
+		if !h.trySend(c, wsOutMessage{Type: "lottery_prompt", Activity: v}) {
+			return false
 		}
 	}
+	return true
+}
+
+func (h *wsHub) pushTasks(ctx context.Context, c *wsClient) bool {
+	tasks, err := h.sv.App.TaskPromptList(ctx, c.userID, c.email, c.role, c.regAt)
+	if err != nil {
+		return true
+	}
+	for i := range tasks {
+		t := &tasks[i]
+		if c.lastTaskIDs[t.ID] {
+			continue
+		}
+		c.lastTaskIDs[t.ID] = true
+		if !h.trySend(c, wsOutMessage{Type: "task_prompt", Task: t}) {
+			return false
+		}
+	}
+	return true
 }
 
 // ServeWS 处理 WS 升级与连接生命周期。挂在 GET /v1/ws。
@@ -154,13 +185,14 @@ func (s *Server) ServeWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c := &wsClient{
-		conn:    conn,
-		userID:  claims.UserID,
-		email:   claims.Email,
-		role:    claims.Role,
-		regAt:   claims.RegisteredAt,
-		send:    make(chan wsOutMessage, 8),
-		lastIDs: map[int64]bool{},
+		conn:        conn,
+		userID:      claims.UserID,
+		email:       claims.Email,
+		role:        claims.Role,
+		regAt:       claims.RegisteredAt,
+		send:        make(chan wsOutMessage, 32),
+		lastIDs:     map[int64]bool{},
+		lastTaskIDs: map[int64]bool{},
 	}
 	s.wsHub.add(c)
 	go s.wsHub.pushIfNew(r.Context(), c) // 连接建立立即推送一次

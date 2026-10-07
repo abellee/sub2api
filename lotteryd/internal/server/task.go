@@ -62,6 +62,16 @@ func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request, claims 
 	ok(w, map[string]any{"tasks": tasks})
 }
 
+// handleTaskPrompts 符合可参与条件的进行中任务（供全局引导弹窗，WS 断开时的轮询回退）。
+func (s *Server) handleTaskPrompts(w http.ResponseWriter, r *http.Request, claims *Claims) {
+	tasks, err := s.App.TaskPromptList(r.Context(), claims.UserID, claims.Email, claims.Role, claims.RegisteredAt)
+	if err != nil {
+		internalError(w, err)
+		return
+	}
+	ok(w, map[string]any{"tasks": tasks})
+}
+
 // handleMyTasksPhase 用户侧角标探测：该用户有可见的进行中任务 → active。
 func (s *Server) handleMyTasksPhase(w http.ResponseWriter, r *http.Request, claims *Claims) {
 	if !s.App.IsUserAllowedTask(claims.Role, claims.Email) {
@@ -110,6 +120,7 @@ func (s *Server) handleAdminSaveTaskSettings(w http.ResponseWriter, r *http.Requ
 			internalError(w, err)
 			return
 		}
+		s.wsHub.Wake()
 	}
 	ok(w, map[string]any{"saved": true})
 }
@@ -139,6 +150,7 @@ func (s *Server) handleAdminCreateTask(w http.ResponseWriter, r *http.Request, _
 		fail(w, http.StatusBadRequest, 400, err.Error())
 		return
 	}
+	s.wsHub.Wake()
 	ok(w, map[string]any{"id": id})
 }
 
@@ -179,6 +191,7 @@ func (s *Server) handleAdminUpdateTask(w http.ResponseWriter, r *http.Request, _
 		fail(w, http.StatusBadRequest, 400, err.Error())
 		return
 	}
+	s.wsHub.Wake()
 	ok(w, map[string]any{"id": id})
 }
 
@@ -192,6 +205,7 @@ func (s *Server) handleAdminDeleteTask(w http.ResponseWriter, r *http.Request, _
 		mapStoreError(w, err)
 		return
 	}
+	s.wsHub.Wake()
 	ok(w, map[string]any{"deleted": true})
 }
 
