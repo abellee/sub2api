@@ -94,6 +94,9 @@ export interface ActivityView {
   created_at: string
   /** 来源日常定时抽奖配置 ID（0/缺省 = 手动创建） */
   daily_config_id?: number
+  /** 管理端列表才有：当前生效的共用参与组。 */
+  repeat_group?: string
+  repeat_policy?: RepeatPolicy | string
 }
 
 /** 管理端活动详情（原始条件定义，供编辑）。 */
@@ -113,6 +116,8 @@ export interface AdminActivityDetail {
     conditions: ConditionDef[]
     prizes: PrizeView[]
     daily_config_id?: number
+    repeat_policy?: RepeatPolicy | string
+    repeat_group?: string
   }
   winners: WinnerRecord[]
 }
@@ -126,6 +131,9 @@ export interface ActivityInput {
   show_participant_count: boolean
   condition_match: ConditionMatch
   auto_bonus_percent: number
+  /** 手动活动的重复策略和共用参与组。定时场次由日常配置决定，编辑单场时服务端会忽略。 */
+  repeat_policy?: RepeatPolicy
+  repeat_group?: string
   conditions: ConditionDef[]
   prizes: Array<{
     name: string
@@ -324,6 +332,8 @@ export interface DailyConfig {
   enabled: boolean
   /** 重复参与策略：unlimited 每期独立 / join_once 限参与一次 / win_once 中奖后出局 */
   repeat_policy: RepeatPolicy
+  /** 共用参与组。相同非空名称的配置共用次数；空则只限制本配置。 */
+  repeat_group?: string
   /** 每日开启时刻，"HH:MM"（本地时区） */
   start_time: string
   /** 开奖时刻 = 开启 + 时长（小时） */
@@ -351,6 +361,7 @@ export function emptyDailyConfig(): DailyConfig {
     id: 0,
     enabled: false,
     repeat_policy: 'unlimited',
+    repeat_group: '',
     start_time: '08:00',
     duration_hours: 12,
     name: '每日抽奖',

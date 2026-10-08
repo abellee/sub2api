@@ -162,8 +162,10 @@ function emptyForm(): {
   /** 每日定时模式字段：开启时刻 HH:MM 与持续时长（小时）。 */
   dailyStartTime: string
   dailyDurationHours: number
-  /** 重复参与策略（仅每日定时模式）。 */
+  /** 重复参与策略。手动活动和日常定时配置都能填。 */
   repeatPolicy: 'unlimited' | 'join_once' | 'win_once'
+  /** 共用参与组。相同名称的手动活动和日常定时配置共用次数。 */
+  repeatGroup: string
 } {
   return {
     name: '',
@@ -181,7 +183,8 @@ function emptyForm(): {
     isDaily: false,
     dailyStartTime: '08:00',
     dailyDurationHours: 12,
-    repeatPolicy: 'unlimited'
+    repeatPolicy: 'unlimited',
+    repeatGroup: ''
   }
 }
 
@@ -214,6 +217,7 @@ function editDaily(c: DailyConfig) {
   form.value.dailyStartTime = c.start_time
   form.value.dailyDurationHours = c.duration_hours
   form.value.repeatPolicy = c.repeat_policy || 'unlimited'
+  form.value.repeatGroup = (c.repeat_group || '').trim()
   form.value.isDaily = true
   editingDailyId.value = c.id
   dialogError.value = ''
@@ -360,7 +364,8 @@ function fillForm(a: ActivityView) {
     showParticipantCount: loadedShow,
     conditionMatch: a.condition_match,
     autoBonusPercent: 25,
-    repeatPolicy: 'unlimited',
+    repeatPolicy: ((a.repeat_policy || 'unlimited') as 'unlimited' | 'join_once' | 'win_once'),
+    repeatGroup: (a.repeat_group || '').trim(),
     isDaily: false, // 编辑已有活动：始终普通模式
     dailyStartTime: '08:00',
     dailyDurationHours: 12,
@@ -379,6 +384,10 @@ function fillForm(a: ActivityView) {
     if (!dialogOpen.value || editingId.value !== activityId) return
     if (form.value.showParticipantCount === loadedShow) {
       form.value.showParticipantCount = detail.activity.show_participant_count === true
+    }
+    if ((detail.activity.daily_config_id ?? 0) === 0) {
+      form.value.repeatPolicy = (detail.activity.repeat_policy || 'unlimited') as 'unlimited' | 'join_once' | 'win_once'
+      form.value.repeatGroup = (detail.activity.repeat_group || '').trim()
     }
     form.value.conditions = detail.activity.conditions.map((c) => ({ ...c }))
     form.value.autoBonusPercent = detail.activity.auto_bonus_percent
@@ -520,6 +529,8 @@ function buildInput(): ActivityInput {
     show_participant_count: form.value.showParticipantCount === true,
     condition_match: form.value.conditionMatch,
     auto_bonus_percent: Number(form.value.autoBonusPercent) || 0,
+    repeat_policy: form.value.repeatPolicy,
+    repeat_group: form.value.repeatGroup.trim(),
     ...buildSharedParts()
   }
 }
@@ -550,6 +561,7 @@ async function submit(regenerate = false) {
         id: editingDailyId.value ?? 0,
         enabled: true,
         repeat_policy: form.value.repeatPolicy,
+        repeat_group: form.value.repeatGroup.trim(),
         start_time: form.value.dailyStartTime,
         duration_hours: Number(form.value.dailyDurationHours) || 0,
         name: form.value.name,
@@ -895,6 +907,7 @@ onMounted(refresh)
             <p class="mt-0.5 text-xs text-gray-400 dark:text-dark-500">
               每天 {{ c.start_time }}（北京时间）开启，{{ c.duration_hours }} 小时后开奖
               <template v-if="c.enabled"> · 到点自动创建场次</template>
+              <template v-if="c.repeat_group"> · 共用组「{{ c.repeat_group }}」</template>
             </p>
             <p class="mt-0.5 truncate text-xs" :class="c.conditions.length ? 'text-primary-600 dark:text-primary-400' : 'text-gray-400 dark:text-dark-500'">
               🎟️ 可参与条件：{{ conditionsSummary(c.conditions) }}
@@ -936,6 +949,7 @@ onMounted(refresh)
               <p class="truncate text-sm font-medium text-gray-900 dark:text-gray-100">{{ a.name }}</p>
               <p class="mt-0.5 text-xs text-gray-400 dark:text-dark-500">
                 {{ fmtDate(a.starts_at) }} → {{ fmtDate(a.draws_at) }} · {{ a.participant_count ?? 0 }} 人参与
+                <template v-if="a.repeat_group"> · 共用组「{{ a.repeat_group }}」</template>
               </p>
             </div>
             <button class="btn btn-secondary btn-sm" @click="toggleWinners(a)">
@@ -1025,7 +1039,7 @@ onMounted(refresh)
             v-if="editingId != null && editingConfigId > 0"
             class="rounded-xl bg-amber-50 px-4 py-3 text-xs text-amber-700 dark:bg-amber-500/10 dark:text-amber-300"
           >
-            该场次由日常定时抽奖自动生成：这里的修改<b>仅影响这一场</b>。如需调整整个系列（含之后自动创建的场次），请编辑上方「⏰ 日常定时抽奖」里的配置。
+            该场次由日常定时抽奖自动生成。名称、时间和奖池的修改只影响这一场。重复参与策略和共用参与组会写回对应的定时配置，这一场和之后自动创建的场次一起生效。
           </p>
           <div class="grid gap-4 sm:grid-cols-2">
             <label class="sm:col-span-2">
@@ -1076,10 +1090,10 @@ onMounted(refresh)
                 关闭后不向用户下发参与人数，用户侧只显示最多可参与人数
               </span>
             </label>
-            <label v-if="form.isDaily" class="sm:col-span-2">
+            <label class="sm:col-span-2">
               <FieldHint
                 label="重复参与策略"
-                hint="限制用户反复抽奖：不限 = 每期都能参与；限参与一次 = 参与过该系列任意一场后不能再参与；中奖后出局 = 在该系列中过奖的用户不能再参与。"
+                hint="限制用户反复抽奖：不限 = 每期都能参与；限参与一次 = 参与过该系列任意一场后不能再参与；中奖后出局 = 在该系列中过奖的用户不能再参与。手动活动和日常定时配置填了相同共用参与组，就算同一个系列。"
               />
               <LotterySelect
                 v-model="form.repeatPolicy"
@@ -1088,6 +1102,18 @@ onMounted(refresh)
                   { value: 'join_once', label: '限参与一次（该系列）' },
                   { value: 'win_once', label: '中奖后不能再参与' }
                 ]"
+              />
+            </label>
+            <label class="sm:col-span-2">
+              <FieldHint
+                label="共用参与组"
+                hint="手动活动和日常定时配置填同一个名称，并都选「限参与一次」。用户参加过其中任一场后，不能再参加同组的其他场。留空则只限制这一场或这一条定时配置。历史上已经生成的场次也算。编辑定时生成的场次时，这两项会写回上面的日常定时配置。"
+              />
+              <input
+                v-model="form.repeatGroup"
+                class="input"
+                maxlength="64"
+                placeholder="例如：新用户注册礼"
               />
             </label>
             <label>
