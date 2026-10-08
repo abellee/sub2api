@@ -184,7 +184,7 @@ export function healthTone(state?: HealthState): StudioTone {
 
 export function scoreTone(score: number | null | undefined): StudioTone {
   if (score == null || Number.isNaN(score)) return 'unknown'
-  if (score >= 80) return 'healthy'
+  if (score >= 70) return 'healthy'
   if (score >= 50) return 'warning'
   return 'critical'
 }
@@ -476,11 +476,13 @@ const FACE_TONE_RANGE: Record<StudioTone, { light: StudioFacePalette; dark: Stud
   },
 }
 
-/** Map a score onto 0–1 within its status band so higher data reads clearly darker. */
+/** 0 is the light end of a status hue and 1 is the dark end.
+ * Healthy darkens as the score rises. Warning and critical darken as it falls.
+ */
 export function studioFaceDepth(tone: StudioTone, score: number): number {
-  if (tone === 'healthy') return clamp01((score - 80) / 20)
-  if (tone === 'warning') return clamp01((score - 50) / 30)
-  if (tone === 'critical') return clamp01(score / 50)
+  if (tone === 'healthy') return clamp01((score - 70) / 30)
+  if (tone === 'warning') return clamp01((70 - score) / 20)
+  if (tone === 'critical') return clamp01((50 - score) / 50)
   return 0
 }
 
@@ -506,7 +508,7 @@ export function hexLuminance(color: string): number {
   return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255
 }
 
-/** Higher score → darker skin within the status hue. Missing scores keep the light fallback. */
+/** Healthy darkens as the score rises. Warning and critical darken as it falls. */
 export function studioFacePalette(tone: StudioTone = 'unknown', score?: number | null): StudioFacePalette {
   if (tone === 'unknown' || score == null || Number.isNaN(Number(score))) {
     return FACE_TONE_FALLBACK[tone] || FACE_TONE_FALLBACK.unknown

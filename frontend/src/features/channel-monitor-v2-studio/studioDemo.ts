@@ -99,7 +99,7 @@ function demoMetric(score: number, thresholds?: StudioThresholds | null): Monito
 }
 
 function demoHealth(score: number): MonitorHealth {
-  // Keep a healthy-but-not-hot band so smile faces still appear (scoreTone treats <80 as warning).
+  // Keep a healthy-but-not-hot band so smile faces still appear (scoreTone treats <70 as warning).
   const overall = score >= 70 ? 'healthy' : score >= 40 ? 'warning' : 'critical'
   const state = overall
   return {

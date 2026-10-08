@@ -166,27 +166,29 @@ describe('studioFormat', () => {
     expect(studioTtftTone(metric())).toBe('unknown')
   })
 
-  it('darkens face skin as the score rises', () => {
+  it('darkens healthy skin as the score rises and warning or critical skin as it falls', () => {
     const low = studioFacePalette('healthy', 20)
     const high = studioFacePalette('healthy', 96)
     const warnLow = studioFacePalette('warning', 50)
-    const warnHigh = studioFacePalette('warning', 78)
+    const warnHigh = studioFacePalette('warning', 69)
     const critLow = studioFacePalette('critical', 8)
     const critHigh = studioFacePalette('critical', 40)
     expect(hexLuminance(high.skin)).toBeLessThan(hexLuminance(low.skin))
-    expect(hexLuminance(warnHigh.skin)).toBeLessThan(hexLuminance(warnLow.skin))
-    expect(hexLuminance(critHigh.skin)).toBeLessThan(hexLuminance(critLow.skin))
+    expect(hexLuminance(warnLow.skin)).toBeLessThan(hexLuminance(warnHigh.skin))
+    expect(hexLuminance(critLow.skin)).toBeLessThan(hexLuminance(critHigh.skin))
     expect(studioFacePalette('healthy').skin).toBe('#6EE7B7')
-    expect(studioFaceDepth('healthy', 80)).toBeLessThan(studioFaceDepth('healthy', 100))
+    expect(studioFaceDepth('healthy', 70)).toBeLessThan(studioFaceDepth('healthy', 100))
+    expect(studioFaceDepth('warning', 50)).toBeGreaterThan(studioFaceDepth('warning', 69))
+    expect(studioFaceDepth('critical', 0)).toBeGreaterThan(studioFaceDepth('critical', 49))
     expect(studioValueShade(1, 0, 1)).toBeGreaterThan(studioValueShade(0, 0, 1))
     expect(hexLuminance(studioFacePalette('healthy', 100).skin)).toBeGreaterThan(0.5)
     expect(hexLuminance(studioFacePalette('healthy', 100).skin)).toBeLessThan(0.7)
     expect(
-      hexLuminance(studioFacePalette('healthy', 80).skin) - hexLuminance(studioFacePalette('healthy', 100).skin),
+      hexLuminance(studioFacePalette('healthy', 70).skin) - hexLuminance(studioFacePalette('healthy', 100).skin),
     ).toBeGreaterThan(0.18)
-    expect(hexLuminance(studioFacePalette('critical', 0).skin)).toBeGreaterThan(0.7)
-    expect(hexLuminance(studioFacePalette('critical', 40).skin)).toBeGreaterThan(0.42)
-    expect(hexLuminance(studioFacePalette('critical', 40).skin)).toBeLessThan(0.72)
+    expect(
+      hexLuminance(studioFacePalette('critical', 49).skin) - hexLuminance(studioFacePalette('critical', 0).skin),
+    ).toBeGreaterThan(0.18)
   })
 
   it('widens the K-line track so dots keep a minimum gap', () => {
