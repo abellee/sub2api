@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"lotteryd/internal/lottery"
@@ -11,15 +12,15 @@ import (
 
 // Sentinel errors surfaced to the HTTP layer.
 var (
-	ErrNotFound        = errors.New("not found")
-	ErrActivityDrawn   = errors.New("activity already drawn")
-	ErrAlreadyJoined   = errors.New("already joined")
-	ErrActivityFull    = errors.New("activity is full")
-	ErrNotJoinable     = errors.New("activity is not open for participation")
-	ErrNotEligible     = errors.New("conditions not met")
-	ErrNotVisible      = errors.New("lottery is not available to this user")
-	ErrRepeatJoin      = errors.New("you have already joined this lottery series")
-	ErrRepeatWin       = errors.New("you have already won in this lottery series")
+	ErrNotFound      = errors.New("not found")
+	ErrActivityDrawn = errors.New("activity already drawn")
+	ErrAlreadyJoined = errors.New("already joined")
+	ErrActivityFull  = errors.New("activity is full")
+	ErrNotJoinable   = errors.New("activity is not open for participation")
+	ErrNotEligible   = errors.New("conditions not met")
+	ErrNotVisible    = errors.New("lottery is not available to this user")
+	ErrRepeatJoin    = errors.New("you have already joined this lottery series")
+	ErrRepeatWin     = errors.New("you have already won in this lottery series")
 )
 
 // ---- Participants ----
@@ -324,5 +325,46 @@ func (s *Store) HasUserWonInConfig(configID, userID int64) (bool, error) {
 	err := s.db.QueryRow(
 		`SELECT COUNT(*) FROM winners w JOIN activities a ON w.activity_id = a.id
 		 WHERE a.daily_config_id = ? AND w.user_id = ?`, configID, userID).Scan(&n)
+	return n > 0, err
+}
+
+// HasUserRecordInRepeatSet 用户在共用参与组里是否已有参与或中奖记录。
+// group 匹配场次上写下的组名；configIDs 覆盖还没写上组名的旧场次。
+// kind 为 "win" 时查中奖，否则查参与。
+func (s *Store) HasUserRecordInRepeatSet(kind, group string, configIDs []int64, userID int64) (bool, error) {
+	group = strings.TrimSpace(group)
+	ids := make([]int64, 0, len(configIDs))
+	for _, id := range configIDs {
+		if id > 0 {
+			ids = append(ids, id)
+		}
+	}
+	if group == "" && len(ids) == 0 {
+		return false, nil
+	}
+	table := "participants"
+	if kind == "win" {
+		table = "winners"
+	}
+	args := make([]any, 0, 2+len(ids))
+	args = append(args, userID)
+	clauses := make([]string, 0, 2)
+	if group != "" {
+		clauses = append(clauses, "a.repeat_group = ?")
+		args = append(args, group)
+	}
+	if len(ids) > 0 {
+		placeholders := make([]string, len(ids))
+		for i, id := range ids {
+			placeholders[i] = "?"
+			args = append(args, id)
+		}
+		clauses = append(clauses, "a.daily_config_id IN ("+strings.Join(placeholders, ",")+")")
+	}
+	query := fmt.Sprintf(
+		`SELECT COUNT(*) FROM %s t JOIN activities a ON t.activity_id = a.id WHERE t.user_id = ? AND (%s)`,
+		table, strings.Join(clauses, " OR "))
+	var n int
+	err := s.db.QueryRow(query, args...).Scan(&n)
 	return n > 0, err
 }

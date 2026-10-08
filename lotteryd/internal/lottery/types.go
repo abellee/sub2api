@@ -3,6 +3,7 @@ package lottery
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -129,6 +130,11 @@ type Activity struct {
 	DrawnAt              time.Time `json:"drawn_at"`           // 已开奖时间；零值 = 未开奖
 	// 来源：日常定时抽奖配置 ID（0 = 手动创建）。
 	DailyConfigID int64 `json:"daily_config_id,omitempty"`
+	// RepeatGroup 共用参与组。定时场次创建时从日常配置抄下；手动场次由管理员直接填写。
+	// 定时配置还在时，次数按配置当前的组名统计；否则用场次上的这个值。
+	RepeatGroup string `json:"repeat_group,omitempty"`
+	// RepeatPolicy 手动场次自己的重复策略。定时场次以所属日常配置为准，这里只是创建时的快照。
+	RepeatPolicy string `json:"repeat_policy,omitempty"`
 	// 用户侧可见性：全员可见，或仅 VisibleUsers 中的用户可见（管理员不受限）。
 	VisibleToAll bool      `json:"visible_to_all"`
 	VisibleUsers []int64   `json:"visible_users,omitempty"`
@@ -342,12 +348,36 @@ const (
 	VisibilityPartial = "partial" // 部分人可见（按邮箱白名单）
 )
 
-// 重复参与策略（日常定时抽奖配置）。
+// 重复参与策略。日常定时配置和手动场次都用这组值。
+// 组名为空时「系列」只含本配置或本场；RepeatGroup 相同的配置和手动场次算同一个系列。
 const (
 	RepeatUnlimited = "unlimited" // 每期独立（默认）
 	RepeatJoinOnce  = "join_once" // 该系列限参与一次
 	RepeatWinOnce   = "win_once"  // 该系列中奖后不能再参与
 )
+
+// ErrRepeatGroupTooLong 共用参与组名称超过 64 个字符。
+var ErrRepeatGroupTooLong = errors.New("共用参与组名称最多 64 个字符")
+
+// NormalizeRepeatGroup 去掉组名首尾空白。空字符串表示不与其他配置共用次数。
+func NormalizeRepeatGroup(s string) string {
+	return strings.TrimSpace(s)
+}
+
+// ErrUnknownRepeatPolicy 重复参与策略不是 unlimited / join_once / win_once。
+var ErrUnknownRepeatPolicy = errors.New("重复参与策略无效")
+
+// NormalizeRepeatPolicy 把空策略当成 unlimited，并拒绝未知值。
+func NormalizeRepeatPolicy(s string) (string, error) {
+	switch strings.TrimSpace(s) {
+	case "", RepeatUnlimited:
+		return RepeatUnlimited, nil
+	case RepeatJoinOnce, RepeatWinOnce:
+		return strings.TrimSpace(s), nil
+	default:
+		return "", ErrUnknownRepeatPolicy
+	}
+}
 
 // Visibility 用户侧显隐配置。
 type Visibility struct {
@@ -361,6 +391,8 @@ type DailyConfig struct {
 	Enabled bool  `json:"enabled"`
 	// 重复参与策略：unlimited 每期独立 / join_once 该系列限参与一次 / win_once 该系列中奖后不能再参与。
 	RepeatPolicy string `json:"repeat_policy"`
+	// RepeatGroup 共用参与组。相同非空组名的配置共用上面的次数；空则只统计本配置。
+	RepeatGroup string `json:"repeat_group,omitempty"`
 	// SkipDate 手动关闭场次时记录的跳过日期（该日期不再自动补建）。
 	SkipDate        string  `json:"skip_date,omitempty"`
 	StartTime       string  `json:"start_time"`     // 每日开启时刻，"HH:MM"（北京时间）
@@ -393,8 +425,19 @@ func (c DailyConfig) ShowsParticipants() bool {
 	return c.ShowParticipantCount
 }
 
+// ValidateRepeatGroup 校验共用参与组名称长度。停用中的配置也要过这一关。
+func (c DailyConfig) ValidateRepeatGroup() error {
+	if len([]rune(NormalizeRepeatGroup(c.RepeatGroup))) > 64 {
+		return ErrRepeatGroupTooLong
+	}
+	return nil
+}
+
 // Validate 校验日常配置。
 func (c DailyConfig) Validate() error {
+	if err := c.ValidateRepeatGroup(); err != nil {
+		return err
+	}
 	if !c.Enabled {
 		return nil
 	}

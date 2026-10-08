@@ -598,6 +598,237 @@ func TestDailyStartUsesBeijing(t *testing.T) {
 	require.Equal(t, "2026-10-08T15:30:00Z", found.DrawsAt.UTC().Format(time.RFC3339))
 }
 
+func TestRepeatGroupSharesParticipation(t *testing.T) {
+	e := newTestEnv(t)
+	adminToken := signJWT(e.secret, 1, "admin")
+	mustJSON(t, e.req(t, http.MethodPut, "/v1/admin/settings", adminToken,
+		map[string]any{"visibility": map[string]any{"mode": "all"}}))
+	user7 := signJWT(e.secret, 7, "user")
+	user8 := signJWT(e.secret, 8, "user")
+	user103 := signJWT(e.secret, 103, "user")
+
+	morning := saveRepeatConfig(t, e, "早场", lottery.RepeatJoinOnce, "  新用户注册礼  ")
+	require.Equal(t, "新用户注册礼", morning.RepeatGroup)
+	afternoon := saveRepeatConfig(t, e, "午场", lottery.RepeatJoinOnce, "新用户注册礼")
+	other := saveRepeatConfig(t, e, "别的礼", lottery.RepeatJoinOnce, "别的礼")
+	alone := saveRepeatConfig(t, e, "单独系列", lottery.RepeatJoinOnce, "")
+
+	morningID := openRepeatActivity(t, e, adminToken, "早场", morning.ID)
+	afternoonID := openRepeatActivity(t, e, adminToken, "午场", afternoon.ID)
+	otherID := openRepeatActivity(t, e, adminToken, "别的礼", other.ID)
+	aloneID := openRepeatActivity(t, e, adminToken, "单独系列", alone.ID)
+
+	stamped, err := e.app.Store.GetActivity(morningID)
+	require.NoError(t, err)
+	require.Equal(t, "新用户注册礼", stamped.RepeatGroup)
+
+	resp := e.req(t, http.MethodPost, fmt.Sprintf("/v1/activities/%d/participate", morningID), user7, nil)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	_ = resp.Body.Close()
+
+	require.NotContains(t, activityNames(t, e, user7), "午场")
+	elig := mustJSON(t, e.req(t, http.MethodGet, "/v1/eligibility", user7, nil))
+	for _, row := range elig["activities"].([]any) {
+		require.NotEqual(t, "午场", row.(map[string]any)["name"])
+	}
+	resp = e.req(t, http.MethodPost, fmt.Sprintf("/v1/activities/%d/participate", afternoonID), user7, nil)
+	body := readResp(t, resp)
+	require.Equal(t, http.StatusForbidden, resp.StatusCode)
+	require.Contains(t, body, "您已参与过该系列抽奖")
+
+	require.Contains(t, activityNames(t, e, user8), "午场")
+	resp = e.req(t, http.MethodPost, fmt.Sprintf("/v1/activities/%d/participate", afternoonID), user8, nil)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	_ = resp.Body.Close()
+
+	resp = e.req(t, http.MethodPost, fmt.Sprintf("/v1/activities/%d/participate", otherID), user7, nil)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	_ = resp.Body.Close()
+	resp = e.req(t, http.MethodPost, fmt.Sprintf("/v1/activities/%d/participate", aloneID), user7, nil)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	_ = resp.Body.Close()
+
+	// 升级前生成的场次没有组名，仍按当前配置的组一起统计。
+	legacy, err := e.app.Store.CreateActivity(&lottery.Activity{
+		Name: "早场旧场次", StartsAt: time.Now().Add(-time.Hour), DrawsAt: time.Now().Add(2 * time.Hour),
+		ConditionMatch: lottery.MatchAll, DailyConfigID: morning.ID,
+		Prizes: []lottery.Prize{{Name: "奖", PrizeType: lottery.PrizeBalance, Value: 1, Weight: 1, Stock: 5}},
+	})
+	require.NoError(t, err)
+	resp = e.req(t, http.MethodPost, fmt.Sprintf("/v1/activities/%d/participate", legacy), user103, nil)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	_ = resp.Body.Close()
+	resp = e.req(t, http.MethodPost, fmt.Sprintf("/v1/activities/%d/participate", afternoonID), user103, nil)
+	require.Equal(t, http.StatusForbidden, resp.StatusCode)
+	_ = resp.Body.Close()
+
+	winA := saveRepeatConfig(t, e, "中奖早场", lottery.RepeatWinOnce, "中奖组")
+	winB := saveRepeatConfig(t, e, "中奖午场", lottery.RepeatWinOnce, "中奖组")
+	winAID := openRepeatActivity(t, e, adminToken, "中奖早场", winA.ID)
+	winBID := openRepeatActivity(t, e, adminToken, "中奖午场", winB.ID)
+	resp = e.req(t, http.MethodPost, fmt.Sprintf("/v1/activities/%d/participate", winAID), user7, nil)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	_ = resp.Body.Close()
+	resp = e.req(t, http.MethodPost, fmt.Sprintf("/v1/admin/activities/%d/draw", winAID), adminToken, nil)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	_ = resp.Body.Close()
+	resp = e.req(t, http.MethodPost, fmt.Sprintf("/v1/activities/%d/participate", winBID), user7, nil)
+	body = readResp(t, resp)
+	require.Equal(t, http.StatusForbidden, resp.StatusCode)
+	require.Contains(t, body, "您已在该系列抽奖中中奖")
+	resp = e.req(t, http.MethodPost, fmt.Sprintf("/v1/activities/%d/participate", winBID), user8, nil)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	_ = resp.Body.Close()
+
+	sched := saveRepeatConfig(t, e, "晚场", lottery.RepeatJoinOnce, "新用户注册礼")
+	now := time.Date(2026, 10, 8, 9, 0, 0, 0, lottery.Beijing())
+	require.NoError(t, e.app.CreateDueDailyActivity(now))
+	acts, err := e.app.Store.ListActivities()
+	require.NoError(t, err)
+	var scheduled *lottery.Activity
+	for i := range acts {
+		if acts[i].DailyConfigID == sched.ID {
+			scheduled = &acts[i]
+		}
+	}
+	require.NotNil(t, scheduled)
+	require.Equal(t, "新用户注册礼", scheduled.RepeatGroup)
+
+	longName := strings.Repeat("组", 65)
+	resp = e.req(t, http.MethodPost, "/v1/admin/daily-configs", adminToken, map[string]any{"config": map[string]any{
+		"enabled": false, "repeat_policy": "join_once", "repeat_group": longName,
+		"start_time": "08:00", "duration_hours": 2, "name": "过长",
+		"prizes": []map[string]any{{"name": "奖", "prize_type": "balance", "value": 1, "weight": 1, "stock": 1}},
+	}})
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	_ = resp.Body.Close()
+}
+
+func saveRepeatConfig(t *testing.T, e *testEnv, name, policy, group string) lottery.DailyConfig {
+	t.Helper()
+	cfg, err := e.app.SaveDailyConfig(lottery.DailyConfig{
+		Enabled: true, RepeatPolicy: policy, RepeatGroup: group,
+		StartTime: "18:30", DurationHours: 2, Name: name, ConditionMatch: "all",
+		Prizes: []lottery.PrizeSpec{{Name: "奖", PrizeType: "balance", Value: 1, Weight: 1, Stock: 1}},
+	})
+	require.NoError(t, err)
+	return cfg
+}
+
+func openRepeatActivity(t *testing.T, e *testEnv, adminToken, name string, cfgID int64) int64 {
+	t.Helper()
+	now := time.Now().UTC()
+	data := mustJSON(t, e.req(t, http.MethodPost, "/v1/admin/activities", adminToken, map[string]any{
+		"name": name, "starts_at": now.Add(-time.Hour).Format(isoFmt), "draws_at": now.Add(2 * time.Hour).Format(isoFmt),
+		"max_participants": 0, "condition_match": "all", "daily_config_id": cfgID, "conditions": []any{},
+		"prizes": []map[string]any{{"name": "奖", "prize_type": "balance", "value": 1, "weight": 1, "stock": 5}},
+	}))
+	return int64(data["id"].(float64))
+}
+
+func activityNames(t *testing.T, e *testEnv, token string) []string {
+	t.Helper()
+	data := mustJSON(t, e.req(t, http.MethodGet, "/v1/activities", token, nil))
+	raw, _ := data["activities"].([]any)
+	names := make([]string, 0, len(raw))
+	for _, row := range raw {
+		names = append(names, row.(map[string]any)["name"].(string))
+	}
+	return names
+}
+
+func readResp(t *testing.T, resp *http.Response) string {
+	t.Helper()
+	defer func() { _ = resp.Body.Close() }()
+	b, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	return string(b)
+}
+
+func TestManualActivitySharesRepeatGroup(t *testing.T) {
+	e := newTestEnv(t)
+	adminToken := signJWT(e.secret, 1, "admin")
+	mustJSON(t, e.req(t, http.MethodPut, "/v1/admin/settings", adminToken,
+		map[string]any{"visibility": map[string]any{"mode": "all"}}))
+	user := signJWT(e.secret, 201, "user")
+	other := signJWT(e.secret, 202, "user")
+
+	daily := saveRepeatConfig(t, e, "午场", lottery.RepeatJoinOnce, "新用户注册礼")
+	dailyID := openRepeatActivity(t, e, adminToken, "午场", daily.ID)
+	manualID := openManualRepeatActivity(t, e, adminToken, "手动加场", "join_once", "新用户注册礼")
+	otherManualID := openManualRepeatActivity(t, e, adminToken, "手动另一场", "join_once", " 新用户注册礼 ")
+
+	stored, err := e.app.Store.GetActivity(manualID)
+	require.NoError(t, err)
+	require.Equal(t, int64(0), stored.DailyConfigID)
+	require.Equal(t, lottery.RepeatJoinOnce, stored.RepeatPolicy)
+	require.Equal(t, "新用户注册礼", stored.RepeatGroup)
+	stored, err = e.app.Store.GetActivity(otherManualID)
+	require.NoError(t, err)
+	require.Equal(t, "新用户注册礼", stored.RepeatGroup)
+
+	resp := e.req(t, http.MethodPost, fmt.Sprintf("/v1/activities/%d/participate", manualID), user, nil)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	_ = resp.Body.Close()
+	resp = e.req(t, http.MethodPost, fmt.Sprintf("/v1/activities/%d/participate", dailyID), user, nil)
+	body := readResp(t, resp)
+	require.Equal(t, http.StatusForbidden, resp.StatusCode)
+	require.Contains(t, body, "您已参与过该系列抽奖")
+	resp = e.req(t, http.MethodPost, fmt.Sprintf("/v1/activities/%d/participate", otherManualID), user, nil)
+	require.Equal(t, http.StatusForbidden, resp.StatusCode)
+	_ = resp.Body.Close()
+	require.NotContains(t, activityNames(t, e, user), "手动另一场")
+	require.NotContains(t, activityNames(t, e, user), "午场")
+
+	resp = e.req(t, http.MethodPost, fmt.Sprintf("/v1/activities/%d/participate", otherManualID), other, nil)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	_ = resp.Body.Close()
+
+	// 编辑定时场次不会清掉它的共用组。
+	now := time.Now().UTC()
+	mustJSON(t, e.req(t, http.MethodPut, fmt.Sprintf("/v1/admin/activities/%d", dailyID), adminToken, map[string]any{
+		"name": "午场改名", "starts_at": now.Add(-time.Hour).Format(isoFmt), "draws_at": now.Add(2 * time.Hour).Format(isoFmt),
+		"max_participants": 0, "condition_match": "all", "conditions": []any{},
+		"prizes": []map[string]any{{"name": "奖", "prize_type": "balance", "value": 1, "weight": 1, "stock": 5}},
+	}))
+	stored, err = e.app.Store.GetActivity(dailyID)
+	require.NoError(t, err)
+	require.Equal(t, "午场改名", stored.Name)
+	require.Equal(t, "新用户注册礼", stored.RepeatGroup)
+	require.Equal(t, lottery.RepeatJoinOnce, stored.RepeatPolicy)
+
+	mustJSON(t, e.req(t, http.MethodPut, fmt.Sprintf("/v1/admin/activities/%d", dailyID), adminToken, map[string]any{
+		"name": "午场改组", "starts_at": now.Add(-time.Hour).Format(isoFmt), "draws_at": now.Add(2 * time.Hour).Format(isoFmt),
+		"max_participants": 0, "condition_match": "all", "conditions": []any{},
+		"repeat_policy": "win_once", "repeat_group": " 改过的组 ",
+		"prizes": []map[string]any{{"name": "奖", "prize_type": "balance", "value": 1, "weight": 1, "stock": 5}},
+	}))
+	stored, err = e.app.Store.GetActivity(dailyID)
+	require.NoError(t, err)
+	require.Equal(t, "改过的组", stored.RepeatGroup)
+	require.Equal(t, lottery.RepeatWinOnce, stored.RepeatPolicy)
+	var saved lottery.DailyConfig
+	for _, cfg := range e.app.GetDailyConfigs() {
+		if cfg.ID == daily.ID {
+			saved = cfg
+		}
+	}
+	require.Equal(t, "改过的组", saved.RepeatGroup)
+	require.Equal(t, lottery.RepeatWinOnce, saved.RepeatPolicy)
+}
+
+func openManualRepeatActivity(t *testing.T, e *testEnv, adminToken, name, policy, group string) int64 {
+	t.Helper()
+	now := time.Now().UTC()
+	data := mustJSON(t, e.req(t, http.MethodPost, "/v1/admin/activities", adminToken, map[string]any{
+		"name": name, "starts_at": now.Add(-time.Hour).Format(isoFmt), "draws_at": now.Add(2 * time.Hour).Format(isoFmt),
+		"max_participants": 0, "condition_match": "all", "conditions": []any{},
+		"repeat_policy": policy, "repeat_group": group,
+		"prizes": []map[string]any{{"name": "奖", "prize_type": "balance", "value": 1, "weight": 1, "stock": 5}},
+	}))
+	return int64(data["id"].(float64))
+}
+
 func sampleTask(name, startDate string, durationDays int, rewardType string) map[string]any {
 	return map[string]any{
 		"name":             name,

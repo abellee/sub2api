@@ -92,8 +92,11 @@ type ActivityView struct {
 	Status               string               `json:"status"`
 	CreatedAt            time.Time            `json:"created_at"`
 	// 来源日常定时抽奖配置 ID（0 = 手动创建；仅管理端视图填充）。
-	DailyConfigID int64                  `json:"daily_config_id,omitempty"`
-	Extra         map[string]interface{} `json:"-"`
+	DailyConfigID int64 `json:"daily_config_id,omitempty"`
+	// 管理端列表展示当前生效的共用参与组和重复策略。用户侧不填，JSON 省略。
+	RepeatGroup  string                 `json:"repeat_group,omitempty"`
+	RepeatPolicy string                 `json:"repeat_policy,omitempty"`
+	Extra        map[string]interface{} `json:"-"`
 }
 
 func prizeViews(prizes []lottery.Prize) []PrizeView {
@@ -520,6 +523,13 @@ func (ap *App) AdminListActivities(ctx context.Context) ([]ActivityView, error) 
 			CreatedAt:            a.CreatedAt,
 			DailyConfigID:        a.DailyConfigID,
 		}
+		policy, group, _ := ap.repeatScope(a)
+		if group != "" {
+			v.RepeatGroup = group
+		}
+		if policy != "" && policy != lottery.RepeatUnlimited {
+			v.RepeatPolicy = policy
+		}
 		if !a.DrawnAt.IsZero() {
 			t := a.DrawnAt
 			v.DrawnAt = &t
@@ -633,28 +643,99 @@ func isAllowedBy(v lottery.Visibility, role, email string) bool {
 // ---- Daily activity ----
 
 // repeatPolicyBlocked 按活动所属日常配置的重复参与策略判断用户是否被排除。
+// 配置还在时，组名以当前配置为准，所以改组后立刻作用于已生成的场次。
+// 组名相同的配置放在一起统计；组名为空时仍只统计本配置。
 func (ap *App) repeatPolicyBlocked(a *lottery.Activity, userID int64) (bool, string) {
-	if a.DailyConfigID <= 0 {
-		return false, ""
-	}
-	var policy string
-	for _, dc := range ap.GetDailyConfigs() {
-		if dc.ID == a.DailyConfigID {
-			policy = dc.RepeatPolicy
-			break
-		}
-	}
+	policy, group, configIDs := ap.repeatScope(a)
 	switch policy {
 	case lottery.RepeatJoinOnce:
-		if joined, err := ap.Store.HasUserParticipatedInConfig(a.DailyConfigID, userID); err == nil && joined {
+		if joined, err := ap.userRepeatHit(false, a, group, configIDs, userID); err == nil && joined {
 			return true, "您已参与过该系列抽奖"
 		}
 	case lottery.RepeatWinOnce:
-		if won, err := ap.Store.HasUserWonInConfig(a.DailyConfigID, userID); err == nil && won {
+		if won, err := ap.userRepeatHit(true, a, group, configIDs, userID); err == nil && won {
 			return true, "您已在该系列抽奖中中奖"
 		}
 	}
 	return false, ""
+}
+
+// repeatScope 返回这场活动当前生效的策略、共用组和应一并统计的配置 ID。
+// 定时场次在配置还在时以配置为准。手动场次，以及配置已删除的场次，用场次自己记下的策略和组名。
+func (ap *App) repeatScope(a *lottery.Activity) (policy, group string, configIDs []int64) {
+	configs := ap.GetDailyConfigs()
+	found := false
+	if a.DailyConfigID > 0 {
+		for _, dc := range configs {
+			if dc.ID != a.DailyConfigID {
+				continue
+			}
+			found = true
+			policy = dc.RepeatPolicy
+			group = lottery.NormalizeRepeatGroup(dc.RepeatGroup)
+			break
+		}
+	}
+	if !found {
+		policy = a.RepeatPolicy
+		group = lottery.NormalizeRepeatGroup(a.RepeatGroup)
+	}
+	if policy == "" {
+		policy = lottery.RepeatUnlimited
+	}
+	if group == "" {
+		return policy, "", nil
+	}
+	for _, dc := range configs {
+		if dc.ID > 0 && lottery.NormalizeRepeatGroup(dc.RepeatGroup) == group {
+			configIDs = append(configIDs, dc.ID)
+		}
+	}
+	return policy, group, configIDs
+}
+
+func (ap *App) userRepeatHit(win bool, a *lottery.Activity, group string, configIDs []int64, userID int64) (bool, error) {
+	if group != "" {
+		kind := "join"
+		if win {
+			kind = "win"
+		}
+		return ap.Store.HasUserRecordInRepeatSet(kind, group, configIDs, userID)
+	}
+	if a.DailyConfigID <= 0 {
+		return false, nil
+	}
+	if win {
+		return ap.Store.HasUserWonInConfig(a.DailyConfigID, userID)
+	}
+	return ap.Store.HasUserParticipatedInConfig(a.DailyConfigID, userID)
+}
+
+// ApplyRepeatGroup 规范化场次上的重复策略和共用参与组。
+// 挂在日常配置上的场次，组名以配置当前值为准，避免和系列脱节。
+func (ap *App) ApplyRepeatGroup(a *lottery.Activity) error {
+	policy, err := lottery.NormalizeRepeatPolicy(a.RepeatPolicy)
+	if err != nil {
+		return err
+	}
+	a.RepeatPolicy = policy
+	a.RepeatGroup = lottery.NormalizeRepeatGroup(a.RepeatGroup)
+	if len([]rune(a.RepeatGroup)) > 64 {
+		return lottery.ErrRepeatGroupTooLong
+	}
+	if a.DailyConfigID <= 0 {
+		return nil
+	}
+	for _, dc := range ap.GetDailyConfigs() {
+		if dc.ID == a.DailyConfigID {
+			a.RepeatGroup = lottery.NormalizeRepeatGroup(dc.RepeatGroup)
+			if dc.RepeatPolicy != "" {
+				a.RepeatPolicy = dc.RepeatPolicy
+			}
+			return nil
+		}
+	}
+	return nil
 }
 
 // repeatPolicyDeniedErr 按活动所属日常配置的重复参与策略判断用户是否被排除，
@@ -698,6 +779,10 @@ func (ap *App) GetDailyConfigs() []lottery.DailyConfig {
 
 // SaveDailyConfig 新建（ID=0）或更新日常定时抽奖配置，返回带 ID 的配置。
 func (ap *App) SaveDailyConfig(c lottery.DailyConfig) (lottery.DailyConfig, error) {
+	c.RepeatGroup = lottery.NormalizeRepeatGroup(c.RepeatGroup)
+	if err := c.ValidateRepeatGroup(); err != nil {
+		return c, err
+	}
 	list := ap.GetDailyConfigs()
 	if c.ID > 0 {
 		found := false
@@ -729,6 +814,36 @@ func (ap *App) SaveDailyConfig(c lottery.DailyConfig) (lottery.DailyConfig, erro
 		return c, err
 	}
 	return c, nil
+}
+
+// UpdateDailyConfigRepeat 只改一条日常配置的重复策略和共用参与组。
+// 编辑已生成的场次时，这两项写回配置，这一场和之后的场次一起生效。
+func (ap *App) UpdateDailyConfigRepeat(id int64, policy, group string) (string, string, error) {
+	policy, err := lottery.NormalizeRepeatPolicy(policy)
+	if err != nil {
+		return "", "", err
+	}
+	group = lottery.NormalizeRepeatGroup(group)
+	if len([]rune(group)) > 64 {
+		return "", "", lottery.ErrRepeatGroupTooLong
+	}
+	list := ap.GetDailyConfigs()
+	for i := range list {
+		if list[i].ID != id {
+			continue
+		}
+		list[i].RepeatPolicy = policy
+		list[i].RepeatGroup = group
+		raw, err := json.Marshal(list)
+		if err != nil {
+			return "", "", err
+		}
+		if err := ap.Store.SetState(stateDailyConfigs, string(raw)); err != nil {
+			return "", "", err
+		}
+		return policy, group, nil
+	}
+	return "", "", store.ErrNotFound
 }
 
 // SetDailyConfigEnabled 启用/停用单个配置（保留其余字段）。
@@ -963,6 +1078,8 @@ func dailyActivityFromConfig(cfg lottery.DailyConfig, start time.Time) *lottery.
 		AutoBonusPercent:     cfg.AutoBonusPercent,
 		Conditions:           cfg.Conditions,
 		DailyConfigID:        cfg.ID,
+		RepeatGroup:          lottery.NormalizeRepeatGroup(cfg.RepeatGroup),
+		RepeatPolicy:         cfg.RepeatPolicy,
 	}
 	if a.ConditionMatch == "" {
 		a.ConditionMatch = lottery.MatchAll

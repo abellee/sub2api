@@ -358,6 +358,8 @@ func mapStoreError(w http.ResponseWriter, err error) {
 		fail(w, http.StatusForbidden, 403, "您已参与过该系列抽奖，不能重复参与")
 	case errors.Is(err, store.ErrRepeatWin):
 		fail(w, http.StatusForbidden, 403, "您已在该系列抽奖中中奖，不能再参与")
+	case errors.Is(err, lottery.ErrRepeatGroupTooLong), errors.Is(err, lottery.ErrUnknownRepeatPolicy):
+		fail(w, http.StatusBadRequest, 400, err.Error())
 	case errors.Is(err, store.ErrActivityDrawn):
 		fail(w, http.StatusConflict, 409, "activity already drawn")
 	default:
@@ -382,6 +384,8 @@ type activityInput struct {
 	ConditionMatch       string                 `json:"condition_match"`
 	AutoBonusPercent     float64                `json:"auto_bonus_percent"`
 	DailyConfigID        int64                  `json:"daily_config_id"`
+	RepeatPolicy         *string                `json:"repeat_policy"`
+	RepeatGroup          *string                `json:"repeat_group"`
 	Conditions           []lottery.ConditionDef `json:"conditions"`
 	Prizes               []prizeInput           `json:"prizes"`
 }
@@ -406,6 +410,8 @@ func (in *activityInput) toActivity() *lottery.Activity {
 		ConditionMatch:       in.ConditionMatch,
 		AutoBonusPercent:     in.AutoBonusPercent,
 		DailyConfigID:        in.DailyConfigID,
+		RepeatPolicy:         derefString(in.RepeatPolicy),
+		RepeatGroup:          derefString(in.RepeatGroup),
 		Conditions:           in.Conditions,
 	}
 	for _, p := range in.Prizes {
@@ -420,6 +426,13 @@ func (in *activityInput) toActivity() *lottery.Activity {
 	return a
 }
 
+func derefString(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
 func (s *Server) handleAdminCreateActivity(w http.ResponseWriter, r *http.Request, _ *Claims) {
 	var in activityInput
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
@@ -427,6 +440,10 @@ func (s *Server) handleAdminCreateActivity(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	a := in.toActivity()
+	if err := s.App.ApplyRepeatGroup(a); err != nil {
+		mapStoreError(w, err)
+		return
+	}
 	if err := a.Validate(); err != nil {
 		fail(w, http.StatusBadRequest, 400, err.Error())
 		return
@@ -451,8 +468,51 @@ func (s *Server) handleAdminUpdateActivity(w http.ResponseWriter, r *http.Reques
 		fail(w, http.StatusBadRequest, 400, "invalid body: "+err.Error())
 		return
 	}
+	existing, err := s.App.Store.GetActivity(id)
+	if err != nil {
+		mapStoreError(w, err)
+		return
+	}
 	a := in.toActivity()
 	a.ID = id
+	if existing.DailyConfigID > 0 {
+		a.DailyConfigID = existing.DailyConfigID
+		policy, group := existing.RepeatPolicy, existing.RepeatGroup
+		if in.RepeatPolicy != nil || in.RepeatGroup != nil {
+			if in.RepeatPolicy != nil {
+				policy = *in.RepeatPolicy
+			}
+			if in.RepeatGroup != nil {
+				group = *in.RepeatGroup
+			}
+			savedPolicy, savedGroup, err := s.App.UpdateDailyConfigRepeat(existing.DailyConfigID, policy, group)
+			if errors.Is(err, store.ErrNotFound) {
+				a.RepeatPolicy, a.RepeatGroup = policy, group
+				if err := s.App.ApplyRepeatGroup(a); err != nil {
+					mapStoreError(w, err)
+					return
+				}
+			} else if err != nil {
+				mapStoreError(w, err)
+				return
+			} else {
+				a.RepeatPolicy, a.RepeatGroup = savedPolicy, savedGroup
+			}
+		} else {
+			a.RepeatPolicy, a.RepeatGroup = policy, group
+		}
+	} else {
+		if in.RepeatPolicy == nil {
+			a.RepeatPolicy = existing.RepeatPolicy
+		}
+		if in.RepeatGroup == nil {
+			a.RepeatGroup = existing.RepeatGroup
+		}
+		if err := s.App.ApplyRepeatGroup(a); err != nil {
+			mapStoreError(w, err)
+			return
+		}
+	}
 	if err := a.Validate(); err != nil {
 		fail(w, http.StatusBadRequest, 400, err.Error())
 		return
