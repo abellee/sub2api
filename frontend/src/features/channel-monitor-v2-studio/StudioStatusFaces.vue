@@ -324,6 +324,10 @@ onBeforeUnmount(() => {
   transform-origin: 50% 50%;
   transition: transform 0.16s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.16s ease;
 }
+.studio-face--warning:not(.studio-face--empty) .studio-face-cell,
+.studio-face--critical:not(.studio-face--empty) .studio-face-cell {
+  filter: brightness(0.72);
+}
 .studio-face--empty {
   background: var(--studio-cell, #6ee7b7);
 }
