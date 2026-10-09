@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"sort"
 	"time"
 
@@ -22,13 +23,18 @@ type AdminTaskView struct {
 	lottery.Task
 	CodesAvailable int64 `json:"codes_available"`
 	CodesGranted   int64 `json:"codes_granted"`
+	NotifiedCount  int64 `json:"notified_count"`
 }
 
 // UserTaskView 用户侧任务视图：不暴露白/黑名单、条件明细中的运营字段。
 type UserTaskView struct {
-	ID              int64   `json:"id"`
-	Name            string  `json:"name"`
-	Cover           string  `json:"cover,omitempty"`
+	ID    int64  `json:"id"`
+	Name  string `json:"name"`
+	Cover string `json:"cover,omitempty"`
+	// ProgressColor 是管理端配置的进度条颜色（#RGB / #RRGGBB），空表示用默认色。
+	// ProgressSvg 是管理端上传的进度条小动画（SVG 源码），空表示无动画。
+	ProgressColor   string  `json:"progress_color,omitempty"`
+	ProgressSvg     string  `json:"progress_svg,omitempty"`
 	Description     string  `json:"description,omitempty"`
 	Status          string  `json:"status"`
 	GroupName       string  `json:"group_name,omitempty"`
@@ -40,6 +46,13 @@ type UserTaskView struct {
 	ThresholdTokens float64 `json:"threshold_tokens"`
 	RewardType      string  `json:"reward_type"`
 	RewardValue     float64 `json:"reward_value"`
+	RepeatPolicy    string  `json:"repeat_policy"`
+	// ProgressTokens 是当前结算日已经消耗的 token。ProgressCap 是这一档的上限。
+	// ProgressUnits 是达到该上限时对应的奖励单位数。ProgressReady 为 false 表示用量暂时没取到。
+	ProgressTokens float64 `json:"progress_tokens"`
+	ProgressCap    float64 `json:"progress_cap"`
+	ProgressUnits  int     `json:"progress_units"`
+	ProgressReady  bool    `json:"progress_ready"`
 }
 
 // ---- 管理端 CRUD ----
@@ -75,9 +88,13 @@ func (ap *App) AdminListTasks() ([]AdminTaskView, error) {
 	if err != nil {
 		return nil, err
 	}
+	notified, err := ap.Store.CountNotifiedTaskUsers()
+	if err != nil {
+		return nil, err
+	}
 	out := make([]AdminTaskView, 0, len(tasks))
 	for _, t := range tasks {
-		v := AdminTaskView{Task: t}
+		v := AdminTaskView{Task: t, NotifiedCount: notified[t.ID]}
 		if t.RewardType == lottery.TaskRewardRedeemCode {
 			v.CodesAvailable, v.CodesGranted, _ = ap.Store.TaskCodeCounts(t.ID)
 		}
@@ -131,63 +148,169 @@ func userTaskView(t lottery.Task, now time.Time) UserTaskView {
 		}
 	}
 	return UserTaskView{
-		ID: t.ID, Name: t.Name, Cover: t.Cover, Description: t.Description, Status: t.Status,
+		ID: t.ID, Name: t.Name, Cover: t.Cover, ProgressColor: t.ProgressColor, ProgressSvg: t.ProgressSvg, Description: t.Description, Status: t.Status,
 		GroupName: t.GroupName, Model: t.Model,
 		StartDate: t.StartDate, EndDate: end, DaysLeft: daysLeft,
 		SettleTime:      t.SettleTime,
 		ThresholdTokens: t.ThresholdTokens,
 		RewardType:      t.RewardType, RewardValue: t.RewardValue,
+		RepeatPolicy: t.RepeatPolicy,
 	}
 }
 
-// ListUserTasks 用户侧进行中的任务列表（status=active，含未开始）。
-// 白名单外 / 黑名单内，以及未满足可参与条件的用户看不到对应任务。
-// 管理员不受白名单、黑名单和参与条件限制。
-func (ap *App) ListUserTasks(ctx context.Context, userID int64, email, role string, registeredAt *time.Time, now time.Time) ([]UserTaskView, error) {
+type modelUsageKey struct {
+	groupID int64
+	model   string
+}
+
+type modelUsageHit struct {
+	tokens float64
+	ok     bool
+}
+
+// fillTaskProgress 填入当前用户在任务统计口径下、今天（北京时间）的阶段进度。
+// 今天不在任务周期内时进度为 0。用量接口失败时保留任务卡片，并标记进度未就绪。
+func (ap *App) fillTaskProgress(ctx context.Context, view *UserTaskView, t *lottery.Task, userID int64, today string, cache map[modelUsageKey]modelUsageHit) {
+	usage := 0.0
+	ready := true
+	if today >= t.StartDate && today <= t.EndDate() {
+		if ap == nil || ap.Sub2API == nil || userID <= 0 {
+			ready = false
+		} else {
+			key := modelUsageKey{groupID: t.GroupID, model: t.Model}
+			hit, ok := cache[key]
+			if !ok {
+				tokens, err := ap.Sub2API.FetchUserDailyModelUsage(ctx, today, t.GroupID, t.Model, userID)
+				extra := ap.taskTestUsage(today, t.GroupID, t.Model)
+				switch {
+				case err != nil && extra <= 0:
+					slog.Warn("task progress usage", "task", t.ID, "user", userID, "err", err)
+					hit = modelUsageHit{}
+				case err != nil:
+					slog.Warn("task progress usage, showing test usage", "task", t.ID, "user", userID, "err", err)
+					hit = modelUsageHit{tokens: extra, ok: true}
+				default:
+					hit = modelUsageHit{tokens: tokens + extra, ok: true}
+				}
+				cache[key] = hit
+			}
+			if !hit.ok {
+				ready = false
+			} else {
+				usage = hit.tokens
+			}
+		}
+	}
+	capTokens, units := lottery.NextStageProgress(t.ThresholdTokens, usage)
+	view.ProgressTokens = usage
+	view.ProgressCap = capTokens
+	view.ProgressUnits = units
+	view.ProgressReady = ready
+}
+
+// taskTestUsage 读取本地测试消耗。读失败时当作没有，避免挡住真实用量。
+func (ap *App) taskTestUsage(date string, groupID int64, model string) float64 {
+	if ap == nil || ap.Store == nil {
+		return 0
+	}
+	tokens, err := ap.Store.TaskTestUsage(date, groupID, model)
+	if err != nil || tokens < 0 || math.IsNaN(tokens) || math.IsInf(tokens, 0) {
+		if err != nil {
+			slog.Warn("task test usage", "err", err)
+		}
+		return 0
+	}
+	return tokens
+}
+
+// visibleUserTasks 返回该用户能看到的进行中和已结束任务，不含进度用量。
+// 侧边栏每几秒查一次显隐和角标，不能走 ListUserTasks，否则会顺带请求当日用量。
+func (ap *App) visibleUserTasks(ctx context.Context, userID int64, email, role string, registeredAt *time.Time, now time.Time) ([]lottery.Task, error) {
+	admin := role == "admin"
 	tasks, err := ap.Store.ListTasks()
 	if err != nil {
 		return nil, err
 	}
-	admin := role == "admin"
 	candidates := make([]lottery.Task, 0, len(tasks))
-	maxWindow := 0
-	needsUsage := false
 	for _, t := range tasks {
-		if t.Status != lottery.TaskActive {
+		if t.Status != lottery.TaskActive && t.Status != lottery.TaskEnded {
 			continue
-		}
-		if !admin && !t.UserAllowed(email) {
-			continue
-		}
-		if !admin && len(t.Conditions) > 0 {
-			needsUsage = true
-		}
-		for _, c := range t.Conditions {
-			if c.WindowDays > maxWindow {
-				maxWindow = c.WindowDays
-			}
 		}
 		candidates = append(candidates, t)
 	}
 	if len(candidates) == 0 {
-		return []UserTaskView{}, nil
+		return []lottery.Task{}, nil
 	}
 	var usage *lottery.UserUsage
-	if needsUsage {
-		usage, err = ap.loadUserUsage(ctx, userID, email, registeredAt, maxWindow)
-		if err != nil {
-			return nil, err
+	rewarded := map[int64]bool{}
+	if !admin {
+		needEligible := false
+		maxWindow := 0
+		for _, t := range candidates {
+			if t.Visibility.Mode != lottery.VisibilityEligible {
+				continue
+			}
+			needEligible = true
+			for _, c := range t.Conditions {
+				if c.WindowDays > maxWindow {
+					maxWindow = c.WindowDays
+				}
+			}
+		}
+		if needEligible {
+			usage, err = ap.loadUserUsage(ctx, userID, email, registeredAt, maxWindow)
+			if err != nil {
+				return nil, err
+			}
+			rewards, rerr := ap.Store.ListUserTaskRewards(userID)
+			if rerr != nil {
+				return nil, rerr
+			}
+			for _, reward := range rewards {
+				rewarded[reward.TaskID] = true
+			}
 		}
 	}
-	out := make([]UserTaskView, 0, len(candidates))
+	out := make([]lottery.Task, 0, len(candidates))
 	for i := range candidates {
 		t := &candidates[i]
-		if !admin && needsUsage && !taskConditionsMet(t, usage, now) {
-			continue
+		if !admin {
+			shown := true
+			if t.Visibility.Mode == lottery.VisibilityEligible {
+				shown = rewarded[t.ID] || (t.UserAllowed(email) && taskConditionsMet(t, usage, now))
+			}
+			if !t.Visibility.ShowsTo(email, shown) {
+				continue
+			}
 		}
-		out = append(out, userTaskView(*t, now))
+		out = append(out, *t)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].StartDate < out[j].StartDate })
+	return out, nil
+}
+
+// ListUserTasks 用户侧任务列表：进行中和已结束都可能展示，已归档不下发。
+// 每条任务自己决定可见范围。全部用户都看得到卡片。部分用户只给名单。
+// 仅符合条件的用户只看自己能参与的任务，已经拿到奖励的任务仍保留。管理员不受限。
+func (ap *App) ListUserTasks(ctx context.Context, userID int64, email, role string, registeredAt *time.Time, now time.Time) ([]UserTaskView, error) {
+	tasks, err := ap.visibleUserTasks(ctx, userID, email, role, registeredAt, now)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]UserTaskView, 0, len(tasks))
+	today := dateStr(now)
+	usageCache := map[modelUsageKey]modelUsageHit{}
+	for i := range tasks {
+		t := &tasks[i]
+		view := userTaskView(*t, now)
+		ap.fillTaskProgress(ctx, &view, t, userID, today, usageCache)
+		out = append(out, view)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if (out[i].Status == lottery.TaskActive) != (out[j].Status == lottery.TaskActive) {
+			return out[i].Status == lottery.TaskActive
+		}
+		return out[i].StartDate < out[j].StartDate
+	})
 	return out, nil
 }
 
@@ -200,12 +323,10 @@ type TaskPromptView struct {
 }
 
 // TaskPromptList 返回该用户当前可参与、进行中的任务，供 WebSocket 引导弹窗。
-// 显隐与任务列表一致（管理员可见）；任务白/黑名单和可参与条件
-// （全部满足，空条件视为可参与）都要过。
+// 管理员不受每条任务的可见范围限制。其他用户在部分用户模式下必须在名单里。
+// 任务白/黑名单和可参与条件（全部满足，空条件视为可参与）都要过。
 func (ap *App) TaskPromptList(ctx context.Context, userID int64, email, role string, registeredAt *time.Time) ([]TaskPromptView, error) {
-	if !ap.IsUserAllowedTask(role, email) {
-		return []TaskPromptView{}, nil
-	}
+	admin := role == "admin"
 	tasks, err := ap.Store.ListTasks()
 	if err != nil {
 		return nil, err
@@ -215,6 +336,9 @@ func (ap *App) TaskPromptList(ctx context.Context, userID int64, email, role str
 	maxWindow := 0
 	for _, t := range tasks {
 		if t.Status != lottery.TaskActive || !t.UserAllowed(email) {
+			continue
+		}
+		if !admin && !t.Visibility.ShowsTo(email, true) {
 			continue
 		}
 		if dateStr(now) > t.EndDate() {
@@ -278,17 +402,67 @@ func taskConditionsMet(t *lottery.Task, usage *lottery.UserUsage, now time.Time)
 	return true
 }
 
-// TasksPhase 用户侧角标：该用户有可参与的进行中任务返回 "active"，否则 "none"。
-// 管理员只要存在进行中任务就返回 "active"。
+// TasksPhase 侧边栏角标。管理员看全部进行中任务。
+// 其他用户只在自己能看到的任务里还有进行中时返回 active。已结束、已归档不点亮角标。
 func (ap *App) TasksPhase(ctx context.Context, userID int64, email, role string, registeredAt *time.Time, now time.Time) (string, error) {
-	tasks, err := ap.ListUserTasks(ctx, userID, email, role, registeredAt, now)
+	if role == "admin" {
+		tasks, err := ap.Store.ListTasks()
+		if err != nil {
+			return "", err
+		}
+		for _, t := range tasks {
+			if t.Status == lottery.TaskActive {
+				return "active", nil
+			}
+		}
+		return "none", nil
+	}
+	tasks, err := ap.visibleUserTasks(ctx, userID, email, role, registeredAt, now)
 	if err != nil {
 		return "", err
 	}
-	if len(tasks) > 0 {
-		return "active", nil
+	for _, t := range tasks {
+		if t.Status == lottery.TaskActive {
+			return "active", nil
+		}
 	}
 	return "none", nil
+}
+
+// MenuState 侧边栏一次拿到抽奖和任务的显隐与角标。
+// 任务部分只看可见任务的状态，不拉取当日用量。
+type MenuState struct {
+	LotteryVisible bool   `json:"lottery_visible"`
+	LotteryPhase   string `json:"lottery_phase"`
+	TaskVisible    bool   `json:"task_visible"`
+	TaskPhase      string `json:"task_phase"`
+}
+
+func (ap *App) MenuState(ctx context.Context, userID int64, email, role string, registeredAt *time.Time, now time.Time) (MenuState, error) {
+	lotteryVisible, lotteryPhase := ap.UserLotteryAccess(ctx, userID, email, role, registeredAt)
+	taskVisible, err := ap.TaskCenterVisible(email, role)
+	if err != nil {
+		return MenuState{}, err
+	}
+	phase, err := ap.TasksPhase(ctx, userID, email, role, registeredAt, now)
+	if err != nil {
+		return MenuState{}, err
+	}
+	return MenuState{
+		LotteryVisible: lotteryVisible,
+		LotteryPhase:   lotteryPhase,
+		TaskVisible:    taskVisible,
+		TaskPhase:      phase,
+	}, nil
+}
+
+// TaskCenterVisible 任务中心菜单是否展示。
+// 管理员始终看得到。其他用户按右上角的全部用户或部分用户，不按单条任务的可见范围。
+func (ap *App) TaskCenterVisible(email, role string) (bool, error) {
+	if role == "admin" {
+		return true, nil
+	}
+	return ap.GetTaskVisibility().ShowsTo(email, false), nil
 }
 
 // MyTaskRewards 用户自己的结算/奖励记录（含兑换码）。
@@ -302,6 +476,9 @@ func (ap *App) MyTaskRewards(userID int64) ([]lottery.TaskReward, error) {
 // 每个结算日以 sync_state 键 task_settled:<taskID>:<date> 幂等；失败不写键，
 // 下个 tick 自动重试。
 func (ap *App) SettleDueTasks(ctx context.Context, now time.Time) {
+	if ap.Cfg.DisableSettlement {
+		return
+	}
 	tasks, err := ap.Store.ListTasks()
 	if err != nil {
 		slog.Error("task settle: list tasks failed", "err", err)
@@ -385,8 +562,8 @@ func (ap *App) settleTaskDay(ctx context.Context, t *lottery.Task, date string) 
 	}
 
 	for _, u := range usage {
-		// 全局显隐：任务中心对该用户不可见时不参与结算
-		if !ap.IsUserAllowedTask("user", u.Email) {
+		// 部分用户：名单外不结算。仅符合条件的用户仍按白黑名单和参与条件结算。
+		if !t.Visibility.ShowsTo(u.Email, true) {
 			continue
 		}
 		if !t.UserAllowed(u.Email) {
@@ -480,6 +657,9 @@ func (ap *App) fulfillTaskReward(ctx context.Context, t *lottery.Task, reward *l
 
 // RetryTaskFulfillment 管理端重试某任务 pending/failed 的发放（如补码后）。
 func (ap *App) RetryTaskFulfillment(ctx context.Context, taskID int64) error {
+	if ap.Cfg.DisableSettlement {
+		return ErrSettlementDisabled
+	}
 	t, err := ap.Store.GetTask(taskID)
 	if err != nil {
 		return err

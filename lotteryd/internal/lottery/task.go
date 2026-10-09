@@ -2,13 +2,15 @@ package lottery
 
 import (
 	"fmt"
+	"math"
 	"time"
 )
 
 // 任务状态。
 const (
-	TaskActive = "active" // 进行中（含未开始）
-	TaskEnded  = "ended"  // 已结束（到达期）
+	TaskActive   = "active"   // 进行中（含未开始）
+	TaskEnded    = "ended"    // 已结束（到达期）
+	TaskArchived = "archived" // 已归档（管理端手动隐藏，用户侧不再展示）
 )
 
 // 任务奖励类型（与抽奖奖品的 balance/redeem_code 对齐）。
@@ -30,6 +32,10 @@ type Task struct {
 	ID    int64  `json:"id"`
 	Name  string `json:"name"`
 	Cover string `json:"cover,omitempty"` // 封面（URL 或 data URL）
+	// ProgressSvg 进度条小动画：管理端上传的 SVG 源码文本。
+	ProgressSvg string `json:"progress_svg,omitempty"`
+	// ProgressColor 进度条颜色：#RGB 或 #RRGGBB；空表示用默认色。
+	ProgressColor string `json:"progress_color,omitempty"`
 	// Description 任务说明（纯文本/Markdown），用户侧展示在任务卡片里。
 	Description string `json:"description,omitempty"`
 	// GroupID 0 = 全部分组；Model 空 = 不限模型（全部分组时强制为空）。
@@ -42,6 +48,7 @@ type Task struct {
 	// SettleTime 每日结算时刻 "HH:MM"（北京时间，次日该时刻结算前一天）。
 	SettleTime string `json:"settle_time"`
 	// ThresholdTokens 达成条件：每个结算日的 token 消耗量（原始 token 数）。
+	// 进度阶段上限是它的整数倍：0 时上限为 1 倍，超过 1 倍后上限改为 2 倍，依次类推。
 	ThresholdTokens float64 `json:"threshold_tokens"`
 	// RewardType balance | redeem_code；RewardValue 每达成单位的奖励值。
 	// 兑换码从管理员预录入的码池随机抽取，不走上游生成接口。
@@ -52,7 +59,9 @@ type Task struct {
 	Whitelist  []string       `json:"whitelist,omitempty"`
 	Blacklist  []string       `json:"blacklist,omitempty"`
 	Conditions []ConditionDef `json:"conditions"` // 复用注册时长/Token消耗/活跃度，全部满足（AND）
-	Status     string         `json:"status"`     // active | ended
+	// Visibility 这张任务对谁可见。未填写时按全部用户。
+	Visibility Visibility `json:"visibility"`
+	Status     string     `json:"status"` // active | ended | archived
 
 	CreatedAt string `json:"created_at,omitempty"`
 	UpdatedAt string `json:"updated_at,omitempty"`
@@ -87,6 +96,28 @@ type TaskReward struct {
 	Note        string   `json:"note,omitempty"`
 	Err         string   `json:"error,omitempty"`
 	CreatedAt   string   `json:"created_at,omitempty"`
+}
+
+// NextStageProgress 把当日消耗映射到当前阶段上限。
+// 阈值为 100 时：没有任何消耗，上限是 100；恰好 100，上限仍是 100；超过 100，上限改为 200。
+// units 是到达该上限时对应的达成单位数，奖励按这个单位数计算。
+func NextStageProgress(threshold, usage float64) (cap float64, units int) {
+	if threshold <= 0 || math.IsNaN(threshold) || math.IsInf(threshold, 0) {
+		return 0, 0
+	}
+	if usage <= 0 || math.IsNaN(usage) || math.IsInf(usage, 0) {
+		return threshold, 1
+	}
+	completed := math.Floor(usage/threshold + 1e-9)
+	if completed < 1 {
+		return threshold, 1
+	}
+	// 刚好落在整数倍上时，进度条停在这一档并显示满格；再多一点才进入下一档。
+	if math.Abs(usage-completed*threshold) <= threshold*1e-6 {
+		return completed * threshold, int(completed)
+	}
+	next := completed + 1
+	return next * threshold, int(next)
 }
 
 // ParseDate 解析 YYYY-MM-DD（UTC 锚定，仅做日期算术）。
@@ -162,6 +193,21 @@ func containsFold(list []string, email string) bool {
 }
 
 // Validate 校验任务配置。
+// isHexColor 只接受 #RGB 与 #RRGGBB 两种写法。
+func isHexColor(s string) bool {
+	if len(s) != 4 && len(s) != 7 || s[0] != '#' {
+		return false
+	}
+	for i := 1; i < len(s); i++ {
+		c := s[i]
+		if c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
 func (t *Task) Validate() error {
 	if t.Name == "" {
 		return fmt.Errorf("task: name is required")
@@ -171,6 +217,9 @@ func (t *Task) Validate() error {
 	}
 	if len(t.Description) > 5000 {
 		return fmt.Errorf("task: description too long")
+	}
+	if t.ProgressColor != "" && !isHexColor(t.ProgressColor) {
+		return fmt.Errorf("task: progress_color must be #RGB or #RRGGBB")
 	}
 	if _, err := ParseDate(t.StartDate); err != nil {
 		return fmt.Errorf("task: start_date must be YYYY-MM-DD")
@@ -213,6 +262,10 @@ func (t *Task) Validate() error {
 		if e == "" {
 			return fmt.Errorf("task: whitelist/blacklist emails must not be empty")
 		}
+	}
+	t.Visibility = NormalizeItemVisibility(t.Visibility)
+	if err := t.Visibility.Validate(); err != nil {
+		return err
 	}
 	return nil
 }

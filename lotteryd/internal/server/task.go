@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"lotteryd/internal/lottery"
@@ -15,6 +16,8 @@ import (
 type taskInput struct {
 	Name            string                 `json:"name"`
 	Cover           string                 `json:"cover"`
+	ProgressSvg     string                 `json:"progress_svg"`
+	ProgressColor   string                 `json:"progress_color"`
 	Description     string                 `json:"description"`
 	GroupID         int64                  `json:"group_id"`
 	GroupName       string                 `json:"group_name"`
@@ -29,12 +32,13 @@ type taskInput struct {
 	Whitelist       []string               `json:"whitelist"`
 	Blacklist       []string               `json:"blacklist"`
 	Conditions      []lottery.ConditionDef `json:"conditions"`
+	Visibility      *lottery.Visibility    `json:"visibility"`
 	Status          string                 `json:"status"`
 }
 
 func (in *taskInput) toTask() *lottery.Task {
-	return &lottery.Task{
-		Name: in.Name, Cover: in.Cover, Description: in.Description,
+	t := &lottery.Task{
+		Name: in.Name, Cover: in.Cover, ProgressSvg: in.ProgressSvg, ProgressColor: in.ProgressColor, Description: in.Description,
 		GroupID: in.GroupID, GroupName: in.GroupName, Model: in.Model,
 		StartDate: in.StartDate, DurationDays: in.DurationDays, SettleTime: in.SettleTime,
 		ThresholdTokens: in.ThresholdTokens,
@@ -44,16 +48,16 @@ func (in *taskInput) toTask() *lottery.Task {
 		Conditions: in.Conditions,
 		Status:     in.Status,
 	}
+	if in.Visibility != nil {
+		t.Visibility = *in.Visibility
+	}
+	return t
 }
 
 // ---- 用户侧 ----
 
-// handleListTasks 用户侧进行中的任务列表（全局显隐 + 白名单/黑名单过滤可见性）。
+// handleListTasks 用户侧任务列表（进行中与已结束，已归档不下发）。按任务可见范围过滤。
 func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request, claims *Claims) {
-	if !s.App.IsUserAllowedTask(claims.Role, claims.Email) {
-		ok(w, map[string]any{"tasks": []any{}})
-		return
-	}
 	tasks, err := s.App.ListUserTasks(r.Context(), claims.UserID, claims.Email, claims.Role, claims.RegisteredAt, time.Now())
 	if err != nil {
 		internalError(w, err)
@@ -70,25 +74,6 @@ func (s *Server) handleTaskPrompts(w http.ResponseWriter, r *http.Request, claim
 		return
 	}
 	ok(w, map[string]any{"tasks": tasks})
-}
-
-// handleMyTasksPhase 用户侧角标探测：该用户有可参与的进行中任务 → active。
-func (s *Server) handleMyTasksPhase(w http.ResponseWriter, r *http.Request, claims *Claims) {
-	if !s.App.IsUserAllowedTask(claims.Role, claims.Email) {
-		ok(w, map[string]any{"phase": "none"})
-		return
-	}
-	phase, err := s.App.TasksPhase(r.Context(), claims.UserID, claims.Email, claims.Role, claims.RegisteredAt, time.Now())
-	if err != nil {
-		internalError(w, err)
-		return
-	}
-	ok(w, map[string]any{"phase": phase})
-}
-
-// handleMyTaskVisibility 用户侧任务中心显隐结果（供侧边栏入口显隐与页面未开放态）。
-func (s *Server) handleMyTaskVisibility(w http.ResponseWriter, r *http.Request, claims *Claims) {
-	ok(w, map[string]any{"visible": s.App.IsUserAllowedTask(claims.Role, claims.Email)})
 }
 
 // handleMyTaskRewards 用户自己的任务结算/奖励记录（含兑换码）。
@@ -117,7 +102,7 @@ func (s *Server) handleAdminSaveTaskSettings(w http.ResponseWriter, r *http.Requ
 	}
 	if body.Visibility != nil {
 		if err := s.App.SetTaskVisibility(*body.Visibility); err != nil {
-			internalError(w, err)
+			fail(w, http.StatusBadRequest, 400, err.Error())
 			return
 		}
 		s.wsHub.Wake()
@@ -181,8 +166,16 @@ func (s *Server) handleAdminUpdateTask(w http.ResponseWriter, r *http.Request, _
 		fail(w, http.StatusBadRequest, 400, "invalid body: "+err.Error())
 		return
 	}
+	existing, err := s.App.Store.GetTask(id)
+	if err != nil {
+		mapStoreError(w, err)
+		return
+	}
 	t := in.toTask()
 	t.ID = id
+	if in.Visibility == nil || strings.TrimSpace(in.Visibility.Mode) == "" {
+		t.Visibility = existing.Visibility
+	}
 	if err := s.App.UpdateTask(t); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			mapStoreError(w, err)
@@ -193,6 +186,34 @@ func (s *Server) handleAdminUpdateTask(w http.ResponseWriter, r *http.Request, _
 	}
 	s.wsHub.Wake()
 	ok(w, map[string]any{"id": id})
+}
+
+// handleAdminArchiveTask 把已结束的任务标为归档，用户侧不再展示。奖励与码池保留。
+func (s *Server) handleAdminArchiveTask(w http.ResponseWriter, r *http.Request, _ *Claims) {
+	id, err := pathID(r)
+	if err != nil {
+		fail(w, http.StatusBadRequest, 400, "invalid task id")
+		return
+	}
+	t, err := s.App.Store.GetTask(id)
+	if err != nil {
+		mapStoreError(w, err)
+		return
+	}
+	if t.Status == lottery.TaskArchived {
+		fail(w, http.StatusConflict, 409, "任务已归档")
+		return
+	}
+	if t.Status != lottery.TaskEnded {
+		fail(w, http.StatusConflict, 409, "仅已结束的任务可以归档")
+		return
+	}
+	if err := s.App.Store.SetTaskStatus(id, lottery.TaskArchived); err != nil {
+		mapStoreError(w, err)
+		return
+	}
+	s.wsHub.Wake()
+	ok(w, map[string]any{"id": id, "status": lottery.TaskArchived})
 }
 
 func (s *Server) handleAdminDeleteTask(w http.ResponseWriter, r *http.Request, _ *Claims) {
@@ -207,6 +228,24 @@ func (s *Server) handleAdminDeleteTask(w http.ResponseWriter, r *http.Request, _
 	}
 	s.wsHub.Wake()
 	ok(w, map[string]any{"deleted": true})
+}
+
+func (s *Server) handleAdminTaskNotifications(w http.ResponseWriter, r *http.Request, _ *Claims) {
+	id, err := pathID(r)
+	if err != nil {
+		fail(w, http.StatusBadRequest, 400, "invalid task id")
+		return
+	}
+	if _, err := s.App.Store.GetTask(id); err != nil {
+		mapStoreError(w, err)
+		return
+	}
+	users, err := s.App.Store.ListNotifiedTaskUsers(id)
+	if err != nil {
+		internalError(w, err)
+		return
+	}
+	ok(w, map[string]any{"users": users})
 }
 
 func (s *Server) handleAdminTaskRewards(w http.ResponseWriter, r *http.Request, _ *Claims) {

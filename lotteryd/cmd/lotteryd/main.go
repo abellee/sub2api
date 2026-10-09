@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"lotteryd/internal/app"
+	"lotteryd/internal/push"
 	"lotteryd/internal/server"
 	"lotteryd/internal/store"
 	"lotteryd/internal/sub2api"
@@ -42,6 +43,7 @@ func main() {
 		syncEvery  = flag.Duration("sync-interval", envDuration("LOTTERYD_SYNC_INTERVAL", time.Hour), "Usage data sync interval")
 		drawEvery  = flag.Duration("draw-interval", envDuration("LOTTERYD_DRAW_INTERVAL", 30*time.Second), "Draw scheduler interval")
 		backfill   = flag.Int("backfill-days", 35, "Days of usage data to backfill when no watermark exists")
+		settlement = flag.String("settlement", envOr("LOTTERYD_SETTLEMENT", "auto"), "Settlement gate: auto (off for dev builds), on, or off")
 		showVer    = flag.Bool("version", false, "Show version information")
 	)
 	flag.Parse()
@@ -66,7 +68,17 @@ func main() {
 	defer func() { _ = st.Close() }()
 
 	client := sub2api.NewClient(*sub2apiURL, *adminKey)
-	ap := app.New(st, client, app.Config{BackfillDays: *backfill})
+	disableSettlement := settlementDisabled(*settlement, Version)
+	ap := app.New(st, client, app.Config{BackfillDays: *backfill, DisableSettlement: disableSettlement})
+	if disableSettlement {
+		logger.Warn("settlement gate on: draws still run, reward payout and task settlement are disabled")
+	}
+	pushToken := strings.TrimSpace(os.Getenv("LOTTERY_PUSH_TOKEN"))
+	if pushToken == "" {
+		logger.Warn("LOTTERY_PUSH_TOKEN is empty; activity and task notifications are skipped")
+	} else {
+		ap.Push = push.New(envOr("LOTTERY_PUSH_URL", "http://127.0.0.1:8091"), pushToken)
+	}
 	// 恢复管理页保存的运行时设置（优先级高于启动参数）
 	ap.LoadRuntimeSettings()
 	if ap.Sub2API.AdminAPIKey() == "" {
@@ -128,12 +140,19 @@ func main() {
 				if err := ap.DrawDueActivities(ctx, time.Now()); err != nil {
 					slog.Warn("draw scheduler failed", "err", err)
 				}
+				srv.WakeWS()
+				if err := ap.NotifyDueActivities(ctx, time.Now()); err != nil {
+					slog.Warn("activity notification scheduler failed", "err", err)
+				}
 				// 日常定时抽奖：到达每日开启时刻自动创建当天的活动。
 				if err := ap.CreateDueDailyActivity(time.Now()); err != nil {
 					slog.Warn("daily activity scheduler failed", "err", err)
 				}
 				// 任务结算：到达结算时刻自动结算前一日消耗并发放奖励。
 				ap.SettleDueTasks(ctx, time.Now())
+				if err := ap.NotifyDueTaskRewards(ctx); err != nil {
+					slog.Warn("task reward notification scheduler failed", "err", err)
+				}
 			}
 		}
 	}()
@@ -155,6 +174,19 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = httpServer.Shutdown(shutdownCtx)
+}
+
+// settlementDisabled 决定要不要拦住奖励发放和任务结算。开奖不受影响。
+// auto：版本号为 dev（本地 go build）时关闭，正式构建保持开启。
+func settlementDisabled(mode, version string) bool {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "on", "1", "true", "enabled":
+		return false
+	case "off", "0", "false", "disabled":
+		return true
+	default:
+		return version == "" || version == "dev"
+	}
 }
 
 func envDuration(key string, fallback time.Duration) time.Duration {

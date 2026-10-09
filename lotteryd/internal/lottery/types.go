@@ -136,10 +136,13 @@ type Activity struct {
 	// RepeatPolicy 手动场次自己的重复策略。定时场次以所属日常配置为准，这里只是创建时的快照。
 	RepeatPolicy string `json:"repeat_policy,omitempty"`
 	// 用户侧可见性：全员可见，或仅 VisibleUsers 中的用户可见（管理员不受限）。
-	VisibleToAll bool      `json:"visible_to_all"`
-	VisibleUsers []int64   `json:"visible_users,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	// 新的可见范围用 Visibility。这两列仍随活动保存，列表过滤不再读它们。
+	VisibleToAll bool    `json:"visible_to_all"`
+	VisibleUsers []int64 `json:"visible_users,omitempty"`
+	// Visibility 这一场对谁可见。未填写时按全部用户。
+	Visibility Visibility `json:"visibility"`
+	CreatedAt  time.Time  `json:"created_at"`
+	UpdatedAt  time.Time  `json:"updated_at"`
 
 	Conditions []ConditionDef `json:"conditions"`
 	Prizes     []Prize        `json:"prizes"`
@@ -168,6 +171,10 @@ func (a *Activity) Validate() error {
 		}
 	}
 	seen := map[string]bool{}
+	a.Visibility = NormalizeItemVisibility(a.Visibility)
+	if err := a.Visibility.Validate(); err != nil {
+		return err
+	}
 	for i, p := range a.Prizes {
 		if err := p.Validate(); err != nil {
 			return fmt.Errorf("prize[%d]: %w", i, err)
@@ -344,8 +351,9 @@ func MaskSecret(s string) string {
 
 // 用户侧显隐模式。
 const (
-	VisibilityAll     = "all"     // 全员可见
-	VisibilityPartial = "partial" // 部分人可见（按邮箱白名单）
+	VisibilityAll      = "all"      // 全部用户可见
+	VisibilityPartial  = "partial"  // 部分用户可见（按邮箱白名单）
+	VisibilityEligible = "eligible" // 仅符合参与条件的用户可见
 )
 
 // 重复参与策略。日常定时配置和手动场次都用这组值。
@@ -379,10 +387,49 @@ func NormalizeRepeatPolicy(s string) (string, error) {
 	}
 }
 
-// Visibility 用户侧显隐配置。
+// ErrBadVisibility 可见范围不是 all、partial 或 eligible。
+var ErrBadVisibility = errors.New("visibility mode must be all, partial, or eligible")
+
+// Visibility 一场活动、一条定时配置或一条任务的可见范围。
 type Visibility struct {
-	Mode          string   `json:"mode"`           // all | partial
+	Mode          string   `json:"mode"`           // all | partial | eligible
 	AllowedEmails []string `json:"allowed_emails"` // partial 模式下的邮箱白名单
+}
+
+// NormalizeItemVisibility 把空模式当成全部用户，并清掉空白邮箱。未知模式保留，交给 Validate 拒绝。
+func NormalizeItemVisibility(v Visibility) Visibility {
+	switch strings.TrimSpace(v.Mode) {
+	case "", VisibilityAll:
+		v.Mode = VisibilityAll
+	case VisibilityPartial, VisibilityEligible:
+		v.Mode = strings.TrimSpace(v.Mode)
+	default:
+		v.Mode = strings.TrimSpace(v.Mode)
+	}
+	cleaned := make([]string, 0, len(v.AllowedEmails))
+	for _, email := range v.AllowedEmails {
+		email = strings.TrimSpace(email)
+		if email != "" {
+			cleaned = append(cleaned, email)
+		}
+	}
+	v.AllowedEmails = cleaned
+	return v
+}
+
+// ShowsTo 判断非管理员用户是否看得到这一项。
+// eligibleShown 为真表示这个用户符合参与条件，或已经参与、中奖、拿到过奖励。
+func (v Visibility) ShowsTo(email string, eligibleShown bool) bool {
+	switch strings.TrimSpace(v.Mode) {
+	case "", VisibilityAll:
+		return true
+	case VisibilityPartial:
+		return v.IsEmailAllowed(email)
+	case VisibilityEligible:
+		return eligibleShown
+	default:
+		return false
+	}
 }
 
 // DailyConfig 日常定时抽奖配置：调度器每天到达 StartTime 后自动创建一场活动。
@@ -402,11 +449,17 @@ type DailyConfig struct {
 	MaxParticipants int64   `json:"max_participants"` // 0 = 不限
 	// ShowParticipantCount 为 true 时，该配置生成的场次向用户下发参与人数。
 	// 缺省（旧配置没有该字段）为 false：不显示。
-	ShowParticipantCount bool           `json:"show_participant_count"`
-	ConditionMatch       string         `json:"condition_match"` // all | any
-	AutoBonusPercent     float64        `json:"auto_bonus_percent"`
-	Conditions           []ConditionDef `json:"conditions"`
-	Prizes               []PrizeSpec    `json:"prizes"`
+	ShowParticipantCount bool `json:"show_participant_count"`
+	// Visibility 这条定时配置生成的场次对谁可见。未填写时按全部用户。
+	Visibility Visibility `json:"visibility"`
+	// Notify 为 true 且 NotifyStages 为空（旧配置）时，四个阶段都发送。
+	// NotifyStages 非 nil 时只发送勾选的阶段，空列表表示不发送。
+	Notify           bool           `json:"notify"`
+	NotifyStages     []string       `json:"notify_stages,omitempty"`
+	ConditionMatch   string         `json:"condition_match"` // all | any
+	AutoBonusPercent float64        `json:"auto_bonus_percent"`
+	Conditions       []ConditionDef `json:"conditions"`
+	Prizes           []PrizeSpec    `json:"prizes"`
 }
 
 // PrizeSpec 日常活动配置里的奖品（无 ID，创建活动时落库生成）。
@@ -436,6 +489,9 @@ func (c DailyConfig) ValidateRepeatGroup() error {
 // Validate 校验日常配置。
 func (c DailyConfig) Validate() error {
 	if err := c.ValidateRepeatGroup(); err != nil {
+		return err
+	}
+	if err := NormalizeItemVisibility(c.Visibility).Validate(); err != nil {
 		return err
 	}
 	if !c.Enabled {
@@ -484,11 +540,11 @@ func (v Visibility) MarshalJSON() ([]byte, error) {
 
 func (v Visibility) Validate() error {
 	switch v.Mode {
-	case VisibilityAll, VisibilityPartial:
+	case VisibilityAll, VisibilityPartial, VisibilityEligible:
+		return nil
 	default:
-		return fmt.Errorf("visibility mode must be all or partial")
+		return ErrBadVisibility
 	}
-	return nil
 }
 
 // IsEmailAllowed 判断邮箱是否在白名单内（不区分大小写）。

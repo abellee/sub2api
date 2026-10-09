@@ -191,6 +191,12 @@ func (e *testEnv) req(t *testing.T, method, path, token string, body any) *http.
 	return resp
 }
 
+// mustMenu 读取侧边栏聚合探测 /v1/me/menu 的 data。
+func (e *testEnv) mustMenu(t *testing.T, token string) map[string]any {
+	t.Helper()
+	return mustJSON(t, e.req(t, http.MethodGet, "/v1/me/menu", token, nil))
+}
+
 const isoFmt = "2006-01-02T15:04:05Z07:00"
 
 func sampleActivity(startsAt, drawsAt time.Time) map[string]any {
@@ -237,7 +243,7 @@ func TestLotteryEndToEnd(t *testing.T) {
 	}
 	require.NoError(t, e.app.SyncTokens(context.Background(), localNow))
 
-	// 3. 用户查活动列表：user7 合格（权重 1.5），user8 不合格。
+	// 3. 用户查活动列表：两边都能看到这场。user7 合格（权重 1.5），user8 不合格但不能报名。
 	resp = e.req(t, http.MethodGet, "/v1/activities", userToken, nil)
 	data = mustJSON(t, resp)
 	acts := data["activities"].([]any)
@@ -249,13 +255,15 @@ func TestLotteryEndToEnd(t *testing.T) {
 
 	resp = e.req(t, http.MethodGet, "/v1/activities", otherToken, nil)
 	data = mustJSON(t, resp)
-	require.Empty(t, data["activities"].([]any), "ineligible user does not see the activity")
-	vis := mustJSON(t, e.req(t, http.MethodGet, "/v1/me/visibility", userToken, nil))
-	require.Equal(t, true, vis["visible"].(bool))
-	require.Equal(t, "joining", vis["phase"].(string), "eligible user badge follows the joining activity")
-	vis = mustJSON(t, e.req(t, http.MethodGet, "/v1/me/visibility", otherToken, nil))
-	require.Equal(t, true, vis["visible"].(bool))
-	require.Equal(t, "", vis["phase"].(string), "ineligible user gets no lottery badge")
+	otherActs := data["activities"].([]any)
+	require.Len(t, otherActs, 1, "ineligible user still sees the activity")
+	require.False(t, otherActs[0].(map[string]any)["eligible"].(bool))
+	vis := e.mustMenu(t, userToken)
+	require.Equal(t, true, vis["lottery_visible"].(bool))
+	require.Equal(t, "joining", vis["lottery_phase"].(string), "badge follows the global joining activity")
+	vis = e.mustMenu(t, otherToken)
+	require.Equal(t, true, vis["lottery_visible"].(bool))
+	require.Equal(t, "joining", vis["lottery_phase"].(string), "ineligible user gets the same lottery badge")
 
 	// 4. user7 参与成功；重复参与 409；不合格的 user8 参与被拒 403。
 	resp = e.req(t, http.MethodPost, fmt.Sprintf("/v1/activities/%d/participate", activityID), userToken, nil)
@@ -310,7 +318,7 @@ func TestLotteryEndToEnd(t *testing.T) {
 		t.Fatalf("unexpected prize type %v", m["prize_type"])
 	}
 
-	// 9. 用户侧中奖名单：可参与/已参与的用户看脱敏名单；不符合条件的用户看不到这场。
+	// 9. 用户侧中奖名单：公开场次对所有登录用户展示脱敏名单。
 	resp = e.req(t, http.MethodGet, fmt.Sprintf("/v1/activities/%d/winners", activityID), userToken, nil)
 	data = mustJSON(t, resp)
 	userWinners := data["winners"].([]any)
@@ -318,7 +326,8 @@ func TestLotteryEndToEnd(t *testing.T) {
 	require.Equal(t, "u***@test.com", userWinners[0].(map[string]any)["email"])
 	resp = e.req(t, http.MethodGet, fmt.Sprintf("/v1/activities/%d/winners", activityID), otherToken, nil)
 	data = mustJSON(t, resp)
-	require.Empty(t, data["winners"].([]any))
+	require.Len(t, data["winners"].([]any), 1)
+	require.Equal(t, "u***@test.com", data["winners"].([]any)[0].(map[string]any)["email"])
 
 	// 10. 非管理员访问管理端 → 403。
 	resp = e.req(t, http.MethodGet, "/v1/admin/activities", userToken, nil)
@@ -388,15 +397,14 @@ func TestBadgeFollowsParticipatableActivities(t *testing.T) {
 
 	data := mustJSON(t, e.req(t, http.MethodGet, "/v1/activities", light, nil))
 	lightActs := data["activities"].([]any)
-	require.Len(t, lightActs, 1, "user who misses the joining condition only sees the open upcoming round")
-	require.Equal(t, "未开始无门槛", lightActs[0].(map[string]any)["name"])
-	vis := mustJSON(t, e.req(t, http.MethodGet, "/v1/me/visibility", light, nil))
-	require.Equal(t, "upcoming", vis["phase"].(string), "badge follows the round this user can join, not the global joining round")
+	require.Len(t, lightActs, 2, "user who misses the joining condition still sees both rounds")
+	vis := e.mustMenu(t, light)
+	require.Equal(t, "joining", vis["lottery_phase"].(string), "badge follows the global joining round")
 
 	data = mustJSON(t, e.req(t, http.MethodGet, "/v1/activities", heavy, nil))
 	require.Len(t, data["activities"].([]any), 2, "eligible user still sees both rounds")
-	vis = mustJSON(t, e.req(t, http.MethodGet, "/v1/me/visibility", heavy, nil))
-	require.Equal(t, "joining", vis["phase"].(string))
+	vis = e.mustMenu(t, heavy)
+	require.Equal(t, "joining", vis["lottery_phase"].(string))
 }
 
 func TestAdminSeesIneligibleActivitiesAndTasks(t *testing.T) {
@@ -422,22 +430,23 @@ func TestAdminSeesIneligibleActivitiesAndTasks(t *testing.T) {
 	mustJSON(t, e.req(t, http.MethodPost, "/v1/admin/tasks", adminToken, task))
 
 	data := mustJSON(t, e.req(t, http.MethodGet, "/v1/activities", user, nil))
-	require.Empty(t, data["activities"].([]any))
-	vis := mustJSON(t, e.req(t, http.MethodGet, "/v1/me/visibility", user, nil))
-	require.Equal(t, "", vis["phase"].(string))
+	require.Len(t, data["activities"].([]any), 1, "every user sees the activity")
+	require.False(t, data["activities"].([]any)[0].(map[string]any)["eligible"].(bool))
+	require.Equal(t, "joining", e.mustMenu(t, user)["lottery_phase"].(string))
 	data = mustJSON(t, e.req(t, http.MethodGet, "/v1/tasks", user, nil))
-	require.Empty(t, data["tasks"].([]any))
-	phase := mustJSON(t, e.req(t, http.MethodGet, "/v1/me/tasks/phase", user, nil))
-	require.Equal(t, "none", phase["phase"].(string))
+	require.Len(t, data["tasks"].([]any), 1, "every user sees the task")
+	require.Equal(t, "active", e.mustMenu(t, user)["task_phase"].(string))
+	prompts := mustJSON(t, e.req(t, http.MethodGet, "/v1/task-prompts", user, nil))
+	require.Empty(t, prompts["tasks"].([]any), "popup still skips users outside the whitelist")
+	elig := mustJSON(t, e.req(t, http.MethodGet, "/v1/eligibility", user, nil))
+	require.Empty(t, elig["activities"].([]any), "lottery popup still skips ineligible users")
 
 	data = mustJSON(t, e.req(t, http.MethodGet, "/v1/activities", adminToken, nil))
 	require.Len(t, data["activities"].([]any), 1, "admin sees activities they do not qualify for")
-	vis = mustJSON(t, e.req(t, http.MethodGet, "/v1/me/visibility", adminToken, nil))
-	require.Equal(t, "joining", vis["phase"].(string), "admin badge counts every round")
+	require.Equal(t, "joining", e.mustMenu(t, adminToken)["lottery_phase"].(string), "admin badge counts every round")
 	data = mustJSON(t, e.req(t, http.MethodGet, "/v1/tasks", adminToken, nil))
 	require.Len(t, data["tasks"].([]any), 1, "admin sees tasks outside the whitelist and conditions")
-	phase = mustJSON(t, e.req(t, http.MethodGet, "/v1/me/tasks/phase", adminToken, nil))
-	require.Equal(t, "active", phase["phase"].(string))
+	require.Equal(t, "active", e.mustMenu(t, adminToken)["task_phase"].(string))
 }
 
 func TestTaskConditionsHideAndBadge(t *testing.T) {
@@ -471,19 +480,28 @@ func TestTaskConditionsHideAndBadge(t *testing.T) {
 	}
 	phase := func(token string) string {
 		t.Helper()
-		data := mustJSON(t, e.req(t, http.MethodGet, "/v1/me/tasks/phase", token, nil))
-		return data["phase"].(string)
+		return e.mustMenu(t, token)["task_phase"].(string)
 	}
 
-	require.Equal(t, []string{"无条件任务"}, names(user8), "conditional task is hidden before the user qualifies")
-	require.Equal(t, "active", phase(user8), "badge stays active because another task is still participatable")
-	require.NotContains(t, names(user7), "条件任务")
+	require.ElementsMatch(t, []string{"无条件任务", "条件任务"}, names(user8), "conditional task stays visible before the user qualifies")
+	require.Equal(t, "active", phase(user8), "badge stays active while any task is running")
+	require.ElementsMatch(t, []string{"无条件任务", "条件任务"}, names(user7))
+	prompts := promptNames(t, e, user8)
+	require.Contains(t, prompts, "无条件任务")
+	require.NotContains(t, prompts, "条件任务", "popup still hides the task until the user qualifies")
 
 	open["status"] = "ended"
 	mustJSON(t, e.req(t, http.MethodPut, fmt.Sprintf("/v1/admin/tasks/%d", openID), adminToken, open))
-	require.Empty(t, names(user8))
-	require.Equal(t, "none", phase(user8), "badge clears when no participatable task remains")
-	require.Equal(t, "none", phase(user7))
+	ended := names(user8)
+	require.ElementsMatch(t, []string{"无条件任务", "条件任务"}, ended, "ended tasks stay on the user list")
+	for _, row := range mustJSON(t, e.req(t, http.MethodGet, "/v1/tasks", user8, nil))["tasks"].([]any) {
+		item := row.(map[string]any)
+		if item["name"] == "无条件任务" {
+			require.Equal(t, "ended", item["status"])
+		}
+	}
+	require.Equal(t, "active", phase(user8), "badge follows the remaining active task for every user")
+	require.Equal(t, "active", phase(user7))
 
 	localNow := time.Now().In(lottery.Beijing())
 	for i := 1; i <= 8; i++ {
@@ -491,10 +509,10 @@ func TestTaskConditionsHideAndBadge(t *testing.T) {
 		e.fake.dailyTokens[date] = map[int64]float64{7: 110e6}
 	}
 	require.NoError(t, e.app.SyncTokens(context.Background(), localNow))
-	require.Equal(t, []string{"条件任务"}, names(user7))
+	require.ElementsMatch(t, []string{"无条件任务", "条件任务"}, names(user7))
 	require.Equal(t, "active", phase(user7))
-	require.Empty(t, names(user8))
-	require.Equal(t, "none", phase(user8))
+	require.ElementsMatch(t, []string{"无条件任务", "条件任务"}, names(user8))
+	require.Equal(t, "active", phase(user8))
 }
 
 func TestHealth(t *testing.T) {
@@ -626,7 +644,9 @@ func TestRepeatGroupSharesParticipation(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	_ = resp.Body.Close()
 
-	require.NotContains(t, activityNames(t, e, user7), "午场")
+	noon := activityView(t, e, user7, "午场")
+	require.NotNil(t, noon, "repeat-blocked round stays on the public list")
+	require.False(t, noon["eligible"].(bool))
 	elig := mustJSON(t, e.req(t, http.MethodGet, "/v1/eligibility", user7, nil))
 	for _, row := range elig["activities"].([]any) {
 		require.NotEqual(t, "午场", row.(map[string]any)["name"])
@@ -726,6 +746,17 @@ func openRepeatActivity(t *testing.T, e *testEnv, adminToken, name string, cfgID
 	return int64(data["id"].(float64))
 }
 
+func activityView(t *testing.T, e *testEnv, token, name string) map[string]any {
+	t.Helper()
+	for _, row := range mustJSON(t, e.req(t, http.MethodGet, "/v1/activities", token, nil))["activities"].([]any) {
+		item := row.(map[string]any)
+		if item["name"] == name {
+			return item
+		}
+	}
+	return nil
+}
+
 func activityNames(t *testing.T, e *testEnv, token string) []string {
 	t.Helper()
 	data := mustJSON(t, e.req(t, http.MethodGet, "/v1/activities", token, nil))
@@ -777,8 +808,12 @@ func TestManualActivitySharesRepeatGroup(t *testing.T) {
 	resp = e.req(t, http.MethodPost, fmt.Sprintf("/v1/activities/%d/participate", otherManualID), user, nil)
 	require.Equal(t, http.StatusForbidden, resp.StatusCode)
 	_ = resp.Body.Close()
-	require.NotContains(t, activityNames(t, e, user), "手动另一场")
-	require.NotContains(t, activityNames(t, e, user), "午场")
+	blocked := activityView(t, e, user, "手动另一场")
+	require.NotNil(t, blocked)
+	require.False(t, blocked["eligible"].(bool))
+	dailyView := activityView(t, e, user, "午场")
+	require.NotNil(t, dailyView)
+	require.False(t, dailyView["eligible"].(bool))
 
 	resp = e.req(t, http.MethodPost, fmt.Sprintf("/v1/activities/%d/participate", otherManualID), other, nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
@@ -873,13 +908,22 @@ func TestTaskEndToEnd(t *testing.T) {
 	resp = e.req(t, http.MethodPost, "/v1/admin/tasks", adminToken, sampleTask("进行中任务", today.Format("2006-01-02"), 7, "balance"))
 	mustJSON(t, resp)
 
-	// 用户侧可见与奖励记录（已结算的余额任务已过期，不再出现在任务列表）
+	// 用户侧可见与奖励记录（已结束的余额任务仍展示，状态为 ended）
 	data = mustJSON(t, e.req(t, http.MethodGet, "/v1/tasks", userToken, nil))
-	require.Len(t, data["tasks"].([]any), 1, "only the ongoing task is visible")
+	userTasks := data["tasks"].([]any)
+	require.Len(t, userTasks, 2, "ended task stays visible next to the ongoing one")
+	var sawEnded bool
+	for _, row := range userTasks {
+		item := row.(map[string]any)
+		if item["name"] == "余额任务" {
+			require.Equal(t, "ended", item["status"])
+			sawEnded = true
+		}
+	}
+	require.True(t, sawEnded)
 	data = mustJSON(t, e.req(t, http.MethodGet, "/v1/me/task-rewards", userToken, nil))
 	require.Len(t, data["rewards"].([]any), 1)
-	data = mustJSON(t, e.req(t, http.MethodGet, "/v1/me/tasks/phase", userToken, nil))
-	require.Equal(t, "active", data["phase"].(string))
+	require.Equal(t, "active", e.mustMenu(t, userToken)["task_phase"].(string))
 
 	// ---- 2. 重复参与策略 join_once：第 1 天发奖，第 2 天封顶 ----
 	task := sampleTask("限参与一次任务", dayBefore.Format("2006-01-02"), 2, "balance")
@@ -931,8 +975,7 @@ func TestTaskEndToEnd(t *testing.T) {
 	require.Equal(t, "ended", data["task"].(map[string]any)["status"].(string))
 
 	// ---- 5. 用户侧 phase：所有任务结束后 none？ —— 码池/余额任务仍 active ----
-	data = mustJSON(t, e.req(t, http.MethodGet, "/v1/me/tasks/phase", userToken, nil))
-	require.Equal(t, "active", data["phase"].(string))
+	require.Equal(t, "active", e.mustMenu(t, userToken)["task_phase"].(string))
 
 	// ---- 6. 分组/模型下拉代理 ----
 	data = mustJSON(t, e.req(t, http.MethodGet, "/v1/admin/task-options/groups", adminToken, nil))
@@ -955,42 +998,44 @@ func TestTaskVisibility(t *testing.T) {
 	user102 := signJWT(e.secret, 102, "user")
 	today := time.Now().In(lottery.Beijing()).Format("2006-01-02")
 
-	// 白名单任务：仅 user101 可见
+	// 白名单只限制弹窗和结算，列表两边都能看到。
 	task := sampleTask("白名单任务", today, 7, "balance")
 	task["whitelist"] = []string{"user101@test.com"}
 	data := mustJSON(t, e.req(t, http.MethodPost, "/v1/admin/tasks", adminToken, task))
 	_ = data
 
 	data = mustJSON(t, e.req(t, http.MethodGet, "/v1/tasks", user101, nil))
-	require.Len(t, data["tasks"].([]any), 1, "whitelisted user sees the task")
+	require.Len(t, data["tasks"].([]any), 1)
 	data = mustJSON(t, e.req(t, http.MethodGet, "/v1/tasks", user102, nil))
-	require.Empty(t, data["tasks"].([]any), "user outside whitelist cannot see the task")
-	data = mustJSON(t, e.req(t, http.MethodGet, "/v1/me/tasks/phase", user102, nil))
-	require.Equal(t, "none", data["phase"].(string))
+	require.Len(t, data["tasks"].([]any), 1, "user outside whitelist still sees the task")
+	require.Equal(t, "active", e.mustMenu(t, user102)["task_phase"].(string))
+	require.NotContains(t, promptNames(t, e, user102), "白名单任务")
+	require.Contains(t, promptNames(t, e, user101), "白名单任务")
 
-	// 黑名单任务：user101 被排除（但仍能看到自己在白名单内的任务），user102 可见
+	// 黑名单同样不隐藏列表。
 	task = sampleTask("黑名单任务", today, 7, "balance")
 	task["blacklist"] = []string{"user101@test.com"}
 	mustJSON(t, e.req(t, http.MethodPost, "/v1/admin/tasks", adminToken, task))
 
 	data = mustJSON(t, e.req(t, http.MethodGet, "/v1/tasks", user101, nil))
-	tasks101 := data["tasks"].([]any)
-	require.Len(t, tasks101, 1, "blacklisted user sees only the whitelisted task, not the blacklisted one")
-	require.Equal(t, "白名单任务", tasks101[0].(map[string]any)["name"].(string))
+	require.Len(t, data["tasks"].([]any), 2)
 	data = mustJSON(t, e.req(t, http.MethodGet, "/v1/tasks", user102, nil))
-	tasks102 := data["tasks"].([]any)
-	require.Len(t, tasks102, 1, "other users still see the blacklisted task")
-	require.Equal(t, "黑名单任务", tasks102[0].(map[string]any)["name"].(string))
+	require.Len(t, data["tasks"].([]any), 2)
 
-	// ---- 全局显隐：恢复默认 partial（白名单空）后，非管理员的任务中心整体不可见 ----
-	mustJSON(t, e.req(t, http.MethodPut, "/v1/admin/task-settings", adminToken,
-		map[string]any{"visibility": map[string]any{"mode": "partial"}}))
+	// 每条任务收成 partial 且名单为空：列表隐藏。菜单仍按右上角「全部用户」。
+	setTasksVisibility(t, e, lottery.Visibility{Mode: lottery.VisibilityPartial})
 	data = mustJSON(t, e.req(t, http.MethodGet, "/v1/tasks", user102, nil))
-	require.Empty(t, data["tasks"].([]any), "partial mode hides task center from non-whitelisted users")
-	data = mustJSON(t, e.req(t, http.MethodGet, "/v1/me/tasks/phase", user102, nil))
-	require.Equal(t, "none", data["phase"].(string))
-	data = mustJSON(t, e.req(t, http.MethodGet, "/v1/me/task-visibility", user102, nil))
-	require.Equal(t, false, data["visible"].(bool))
+	require.Empty(t, data["tasks"].([]any), "item partial hides the task list outside the whitelist")
+	require.Equal(t, "none", e.mustMenu(t, user102)["task_phase"].(string))
+	require.Equal(t, true, e.mustMenu(t, user102)["task_visible"].(bool), "menu follows the top-right setting, which is all")
+	require.Empty(t, promptNames(t, e, user102))
+
+	setTasksVisibility(t, e, lottery.Visibility{Mode: lottery.VisibilityPartial, AllowedEmails: []string{"user102@test.com"}})
+	data = mustJSON(t, e.req(t, http.MethodGet, "/v1/tasks", user102, nil))
+	require.Len(t, data["tasks"].([]any), 2, "whitelisted user sees the task list")
+	require.Equal(t, true, e.mustMenu(t, user102)["task_visible"].(bool))
+	data = mustJSON(t, e.req(t, http.MethodGet, "/v1/tasks", user101, nil))
+	require.Empty(t, data["tasks"].([]any))
 }
 
 func TestTaskPromptFlow(t *testing.T) {
@@ -1000,18 +1045,16 @@ func TestTaskPromptFlow(t *testing.T) {
 	user8 := signJWT(e.secret, 8, "user")
 	today := time.Now().In(lottery.Beijing()).Format("2006-01-02")
 
-	// 默认 partial：引导弹窗按普通用户显隐，白名单空时谁都不弹。
+	// 这一条任务设为 partial 且名单为空：普通用户不弹，管理员仍看得到。
 	hidden := sampleTask("未开放任务", today, 7, "balance")
 	hidden["cover"] = "https://example.com/cover.png"
 	hidden["description"] = "说明"
+	hidden["visibility"] = map[string]any{"mode": "partial"}
 	mustJSON(t, e.req(t, http.MethodPost, "/v1/admin/tasks", adminToken, hidden))
 	data := mustJSON(t, e.req(t, http.MethodGet, "/v1/task-prompts", user7, nil))
 	require.Empty(t, data["tasks"].([]any))
-	// 管理员与任务列表一样不受 partial 显隐限制，WebSocket 用同一份结果推送。
+	// 管理员不受这一条任务的可见范围限制，WebSocket 用同一份结果推送。
 	require.Contains(t, promptNames(t, e, adminToken), "未开放任务")
-
-	mustJSON(t, e.req(t, http.MethodPut, "/v1/admin/task-settings", adminToken,
-		map[string]any{"visibility": map[string]any{"mode": "all"}}))
 
 	// 无条件任务：封面、名称、说明都返回。
 	open := sampleTask("开放任务", today, 7, "balance")
@@ -1205,4 +1248,354 @@ func TestUserActivityOmitsParticipantCount(t *testing.T) {
 		"config": cfgBody,
 	}))
 	require.Equal(t, true, updated["config"].(map[string]any)["show_participant_count"])
+}
+
+func TestActivityDeleteAndTaskArchive(t *testing.T) {
+	e := newTestEnv(t)
+	adminToken := signJWT(e.secret, 1, "admin")
+	userToken := signJWT(e.secret, 7, "user")
+	mustJSON(t, e.req(t, http.MethodPut, "/v1/admin/settings", adminToken,
+		map[string]any{"visibility": map[string]any{"mode": "all"}}))
+	mustJSON(t, e.req(t, http.MethodPut, "/v1/admin/task-settings", adminToken,
+		map[string]any{"visibility": map[string]any{"mode": "all"}}))
+	now := time.Now().UTC()
+	today := time.Now().In(lottery.Beijing()).Format("2006-01-02")
+
+	joining := sampleActivity(now.Add(-time.Hour), now.Add(time.Hour))
+	joining["conditions"] = []map[string]any{}
+	data := mustJSON(t, e.req(t, http.MethodPost, "/v1/admin/activities", adminToken, joining))
+	openID := int64(data["id"].(float64))
+	resp := e.req(t, http.MethodPost, fmt.Sprintf("/v1/admin/activities/%d/delete", openID), adminToken, map[string]any{})
+	require.Equal(t, http.StatusConflict, resp.StatusCode, "joining round cannot be deleted")
+	_ = resp.Body.Close()
+
+	mustJSON(t, e.req(t, http.MethodPost, fmt.Sprintf("/v1/admin/activities/%d/close", openID), adminToken, nil))
+	mustJSON(t, e.req(t, http.MethodPost, fmt.Sprintf("/v1/admin/activities/%d/delete", openID), adminToken, map[string]any{}))
+	left := mustJSON(t, e.req(t, http.MethodGet, "/v1/admin/activities", adminToken, nil))["activities"].([]any)
+	require.Empty(t, left)
+
+	drawnBody := sampleActivity(now.Add(-2*time.Hour), now.Add(-time.Minute))
+	drawnBody["conditions"] = []map[string]any{}
+	data = mustJSON(t, e.req(t, http.MethodPost, "/v1/admin/activities", adminToken, drawnBody))
+	drawnID := int64(data["id"].(float64))
+	require.NoError(t, e.app.Store.AddParticipant(drawnID, 7, "user7@test.com", 1, 0))
+	mustJSON(t, e.req(t, http.MethodPost, fmt.Sprintf("/v1/admin/activities/%d/draw", drawnID), adminToken, nil))
+	mustJSON(t, e.req(t, http.MethodPost, fmt.Sprintf("/v1/admin/activities/%d/delete", drawnID), adminToken, map[string]any{}))
+	kept, err := e.app.Store.GetActivity(drawnID)
+	require.NoError(t, err)
+	require.Equal(t, "deleted", kept.Status)
+	n, err := e.app.Store.CountWinners(drawnID)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), n, "soft delete keeps winner rows")
+	mine := mustJSON(t, e.req(t, http.MethodGet, "/v1/my/winnings", userToken, nil))["winners"].([]any)
+	require.NotEmpty(t, mine, "the winner still sees their prize")
+	resp = e.req(t, http.MethodGet, fmt.Sprintf("/v1/activities/%d/winners", drawnID), userToken, nil)
+	data = mustJSON(t, resp)
+	require.Empty(t, data["winners"].([]any), "deleted round leaves the public list")
+
+	archivedBody := sampleActivity(now.Add(time.Hour), now.Add(2*time.Hour))
+	archivedBody["conditions"] = []map[string]any{}
+	data = mustJSON(t, e.req(t, http.MethodPost, "/v1/admin/activities", adminToken, archivedBody))
+	archivedID := int64(data["id"].(float64))
+	mustJSON(t, e.req(t, http.MethodDelete, fmt.Sprintf("/v1/admin/activities/%d", archivedID), adminToken, nil))
+	mustJSON(t, e.req(t, http.MethodPost, fmt.Sprintf("/v1/admin/activities/%d/delete", archivedID), adminToken, map[string]any{}))
+
+	task := sampleTask("可归档任务", today, 3, "balance")
+	data = mustJSON(t, e.req(t, http.MethodPost, "/v1/admin/tasks", adminToken, task))
+	taskID := int64(data["id"].(float64))
+	resp = e.req(t, http.MethodPost, fmt.Sprintf("/v1/admin/tasks/%d/archive", taskID), adminToken, map[string]any{})
+	require.Equal(t, http.StatusConflict, resp.StatusCode, "active task cannot be archived")
+	_ = resp.Body.Close()
+
+	task["status"] = "ended"
+	mustJSON(t, e.req(t, http.MethodPut, fmt.Sprintf("/v1/admin/tasks/%d", taskID), adminToken, task))
+	listed := mustJSON(t, e.req(t, http.MethodGet, "/v1/tasks", userToken, nil))["tasks"].([]any)
+	require.Len(t, listed, 1)
+	require.Equal(t, "ended", listed[0].(map[string]any)["status"])
+	require.Equal(t, "none", e.mustMenu(t, userToken)["task_phase"])
+
+	mustJSON(t, e.req(t, http.MethodPost, fmt.Sprintf("/v1/admin/tasks/%d/archive", taskID), adminToken, map[string]any{}))
+	require.Empty(t, mustJSON(t, e.req(t, http.MethodGet, "/v1/tasks", userToken, nil))["tasks"].([]any))
+	adminTasks := mustJSON(t, e.req(t, http.MethodGet, "/v1/admin/tasks", adminToken, nil))["tasks"].([]any)
+	require.Len(t, adminTasks, 1)
+	require.Equal(t, "archived", adminTasks[0].(map[string]any)["status"])
+}
+
+func TestTaskProgressShowsTestUsage(t *testing.T) {
+	e := newTestEnv(t)
+	ctx := context.Background()
+	adminToken := signJWT(e.secret, 1, "admin")
+	mustJSON(t, e.req(t, http.MethodPut, "/v1/admin/task-settings", adminToken,
+		map[string]any{"visibility": map[string]any{"mode": "all"}}))
+	userToken := signJWT(e.secret, 101, "user")
+	today := time.Now().In(lottery.Beijing())
+	date := today.Format("2006-01-02")
+
+	progressTask := sampleTask("进度任务", date, 7, "balance")
+	progressTask["progress_color"] = "#10a37f"
+	progressTask["progress_svg"] = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><circle cx="8" cy="8" r="4"><animate attributeName="opacity" values="1;0.2;1" dur="1s" repeatCount="indefinite"/></circle></svg>`
+	mustJSON(t, e.req(t, http.MethodPost, "/v1/admin/tasks", adminToken, progressTask))
+	require.NoError(t, e.app.Store.UpsertTaskTestUsage(date, 7, "grok4.6", 45e6))
+
+	item := mustJSON(t, e.req(t, http.MethodGet, "/v1/tasks", userToken, nil))["tasks"].([]any)[0].(map[string]any)
+	require.Equal(t, 45e6, item["progress_tokens"])
+	require.Equal(t, 100e6, item["progress_cap"])
+	require.EqualValues(t, 1, item["progress_units"])
+	require.Equal(t, true, item["progress_ready"])
+	require.Equal(t, "#10a37f", item["progress_color"], "用户侧要能拿到配置的进度条颜色")
+	require.Contains(t, item["progress_svg"], "<animate", "用户侧要能拿到进度条小动画")
+
+	e.fake.modelUsage[date] = map[int64]float64{101: 20e6}
+	item = mustJSON(t, e.req(t, http.MethodGet, "/v1/tasks", userToken, nil))["tasks"].([]any)[0].(map[string]any)
+	require.Equal(t, 65e6, item["progress_tokens"])
+
+	yesterday := today.AddDate(0, 0, -1).Format("2006-01-02")
+	data := mustJSON(t, e.req(t, http.MethodPost, "/v1/admin/tasks", adminToken, sampleTask("昨日仅测试用量", yesterday, 3, "balance")))
+	taskID := int64(data["id"].(float64))
+	require.NoError(t, e.app.Store.UpsertTaskTestUsage(yesterday, 7, "grok4.6", 200e6))
+	e.app.SettleDueTasks(ctx, today)
+	rewards := mustJSON(t, e.req(t, http.MethodGet, fmt.Sprintf("/v1/admin/tasks/%d/rewards", taskID), adminToken, nil))["rewards"].([]any)
+	require.Empty(t, rewards, "test usage is display-only and does not settle")
+}
+
+func setActivitiesVisibility(t *testing.T, e *testEnv, v lottery.Visibility) {
+	t.Helper()
+	acts, err := e.app.Store.ListActivities()
+	require.NoError(t, err)
+	for i := range acts {
+		acts[i].Visibility = v
+		require.NoError(t, e.app.Store.UpdateActivity(&acts[i]))
+	}
+}
+
+func setTasksVisibility(t *testing.T, e *testEnv, v lottery.Visibility) {
+	t.Helper()
+	tasks, err := e.app.Store.ListTasks()
+	require.NoError(t, err)
+	for i := range tasks {
+		tasks[i].Visibility = v
+		_, err := e.app.Store.UpsertTask(&tasks[i])
+		require.NoError(t, err)
+	}
+}
+
+func TestEligibleAndPartialVisibility(t *testing.T) {
+	e := newTestEnv(t)
+	adminToken := signJWT(e.secret, 1, "admin")
+	user7 := signJWT(e.secret, 7, "user")
+	user8 := signJWT(e.secret, 8, "user")
+	now := time.Now().UTC()
+	today := time.Now().In(lottery.Beijing()).Format("2006-01-02")
+	// 右上角菜单设为全部用户，后面的断言测的是每一场、每一条自己的可见范围。
+	mustJSON(t, e.req(t, http.MethodPut, "/v1/admin/settings", adminToken,
+		map[string]any{"visibility": map[string]any{"mode": "all"}}))
+	mustJSON(t, e.req(t, http.MethodPut, "/v1/admin/task-settings", adminToken,
+		map[string]any{"visibility": map[string]any{"mode": "all"}}))
+
+	high := sampleActivity(now.Add(-time.Hour), now.Add(2*time.Hour))
+	high["name"] = "高门槛"
+	high["visibility"] = map[string]any{"mode": "eligible"}
+	mustJSON(t, e.req(t, http.MethodPost, "/v1/admin/activities", adminToken, high))
+	openRound := sampleActivity(now.Add(2*time.Hour), now.Add(4*time.Hour))
+	openRound["name"] = "无门槛"
+	openRound["conditions"] = []map[string]any{}
+	openRound["visibility"] = map[string]any{"mode": "eligible"}
+	mustJSON(t, e.req(t, http.MethodPost, "/v1/admin/activities", adminToken, openRound))
+
+	require.Equal(t, []string{"无门槛"}, activityNames(t, e, user8))
+	vis := e.mustMenu(t, user8)
+	require.Equal(t, true, vis["lottery_visible"].(bool))
+	require.Equal(t, "upcoming", vis["lottery_phase"].(string), "badge only counts rounds this user can see")
+
+	localNow := time.Now().In(lottery.Beijing())
+	for i := 1; i <= 8; i++ {
+		date := localNow.AddDate(0, 0, -i).Format("2006-01-02")
+		e.fake.dailyTokens[date] = map[int64]float64{7: 110e6}
+	}
+	require.NoError(t, e.app.SyncTokens(context.Background(), localNow))
+	require.ElementsMatch(t, []string{"高门槛", "无门槛"}, activityNames(t, e, user7))
+	vis = e.mustMenu(t, user7)
+	require.Equal(t, "joining", vis["lottery_phase"].(string))
+	require.ElementsMatch(t, []string{"高门槛", "无门槛"}, activityNames(t, e, adminToken))
+	require.Equal(t, []string{"无门槛"}, activityNames(t, e, user8))
+
+	cond := sampleTask("条件任务", today, 7, "balance")
+	cond["conditions"] = []map[string]any{
+		{"dimension": "token_usage", "window_days": 7, "mode": "per_day", "threshold": 100000000, "bonus_mode": "none"},
+	}
+	cond["visibility"] = map[string]any{"mode": "eligible"}
+	mustJSON(t, e.req(t, http.MethodPost, "/v1/admin/tasks", adminToken, cond))
+	openTask := sampleTask("无条件任务", today, 7, "balance")
+	openTask["visibility"] = map[string]any{"mode": "eligible"}
+	mustJSON(t, e.req(t, http.MethodPost, "/v1/admin/tasks", adminToken, openTask))
+	only := sampleTask("仅7", today, 7, "balance")
+	only["whitelist"] = []string{"user7@test.com"}
+	only["visibility"] = map[string]any{"mode": "eligible"}
+	mustJSON(t, e.req(t, http.MethodPost, "/v1/admin/tasks", adminToken, only))
+
+	taskNames := func(token string) []string {
+		t.Helper()
+		data := mustJSON(t, e.req(t, http.MethodGet, "/v1/tasks", token, nil))
+		raw := data["tasks"].([]any)
+		out := make([]string, 0, len(raw))
+		for _, row := range raw {
+			out = append(out, row.(map[string]any)["name"].(string))
+		}
+		return out
+	}
+	require.ElementsMatch(t, []string{"无条件任务"}, taskNames(user8))
+	require.ElementsMatch(t, []string{"条件任务", "无条件任务", "仅7"}, taskNames(user7))
+	require.ElementsMatch(t, []string{"条件任务", "无条件任务", "仅7"}, taskNames(adminToken))
+	require.Equal(t, true, e.mustMenu(t, user8)["task_visible"].(bool))
+	require.Equal(t, "active", e.mustMenu(t, user8)["task_phase"].(string))
+
+	setActivitiesVisibility(t, e, lottery.Visibility{Mode: lottery.VisibilityPartial, AllowedEmails: []string{"user7@test.com"}})
+	require.ElementsMatch(t, []string{"高门槛", "无门槛"}, activityNames(t, e, user7))
+	require.Empty(t, activityNames(t, e, user8))
+	vis = e.mustMenu(t, user8)
+	require.Equal(t, true, vis["lottery_visible"].(bool), "menu stays on while the top-right setting is all")
+	require.Equal(t, "", vis["lottery_phase"].(string), "badge only counts rounds this user can see")
+
+	setTasksVisibility(t, e, lottery.Visibility{Mode: lottery.VisibilityPartial})
+	require.Empty(t, taskNames(user8))
+	require.Equal(t, true, e.mustMenu(t, user8)["task_visible"].(bool))
+	require.Equal(t, "none", e.mustMenu(t, user8)["task_phase"].(string))
+
+	resp := e.req(t, http.MethodPut, "/v1/admin/settings", adminToken,
+		map[string]any{"visibility": map[string]any{"mode": "nope"}})
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	_ = resp.Body.Close()
+}
+
+func TestMenuSettingsGate(t *testing.T) {
+	e := newTestEnv(t)
+	adminToken := signJWT(e.secret, 1, "admin")
+	user7 := signJWT(e.secret, 7, "user")
+	user8 := signJWT(e.secret, 8, "user")
+	now := time.Now().UTC()
+	today := time.Now().In(lottery.Beijing()).Format("2006-01-02")
+
+	high := sampleActivity(now.Add(-time.Hour), now.Add(2*time.Hour))
+	high["name"] = "高门槛"
+	high["visibility"] = map[string]any{"mode": "all"}
+	mustJSON(t, e.req(t, http.MethodPost, "/v1/admin/activities", adminToken, high))
+
+	cond := sampleTask("条件任务", today, 7, "balance")
+	cond["conditions"] = []map[string]any{
+		{"dimension": "token_usage", "window_days": 7, "mode": "per_day", "threshold": 100000000, "bonus_mode": "none"},
+	}
+	cond["visibility"] = map[string]any{"mode": "all"}
+	mustJSON(t, e.req(t, http.MethodPost, "/v1/admin/tasks", adminToken, cond))
+
+	localNow := time.Now().In(lottery.Beijing())
+	for i := 1; i <= 8; i++ {
+		date := localNow.AddDate(0, 0, -i).Format("2006-01-02")
+		e.fake.dailyTokens[date] = map[int64]float64{7: 110e6}
+	}
+	require.NoError(t, e.app.SyncTokens(context.Background(), localNow))
+
+	taskNames := func(token string) []string {
+		t.Helper()
+		data := mustJSON(t, e.req(t, http.MethodGet, "/v1/tasks", token, nil))
+		raw := data["tasks"].([]any)
+		out := make([]string, 0, len(raw))
+		for _, row := range raw {
+			out = append(out, row.(map[string]any)["name"].(string))
+		}
+		return out
+	}
+
+	require.Equal(t, []string{"高门槛"}, activityNames(t, e, user7))
+	require.Equal(t, []string{"高门槛"}, activityNames(t, e, user8))
+	require.Equal(t, []string{"条件任务"}, taskNames(user7))
+	require.Equal(t, []string{"条件任务"}, taskNames(user8))
+	require.Equal(t, false, e.mustMenu(t, user7)["lottery_visible"].(bool))
+	require.Equal(t, false, e.mustMenu(t, user8)["lottery_visible"].(bool))
+	require.Equal(t, false, e.mustMenu(t, user7)["task_visible"].(bool))
+	require.Equal(t, false, e.mustMenu(t, user8)["task_visible"].(bool))
+
+	resp := e.req(t, http.MethodPut, "/v1/admin/settings", adminToken,
+		map[string]any{"visibility": map[string]any{"mode": "eligible"}})
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	_ = resp.Body.Close()
+	require.NoError(t, e.app.Store.SetState("visibility_json", `{"mode":"eligible","allowed_emails":[]}`))
+	require.Equal(t, false, e.mustMenu(t, user7)["lottery_visible"].(bool))
+	require.Equal(t, []string{"高门槛"}, activityNames(t, e, user8))
+
+	mustJSON(t, e.req(t, http.MethodPut, "/v1/admin/settings", adminToken,
+		map[string]any{"visibility": map[string]any{"mode": "partial", "allowed_emails": []string{"user8@test.com"}}}))
+	vis := e.mustMenu(t, user8)
+	require.Equal(t, true, vis["lottery_visible"].(bool))
+	require.Equal(t, "joining", vis["lottery_phase"].(string))
+	vis = e.mustMenu(t, user7)
+	require.Equal(t, false, vis["lottery_visible"].(bool))
+	require.Equal(t, []string{"高门槛"}, activityNames(t, e, user7))
+
+	resp = e.req(t, http.MethodPut, "/v1/admin/task-settings", adminToken,
+		map[string]any{"visibility": map[string]any{"mode": "eligible"}})
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	_ = resp.Body.Close()
+	require.Equal(t, false, e.mustMenu(t, user7)["task_visible"].(bool))
+	require.Equal(t, []string{"条件任务"}, taskNames(user8))
+
+	mustJSON(t, e.req(t, http.MethodPut, "/v1/admin/task-settings", adminToken,
+		map[string]any{"visibility": map[string]any{"mode": "partial", "allowed_emails": []string{"user8@test.com"}}}))
+	require.Equal(t, true, e.mustMenu(t, user8)["task_visible"].(bool))
+	require.Equal(t, false, e.mustMenu(t, user7)["task_visible"].(bool))
+	require.Equal(t, []string{"条件任务"}, taskNames(user7))
+
+	mustJSON(t, e.req(t, http.MethodPut, "/v1/admin/task-settings", adminToken,
+		map[string]any{"visibility": map[string]any{"mode": "all"}}))
+	setTasksVisibility(t, e, lottery.Visibility{Mode: lottery.VisibilityPartial})
+	require.Empty(t, taskNames(user8))
+	require.Equal(t, true, e.mustMenu(t, user8)["task_visible"].(bool))
+	require.Equal(t, "none", e.mustMenu(t, user8)["task_phase"].(string))
+}
+
+// TestMenuRouteReplacesProbes 侧边栏显隐/角标统一走 /v1/me/menu，三条分散探测接口已下线。
+func TestMenuRouteReplacesProbes(t *testing.T) {
+	e := newTestEnv(t)
+	adminToken := signJWT(e.secret, 1, "admin")
+	menu := e.mustMenu(t, adminToken)
+	require.Equal(t, true, menu["lottery_visible"].(bool))
+	require.Equal(t, true, menu["task_visible"].(bool))
+	for _, path := range []string{"/v1/me/visibility", "/v1/me/tasks/phase", "/v1/me/task-visibility"} {
+		resp := e.req(t, http.MethodGet, path, adminToken, nil)
+		_ = resp.Body.Close()
+		require.Equal(t, http.StatusNotFound, resp.StatusCode, path+" must no longer be routed")
+	}
+}
+
+// TestTaskProgressSvgRoundTrip 任务管理上传的进度条小动画（SVG 源码）与进度条颜色随任务落库并原样回显，
+// 清空后保存不残留；非法颜色直接 400。
+func TestTaskProgressSvgRoundTrip(t *testing.T) {
+	e := newTestEnv(t)
+	adminToken := signJWT(e.secret, 1, "admin")
+	today := time.Now().In(lottery.Beijing()).Format("2006-01-02")
+	svg := `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 8"><circle cx="4" cy="4" r="2"><animate attributeName="opacity" values="1;0.2;1" dur="1.2s" repeatCount="indefinite"/></circle></svg>`
+
+	input := sampleTask("进度动画任务", today, 7, "balance")
+	input["progress_svg"] = svg
+	input["progress_color"] = "#22c55e"
+	created := mustJSON(t, e.req(t, http.MethodPost, "/v1/admin/tasks", adminToken, input))
+	id := int64(created["id"].(float64))
+
+	adminURL := fmt.Sprintf("/v1/admin/tasks/%d", id)
+	task := mustJSON(t, e.req(t, http.MethodGet, adminURL, adminToken, nil))["task"].(map[string]any)
+	require.Equal(t, svg, task["progress_svg"])
+	require.Equal(t, "#22c55e", task["progress_color"])
+
+	// 非法颜色（既不是 #RGB 也不是 #RRGGBB）直接拒绝。
+	bad := sampleTask("非法颜色任务", today, 7, "balance")
+	bad["progress_color"] = "red"
+	resp := e.req(t, http.MethodPost, "/v1/admin/tasks", adminToken, bad)
+	_ = resp.Body.Close()
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+
+	input["progress_svg"] = ""
+	input["progress_color"] = ""
+	mustJSON(t, e.req(t, http.MethodPut, adminURL, adminToken, input))
+	task = mustJSON(t, e.req(t, http.MethodGet, adminURL, adminToken, nil))["task"].(map[string]any)
+	require.Empty(t, task["progress_svg"])
+	require.Empty(t, task["progress_color"])
 }

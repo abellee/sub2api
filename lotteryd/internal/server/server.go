@@ -39,6 +39,13 @@ func (s *Server) RunWSHub(ctx context.Context) {
 	s.wsHub.Run(ctx)
 }
 
+// WakeWS 让在线连接马上重算资格，并推送新的中奖记录。
+func (s *Server) WakeWS() {
+	if s != nil && s.wsHub != nil {
+		s.wsHub.Wake()
+	}
+}
+
 // SetAuthMode configures the authentication mode ("local" or "introspect").
 func (s *Server) SetAuthMode(mode string) {
 	if mode == "introspect" {
@@ -171,13 +178,11 @@ func (s *Server) Handler() http.Handler {
 	//（并入主站后经 vite/nginx 代理转发，部分代理对 upgrade 请求不应用 rewrite）。
 	mux.Handle("GET /v1/ws", http.HandlerFunc(s.ServeWS))
 	mux.Handle("GET /lotteryd/v1/ws", http.HandlerFunc(s.ServeWS))
-	mux.Handle("GET /v1/me/visibility", s.requireUser(s.handleMyVisibility))
+	mux.Handle("GET /v1/me/menu", s.requireUser(s.handleMyMenu))
 
 	// 任务模块（用户侧）。
 	mux.Handle("GET /v1/tasks", s.requireUser(s.handleListTasks))
 	mux.Handle("GET /v1/task-prompts", s.requireUser(s.handleTaskPrompts))
-	mux.Handle("GET /v1/me/tasks/phase", s.requireUser(s.handleMyTasksPhase))
-	mux.Handle("GET /v1/me/task-visibility", s.requireUser(s.handleMyTaskVisibility))
 	mux.Handle("GET /v1/me/task-rewards", s.requireUser(s.handleMyTaskRewards))
 
 	// Admin endpoints.
@@ -186,6 +191,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /v1/admin/activities/{id}", s.requireAdmin(s.handleAdminGetActivity))
 	mux.Handle("PUT /v1/admin/activities/{id}", s.requireAdmin(s.handleAdminUpdateActivity))
 	mux.Handle("DELETE /v1/admin/activities/{id}", s.requireAdmin(s.handleAdminArchiveActivity))
+	mux.Handle("POST /v1/admin/activities/{id}/delete", s.requireAdmin(s.handleAdminDeleteActivity))
 	mux.Handle("GET /v1/admin/activities/{id}/participants", s.requireAdmin(s.handleAdminParticipants))
 	mux.Handle("GET /v1/admin/activities/{id}/winners", s.requireAdmin(s.handleAdminWinners))
 	mux.Handle("POST /v1/admin/activities/{id}/draw", s.requireAdmin(s.handleAdminDraw))
@@ -206,7 +212,9 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /v1/admin/tasks/{id}", s.requireAdmin(s.handleAdminGetTask))
 	mux.Handle("PUT /v1/admin/tasks/{id}", s.requireAdmin(s.handleAdminUpdateTask))
 	mux.Handle("DELETE /v1/admin/tasks/{id}", s.requireAdmin(s.handleAdminDeleteTask))
+	mux.Handle("POST /v1/admin/tasks/{id}/archive", s.requireAdmin(s.handleAdminArchiveTask))
 	mux.Handle("GET /v1/admin/tasks/{id}/rewards", s.requireAdmin(s.handleAdminTaskRewards))
+	mux.Handle("GET /v1/admin/tasks/{id}/notifications", s.requireAdmin(s.handleAdminTaskNotifications))
 	mux.Handle("POST /v1/admin/tasks/{id}/fulfill", s.requireAdmin(s.handleAdminTaskFulfill))
 	mux.Handle("GET /v1/admin/tasks/{id}/codes", s.requireAdmin(s.handleAdminTaskCodesGet))
 	mux.Handle("PUT /v1/admin/tasks/{id}/codes", s.requireAdmin(s.handleAdminTaskCodesPut))
@@ -219,11 +227,16 @@ func (s *Server) Handler() http.Handler {
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	settlement := "enabled"
+	if s.App.Cfg.DisableSettlement {
+		settlement = "draw-only"
+	}
 	ok(w, map[string]any{
 		"status":         "ok",
 		"version":        s.Version,
 		"started_at":     s.StartedAt,
 		"uptime_seconds": int64(time.Since(s.StartedAt).Seconds()),
+		"settlement":     settlement,
 	})
 }
 
@@ -252,16 +265,11 @@ func (s *Server) handleEligibility(w http.ResponseWriter, r *http.Request, claim
 }
 
 // handleActivityWinners 用户侧中奖名单（邮箱脱敏）。
+// 场次在公开列表里就能看，不再按参与资格隐藏。
 func (s *Server) handleActivityWinners(w http.ResponseWriter, r *http.Request, claims *Claims) {
 	id, err := pathID(r)
 	if err != nil {
 		fail(w, http.StatusBadRequest, 400, "invalid activity id")
-		return
-	}
-	// 用户侧显隐：部分人可见模式下，白名单外用户不返回任何中奖数据。
-	// 未满足参与条件、且未参与/未中奖的场次同样不返回名单。
-	if !s.App.IsUserAllowed(claims.Role, claims.Email) {
-		ok(w, map[string]any{"winners": []lottery.Winner{}})
 		return
 	}
 	canSee, err := s.App.UserCanSeeActivity(r.Context(), id, claims.UserID, claims.Email, claims.Role, claims.RegisteredAt)
@@ -294,15 +302,14 @@ func (s *Server) handleActivityWinners(w http.ResponseWriter, r *http.Request, c
 	ok(w, map[string]any{"winners": winners})
 }
 
-// handleMyVisibility 用户侧显隐结果 + 当前抽奖状态（供侧边栏入口显隐与状态角标）。
-// 角标只反映该用户可参与（或已参与/已中奖）的场次。
-func (s *Server) handleMyVisibility(w http.ResponseWriter, r *http.Request, claims *Claims) {
-	visible := s.App.IsUserAllowed(claims.Role, claims.Email)
-	phase := ""
-	if visible {
-		phase = s.App.UserLotteryPhase(r.Context(), claims.UserID, claims.Email, claims.Role, claims.RegisteredAt)
+// handleMyMenu 抽奖和任务的显隐、角标一次返回。
+func (s *Server) handleMyMenu(w http.ResponseWriter, r *http.Request, claims *Claims) {
+	state, err := s.App.MenuState(r.Context(), claims.UserID, claims.Email, claims.Role, claims.RegisteredAt, time.Now())
+	if err != nil {
+		internalError(w, err)
+		return
 	}
-	ok(w, map[string]any{"visible": visible, "phase": phase})
+	ok(w, state)
 }
 
 func (s *Server) handleMyWinnings(w http.ResponseWriter, r *http.Request, claims *Claims) {
@@ -358,10 +365,12 @@ func mapStoreError(w http.ResponseWriter, err error) {
 		fail(w, http.StatusForbidden, 403, "您已参与过该系列抽奖，不能重复参与")
 	case errors.Is(err, store.ErrRepeatWin):
 		fail(w, http.StatusForbidden, 403, "您已在该系列抽奖中中奖，不能再参与")
-	case errors.Is(err, lottery.ErrRepeatGroupTooLong), errors.Is(err, lottery.ErrUnknownRepeatPolicy):
+	case errors.Is(err, lottery.ErrRepeatGroupTooLong), errors.Is(err, lottery.ErrUnknownRepeatPolicy), errors.Is(err, lottery.ErrBadVisibility):
 		fail(w, http.StatusBadRequest, 400, err.Error())
 	case errors.Is(err, store.ErrActivityDrawn):
 		fail(w, http.StatusConflict, 409, "activity already drawn")
+	case errors.Is(err, app.ErrSettlementDisabled):
+		fail(w, http.StatusConflict, 409, err.Error())
 	default:
 		internalError(w, err)
 	}
@@ -386,6 +395,9 @@ type activityInput struct {
 	DailyConfigID        int64                  `json:"daily_config_id"`
 	RepeatPolicy         *string                `json:"repeat_policy"`
 	RepeatGroup          *string                `json:"repeat_group"`
+	Visibility           *lottery.Visibility    `json:"visibility"`
+	Notify               bool                   `json:"notify"`
+	NotifyStages         []string               `json:"notify_stages"`
 	Conditions           []lottery.ConditionDef `json:"conditions"`
 	Prizes               []prizeInput           `json:"prizes"`
 }
@@ -413,6 +425,9 @@ func (in *activityInput) toActivity() *lottery.Activity {
 		RepeatPolicy:         derefString(in.RepeatPolicy),
 		RepeatGroup:          derefString(in.RepeatGroup),
 		Conditions:           in.Conditions,
+	}
+	if in.Visibility != nil {
+		a.Visibility = *in.Visibility
 	}
 	for _, p := range in.Prizes {
 		a.Prizes = append(a.Prizes, lottery.Prize{
@@ -453,6 +468,7 @@ func (s *Server) handleAdminCreateActivity(w http.ResponseWriter, r *http.Reques
 		internalError(w, err)
 		return
 	}
+	s.App.SaveActivityNotify(id, in.NotifyStages, in.Notify)
 	s.wsHub.Wake()
 	ok(w, map[string]any{"id": id})
 }
@@ -513,6 +529,14 @@ func (s *Server) handleAdminUpdateActivity(w http.ResponseWriter, r *http.Reques
 			return
 		}
 	}
+	if in.Visibility == nil || strings.TrimSpace(in.Visibility.Mode) == "" {
+		a.Visibility = existing.Visibility
+	} else if existing.DailyConfigID > 0 {
+		if err := s.App.UpdateDailyConfigVisibility(existing.DailyConfigID, a.Visibility); err != nil && !errors.Is(err, store.ErrNotFound) {
+			mapStoreError(w, err)
+			return
+		}
+	}
 	if err := a.Validate(); err != nil {
 		fail(w, http.StatusBadRequest, 400, err.Error())
 		return
@@ -521,6 +545,7 @@ func (s *Server) handleAdminUpdateActivity(w http.ResponseWriter, r *http.Reques
 		mapStoreError(w, err)
 		return
 	}
+	s.App.SaveActivityNotify(id, in.NotifyStages, in.Notify)
 	s.wsHub.Wake()
 	ok(w, map[string]any{"id": id})
 }
@@ -536,6 +561,35 @@ func (s *Server) handleAdminArchiveActivity(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	ok(w, map[string]any{"id": id, "status": "archived"})
+}
+
+// handleAdminDeleteActivity 软删除已关闭、已归档或已开奖的场次。
+// 只把 status 标为 deleted，参与、奖品和中奖记录都保留。进行中和未开始不可删。
+func (s *Server) handleAdminDeleteActivity(w http.ResponseWriter, r *http.Request, _ *Claims) {
+	id, err := pathID(r)
+	if err != nil {
+		fail(w, http.StatusBadRequest, 400, "invalid activity id")
+		return
+	}
+	a, err := s.App.Store.GetActivity(id)
+	if err != nil {
+		mapStoreError(w, err)
+		return
+	}
+	if a.Status == "deleted" {
+		fail(w, http.StatusConflict, 409, "场次已删除")
+		return
+	}
+	if a.Status != "closed" && a.Status != "archived" && a.DrawnAt.IsZero() {
+		fail(w, http.StatusConflict, 409, "仅已关闭、已归档或已开奖的场次可以删除")
+		return
+	}
+	if err := s.App.Store.SetActivityStatus(id, "deleted"); err != nil {
+		mapStoreError(w, err)
+		return
+	}
+	s.wsHub.Wake()
+	ok(w, map[string]any{"id": id, "status": "deleted"})
 }
 
 func (s *Server) handleAdminListActivities(w http.ResponseWriter, r *http.Request, _ *Claims) {
@@ -564,7 +618,15 @@ func (s *Server) handleAdminGetActivity(w http.ResponseWriter, r *http.Request, 
 		internalError(w, err)
 		return
 	}
-	ok(w, map[string]any{"activity": a, "winners": winners})
+	stages, err := s.App.Store.ActivityNotifyStages(id)
+	if err != nil {
+		internalError(w, err)
+		return
+	}
+	if stages == nil {
+		stages = []string{}
+	}
+	ok(w, map[string]any{"activity": a, "winners": winners, "notify": len(stages) > 0, "notify_stages": stages})
 }
 
 func (s *Server) handleAdminParticipants(w http.ResponseWriter, r *http.Request, _ *Claims) {
@@ -627,7 +689,7 @@ func (s *Server) handleAdminSaveSettings(w http.ResponseWriter, r *http.Request,
 	// 显隐配置可选一并保存
 	if body.Visibility != nil {
 		if err := s.App.SetVisibility(*body.Visibility); err != nil {
-			internalError(w, err)
+			fail(w, http.StatusBadRequest, 400, err.Error())
 			return
 		}
 	}
@@ -769,7 +831,7 @@ func (s *Server) handleAdminDraw(w http.ResponseWriter, r *http.Request, _ *Clai
 		return
 	}
 	if err := s.App.DrawActivity(r.Context(), a); err != nil {
-		internalError(w, err)
+		mapStoreError(w, err)
 		return
 	}
 	s.wsHub.Wake()

@@ -16,6 +16,8 @@ CREATE TABLE IF NOT EXISTS tasks (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	name TEXT NOT NULL,
 	cover TEXT NOT NULL DEFAULT '',
+	progress_svg TEXT NOT NULL DEFAULT '',
+	progress_color TEXT NOT NULL DEFAULT '',
 	description TEXT NOT NULL DEFAULT '',
 	group_id INTEGER NOT NULL DEFAULT 0,
 	group_name TEXT NOT NULL DEFAULT '',
@@ -30,6 +32,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 	whitelist_json TEXT NOT NULL DEFAULT '[]',
 	blacklist_json TEXT NOT NULL DEFAULT '[]',
 	conditions_json TEXT NOT NULL DEFAULT '[]',
+	visibility_json TEXT NOT NULL DEFAULT '',
 	status TEXT NOT NULL DEFAULT 'active',
 	created_at TEXT NOT NULL,
 	updated_at TEXT NOT NULL
@@ -65,26 +68,63 @@ CREATE TABLE IF NOT EXISTS task_rewards (
 );
 CREATE INDEX IF NOT EXISTS idx_task_rewards_user ON task_rewards(user_id);
 CREATE INDEX IF NOT EXISTS idx_task_rewards_fulfill ON task_rewards(task_id, fulfillment);
+
+-- 本地测试消耗：只加到用户侧进度条，不参与结算。
+CREATE TABLE IF NOT EXISTS task_test_usage (
+	date TEXT NOT NULL,
+	group_id INTEGER NOT NULL DEFAULT 0,
+	model TEXT NOT NULL DEFAULT '',
+	tokens REAL NOT NULL DEFAULT 0,
+	PRIMARY KEY (date, group_id, model)
+);
 `
 
-const taskColumns = `id, name, cover, description, group_id, group_name, model, start_date, duration_days, settle_time,
+const taskColumns = `id, name, cover, progress_svg, progress_color, description, group_id, group_name, model, start_date, duration_days, settle_time,
 	threshold_tokens, reward_type, reward_value, repeat_policy, whitelist_json, blacklist_json, conditions_json,
-	status, created_at, updated_at`
+	visibility_json, status, created_at, updated_at`
 
 // ErrCodePoolEmpty 码池可用数量不足。
 var ErrCodePoolEmpty = errors.New("task code pool has not enough available codes")
 
+// TaskTestUsage 读取某一天、某一分组和模型的本地测试消耗。没有记录时返回 0。
+// 只给进度条用，结算不读这张表。
+func (s *Store) TaskTestUsage(date string, groupID int64, model string) (float64, error) {
+	var tokens float64
+	err := s.db.QueryRow(
+		`SELECT tokens FROM task_test_usage WHERE date = ? AND group_id = ? AND model = ?`,
+		date, groupID, model,
+	).Scan(&tokens)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, nil
+	}
+	return tokens, err
+}
+
+// UpsertTaskTestUsage 写入本地测试消耗。
+func (s *Store) UpsertTaskTestUsage(date string, groupID int64, model string, tokens float64) error {
+	_, err := s.db.Exec(
+		`INSERT INTO task_test_usage (date, group_id, model, tokens) VALUES (?, ?, ?, ?)
+		 ON CONFLICT(date, group_id, model) DO UPDATE SET tokens = excluded.tokens`,
+		date, groupID, model, tokens,
+	)
+	return err
+}
+
 func scanTaskRow(row interface{ Scan(...any) error }) (*lottery.Task, error) {
 	var t lottery.Task
-	var whitelistJSON, blacklistJSON, conditionsJSON string
-	if err := row.Scan(&t.ID, &t.Name, &t.Cover, &t.Description, &t.GroupID, &t.GroupName, &t.Model, &t.StartDate,
+	var whitelistJSON, blacklistJSON, conditionsJSON, visibilityJSON string
+	if err := row.Scan(&t.ID, &t.Name, &t.Cover, &t.ProgressSvg, &t.ProgressColor, &t.Description, &t.GroupID, &t.GroupName, &t.Model, &t.StartDate,
 		&t.DurationDays, &t.SettleTime, &t.ThresholdTokens, &t.RewardType, &t.RewardValue, &t.RepeatPolicy,
-		&whitelistJSON, &blacklistJSON, &conditionsJSON, &t.Status, &t.CreatedAt, &t.UpdatedAt); err != nil {
+		&whitelistJSON, &blacklistJSON, &conditionsJSON, &visibilityJSON, &t.Status, &t.CreatedAt, &t.UpdatedAt); err != nil {
 		return nil, err
 	}
 	_ = json.Unmarshal([]byte(whitelistJSON), &t.Whitelist)
 	_ = json.Unmarshal([]byte(blacklistJSON), &t.Blacklist)
 	_ = json.Unmarshal([]byte(conditionsJSON), &t.Conditions)
+	if visibilityJSON != "" {
+		_ = json.Unmarshal([]byte(visibilityJSON), &t.Visibility)
+	}
+	t.Visibility = lottery.NormalizeItemVisibility(t.Visibility)
 	if t.RepeatPolicy == "" {
 		t.RepeatPolicy = lottery.TaskRepeatUnlimited
 	}
@@ -99,6 +139,10 @@ func (s *Store) UpsertTask(t *lottery.Task) (int64, error) {
 	whitelistJSON, _ := json.Marshal(t.Whitelist)
 	blacklistJSON, _ := json.Marshal(t.Blacklist)
 	conditionsJSON, _ := json.Marshal(t.Conditions)
+	visibilityJSON, err := json.Marshal(lottery.NormalizeItemVisibility(t.Visibility))
+	if err != nil {
+		return 0, err
+	}
 	now := fmtTime(time.Now().UTC())
 	if t.Status == "" {
 		t.Status = lottery.TaskActive
@@ -106,12 +150,12 @@ func (s *Store) UpsertTask(t *lottery.Task) (int64, error) {
 
 	if t.ID > 0 {
 		res, err := s.db.Exec(
-			`UPDATE tasks SET name=?, cover=?, description=?, group_id=?, group_name=?, model=?, start_date=?, duration_days=?,
+			`UPDATE tasks SET name=?, cover=?, progress_svg=?, progress_color=?, description=?, group_id=?, group_name=?, model=?, start_date=?, duration_days=?,
 			settle_time=?, threshold_tokens=?, reward_type=?, reward_value=?, repeat_policy=?, whitelist_json=?,
-			blacklist_json=?, conditions_json=?, status=?, updated_at=? WHERE id=?`,
-			t.Name, t.Cover, t.Description, t.GroupID, t.GroupName, t.Model, t.StartDate, t.DurationDays,
+			blacklist_json=?, conditions_json=?, visibility_json=?, status=?, updated_at=? WHERE id=?`,
+			t.Name, t.Cover, t.ProgressSvg, t.ProgressColor, t.Description, t.GroupID, t.GroupName, t.Model, t.StartDate, t.DurationDays,
 			t.SettleTime, t.ThresholdTokens, t.RewardType, t.RewardValue, t.RepeatPolicy, string(whitelistJSON),
-			string(blacklistJSON), string(conditionsJSON), t.Status, now, t.ID,
+			string(blacklistJSON), string(conditionsJSON), string(visibilityJSON), t.Status, now, t.ID,
 		)
 		if err != nil {
 			return 0, err
@@ -123,12 +167,12 @@ func (s *Store) UpsertTask(t *lottery.Task) (int64, error) {
 	}
 
 	res, err := s.db.Exec(
-		`INSERT INTO tasks (name, cover, description, group_id, group_name, model, start_date, duration_days, settle_time,
+		`INSERT INTO tasks (name, cover, progress_svg, progress_color, description, group_id, group_name, model, start_date, duration_days, settle_time,
 		threshold_tokens, reward_type, reward_value, repeat_policy, whitelist_json, blacklist_json, conditions_json,
-		status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		t.Name, t.Cover, t.Description, t.GroupID, t.GroupName, t.Model, t.StartDate, t.DurationDays,
+		visibility_json, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		t.Name, t.Cover, t.ProgressSvg, t.ProgressColor, t.Description, t.GroupID, t.GroupName, t.Model, t.StartDate, t.DurationDays,
 		t.SettleTime, t.ThresholdTokens, t.RewardType, t.RewardValue, t.RepeatPolicy, string(whitelistJSON),
-		string(blacklistJSON), string(conditionsJSON), t.Status, now, now,
+		string(blacklistJSON), string(conditionsJSON), string(visibilityJSON), t.Status, now, now,
 	)
 	if err != nil {
 		return 0, err
@@ -187,6 +231,7 @@ func (s *Store) DeleteTask(id int64) error {
 	defer func() { _ = tx.Rollback() }()
 	for _, stmt := range []string{
 		`DELETE FROM task_codes WHERE task_id = ?`,
+		`DELETE FROM task_reward_push WHERE task_id = ?`,
 		`DELETE FROM task_rewards WHERE task_id = ?`,
 		`DELETE FROM tasks WHERE id = ?`,
 	} {

@@ -11,9 +11,11 @@ import (
 	"math/rand"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"lotteryd/internal/lottery"
+	"lotteryd/internal/push"
 	"lotteryd/internal/store"
 	"lotteryd/internal/sub2api"
 )
@@ -32,10 +34,15 @@ type AdminSettings struct {
 	AdminAPIKeyMasked string `json:"admin_api_key_masked"`
 }
 
+// ErrSettlementDisabled 表示本地测试门禁拦住了奖励发放和任务结算。开奖仍会进行。
+var ErrSettlementDisabled = errors.New("本地测试已关闭奖励发放，不会入账或生成兑换码")
+
 // Config holds runtime-tunable behaviour.
 type Config struct {
 	// BackfillDays 在无水位时首次回溯多少天的用量（含今天）。
 	BackfillDays int
+	// DisableSettlement 为真时，仍会开奖并记下中奖者，但不发放奖品，也不做任务结算。
+	DisableSettlement bool
 }
 
 // App is the application core.
@@ -43,6 +50,7 @@ type App struct {
 	Store   *store.Store
 	Sub2API *sub2api.Client
 	Cfg     Config
+	Push    *push.Client
 	rng     *rand.Rand
 }
 
@@ -94,9 +102,11 @@ type ActivityView struct {
 	// 来源日常定时抽奖配置 ID（0 = 手动创建；仅管理端视图填充）。
 	DailyConfigID int64 `json:"daily_config_id,omitempty"`
 	// 管理端列表展示当前生效的共用参与组和重复策略。用户侧不填，JSON 省略。
-	RepeatGroup  string                 `json:"repeat_group,omitempty"`
-	RepeatPolicy string                 `json:"repeat_policy,omitempty"`
-	Extra        map[string]interface{} `json:"-"`
+	RepeatGroup  string `json:"repeat_group,omitempty"`
+	RepeatPolicy string `json:"repeat_policy,omitempty"`
+	// Notifications 只在管理端列表填充。未发送的阶段为 nil。
+	Notifications *ActivityNotificationView `json:"notifications,omitempty"`
+	Extra         map[string]interface{}    `json:"-"`
 }
 
 func prizeViews(prizes []lottery.Prize) []PrizeView {
@@ -171,26 +181,27 @@ func (ap *App) usageWindow(ctx context.Context, maxDays int) (map[int64]*lottery
 
 // ---- User endpoints ----
 
-// ListUserActivities 返回该用户可见的活动。
-// 全局显隐（部分人可见）之外，未满足参与条件、且未参与/未中奖的场次不下发。
-// 管理员不受显隐白名单和参与条件限制，用户侧能看到全部未归档场次。
+// ListUserActivities 返回当前用户能看到的活动。
+// 已删除，以及已关闭、已归档且未开奖的场次不下发。
+// 每场活动自己决定可见范围：全部用户都看得到；部分用户只给名单内的邮箱；
+// 仅符合条件的用户只看自己能参与的场次，已参与或已中奖的场次仍保留。管理员不受限。
+// 右上角的抽奖可见范围不参与这里，它只决定菜单。
 func (ap *App) ListUserActivities(ctx context.Context, userID int64, email, role string, registeredAt *time.Time) ([]ActivityView, error) {
+	return ap.userActivityViews(ctx, userID, email, role, registeredAt, true)
+}
+
+func (ap *App) userActivityViews(ctx context.Context, userID int64, email, role string, registeredAt *time.Time, filterItem bool) ([]ActivityView, error) {
+	admin := role == "admin"
 	acts, err := ap.Store.ListActivities()
 	if err != nil {
 		return nil, err
 	}
 	now := time.Now()
-	admin := role == "admin"
-	visAllowed := admin || ap.IsUserAllowed("user", email)
 	candidates := make([]*lottery.Activity, 0, len(acts))
 	for i := range acts {
 		a := &acts[i]
-		if a.Status != "active" && a.DrawnAt.IsZero() {
-			continue // 归档且未开奖的活动对用户不可见
-		}
-		// 部分人可见模式下，未在白名单的用户：任何活动（含已开奖）都不可见
-		if !visAllowed {
-			continue
+		if a.Status == "deleted" || (a.Status != "active" && a.DrawnAt.IsZero()) {
+			continue // 已删除，以及已关闭/已归档且未开奖的活动对用户不可见
 		}
 		candidates = append(candidates, a)
 	}
@@ -208,7 +219,7 @@ func (ap *App) ListUserActivities(ctx context.Context, userID int64, email, role
 		if err != nil {
 			return nil, err
 		}
-		if !admin && !userCanSeeActivity(v) {
+		if filterItem && !admin && !a.Visibility.ShowsTo(email, v.Joined || v.Won != nil || v.Eligible) {
 			continue
 		}
 		out = append(out, *v)
@@ -217,34 +228,28 @@ func (ap *App) ListUserActivities(ctx context.Context, userID int64, email, role
 	return out, nil
 }
 
-// userCanSeeActivity 已参与或已中奖的场次始终可见；其余场次只有当前满足参与条件才可见。
-func userCanSeeActivity(v *ActivityView) bool {
-	if v.Joined || v.Won != nil {
-		return true
-	}
-	return v.Eligible
-}
-
-// UserCanSeeActivity 用户侧中奖名单等单场接口：与活动列表同一套可见性。管理员始终可见。
+// UserCanSeeActivity 用户侧中奖名单：场次要在该用户的可见列表里。
 func (ap *App) UserCanSeeActivity(ctx context.Context, activityID, userID int64, email, role string, registeredAt *time.Time) (bool, error) {
 	a, err := ap.Store.GetActivity(activityID)
 	if err != nil {
 		return false, err
 	}
+	if a.Status == "deleted" || (a.Status != "active" && a.DrawnAt.IsZero()) {
+		return false, nil
+	}
 	if role == "admin" {
 		return true, nil
 	}
-	if a.Status != "active" && a.DrawnAt.IsZero() {
-		return false, nil
-	}
-	if !ap.IsUserAllowed("user", email) {
-		return false, nil
-	}
-	v, err := ap.buildActivityView(ctx, a, userID, email, registeredAt, time.Now(), nil, false)
+	acts, err := ap.ListUserActivities(ctx, userID, email, role, registeredAt)
 	if err != nil {
 		return false, err
 	}
-	return userCanSeeActivity(v), nil
+	for _, view := range acts {
+		if view.ID == activityID {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (ap *App) buildActivityView(ctx context.Context, a *lottery.Activity, userID int64, email string, registeredAt *time.Time, now time.Time, usages map[int64]*lottery.UserUsage, withWinners bool) (*ActivityView, error) {
@@ -295,7 +300,7 @@ func (ap *App) buildActivityView(ctx context.Context, a *lottery.Activity, userI
 			}
 		}
 	}
-	// 未参与的场次都评估资格：不符合条件的场次对用户隐藏，角标也不计入。
+	// 未参与的场次都评估资格，供参与按钮使用。列表本身不再按资格隐藏。
 	if !joined && !won && phaseNeedsEligibility(v.Phase) {
 		if usages == nil {
 			var loadErr error
@@ -351,14 +356,14 @@ func (ap *App) EligibilityList(ctx context.Context, userID int64, email string, 
 		return nil, err
 	}
 	applyRegistered(usages, userID, email, ap.registeredAt(ctx, userID, email, registeredAt))
-	visAllowed := ap.IsUserAllowed("user", email) // 引导弹窗同样遵守用户侧显隐
 	out := make([]ActivityView, 0)
 	for i := range acts {
 		a := &acts[i]
 		if a.Status != "active" || !a.DrawnAt.IsZero() || !now.After(a.StartsAt) {
 			continue
 		}
-		if !visAllowed {
+		// 部分用户：名单外不弹。全部用户和仅符合条件的用户仍按参与条件判断。
+		if !a.Visibility.ShowsTo(email, true) {
 			continue
 		}
 		joined, err := ap.Store.HasParticipant(a.ID, userID)
@@ -422,8 +427,8 @@ func (ap *App) Participate(ctx context.Context, activityID, userID int64, identi
 	if !now.Before(a.DrawsAt) {
 		return nil, store.ErrNotJoinable
 	}
-	// 用户侧显隐：部分人可见模式下，白名单外的用户（管理员除外）不可参与
-	if !ap.IsUserAllowed(identity.Role, identity.Email) {
+	// 这一场设为部分用户时，名单外的用户不可参与。管理员不受限。
+	if identity.Role != "admin" && !a.Visibility.ShowsTo(identity.Email, true) {
 		return nil, store.ErrNotVisible
 	}
 	joined, err := ap.Store.HasParticipant(a.ID, userID)
@@ -501,10 +506,21 @@ func (ap *App) AdminListActivities(ctx context.Context) ([]ActivityView, error) 
 	if err != nil {
 		return nil, err
 	}
+	notifyStages, err := ap.Store.ListActivityNotifyStages()
+	if err != nil {
+		return nil, err
+	}
+	pushLogs, err := ap.Store.ListActivityPushLogs()
+	if err != nil {
+		return nil, err
+	}
 	now := time.Now()
 	out := make([]ActivityView, 0, len(acts))
 	for i := range acts {
 		a := &acts[i]
+		if a.Status == "deleted" {
+			continue
+		}
 		count, err := ap.Store.CountParticipants(a.ID)
 		if err != nil {
 			return nil, err
@@ -529,6 +545,19 @@ func (ap *App) AdminListActivities(ctx context.Context) ([]ActivityView, error) 
 		}
 		if policy != "" && policy != lottery.RepeatUnlimited {
 			v.RepeatPolicy = policy
+		}
+		counts := pushLogs[a.ID]
+		stages := notifyStages[a.ID]
+		if stages == nil {
+			stages = []string{}
+		}
+		v.Notifications = &ActivityNotificationView{
+			Enabled:     len(stages) > 0,
+			Stages:      stages,
+			BeforeStart: stageCountPtr(counts, lottery.StageBeforeStart),
+			Started:     stageCountPtr(counts, lottery.StageStarted),
+			BeforeDraw:  stageCountPtr(counts, lottery.StageBeforeDraw),
+			Results:     stageCountPtr(counts, lottery.StageResults),
 		}
 		if !a.DrawnAt.IsZero() {
 			t := a.DrawnAt
@@ -584,8 +613,15 @@ func (ap *App) GetVisibility() lottery.Visibility {
 	return ap.getVisibilityState(stateVisibility)
 }
 
-// SetVisibility 保存用户侧显隐配置。
+// errMenuVisibilityMode 右上角菜单只接受全部用户或部分用户。
+var errMenuVisibilityMode = errors.New("菜单可见范围只能是全部用户或部分用户")
+
+// SetVisibility 保存抽奖菜单显隐配置。
 func (ap *App) SetVisibility(v lottery.Visibility) error {
+	v, err := normalizeMenuVisibility(v)
+	if err != nil {
+		return err
+	}
 	raw, err := json.Marshal(v)
 	if err != nil {
 		return err
@@ -598,8 +634,12 @@ func (ap *App) GetTaskVisibility() lottery.Visibility {
 	return ap.getVisibilityState(stateTaskVisibility)
 }
 
-// SetTaskVisibility 保存任务中心显隐配置。
+// SetTaskVisibility 保存任务中心菜单显隐配置。
 func (ap *App) SetTaskVisibility(v lottery.Visibility) error {
+	v, err := normalizeMenuVisibility(v)
+	if err != nil {
+		return err
+	}
 	raw, err := json.Marshal(v)
 	if err != nil {
 		return err
@@ -607,7 +647,18 @@ func (ap *App) SetTaskVisibility(v lottery.Visibility) error {
 	return ap.Store.SetState(stateTaskVisibility, string(raw))
 }
 
-// getVisibilityState 读取显隐配置；未配置/解析失败 = 部分人可见（白名单外不可见）。
+// normalizeMenuVisibility 菜单只保留全部用户和部分用户。仅符合条件的用户属于每一场或每一条。
+func normalizeMenuVisibility(v lottery.Visibility) (lottery.Visibility, error) {
+	if v.Mode == lottery.VisibilityEligible {
+		return lottery.Visibility{}, errMenuVisibilityMode
+	}
+	if err := v.Validate(); err != nil {
+		return lottery.Visibility{}, err
+	}
+	return v, nil
+}
+
+// getVisibilityState 读取菜单显隐；未配置、解析失败，或旧的「仅符合条件」都按部分用户处理。
 func (ap *App) getVisibilityState(key string) lottery.Visibility {
 	raw, err := ap.Store.GetState(key)
 	if err != nil || raw == "" {
@@ -617,26 +668,19 @@ func (ap *App) getVisibilityState(key string) lottery.Visibility {
 	if err := json.Unmarshal([]byte(raw), &v); err != nil {
 		return lottery.Visibility{Mode: lottery.VisibilityPartial}
 	}
+	if v.Mode != lottery.VisibilityAll && v.Mode != lottery.VisibilityPartial {
+		v.Mode = lottery.VisibilityPartial
+	}
 	return v
 }
 
-// IsUserAllowed 抽奖对该邮箱是否可见（管理员不受限）。
+// IsUserAllowed 列表、弹窗和参与不看右上角设置。右上角只决定抽奖菜单。
 func (ap *App) IsUserAllowed(role, email string) bool {
-	return isAllowedBy(ap.GetVisibility(), role, email)
+	return true
 }
 
-// IsUserAllowedTask 任务中心对该邮箱是否可见（管理员不受限）。
+// IsUserAllowedTask 列表、弹窗和结算不看右上角设置。右上角只决定任务中心菜单。
 func (ap *App) IsUserAllowedTask(role, email string) bool {
-	return isAllowedBy(ap.GetTaskVisibility(), role, email)
-}
-
-func isAllowedBy(v lottery.Visibility, role, email string) bool {
-	if role == "admin" {
-		return true
-	}
-	if v.Mode == lottery.VisibilityPartial && !v.IsEmailAllowed(email) {
-		return false
-	}
 	return true
 }
 
@@ -753,13 +797,20 @@ func (ap *App) repeatPolicyDeniedErr(a *lottery.Activity, userID int64) error {
 
 // ---- Daily activity（多配置：每个配置独立启停/删除） ----
 
+func normalizeDailyConfigs(list []lottery.DailyConfig) []lottery.DailyConfig {
+	for i := range list {
+		list[i].Visibility = lottery.NormalizeItemVisibility(list[i].Visibility)
+	}
+	return list
+}
+
 // GetDailyConfigs 读取全部日常定时抽奖配置（首次读取时自动迁移旧的单配置数据）。
 func (ap *App) GetDailyConfigs() []lottery.DailyConfig {
 	raw, err := ap.Store.GetState(stateDailyConfigs)
 	if err == nil && raw != "" {
 		var list []lottery.DailyConfig
 		if err := json.Unmarshal([]byte(raw), &list); err == nil {
-			return list
+			return normalizeDailyConfigs(list)
 		}
 	}
 	// 新键为空：迁移旧版单配置（stateDailyConfig 键，对象而非数组）
@@ -771,30 +822,43 @@ func (ap *App) GetDailyConfigs() []lottery.DailyConfig {
 			if raw, err := json.Marshal(list); err == nil {
 				_ = ap.Store.SetState(stateDailyConfigs, string(raw))
 			}
-			return list
+			return normalizeDailyConfigs(list)
 		}
 	}
 	return []lottery.DailyConfig{}
 }
 
 // SaveDailyConfig 新建（ID=0）或更新日常定时抽奖配置，返回带 ID 的配置。
+// 可见范围未填时，新建按全部用户，更新保留原来的范围。保存后同步到该配置尚未开奖的场次。
 func (ap *App) SaveDailyConfig(c lottery.DailyConfig) (lottery.DailyConfig, error) {
 	c.RepeatGroup = lottery.NormalizeRepeatGroup(c.RepeatGroup)
-	if err := c.ValidateRepeatGroup(); err != nil {
-		return c, err
-	}
 	list := ap.GetDailyConfigs()
 	if c.ID > 0 {
 		found := false
 		for i := range list {
-			if list[i].ID == c.ID {
-				list[i] = c
-				found = true
-				break
+			if list[i].ID != c.ID {
+				continue
 			}
+			if strings.TrimSpace(c.Visibility.Mode) == "" {
+				c.Visibility = list[i].Visibility
+			}
+			found = true
+			break
 		}
 		if !found {
 			return c, store.ErrNotFound
+		}
+	}
+	c.Visibility = lottery.NormalizeItemVisibility(c.Visibility)
+	if err := c.Validate(); err != nil {
+		return c, err
+	}
+	if c.ID > 0 {
+		for i := range list {
+			if list[i].ID == c.ID {
+				list[i] = c
+				break
+			}
 		}
 	} else {
 		next := int64(1)
@@ -811,6 +875,9 @@ func (ap *App) SaveDailyConfig(c lottery.DailyConfig) (lottery.DailyConfig, erro
 		return c, err
 	}
 	if err := ap.Store.SetState(stateDailyConfigs, string(raw)); err != nil {
+		return c, err
+	}
+	if err := ap.Store.SetUndrawnActivityVisibility(c.ID, c.Visibility); err != nil {
 		return c, err
 	}
 	return c, nil
@@ -844,6 +911,36 @@ func (ap *App) UpdateDailyConfigRepeat(id int64, policy, group string) (string, 
 		return policy, group, nil
 	}
 	return "", "", store.ErrNotFound
+}
+
+// UpdateDailyConfigVisibility 把可见范围写回定时配置，并同步到它尚未开奖的场次。
+// 配置已删除时返回 store.ErrNotFound，调用方仍可只保存当前这场。
+func (ap *App) UpdateDailyConfigVisibility(id int64, v lottery.Visibility) error {
+	v = lottery.NormalizeItemVisibility(v)
+	if err := v.Validate(); err != nil {
+		return err
+	}
+	list := ap.GetDailyConfigs()
+	found := false
+	for i := range list {
+		if list[i].ID != id {
+			continue
+		}
+		list[i].Visibility = v
+		found = true
+		break
+	}
+	if !found {
+		return store.ErrNotFound
+	}
+	raw, err := json.Marshal(list)
+	if err != nil {
+		return err
+	}
+	if err := ap.Store.SetState(stateDailyConfigs, string(raw)); err != nil {
+		return err
+	}
+	return ap.Store.SetUndrawnActivityVisibility(id, v)
 }
 
 // SetDailyConfigEnabled 启用/停用单个配置（保留其余字段）。
@@ -890,16 +987,34 @@ func (ap *App) DeleteDailyConfig(id int64) error {
 	return ap.Store.SetState(stateDailyConfigs, string(raw))
 }
 
-// UserLotteryPhase 侧边栏角标：只统计该用户可见的场次（可参与，或已参与/已中奖）。
-// 管理员统计全部场次。优先级 joining > upcoming > drawn。没有可见场次时返回空串。
-func (ap *App) UserLotteryPhase(ctx context.Context, userID int64, email, role string, registeredAt *time.Time) string {
-	views, err := ap.ListUserActivities(ctx, userID, email, role, registeredAt)
-	if err != nil || len(views) == 0 {
-		return ""
+// UserLotteryAccess 返回侧边栏是否展示抽奖，以及该用户看到的角标。
+// 菜单是否出现由右上角可见范围决定。角标只统计这个用户能看到的场次。
+// 管理员始终看到菜单，角标按全部进行中场次计算。
+func (ap *App) UserLotteryAccess(ctx context.Context, userID int64, email, role string, registeredAt *time.Time) (bool, string) {
+	if role == "admin" {
+		return true, ap.CurrentLotteryPhase()
 	}
+	acts, err := ap.ListUserActivities(ctx, userID, email, role, registeredAt)
+	if err != nil {
+		return false, ""
+	}
+	phase := ""
+	if len(acts) > 0 {
+		phase = phaseFromActivityViews(acts)
+	}
+	if !ap.GetVisibility().ShowsTo(email, false) {
+		return false, ""
+	}
+	return true, phase
+}
+
+func phaseFromActivityViews(views []ActivityView) string {
 	joining, upcoming, drawn := false, false, false
-	for i := range views {
-		switch views[i].Phase {
+	for _, v := range views {
+		if v.Status != "" && v.Status != "active" {
+			continue
+		}
+		switch v.Phase {
 		case lottery.ActivityJoining:
 			joining = true
 		case lottery.ActivityUpcoming:
@@ -910,17 +1025,17 @@ func (ap *App) UserLotteryPhase(ctx context.Context, userID int64, email, role s
 	}
 	switch {
 	case joining:
-		return lottery.ActivityJoining
+		return "joining"
 	case upcoming:
-		return lottery.ActivityUpcoming
+		return "upcoming"
 	case drawn:
-		return lottery.ActivityDrawn
+		return "drawn"
 	}
 	return ""
 }
 
-// CurrentLotteryPhase 全部进行中场次的全局状态（joining/upcoming/drawn，无活动返回空串）。
-// 用户侧角标用 UserLotteryPhase，不把该用户不可参与的场次算进去。
+// CurrentLotteryPhase 全部 status=active 场次的全局状态（joining/upcoming/drawn，无活动返回空串）。
+// 已关闭、已归档不计入。所有登录用户看到同一个角标。
 func (ap *App) CurrentLotteryPhase() string {
 	acts, err := ap.Store.ListActivities()
 	if err != nil {
@@ -1061,8 +1176,17 @@ func (ap *App) ensureNextDailyRound(cfg lottery.DailyConfig, now time.Time) erro
 	if err != nil {
 		return err
 	}
+	ap.SaveActivityNotify(id, cfg.NotifyStages, cfg.Notify)
 	slog.Info("daily activity created", "id", id, "config", cfg.ID, "name", cfg.Name, "start", start.Format(time.RFC3339))
 	return ap.Store.SetState(keyFor(start), strconv.FormatInt(id, 10))
+}
+
+// SaveActivityNotify 把勾选的阶段写到活动上。旧配置只有总开关时，打开表示四个阶段都发。
+func (ap *App) SaveActivityNotify(id int64, stages []string, legacyAll bool) {
+	resolved := lottery.ResolveNotifyStages(stages, legacyAll)
+	if nerr := ap.Store.SetActivityNotify(id, resolved); nerr != nil {
+		slog.Warn("activity notify stages", "id", id, "err", nerr)
+	}
 }
 
 // dailyActivityFromConfig 按配置构建一场活动（开启时刻由调用方决定）。
@@ -1080,6 +1204,7 @@ func dailyActivityFromConfig(cfg lottery.DailyConfig, start time.Time) *lottery.
 		DailyConfigID:        cfg.ID,
 		RepeatGroup:          lottery.NormalizeRepeatGroup(cfg.RepeatGroup),
 		RepeatPolicy:         cfg.RepeatPolicy,
+		Visibility:           lottery.NormalizeItemVisibility(cfg.Visibility),
 	}
 	if a.ConditionMatch == "" {
 		a.ConditionMatch = lottery.MatchAll
@@ -1149,6 +1274,7 @@ func (ap *App) RegenerateDailyRound(cfgID int64, now time.Time) error {
 	if err != nil {
 		return err
 	}
+	ap.SaveActivityNotify(id, cfg.NotifyStages, cfg.Notify)
 	key := fmt.Sprintf("daily_created:%d:%s", cfg.ID, start.Format("2006-01-02"))
 	if err := ap.Store.SetState(key, strconv.FormatInt(id, 10)); err != nil {
 		return err
@@ -1200,7 +1326,7 @@ func (ap *App) SyncTokens(ctx context.Context, now time.Time) error {
 
 // ---- Draw & fulfillment ----
 
-// DrawDueActivities 对所有到点未开奖的活动执行开奖并发放。
+// DrawDueActivities 对所有到点未开奖的活动执行开奖。奖励发放由门禁单独决定。
 func (ap *App) DrawDueActivities(ctx context.Context, now time.Time) error {
 	acts, err := ap.Store.ListDrawableActivities(now)
 	if err != nil {
@@ -1258,6 +1384,10 @@ func (ap *App) DrawActivity(ctx context.Context, a *lottery.Activity) error {
 // FulfillPending 对活动中 pending/failed 的中奖记录执行发放：
 // 兑换码奖 → 生成兑换码；余额奖 → 调接口入账并备注「抽奖名称+金额」。
 func (ap *App) FulfillPending(ctx context.Context, a *lottery.Activity) error {
+	if ap.Cfg.DisableSettlement {
+		slog.Info("lotteryd fulfillment skipped", "activity", a.ID, "reason", "settlement gate")
+		return nil
+	}
 	ws, err := ap.Store.ListUnfulfilledWinners(a.ID)
 	if err != nil {
 		return err
@@ -1297,6 +1427,9 @@ func (ap *App) FulfillPending(ctx context.Context, a *lottery.Activity) error {
 
 // RetryFulfillment 管理端手动重试某活动的失败发放。
 func (ap *App) RetryFulfillment(ctx context.Context, activityID int64) error {
+	if ap.Cfg.DisableSettlement {
+		return ErrSettlementDisabled
+	}
 	a, err := ap.Store.GetActivity(activityID)
 	if err != nil {
 		return err

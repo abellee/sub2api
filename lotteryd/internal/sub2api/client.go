@@ -12,7 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"	
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -171,6 +171,39 @@ func (c *Client) FetchDailyModelUsage(ctx context.Context, date string, groupID 
 		out = append(out, lottery.DailyToken{Date: date, UserID: u.UserID, Email: u.Email, TotalTokens: u.TotalTokens})
 	}
 	return out, nil
+}
+
+// FetchUserDailyModelUsage 拉取某个用户在某日、按分组和模型过滤后的 token 消耗。
+// 没有记录时返回 0。
+func (c *Client) FetchUserDailyModelUsage(ctx context.Context, date string, groupID int64, model string, userID int64) (float64, error) {
+	if c == nil {
+		return 0, fmt.Errorf("sub2api client is nil")
+	}
+	q := url.Values{}
+	q.Set("start_date", date)
+	q.Set("end_date", date)
+	q.Set("limit", "0")
+	if groupID > 0 {
+		q.Set("group_id", strconv.FormatInt(groupID, 10))
+	}
+	if model != "" {
+		q.Set("model", model)
+	}
+	if userID > 0 {
+		q.Set("user_id", strconv.FormatInt(userID, 10))
+	}
+	var data breakdownData
+	if err := c.do(ctx, http.MethodGet, "/api/v1/admin/dashboard/user-breakdown", q, nil, &data, ""); err != nil {
+		return 0, err
+	}
+	var total float64
+	for _, u := range data.Users {
+		if userID > 0 && u.UserID != userID {
+			continue
+		}
+		total += u.TotalTokens
+	}
+	return total, nil
 }
 
 // IntegrationGroup 原生分组接口返回的分组摘要（GET /admin/groups/all）。

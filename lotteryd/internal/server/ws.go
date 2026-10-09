@@ -10,6 +10,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"lotteryd/internal/app"
+	"lotteryd/internal/lottery"
 )
 
 // ---- WebSocket 实时推送 ----
@@ -29,9 +30,10 @@ const (
 )
 
 type wsOutMessage struct {
-	Type     string              `json:"type"` // lottery_prompt | task_prompt | pong
+	Type     string              `json:"type"` // lottery_prompt | task_prompt | lottery_win | pong
 	Activity *app.ActivityView   `json:"activity,omitempty"`
 	Task     *app.TaskPromptView `json:"task,omitempty"`
+	Winner   *lottery.Winner     `json:"winner,omitempty"`
 }
 
 type wsClient struct {
@@ -43,6 +45,8 @@ type wsClient struct {
 	send        chan wsOutMessage
 	lastIDs     map[int64]bool // 已推送过的活动 ID
 	lastTaskIDs map[int64]bool // 已推送过的任务 ID
+	lastWinIDs  map[int64]bool // 已见过的中奖 ID。连接后先记下存量，只推之后的新中奖。
+	winsReady   bool
 }
 
 type wsHub struct {
@@ -111,7 +115,48 @@ func (h *wsHub) pushIfNew(ctx context.Context, c *wsClient) {
 	if !h.pushLottery(ctx, c) {
 		return
 	}
-	h.pushTasks(ctx, c)
+	if !h.pushTasks(ctx, c) {
+		return
+	}
+	h.pushWins(c)
+}
+
+// pendingWinMessages 第一次只登记已有中奖，不发送。之后按从早到晚返回新中奖。
+func pendingWinMessages(known map[int64]bool, ready bool, wins []lottery.Winner) ([]wsOutMessage, bool) {
+	if !ready {
+		for _, w := range wins {
+			known[w.ID] = true
+		}
+		return nil, true
+	}
+	msgs := make([]wsOutMessage, 0)
+	for i := len(wins) - 1; i >= 0; i-- {
+		if known[wins[i].ID] {
+			continue
+		}
+		cp := wins[i]
+		known[cp.ID] = true
+		msgs = append(msgs, wsOutMessage{Type: "lottery_win", Winner: &cp})
+	}
+	return msgs, true
+}
+
+func (h *wsHub) pushWins(c *wsClient) bool {
+	wins, err := h.sv.App.MyWinnings(c.userID)
+	if err != nil {
+		return true
+	}
+	if c.lastWinIDs == nil {
+		c.lastWinIDs = map[int64]bool{}
+	}
+	msgs, ready := pendingWinMessages(c.lastWinIDs, c.winsReady, wins)
+	c.winsReady = ready
+	for _, msg := range msgs {
+		if !h.trySend(c, msg) {
+			return false
+		}
+	}
+	return true
 }
 
 func (h *wsHub) trySend(c *wsClient, msg wsOutMessage) bool {

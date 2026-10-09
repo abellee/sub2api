@@ -51,6 +51,9 @@ func (s *Store) migrate() error {
 	if _, err := s.db.Exec(taskSchemaSQL); err != nil {
 		return err
 	}
+	if err := s.migrateNotify(); err != nil {
+		return err
+	}
 	// 任务表旧库升级：补 description 列。
 	if err := s.ensureColumn("tasks", "description", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
@@ -72,6 +75,18 @@ func (s *Store) migrate() error {
 		return err
 	}
 	if err := s.ensureColumn("activities", "visible_users_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("activities", "visibility_json", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("tasks", "visibility_json", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("tasks", "progress_svg", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("tasks", "progress_color", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
 	// 旧活动默认继续向用户显示参与人数。
@@ -126,6 +141,7 @@ CREATE TABLE IF NOT EXISTS activities (
 	daily_config_id INTEGER NOT NULL DEFAULT 0,
 	repeat_group TEXT NOT NULL DEFAULT '',
 	repeat_policy TEXT NOT NULL DEFAULT '',
+	visibility_json TEXT NOT NULL DEFAULT '',
 	created_at TEXT NOT NULL,
 	updated_at TEXT NOT NULL
 );
@@ -222,11 +238,15 @@ func (s *Store) CreateActivity(a *lottery.Activity) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
+	visibilityJSON, err := json.Marshal(lottery.NormalizeItemVisibility(a.Visibility))
+	if err != nil {
+		return 0, err
+	}
 	res, err := tx.Exec(
-		`INSERT INTO activities (name, description, starts_at, draws_at, max_participants, show_participant_count, condition_match, auto_bonus_percent, status, visible_to_all, visible_users_json, daily_config_id, repeat_group, repeat_policy, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO activities (name, description, starts_at, draws_at, max_participants, show_participant_count, condition_match, auto_bonus_percent, status, visible_to_all, visible_users_json, daily_config_id, repeat_group, repeat_policy, visibility_json, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?)`,
 		a.Name, a.Description, fmtTime(a.StartsAt), fmtTime(a.DrawsAt),
-		a.MaxParticipants, a.ShowParticipantCount, a.ConditionMatch, a.AutoBonusPercent, a.VisibleToAll, string(visibleUsersJSON), a.DailyConfigID, a.RepeatGroup, a.RepeatPolicy, fmtTime(now), fmtTime(now),
+		a.MaxParticipants, a.ShowParticipantCount, a.ConditionMatch, a.AutoBonusPercent, a.VisibleToAll, string(visibleUsersJSON), a.DailyConfigID, a.RepeatGroup, a.RepeatPolicy, string(visibilityJSON), fmtTime(now), fmtTime(now),
 	)
 	if err != nil {
 		return 0, err
@@ -302,10 +322,14 @@ func (s *Store) UpdateActivity(a *lottery.Activity) error {
 	if err != nil {
 		return err
 	}
+	visibilityJSON, err := json.Marshal(lottery.NormalizeItemVisibility(a.Visibility))
+	if err != nil {
+		return err
+	}
 	res, err := tx.Exec(
-		`UPDATE activities SET name=?, description=?, starts_at=?, draws_at=?, max_participants=?, show_participant_count=?, condition_match=?, auto_bonus_percent=?, visible_to_all=?, visible_users_json=?, repeat_group=?, repeat_policy=?, updated_at=? WHERE id=?`,
+		`UPDATE activities SET name=?, description=?, starts_at=?, draws_at=?, max_participants=?, show_participant_count=?, condition_match=?, auto_bonus_percent=?, visible_to_all=?, visible_users_json=?, repeat_group=?, repeat_policy=?, visibility_json=?, updated_at=? WHERE id=?`,
 		a.Name, a.Description, fmtTime(a.StartsAt), fmtTime(a.DrawsAt),
-		a.MaxParticipants, a.ShowParticipantCount, a.ConditionMatch, a.AutoBonusPercent, a.VisibleToAll, string(visibleUsersJSON), a.RepeatGroup, a.RepeatPolicy, fmtTime(time.Now().UTC()), a.ID,
+		a.MaxParticipants, a.ShowParticipantCount, a.ConditionMatch, a.AutoBonusPercent, a.VisibleToAll, string(visibleUsersJSON), a.RepeatGroup, a.RepeatPolicy, string(visibilityJSON), fmtTime(time.Now().UTC()), a.ID,
 	)
 	if err != nil {
 		return err
@@ -349,14 +373,18 @@ func scanActivities(rows *sql.Rows) ([]lottery.Activity, error) {
 	for rows.Next() {
 		var a lottery.Activity
 		var startsAt, drawsAt, createdAt, updatedAt, drawnAt string
-		var visibleUsersJSON string
+		var visibleUsersJSON, visibilityJSON string
 		if err := rows.Scan(&a.ID, &a.Name, &a.Description, &startsAt, &drawsAt, &a.MaxParticipants, &a.ShowParticipantCount,
-			&a.ConditionMatch, &a.AutoBonusPercent, &a.Status, &drawnAt, &a.VisibleToAll, &visibleUsersJSON, &a.DailyConfigID, &a.RepeatGroup, &a.RepeatPolicy, &createdAt, &updatedAt); err != nil {
+			&a.ConditionMatch, &a.AutoBonusPercent, &a.Status, &drawnAt, &a.VisibleToAll, &visibleUsersJSON, &a.DailyConfigID, &a.RepeatGroup, &a.RepeatPolicy, &visibilityJSON, &createdAt, &updatedAt); err != nil {
 			return nil, err
 		}
 		if visibleUsersJSON != "" && visibleUsersJSON != "[]" {
 			_ = json.Unmarshal([]byte(visibleUsersJSON), &a.VisibleUsers)
 		}
+		if visibilityJSON != "" {
+			_ = json.Unmarshal([]byte(visibilityJSON), &a.Visibility)
+		}
+		a.Visibility = lottery.NormalizeItemVisibility(a.Visibility)
 		a.StartsAt, a.DrawsAt = parseTime(startsAt), parseTime(drawsAt)
 		a.CreatedAt, a.UpdatedAt = parseTime(createdAt), parseTime(updatedAt)
 		if drawnAt != "" {
@@ -367,7 +395,20 @@ func scanActivities(rows *sql.Rows) ([]lottery.Activity, error) {
 	return out, rows.Err()
 }
 
-const activityColumns = `id, name, description, starts_at, draws_at, max_participants, show_participant_count, condition_match, auto_bonus_percent, status, drawn_at, visible_to_all, visible_users_json, daily_config_id, repeat_group, repeat_policy, created_at, updated_at`
+const activityColumns = `id, name, description, starts_at, draws_at, max_participants, show_participant_count, condition_match, auto_bonus_percent, status, drawn_at, visible_to_all, visible_users_json, daily_config_id, repeat_group, repeat_policy, visibility_json, created_at, updated_at`
+
+// SetUndrawnActivityVisibility 把某条定时配置尚未开奖的活动改成同一可见范围。
+func (s *Store) SetUndrawnActivityVisibility(dailyConfigID int64, visibility lottery.Visibility) error {
+	raw, err := json.Marshal(lottery.NormalizeItemVisibility(visibility))
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(
+		`UPDATE activities SET visibility_json=?, updated_at=? WHERE daily_config_id=? AND status='active' AND drawn_at=''`,
+		string(raw), fmtTime(time.Now().UTC()), dailyConfigID,
+	)
+	return err
+}
 
 // ListActivities returns all activities ordered by draws_at.
 func (s *Store) ListActivities() ([]lottery.Activity, error) {
