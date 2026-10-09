@@ -13,6 +13,7 @@ import (
 // stubMonitorSvc 实现 monitorRunnerSvc，用于隔离 runner 与真实 service/repo。
 type stubMonitorSvc struct {
 	enabled    []*ChannelMonitor
+	runResults []*CheckResult
 	runCount   atomic.Int64
 	runCalled  chan int64 // 每次 RunCheck 触发时 push 一次（缓冲足够大避免阻塞）
 	runErr     error
@@ -41,7 +42,7 @@ func (s *stubMonitorSvc) RunCheck(ctx context.Context, id int64) ([]*CheckResult
 		case <-ctx.Done():
 		}
 	}
-	return nil, s.runErr
+	return s.runResults, s.runErr
 }
 
 func newRunnerForTest(svc monitorRunnerSvc) *ChannelMonitorRunner {

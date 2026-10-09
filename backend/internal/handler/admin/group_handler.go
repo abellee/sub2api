@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -25,7 +26,116 @@ type GroupHandler struct {
 	adminService         service.AdminService
 	dashboardService     *service.DashboardService
 	groupCapacityService *service.GroupCapacityService
+	recommendationStore  *service.GroupRecommendationStore
 	cfg                  *config.Config
+}
+
+func (h *GroupHandler) SetRecommendationStore(store *service.GroupRecommendationStore) {
+	h.recommendationStore = store
+}
+
+type groupRecommendationResponse struct {
+	GroupID        int64   `json:"group_id"`
+	Name           string  `json:"name"`
+	Platform       string  `json:"platform"`
+	RateMultiplier float64 `json:"rate_multiplier"`
+	Reason         string  `json:"reason,omitempty"`
+	Rating         float64 `json:"rating"`
+}
+
+type groupRecommendationRequest struct {
+	Reason string  `json:"reason"`
+	Rating float64 `json:"rating"`
+}
+
+func (h *GroupHandler) GetRecommendations(c *gin.Context) {
+	if h.recommendationStore == nil {
+		response.Success(c, []groupRecommendationResponse{})
+		return
+	}
+	groups, err := h.adminService.GetAllGroupsIncludingInactive(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	byID := make(map[int64]service.Group, len(groups))
+	valid := make(map[int64]struct{}, len(groups))
+	for _, group := range groups {
+		byID[group.ID] = group
+		valid[group.ID] = struct{}{}
+	}
+	records, err := h.recommendationStore.List(valid)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "读取推荐分组失败")
+		return
+	}
+	out := make([]groupRecommendationResponse, 0, len(records))
+	for _, record := range records {
+		if group, ok := byID[record.GroupID]; ok {
+			out = append(out, groupRecommendationResponse{GroupID: group.ID, Name: group.Name, Platform: group.Platform, RateMultiplier: group.RateMultiplier, Reason: record.Reason, Rating: record.Rating})
+		}
+	}
+	response.Success(c, out)
+}
+
+func (h *GroupHandler) SetRecommendation(c *gin.Context) {
+	if h.recommendationStore == nil {
+		response.Error(c, http.StatusInternalServerError, "推荐服务不可用")
+		return
+	}
+	groupID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || groupID <= 0 {
+		response.BadRequest(c, "无效的分组 ID")
+		return
+	}
+	if _, err := h.adminService.GetGroup(c.Request.Context(), groupID); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	var req groupRecommendationRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "推荐信息格式无效")
+		return
+	}
+	req.Reason = strings.TrimSpace(req.Reason)
+	if len(req.Reason) > 500 {
+		response.BadRequest(c, "推荐理由不能超过 500 个字符")
+		return
+	}
+	if req.Rating < 0.5 || req.Rating > 5 || req.Rating*2 != float64(int(req.Rating*2)) {
+		response.BadRequest(c, "推荐等级必须为 0.5 到 5 之间的半星值")
+		return
+	}
+	if err := h.recommendationStore.Set(service.GroupRecommendation{GroupID: groupID, Reason: req.Reason, Rating: req.Rating}); err != nil {
+		response.Error(c, http.StatusInternalServerError, "保存推荐分组失败")
+		return
+	}
+	response.Success(c, gin.H{"message": "推荐分组已保存"})
+}
+
+func (h *GroupHandler) DeleteRecommendation(c *gin.Context) {
+	if h.recommendationStore == nil {
+		response.Error(c, http.StatusInternalServerError, "推荐服务不可用")
+		return
+	}
+	groupID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || groupID <= 0 {
+		response.BadRequest(c, "无效的分组 ID")
+		return
+	}
+	if err := h.recommendationStore.Delete(groupID); err != nil {
+		response.Error(c, http.StatusInternalServerError, "取消推荐分组失败")
+		return
+	}
+	response.Success(c, gin.H{"message": "推荐分组已取消"})
+}
+
+type publicModelPlazaGroup struct {
+	ID             int64                       `json:"id"`
+	Name           string                      `json:"name"`
+	Platform       string                      `json:"platform"`
+	RateMultiplier float64                     `json:"rate_multiplier"`
+	ModelAllowlist service.GroupModelAllowlist `json:"model_allowlist"`
 }
 
 // GetLiveCapability 返回当前服务端是否具备生成 Live attestation 的运行环境。
@@ -576,6 +686,32 @@ func (h *GroupHandler) GetAll(c *gin.Context) {
 	outGroups := make([]dto.AdminGroup, 0, len(groups))
 	for i := range groups {
 		outGroups = append(outGroups, *dto.GroupFromServiceAdmin(&groups[i]))
+	}
+	response.Success(c, outGroups)
+}
+
+// ListPublicModelPlazaGroups returns the active, non-exclusive groups used by the public model plaza.
+// GET /api/v1/model-plaza/groups
+func (h *GroupHandler) ListPublicModelPlazaGroups(c *gin.Context) {
+	groups, err := h.adminService.GetAllGroups(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	outGroups := make([]publicModelPlazaGroup, 0, len(groups))
+	for i := range groups {
+		group := &groups[i]
+		if group.IsExclusive || !group.IsActive() || len(group.ModelAllowlist.Models) == 0 {
+			continue
+		}
+		outGroups = append(outGroups, publicModelPlazaGroup{
+			ID:             group.ID,
+			Name:           group.Name,
+			Platform:       group.Platform,
+			RateMultiplier: group.RateMultiplier,
+			ModelAllowlist: group.ModelAllowlist,
+		})
 	}
 	response.Success(c, outGroups)
 }

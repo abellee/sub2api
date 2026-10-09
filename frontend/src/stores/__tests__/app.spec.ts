@@ -327,7 +327,7 @@ describe('useAppStore', () => {
   // --- 公开设置 ---
 
   describe('公开设置加载', () => {
-    it('并发调用复用并等待同一个请求，包括 force 调用', async () => {
+    it('并发非 force 调用复用同一个请求', async () => {
       const deferred = createDeferred<PublicSettings>()
       vi.mocked(getPublicSettings).mockReturnValue(deferred.promise)
       const settings = createPublicSettings({ payment_enabled: true })
@@ -335,25 +335,49 @@ describe('useAppStore', () => {
 
       const first = store.fetchPublicSettings()
       const second = store.fetchPublicSettings()
-      const forced = store.fetchPublicSettings(true)
 
       expect(getPublicSettings).toHaveBeenCalledTimes(1)
 
       const settled = vi.fn()
       void first.then(settled)
       void second.then(settled)
-      void forced.then(settled)
       await Promise.resolve()
       expect(settled).not.toHaveBeenCalled()
 
       deferred.resolve(settings)
-      await expect(Promise.all([first, second, forced])).resolves.toEqual([
-        settings,
-        settings,
-        settings,
-      ])
+      await expect(Promise.all([first, second])).resolves.toEqual([settings, settings])
       expect(store.publicSettingsLoaded).toBe(true)
       expect(store.cachedPublicSettings?.payment_enabled).toBe(true)
+    })
+
+    it('force 在已有请求进行中时发起新请求，且旧结果不会覆盖登录后的可见性', async () => {
+      const firstDeferred = createDeferred<PublicSettings>()
+      const secondDeferred = createDeferred<PublicSettings>()
+      vi.mocked(getPublicSettings)
+        .mockReturnValueOnce(firstDeferred.promise)
+        .mockReturnValueOnce(secondDeferred.promise)
+      const store = useAppStore()
+
+      const first = store.fetchPublicSettings()
+      const forced = store.fetchPublicSettings(true)
+      expect(getPublicSettings).toHaveBeenCalledTimes(2)
+
+      firstDeferred.resolve(
+        createPublicSettings({ channel_monitor_visible: true, site_name: 'Anonymous' }),
+      )
+      await first
+      expect(store.cachedPublicSettings).toBeNull()
+
+      secondDeferred.resolve(
+        createPublicSettings({
+          channel_monitor_visibility: 'selected',
+          channel_monitor_visible: false,
+          site_name: 'Signed In',
+        }),
+      )
+      await forced
+      expect(store.cachedPublicSettings?.site_name).toBe('Signed In')
+      expect(store.cachedPublicSettings?.channel_monitor_visible).toBe(false)
     })
 
     it('force 在无活动请求时绕过缓存，刷新期间的普通调用等待刷新结果', async () => {

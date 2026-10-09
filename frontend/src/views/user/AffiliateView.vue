@@ -45,28 +45,72 @@
         </div>
 
         <div class="card p-6">
-          <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('affiliate.title') }}</h3>
-          <p class="mt-1 text-sm text-gray-500 dark:text-dark-400">{{ t('affiliate.description') }}</p>
+          <div class="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
+            <div>
+              <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('affiliate.title') }}</h3>
+              <p class="mt-1 text-sm text-gray-500 dark:text-dark-400">{{ t('affiliate.description') }}</p>
 
-          <div class="mt-5 grid gap-4 md:grid-cols-2">
-            <div class="space-y-2">
-              <p class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('affiliate.yourCode') }}</p>
-              <div class="flex flex-col items-stretch gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 dark:border-dark-700 dark:bg-dark-900 sm:flex-row sm:items-center">
-                <code class="min-w-0 break-all text-sm font-semibold text-gray-900 dark:text-white sm:flex-1 sm:truncate">{{ detail.aff_code }}</code>
-                <button class="btn btn-secondary btn-sm w-full sm:w-auto sm:shrink-0" @click="copyCode">
-                  <Icon name="copy" size="sm" />
-                  <span>{{ t('affiliate.copyCode') }}</span>
-                </button>
+              <div class="mt-5 space-y-5">
+                <div class="space-y-2">
+                  <p class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('affiliate.yourCode') }}</p>
+                  <div class="flex flex-col items-stretch gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 dark:border-dark-700 dark:bg-dark-900 sm:flex-row sm:items-center">
+                    <code class="min-w-0 break-all text-sm font-semibold text-gray-900 dark:text-white sm:flex-1 sm:truncate">{{ detail.aff_code }}</code>
+                    <button class="btn btn-secondary btn-sm w-full sm:w-auto sm:shrink-0" @click="copyCode">
+                      <Icon name="copy" size="sm" />
+                      <span>{{ t('affiliate.copyCode') }}</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div class="space-y-2">
+                  <p class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('affiliate.inviteLink') }}</p>
+                  <div class="flex flex-col items-stretch gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 dark:border-dark-700 dark:bg-dark-900 sm:flex-row sm:items-center">
+                    <code class="min-w-0 break-all text-sm text-gray-700 dark:text-gray-300 sm:flex-1 sm:truncate">{{ inviteLink }}</code>
+                    <button class="btn btn-secondary btn-sm w-full sm:w-auto sm:shrink-0" @click="copyInviteLink">
+                      <Icon name="copy" size="sm" />
+                      <span>{{ t('affiliate.copyLink') }}</span>
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
 
-            <div class="space-y-2">
-              <p class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('affiliate.inviteLink') }}</p>
-              <div class="flex flex-col items-stretch gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 dark:border-dark-700 dark:bg-dark-900 sm:flex-row sm:items-center">
-                <code class="min-w-0 break-all text-sm text-gray-700 dark:text-gray-300 sm:flex-1 sm:truncate">{{ inviteLink }}</code>
-                <button class="btn btn-secondary btn-sm w-full sm:w-auto sm:shrink-0" @click="copyInviteLink">
-                  <Icon name="copy" size="sm" />
-                  <span>{{ t('affiliate.copyLink') }}</span>
+            <div class="mx-auto flex w-56 flex-col items-center lg:mx-0 lg:w-72">
+              <button
+                v-if="posterDataUrl"
+                type="button"
+                class="group block aspect-[2/3] w-full overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm transition hover:border-primary-400 hover:shadow-md dark:border-dark-700 dark:bg-dark-800"
+                :aria-label="t('affiliate.viewPoster')"
+                @click="openPoster"
+              >
+                <img
+                  :src="posterDataUrl"
+                  :alt="t('affiliate.posterAlt')"
+                  class="h-full w-full object-cover object-top transition group-hover:scale-[1.02]"
+                />
+              </button>
+              <div v-else class="flex aspect-[2/3] w-full items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 text-xs text-gray-400 dark:border-dark-700 dark:bg-dark-900 dark:text-dark-500">
+                <span v-if="posterLoading">{{ t('affiliate.posterLoading') }}</span>
+                <span v-else>{{ t('affiliate.posterFailed') }}</span>
+              </div>
+              <div class="mt-3 grid w-full grid-cols-1 gap-2 lg:grid-cols-2">
+                <button
+                  class="btn btn-secondary btn-sm min-w-0"
+                  type="button"
+                  :disabled="posterLoading || !posterDataUrl"
+                  @click="openPoster"
+                >
+                  <Icon name="eye" size="sm" />
+                  <span>{{ t('affiliate.viewPoster') }}</span>
+                </button>
+                <button
+                  class="btn btn-secondary btn-sm min-w-0"
+                  type="button"
+                  :disabled="posterLoading || !posterDataUrl"
+                  @click="downloadPoster"
+                >
+                  <Icon name="download" size="sm" />
+                  <span>{{ t('affiliate.downloadPoster') }}</span>
                 </button>
               </div>
             </div>
@@ -136,12 +180,44 @@
         </div>
       </template>
     </div>
+
+    <div
+      v-if="posterOpen && posterDataUrl"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+      role="dialog"
+      aria-modal="true"
+      :aria-label="t('affiliate.posterPreview')"
+      @click.self="closePoster"
+      @keydown.esc="closePoster"
+    >
+      <div class="relative flex max-h-full max-w-3xl flex-col items-center gap-3">
+        <button
+          class="absolute -right-2 -top-2 z-10 rounded-full bg-white p-2 text-gray-700 shadow-lg transition hover:bg-gray-100 dark:bg-dark-800 dark:text-gray-200 dark:hover:bg-dark-700"
+          type="button"
+          :aria-label="t('common.close')"
+          @click="closePoster"
+        >
+          <Icon name="x" size="sm" />
+        </button>
+        <img
+          :src="posterDataUrl"
+          :alt="t('affiliate.posterAlt')"
+          class="max-h-[calc(100vh-7rem)] w-auto max-w-full rounded-lg object-contain shadow-2xl"
+          @click="closePoster"
+        />
+        <button class="btn btn-primary btn-sm" type="button" @click="downloadPoster">
+          <Icon name="download" size="sm" />
+          <span>{{ t('affiliate.downloadPoster') }}</span>
+        </button>
+      </div>
+    </div>
   </AppLayout>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import QRCode from 'qrcode'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
 import userAPI from '@/api/user'
@@ -160,6 +236,10 @@ const { copyToClipboard } = useClipboard()
 const loading = ref(true)
 const transferring = ref(false)
 const detail = ref<UserAffiliateDetail | null>(null)
+const posterLoading = ref(false)
+const posterError = ref(false)
+const posterDataUrl = ref('')
+const posterOpen = ref(false)
 
 const inviteLink = computed(() => {
   if (!detail.value) return ''
@@ -204,6 +284,74 @@ async function copyInviteLink(): Promise<void> {
   await copyToClipboard(inviteLink.value, t('affiliate.linkCopied'))
 }
 
+async function buildPoster(): Promise<void> {
+  if (!inviteLink.value) {
+    posterDataUrl.value = ''
+    return
+  }
+  posterLoading.value = true
+  posterError.value = false
+  try {
+    const [template, qrDataUrl] = await Promise.all([
+      loadImage('/affiliate-poster-template.png'),
+      QRCode.toDataURL(inviteLink.value, {
+        width: 148,
+        margin: 0,
+        errorCorrectionLevel: 'H',
+        color: { dark: '#102b68', light: '#ffffff' },
+      }),
+    ])
+    const qr = await loadImage(qrDataUrl)
+    const canvas = document.createElement('canvas')
+    canvas.width = template.naturalWidth || template.width
+    canvas.height = template.naturalHeight || template.height
+    const context = canvas.getContext('2d')
+    if (!context || !canvas.width || !canvas.height) throw new Error('poster canvas unavailable')
+    context.drawImage(template, 0, 0)
+    // Center the QR code within the template's bottom-right white placeholder.
+    const qrSize = Math.min(148, Math.round(canvas.width * 0.145))
+    const qrCenterX = canvas.width * 0.71875
+    const qrCenterY = canvas.height * 0.859375
+    const qrX = Math.round(qrCenterX - qrSize / 2)
+    const qrY = Math.round(qrCenterY - qrSize / 2)
+    context.drawImage(qr, qrX, qrY, qrSize, qrSize)
+    posterDataUrl.value = canvas.toDataURL('image/png')
+  } catch (error) {
+    console.error('Failed to build affiliate poster', error)
+    posterDataUrl.value = ''
+    posterError.value = true
+  } finally {
+    posterLoading.value = false
+  }
+}
+
+function loadImage(source: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image()
+    image.onload = () => resolve(image)
+    image.onerror = () => reject(new Error(`Unable to load image: ${source}`))
+    image.src = source
+  })
+}
+
+function openPoster(): void {
+  if (posterDataUrl.value) posterOpen.value = true
+}
+
+function closePoster(): void {
+  posterOpen.value = false
+}
+
+function downloadPoster(): void {
+  if (!posterDataUrl.value) return
+  const link = document.createElement('a')
+  link.href = posterDataUrl.value
+  link.download = `llmfree-invite-${detail.value?.aff_code || 'poster'}.png`
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+}
+
 async function transferQuota(): Promise<void> {
   if (!detail.value || detail.value.aff_quota <= 0 || transferring.value) return
   transferring.value = true
@@ -223,5 +371,9 @@ async function transferQuota(): Promise<void> {
 
 onMounted(() => {
   void loadAffiliateDetail()
+})
+
+watch(inviteLink, () => {
+  void nextTick(buildPoster)
 })
 </script>

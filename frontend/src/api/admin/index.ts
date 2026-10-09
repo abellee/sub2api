@@ -6,6 +6,7 @@
 import dashboardAPI from './dashboard'
 import usersAPI from './users'
 import groupsAPI from './groups'
+import groupCategoriesAPI from './groupCategories'
 import accountsAPI from './accounts'
 import proxiesAPI from './proxies'
 import redeemAPI from './redeem'
@@ -36,6 +37,7 @@ import riskControlAPI from './riskControl'
 import adminComplianceAPI from './compliance'
 import auditAPI from './audit'
 import pluginsAPI from './plugins'
+import appCatalogAPI from './appCatalog'
 
 /**
  * Unified admin API object for convenient access
@@ -44,6 +46,7 @@ export const adminAPI = {
   dashboard: dashboardAPI,
   users: usersAPI,
   groups: groupsAPI,
+  groupCategories: groupCategoriesAPI,
   accounts: accountsAPI,
   proxies: proxiesAPI,
   redeem: redeemAPI,
@@ -73,13 +76,15 @@ export const adminAPI = {
   riskControl: riskControlAPI,
   compliance: adminComplianceAPI,
   audit: auditAPI,
-  plugins: pluginsAPI
+  plugins: pluginsAPI,
+  appCatalog: appCatalogAPI
 }
 
 export {
   dashboardAPI,
   usersAPI,
   groupsAPI,
+  groupCategoriesAPI,
   accountsAPI,
   proxiesAPI,
   redeemAPI,
@@ -109,7 +114,8 @@ export {
   riskControlAPI,
   adminComplianceAPI,
   auditAPI,
-  pluginsAPI
+  pluginsAPI,
+  appCatalogAPI
 }
 
 export default adminAPI
@@ -127,3 +133,4 @@ export type {
   PluginUISession,
   PluginTestResult
 } from './plugins'
+export type { CatalogApp, CatalogAppDraft, AppCatalogAgentHealth } from './appCatalog'

@@ -2,6 +2,8 @@
 
 Sub2API is an AI API Gateway Platform for distributing and managing AI product subscription API quotas.
 
+The app catalog and provider pricing sidecar is a separate image, `weishaw/sub2api-appcatalogd`. It is not published with this image.
+
 ## Quick Start
 
 ```bash

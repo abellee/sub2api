@@ -64,10 +64,11 @@ type modelPlazaTimePricing struct {
 
 // modelPlazaModel 广场模型条目：实收口径展示定价（白名单形态）+ 官方参考价。
 type modelPlazaModel struct {
-	Name            string                     `json:"name"`
-	Platform        string                     `json:"platform"`
-	Pricing         *userSupportedModelPricing `json:"pricing"`
-	OfficialPricing *modelPlazaOfficialPricing `json:"official_pricing"`
+	Name                     string                     `json:"name"`
+	Platform                 string                     `json:"platform"`
+	Pricing                  *userSupportedModelPricing `json:"pricing"`
+	OfficialPricing          *modelPlazaOfficialPricing `json:"official_pricing"`
+	HasChannelContextPricing bool                       `json:"has_channel_context_pricing,omitempty"`
 	// LongContextBasis 多档时的计价基准："whole_request"（整单按档）| "marginal"（仅超出部分）。
 	LongContextBasis string `json:"long_context_basis,omitempty"`
 	// TimePricing 分时倍率时段，落在时段内的请求整单乘倍率；无分时省略。
@@ -92,6 +93,8 @@ type modelPlazaGroup struct {
 	// 不取分组/用户专属倍率。
 	ImageRateIndependent bool    `json:"image_rate_independent"`
 	ImageRateMultiplier  float64 `json:"image_rate_multiplier"`
+	// 生视频独立倍率：为 true 时视频计费模型的实付倍率取 VideoRateMultiplier，
+	// 不取分组/用户专属倍率。
 	VideoRateIndependent bool    `json:"video_rate_independent"`
 	VideoRateMultiplier  float64 `json:"video_rate_multiplier"`
 	// 分组是否启用长上下文阶梯计费；关闭时模型实付列只展示最低档/基础价。
@@ -108,23 +111,40 @@ type modelPlazaResponse struct {
 // Get 返回模型广场数据。
 // GET /api/v1/model-plaza
 func (h *ModelPlazaHandler) Get(c *gin.Context) {
-	if h.settingService == nil {
-		response.NotFound(c, "Model plaza is not enabled")
-		return
-	}
-	rt := h.settingService.GetModelPlazaRuntime(c.Request.Context())
-	if !rt.Enabled {
-		response.NotFound(c, "Model plaza is not enabled")
-		return
+	h.get(c, true)
+}
+
+// GetPublic returns the public, non-exclusive model plaza view used by the
+// public LLM Free home page. It deliberately does not depend on the optional
+// admin model-plaza feature switch, but still exposes only the DTO whitelist.
+// GET /api/v1/model-plaza/public
+func (h *ModelPlazaHandler) GetPublic(c *gin.Context) {
+	h.get(c, false)
+}
+
+func (h *ModelPlazaHandler) get(c *gin.Context, enforceFeature bool) {
+	var rt service.ModelPlazaRuntime
+	if enforceFeature {
+		if h.settingService == nil {
+			response.NotFound(c, "Model plaza is not enabled")
+			return
+		}
+		rt = h.settingService.GetModelPlazaRuntime(c.Request.Context())
+		if !rt.Enabled {
+			response.NotFound(c, "Model plaza is not enabled")
+			return
+		}
 	}
 
 	subject, authed := middleware.GetAuthSubjectFromContext(c)
-	if rt.RequireAuth && !authed {
+	if enforceFeature && rt.RequireAuth && !authed {
 		response.Unauthorized(c, "Authentication required")
 		return
 	}
 
-	groups, err := h.plazaService.ListGroups(c.Request.Context())
+	// 两个广场入口统一以分组 model_allowlist 为模型白名单；渠道支持模型和
+	// 已配置价格只能补充定价，不能让未在分组模型设置中的模型出现在广场。
+	groups, err := h.plazaService.ListConfiguredGroups(c.Request.Context())
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -190,13 +210,15 @@ func toModelPlazaGroupDTO(g *service.PlazaGroup, userRates map[int64]float64) mo
 	models := make([]modelPlazaModel, 0, len(g.Models))
 	for i := range g.Models {
 		m := &g.Models[i]
+		pricing := toUserPricing(m.Pricing)
 		models = append(models, modelPlazaModel{
-			Name:             m.Name,
-			Platform:         m.Platform,
-			Pricing:          toUserPricing(m.Pricing),
-			OfficialPricing:  toModelPlazaOfficialPricing(m.OfficialPricing),
-			LongContextBasis: string(m.LongContextBasis),
-			TimePricing:      toModelPlazaTimePricing(m.TimePricing),
+			Name:                     m.Name,
+			Platform:                 m.Platform,
+			Pricing:                  pricing,
+			OfficialPricing:          toModelPlazaOfficialPricing(m.OfficialPricing),
+			HasChannelContextPricing: m.HasChannelContextPricing,
+			LongContextBasis:         string(m.LongContextBasis),
+			TimePricing:              toModelPlazaTimePricing(m.TimePricing),
 		})
 	}
 	dto := modelPlazaGroup{

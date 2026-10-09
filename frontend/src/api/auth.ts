@@ -4,6 +4,11 @@
  */
 
 import { apiClient } from './client'
+import {
+  getMockCurrentAdmin,
+  isAdminAuthMockEnabled,
+  mockAdminLogin
+} from '@/mocks/adminAuth'
 import { refreshAuthTokens, type RefreshTokenResponse } from './tokenRefresh'
 export type { RefreshTokenResponse } from './tokenRefresh'
 import type {
@@ -129,6 +134,13 @@ export function clearAuthToken(): void {
  * @returns Authentication response with token and user data, or 2FA required response
  */
 export async function login(credentials: LoginRequest): Promise<LoginResponse> {
+  if (isAdminAuthMockEnabled) {
+    const data = mockAdminLogin(credentials)
+    setAuthToken(data.access_token)
+    localStorage.setItem('auth_user', JSON.stringify(data.user))
+    return data
+  }
+
   const { data } = await apiClient.post<LoginResponse>('/auth/login', credentials)
 
   // Only store token if 2FA is not required
@@ -193,6 +205,10 @@ export async function register(userData: RegisterRequest): Promise<AuthResponse>
  * @returns User profile data
  */
 export async function getCurrentUser() {
+  if (isAdminAuthMockEnabled) {
+    return { data: getMockCurrentAdmin() }
+  }
+
   return apiClient.get<CurrentUserResponse>('/auth/me')
 }
 
@@ -202,6 +218,11 @@ export async function getCurrentUser() {
  * Optionally revokes the refresh token on the server
  */
 export async function logout(): Promise<void> {
+  if (isAdminAuthMockEnabled) {
+    clearAuthToken()
+    return
+  }
+
   const refreshToken = getRefreshToken()
 
   // Try to revoke the refresh token on the server

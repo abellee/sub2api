@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 )
 
 // PlazaOfficialPricing 模型广场展示用的官方参考价（USD per token），与计费同源：
@@ -25,6 +27,10 @@ type PlazaModel struct {
 	Platform        string
 	Pricing         *ChannelModelPricing
 	OfficialPricing *PlazaOfficialPricing
+	// HasChannelContextPricing is true only when the selected channel explicitly
+	// defines token intervals. Catalog/official ladders must not be advertised
+	// as channel pricing in the model plaza.
+	HasChannelContextPricing bool
 	// LongContextBasis 多档时的计价基准（整单 / 仅超出部分），单档为空。
 	LongContextBasis ContextPricingBasis
 	// TimePricing 计费会生效的分时倍率时段；无分时为 nil。
@@ -52,7 +58,8 @@ type PlazaGroup struct {
 	// = 档位价 × ImageRateMultiplier，不乘分组/用户专属倍率（与计费口径一致）。
 	ImageRateIndependent bool
 	ImageRateMultiplier  float64
-	// 视频独立倍率与图片独立倍率分别配置，开启时覆盖分组/用户专属倍率。
+	// 视频按秒实付倍率：VideoRateIndependent 为 true 时，视频计费模型的实付
+	// = 档位价 × VideoRateMultiplier，不乘分组/用户专属倍率（与计费口径一致）。
 	VideoRateIndependent bool
 	VideoRateMultiplier  float64
 	// LongContextPricingEnabled 分组是否按上下文长度应用阶梯价；关闭时模型展示的是最低档。
@@ -95,8 +102,9 @@ func NewModelPlazaService(
 // 平台隔离），仅把顶层从渠道换成分组：
 //   - 渠道按 lower(name) 排序后遍历，保证同名模型去重结果确定；
 //   - 同分组同名模型「先见者胜」，仅当已存条目无定价而新条目有定价时升级替换；
-//   - token 模型的单价与阶梯按实收口径合成（见 ResolveContextPricingSchedule），
-//     图片计费模型的档位价按实收口径合成（见 plazaImageDisplayPricing）；
+//   - token 模型的单价与阶梯按实收口径合成（见 ResolveContextPricingSchedule）；
+//     图片/视频计费模型优先使用渠道价卡（见 plazaResolvedRequestPricing），
+//     分组档位价仅覆盖已配置项（见 plazaImageDisplayPricing / plazaVideoDisplayPricing）；
 //   - 每个模型附带官方参考价（查不到为 nil）；
 //   - 只返回 Models 非空的分组；分组按 RateMultiplier 升序（同倍率按名称），
 //     组内模型按名称排序。
@@ -199,6 +207,7 @@ func (s *ModelPlazaService) ListGroups(ctx context.Context) ([]PlazaGroup, error
 	out := make([]PlazaGroup, 0, len(order))
 	for _, gid := range order {
 		pg := byGroup[gid]
+		g := groupEnt[gid]
 		if len(pg.Models) == 0 {
 			continue
 		}
@@ -208,12 +217,84 @@ func (s *ModelPlazaService) ListGroups(ctx context.Context) ([]PlazaGroup, error
 			}
 			return pg.Models[i].Platform < pg.Models[j].Platform
 		})
-		g := groupEnt[gid]
 		for j := range pg.Models {
 			s.fillDisplayPricing(ctx, &pg.Models[j], g)
 			pg.Models[j].OfficialPricing = s.lookupOfficialPricing(ctx, pg.Models[j].Name, officialMemo)
 		}
 		out = append(out, *pg)
+	}
+
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].RateMultiplier != out[j].RateMultiplier {
+			return out[i].RateMultiplier < out[j].RateMultiplier
+		}
+		return out[i].Name < out[j].Name
+	})
+	return out, nil
+}
+
+// ListConfiguredGroups returns the catalog exactly as configured in each
+// active group's model_allowlist. Channel support and pricing only enrich
+// those configured entries and never determine which models are visible.
+func (s *ModelPlazaService) ListConfiguredGroups(ctx context.Context) ([]PlazaGroup, error) {
+	groups, err := s.groupRepo.ListActive(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list active groups: %w", err)
+	}
+
+	officialMemo := make(map[string]*PlazaOfficialPricing)
+	out := make([]PlazaGroup, 0, len(groups))
+	for i := range groups {
+		g := &groups[i]
+		if len(g.ModelAllowlist.Models) == 0 {
+			continue
+		}
+		pg := PlazaGroup{
+			ID:                        g.ID,
+			Name:                      g.Name,
+			Description:               g.Description,
+			Platform:                  g.Platform,
+			SubscriptionType:          g.SubscriptionType,
+			RateMultiplier:            g.RateMultiplier,
+			PeakRateEnabled:           g.PeakRateEnabled,
+			PeakStart:                 g.PeakStart,
+			PeakEnd:                   g.PeakEnd,
+			PeakRateMultiplier:        g.PeakRateMultiplier,
+			IsExclusive:               g.IsExclusive,
+			ImageRateIndependent:      g.ImageRateIndependent,
+			ImageRateMultiplier:       g.ImageRateMultiplier,
+			VideoRateIndependent:      g.VideoRateIndependent,
+			VideoRateMultiplier:       g.VideoRateMultiplier,
+			LongContextPricingEnabled: g.LongContextPricingEnabled,
+		}
+		seen := make(map[string]struct{}, len(g.ModelAllowlist.Models))
+		for _, configuredName := range g.ModelAllowlist.Models {
+			name := strings.TrimSpace(configuredName)
+			if name == "" {
+				continue
+			}
+			if _, exists := seen[name]; exists {
+				continue
+			}
+			seen[name] = struct{}{}
+			pg.Models = append(pg.Models, PlazaModel{
+				Name:     name,
+				Platform: g.Platform,
+			})
+		}
+		if len(pg.Models) == 0 {
+			continue
+		}
+		for j := range pg.Models {
+			// Configured models stay visible without an active channel. Pricing
+			// enrichment is fork-only and does not change upstream ListGroups.
+			s.fillConfiguredDisplayPricing(ctx, &pg.Models[j], g)
+			pg.Models[j].OfficialPricing = s.lookupOfficialPricing(ctx, pg.Models[j].Name, officialMemo)
+		}
+		sort.SliceStable(pg.Models, func(i, j int) bool {
+			return pg.Models[i].Name < pg.Models[j].Name
+		})
+		out = append(out, pg)
 	}
 
 	sort.SliceStable(out, func(i, j int) bool {
@@ -250,8 +331,193 @@ func (s *ModelPlazaService) fillDisplayPricing(ctx context.Context, m *PlazaMode
 	m.Pricing = plazaImageDisplayPricing(m.Pricing, g)
 }
 
-// plazaPricingFromSchedule 把阶梯表压成展示用的 ChannelModelPricing：
-// 平价取首档单价，多档时 Intervals 逐档给出绝对单价；图片/按次字段沿用原始定价。
+// fillConfiguredDisplayPricing 是分组白名单广场的展示定价，不改变上游 ListGroups 的 fillDisplayPricing：
+// token 模型取计费阶梯表（单价与档位均由真实计费函数得出）；
+// 图片/视频/按次模型优先用渠道价卡，分组档位价只覆盖已配置项。
+// 公开页模型最初可能没有渠道定价指针，因此这里会再走一遍 Resolver。
+func (s *ModelPlazaService) fillConfiguredDisplayPricing(ctx context.Context, m *PlazaModel, g *Group) {
+	if groupPricing := matchGroupModelPricing(g, m.Name); groupPricing != nil {
+		m.Pricing = groupPricing
+	}
+	m.HasChannelContextPricing = false
+	if s.resolver != nil {
+		if requestPricing := plazaResolvedRequestPricing(ctx, s.resolver, m, g); requestPricing != nil {
+			m.Pricing = plazaImageDisplayPricing(requestPricing, g)
+			m.Pricing = plazaVideoDisplayPricing(m.Name, m.Pricing, g)
+			m.TimePricing = nil
+			m.Pricing = plazaApplyGroupMediaDisplayPricing(m.Name, m.Pricing, g)
+			return
+		}
+	}
+	if !plazaIsGrokMediaModel(m.Name) && s.billingService != nil && s.resolver != nil {
+		var groupID *int64
+		if g != nil {
+			id := g.ID
+			groupID = &id
+		}
+		// Resolve the ownership marker with the same target-platform context used
+		// by the schedule probe. This matters for composite groups: without it,
+		// the schedule can correctly use a Grok channel interval while the
+		// separate ownership lookup falls back to the official ladder.
+		pricingCtx := ctx
+		if m.Platform != "" {
+			pricingCtx = WithResolvedTargetPlatform(pricingCtx, m.Platform)
+		}
+		resolved := s.resolver.Resolve(pricingCtx, PricingInput{Model: m.Name, Group: g, GroupID: groupID})
+		sched, err := s.billingService.ResolveContextPricingSchedule(pricingCtx, s.resolver, ContextPricingScheduleInput{
+			Model:    m.Name,
+			Group:    g,
+			Platform: m.Platform,
+		})
+		if err == nil && sched != nil && len(sched.Tiers) > 0 {
+			m.Pricing = plazaPricingFromSchedule(m.Pricing, sched)
+			// Catalog ladders are not channel pricing. Only expose context tiers
+			// when the resolved channel explicitly configures token intervals.
+			// This keeps the model plaza from advertising official/catalog tiers
+			// that do not apply to the selected channel.
+			if resolved == nil || resolved.Source != PricingSourceChannel || len(resolved.Intervals) == 0 {
+				m.Pricing.Intervals = nil
+			} else if len(sched.Tiers) > 1 {
+				// The first probed tier is the channel base price. Channel
+				// intervals are displayed as the additional context tiers.
+				m.Pricing.Intervals = plazaIntervalsFromTiers(sched.Tiers[1:])
+				m.HasChannelContextPricing = true
+			}
+			if len(sched.Tiers) > 1 {
+				m.LongContextBasis = sched.Basis
+			}
+			m.TimePricing = sched.TimePricing
+			return
+		}
+	}
+	m.Pricing = plazaImageDisplayPricing(m.Pricing, g)
+	m.Pricing = plazaVideoDisplayPricing(m.Name, m.Pricing, g)
+	m.Pricing = plazaApplyGroupMediaDisplayPricing(m.Name, m.Pricing, g)
+	if m.Pricing != nil && len(m.Pricing.Intervals) > 0 {
+		// Without a resolver (unit/test or legacy path), intervals already on
+		// the model are the only available channel-owned pricing source.
+		m.HasChannelContextPricing = true
+	}
+}
+
+func plazaIsGrokImagineImage(model string) bool {
+	m := strings.ToLower(xai.StripGrokProviderPrefix(model))
+	return m == "grok-imagine" || m == "grok-imagine-1" || m == "grok-imagine-edit" || strings.HasPrefix(m, "grok-imagine-image")
+}
+
+func plazaGrokImagePricingModel(model string) string {
+	m := strings.ToLower(xai.StripGrokProviderPrefix(model))
+	switch m {
+	case "grok-imagine", "grok-imagine-1", "grok-imagine-edit":
+		return xai.DefaultImagineImageQualityModel
+	default:
+		return strings.TrimSpace(model)
+	}
+}
+
+func plazaIsGrokMediaModel(model string) bool {
+	return plazaIsGrokImagineImage(model) || CanonicalGrokImagineVideoPriceFamily(model) != ""
+}
+
+func plazaHasRequestTiers(p *ChannelModelPricing) bool {
+	if p == nil {
+		return false
+	}
+	if p.PerRequestPrice != nil {
+		return true
+	}
+	for _, iv := range p.Intervals {
+		if iv.PerRequestPrice != nil {
+			return true
+		}
+	}
+	return false
+}
+
+func plazaApplyGroupMediaDisplayPricing(model string, p *ChannelModelPricing, g *Group) *ChannelModelPricing {
+	if plazaIsGrokImagineImage(model) {
+		base := p
+		if base == nil || base.BillingMode != BillingModeImage {
+			base = &ChannelModelPricing{BillingMode: BillingModeImage}
+		}
+		out := plazaImageDisplayPricing(base, g)
+		if plazaHasRequestTiers(out) {
+			return out
+		}
+		if plazaHasRequestTiers(p) {
+			return p
+		}
+		return nil
+	}
+	if CanonicalGrokImagineVideoPriceFamily(model) != "" {
+		base := p
+		if base == nil || base.BillingMode != BillingModeVideo {
+			base = &ChannelModelPricing{BillingMode: BillingModeVideo}
+		}
+		out := plazaVideoDisplayPricing(model, base, g)
+		if plazaHasRequestTiers(out) {
+			return out
+		}
+		if plazaHasRequestTiers(p) {
+			return p
+		}
+		return nil
+	}
+	return p
+}
+
+// plazaResolvedRequestPricing 从计费解析器取出渠道/分组配置的按次、图片、视频价卡。
+// token 模式返回 nil，让调用方继续走阶梯表。
+func plazaResolvedRequestPricing(ctx context.Context, resolver *ModelPricingResolver, m *PlazaModel, g *Group) *ChannelModelPricing {
+	if resolver == nil || m == nil {
+		return nil
+	}
+	input := PricingInput{Group: g}
+	if g != nil {
+		gid := g.ID
+		input.GroupID = &gid
+	}
+	if m.Platform != "" {
+		ctx = WithResolvedTargetPlatform(ctx, m.Platform)
+	}
+	resolve := func(model string) *ResolvedPricing {
+		input.Model = model
+		return resolver.Resolve(ctx, input)
+	}
+	resolved := resolve(m.Name)
+	if canonical := plazaGrokImagePricingModel(m.Name); canonical != strings.TrimSpace(m.Name) &&
+		(resolved == nil || (resolved.Mode != BillingModeImage && resolved.Mode != BillingModePerRequest)) {
+		resolved = resolve(canonical)
+	}
+	if resolved == nil {
+		return nil
+	}
+	switch resolved.Mode {
+	case BillingModeImage, BillingModeVideo, BillingModePerRequest:
+	default:
+		return nil
+	}
+	out := ChannelModelPricing{BillingMode: resolved.Mode}
+	if resolved.channelPricing != nil {
+		out.ImageInputPrice = resolved.channelPricing.ImageInputPrice
+		out.ImageOutputPrice = resolved.channelPricing.ImageOutputPrice
+		out.PerRequestPrice = resolved.channelPricing.PerRequestPrice
+	}
+	if resolved.DefaultPerRequestPrice > 0 && out.PerRequestPrice == nil {
+		v := resolved.DefaultPerRequestPrice
+		out.PerRequestPrice = &v
+	}
+	if len(resolved.RequestTiers) > 0 {
+		out.Intervals = append([]PricingInterval(nil), resolved.RequestTiers...)
+	}
+	if len(out.Intervals) == 0 && out.PerRequestPrice == nil && out.ImageInputPrice == nil && out.ImageOutputPrice == nil {
+		return nil
+	}
+	return &out
+}
+
+// plazaPricingFromSchedule 把计费阶梯表转换为模型广场展示定价。
+// 基础字段取第一档，多档时 Intervals 保留每个档位的绝对单价。
 func plazaPricingFromSchedule(raw *ChannelModelPricing, sched *ContextPricingSchedule) *ChannelModelPricing {
 	out := &ChannelModelPricing{BillingMode: BillingModeToken}
 	if raw != nil {
@@ -274,16 +540,16 @@ func plazaPricingFromSchedule(raw *ChannelModelPricing, sched *ContextPricingSch
 
 func plazaIntervalsFromTiers(tiers []ContextPricingTier) []PricingInterval {
 	intervals := make([]PricingInterval, 0, len(tiers))
-	for i, t := range tiers {
+	for i, tier := range tiers {
 		intervals = append(intervals, PricingInterval{
-			MinTokens:         t.MinTokens,
-			MaxTokens:         t.MaxTokens,
-			TierLabel:         t.Label,
-			InputPrice:        t.Input,
-			OutputPrice:       t.Output,
-			CacheWritePrice:   t.CacheWrite,
-			CacheWrite1hPrice: t.CacheWrite1h,
-			CacheReadPrice:    t.CacheRead,
+			MinTokens:         tier.MinTokens,
+			MaxTokens:         tier.MaxTokens,
+			TierLabel:         tier.Label,
+			InputPrice:        tier.Input,
+			OutputPrice:       tier.Output,
+			CacheWritePrice:   tier.CacheWrite,
+			CacheWrite1hPrice: tier.CacheWrite1h,
+			CacheReadPrice:    tier.CacheRead,
 			SortOrder:         i,
 		})
 	}
@@ -337,6 +603,56 @@ func plazaImageDisplayPricing(p *ChannelModelPricing, g *Group) *ChannelModelPri
 	return &clone
 }
 
+// plazaVideoDisplayPricing 为视频计费模型合成展示定价：
+// 每档（480p/720p/1080p）单价 = 分组模型族价 > 分组平面价 > 渠道同档位价 > 渠道默认按次价。
+// 只展示有价格的档位；分组未配视频价时保持渠道定价原样。
+func plazaVideoDisplayPricing(model string, p *ChannelModelPricing, g *Group) *ChannelModelPricing {
+	if p == nil || g == nil || p.BillingMode != BillingModeVideo {
+		return p
+	}
+	hasGroupVideoPrice := g.VideoPrice480P != nil || g.VideoPrice720P != nil || g.VideoPrice1080P != nil ||
+		LookupVideoModelPrice(g.VideoModelPrices, model, VideoBillingResolution480P) != nil ||
+		LookupVideoModelPrice(g.VideoModelPrices, model, VideoBillingResolution720P) != nil ||
+		LookupVideoModelPrice(g.VideoModelPrices, model, VideoBillingResolution1080P) != nil
+	if !hasGroupVideoPrice {
+		return p
+	}
+	channelTierPrice := func(label string) *float64 {
+		for i := range p.Intervals {
+			if p.Intervals[i].TierLabel == label && p.Intervals[i].PerRequestPrice != nil {
+				return p.Intervals[i].PerRequestPrice
+			}
+		}
+		return p.PerRequestPrice
+	}
+	tiers := []string{
+		VideoBillingResolution480P,
+		VideoBillingResolution720P,
+		VideoBillingResolution1080P,
+	}
+	clone := *p
+	clone.Intervals = make([]PricingInterval, 0, len(tiers))
+	for i, label := range tiers {
+		price := LookupVideoModelPrice(g.VideoModelPrices, model, label)
+		if price == nil {
+			price = g.GetVideoPrice(label)
+		}
+		if price == nil {
+			price = channelTierPrice(label)
+		}
+		if price == nil {
+			continue
+		}
+		v := *price
+		clone.Intervals = append(clone.Intervals, PricingInterval{
+			TierLabel:       label,
+			PerRequestPrice: &v,
+			SortOrder:       i,
+		})
+	}
+	return &clone
+}
+
 // lookupOfficialPricing 查询模型的官方参考价（与计费同源：LiteLLM → 内置兜底 → 模型策略），
 // 带 memo 避免同名模型重复解析。官方阶梯按无分组、无渠道的口径查阶梯表。
 // billingService 为 nil（测试场景）或查不到时返回 nil。
@@ -360,9 +676,9 @@ func (s *ModelPlazaService) lookupOfficialPricing(ctx context.Context, modelName
 			result.CacheWrite1hPrice = nonZeroPtr(mp.CacheCreation1hPrice)
 		}
 		if s.resolver != nil {
-			sched, schedErr := s.billingService.ResolveContextPricingSchedule(ctx, s.resolver, ContextPricingScheduleInput{Model: modelName})
-			if schedErr == nil && sched != nil && len(sched.Tiers) > 1 {
-				result.Intervals = plazaIntervalsFromTiers(sched.Tiers)
+			schedule, scheduleErr := s.billingService.ResolveContextPricingSchedule(ctx, s.resolver, ContextPricingScheduleInput{Model: modelName})
+			if scheduleErr == nil && schedule != nil && len(schedule.Tiers) > 1 {
+				result.Intervals = plazaIntervalsFromTiers(schedule.Tiers)
 			}
 		}
 		if result.InputPrice == nil && result.OutputPrice == nil && result.CacheWritePrice == nil &&

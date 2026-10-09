@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"math"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -20,7 +21,12 @@ import (
 
 // APIKeyHandler handles API key-related requests
 type APIKeyHandler struct {
-	apiKeyService *service.APIKeyService
+	apiKeyService       *service.APIKeyService
+	recommendationStore *service.GroupRecommendationStore
+}
+
+func (h *APIKeyHandler) SetGroupRecommendationStore(store *service.GroupRecommendationStore) {
+	h.recommendationStore = store
 }
 
 // NewAPIKeyHandler creates a new APIKeyHandler
@@ -355,4 +361,48 @@ func (h *APIKeyHandler) GetUserGroupRates(c *gin.Context) {
 	}
 
 	response.Success(c, rates)
+}
+
+type userGroupRecommendation struct {
+	GroupID        int64   `json:"group_id"`
+	Name           string  `json:"name"`
+	RateMultiplier float64 `json:"rate_multiplier"`
+	Reason         string  `json:"reason,omitempty"`
+	Rating         float64 `json:"rating"`
+}
+
+// GetRecommendedGroups returns curated groups that this user can actually bind.
+func (h *APIKeyHandler) GetRecommendedGroups(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	if h.recommendationStore == nil {
+		response.Success(c, []userGroupRecommendation{})
+		return
+	}
+	groups, err := h.apiKeyService.GetAvailableGroups(c.Request.Context(), subject.UserID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	byID := make(map[int64]service.Group, len(groups))
+	valid := make(map[int64]struct{}, len(groups))
+	for _, group := range groups {
+		byID[group.ID] = group
+		valid[group.ID] = struct{}{}
+	}
+	records, err := h.recommendationStore.List(valid)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "读取推荐分组失败")
+		return
+	}
+	out := make([]userGroupRecommendation, 0, len(records))
+	for _, record := range records {
+		if group, ok := byID[record.GroupID]; ok {
+			out = append(out, userGroupRecommendation{GroupID: group.ID, Name: group.Name, RateMultiplier: group.RateMultiplier, Reason: record.Reason, Rating: record.Rating})
+		}
+	}
+	response.Success(c, out)
 }
