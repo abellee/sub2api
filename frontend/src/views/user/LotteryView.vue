@@ -7,7 +7,7 @@
 import AppLayout from '@/components/layout/AppLayout.vue'
 import LotteryDrawPanel from '@/components/lottery/LotteryDrawPanel.vue'
 import { createDefaultLotteryClient } from '@/api/lotteryClient'
-// 资格引导弹窗由 AppLayout 内的全局 LotteryPromptHost 负责（覆盖所有页面）
+// 资格引导弹窗由 App.vue 里的 LotteryPromptHost 负责，菜单切换不断开连接
 
 const client = createDefaultLotteryClient()
 </script>

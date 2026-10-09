@@ -1,5 +1,13 @@
 <template>
   <header class="glass sticky top-0 z-30 border-b border-gray-200/50 dark:border-dark-700/50">
+    <span
+      v-if="user && lotterySocketStatus !== 'idle'"
+      class="absolute right-1.5 top-1.5 z-40 inline-block h-2 w-2 rounded-full"
+      :class="socketDotClass"
+      role="status"
+      :title="socketDotTitle"
+      :aria-label="socketDotTitle"
+    ></span>
     <div class="flex h-16 items-center justify-between gap-2 px-2 sm:px-4 md:px-6">
       <!-- Left: Mobile Menu Toggle + Page Title -->
       <div class="flex shrink-0 items-center gap-2 sm:gap-4">
@@ -92,6 +100,7 @@
             <div
               v-if="headerWidgetConfig"
               class="group relative z-50 flex h-[22px] w-[76px] flex-shrink-0 items-center justify-center sm:w-[90px]"
+              data-tour="join-qq-group"
             >
             <a
               target="_blank"
@@ -146,48 +155,6 @@
               </div>
             </div>
             </div>
-
-            <div
-              v-if="headerWidgetConfig"
-              class="group relative z-50 flex h-[22px] flex-shrink-0 items-center"
-            >
-              <button
-                type="button"
-                class="flex h-[22px] items-center justify-center gap-1 rounded-md bg-[#07C160] px-2 text-[11px] font-semibold text-white shadow-sm transition-opacity hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-[#07C160]/40"
-                title="加入微信群"
-                aria-label="加入微信群"
-              >
-                <Icon name="chat" size="xs" />
-                <span>加入微信群</span>
-              </button>
-
-              <div
-                class="pointer-events-none invisible absolute right-0 top-full w-72 translate-y-2 pt-2 opacity-0 transition-all duration-200 group-hover:pointer-events-auto group-hover:visible group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:visible group-focus-within:translate-y-0 group-focus-within:opacity-100"
-              >
-                <div class="rounded-2xl border border-white/10 bg-[#242424] p-4 text-white shadow-2xl">
-                  <div class="flex items-center gap-3 text-left">
-                    <img
-                      :src="headerWidgetConfig.qq.logoUrl"
-                      alt="LLM-Free Logo"
-                      class="h-14 w-14 flex-shrink-0 rounded-full object-cover"
-                    >
-                    <div class="min-w-0">
-                      <div class="truncate text-lg font-semibold">{{ wechatGroup.groupName }}</div>
-                      <div class="mt-1 text-sm text-gray-400">微信扫码加入群聊</div>
-                    </div>
-                  </div>
-
-                  <div class="my-4 border-t border-dashed border-white/10"></div>
-
-                  <img
-                    :src="wechatGroup.qrUrl"
-                    :alt="`${wechatGroup.groupName} 二维码`"
-                    class="mx-auto block w-full rounded-xl bg-white"
-                  >
-                  <div class="mt-3 text-center text-sm text-gray-300">扫一扫二维码，加入微信群</div>
-                </div>
-              </div>
-            </div>
           </div>
 
           <div
@@ -212,7 +179,7 @@
                 class="fixed inset-x-2 top-16 z-[70] mt-2 max-h-[calc(100vh-5rem)] w-auto overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-2xl dark:border-dark-600 dark:bg-dark-800"
               >
                 <div class="p-3">
-                  <div class="grid grid-cols-3 rounded-lg bg-gray-100 p-1 dark:bg-dark-700">
+                  <div class="grid grid-cols-2 rounded-lg bg-gray-100 p-1 dark:bg-dark-700">
                     <button
                       type="button"
                       class="h-8 rounded-md text-sm font-medium transition-colors"
@@ -233,19 +200,9 @@
                     >
                       Telegram
                     </button>
-                    <button
-                      type="button"
-                      class="h-8 rounded-md text-sm font-medium transition-colors"
-                      :class="mobileHeaderWidgetTab === 'wechat'
-                        ? 'bg-white text-gray-900 shadow-sm dark:bg-dark-900 dark:text-white'
-                        : 'text-gray-500 hover:text-gray-900 dark:text-dark-300 dark:hover:text-white'"
-                      @click="mobileHeaderWidgetTab = 'wechat'"
-                    >
-                      微信群
-                    </button>
                   </div>
 
-                  <div v-if="mobileHeaderWidgetTab === 'qq'" class="mt-4">
+                  <div v-if="mobileHeaderWidgetTab === 'qq'" class="mt-4" data-tour="join-qq-group">
                     <div class="flex items-center gap-3 text-left">
                       <img
                         :src="headerWidgetConfig.qq.logoUrl"
@@ -340,35 +297,6 @@
                     >
                     <div class="mt-3 text-center text-sm text-gray-500 dark:text-dark-300">
                       扫一扫二维码，加入 Telegram 群组
-                    </div>
-                  </div>
-
-                  <div v-else class="mt-4">
-                    <div class="flex items-center gap-3 text-left">
-                      <img
-                        :src="headerWidgetConfig.qq.logoUrl"
-                        alt="LLM-Free Logo"
-                        class="h-14 w-14 flex-shrink-0 rounded-full object-cover"
-                      >
-                      <div class="min-w-0 flex-1">
-                        <div class="text-lg font-semibold text-gray-900 dark:text-white">
-                          {{ wechatGroup.groupName }}
-                        </div>
-                        <div class="mt-1 text-sm text-gray-500 dark:text-dark-300">
-                          微信扫码加入群聊
-                        </div>
-                      </div>
-                    </div>
-
-                    <div class="my-4 border-t border-dashed border-gray-200 dark:border-dark-600"></div>
-
-                    <img
-                      :src="wechatGroup.qrUrl"
-                      :alt="`${wechatGroup.groupName} 二维码`"
-                      class="mx-auto block w-full max-w-64 rounded-xl bg-white"
-                    >
-                    <div class="mt-3 text-center text-sm text-gray-500 dark:text-dark-300">
-                      扫一扫二维码，加入微信群
                     </div>
                   </div>
                 </div>
@@ -519,6 +447,8 @@
                   {{ t('nav.apiKeys') }}
                 </router-link>
 
+                <PushNotificationToggle />
+
                 <a
                   v-if="authStore.isAdmin"
                   href="https://github.com/Wei-Shaw/sub2api"
@@ -607,6 +537,8 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { CLOSE_QQ_GROUP_EVENT, OPEN_QQ_GROUP_EVENT, OPEN_USER_MENU_EVENT, PUSH_TOUR_UNLOCK_EVENT } from '@/composables/usePushNotificationTour'
+import { useLotterySocketStatus } from '@/composables/useLotterySocketStatus'
 import { storeToRefs } from 'pinia'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -615,15 +547,11 @@ import { useAdminSettingsStore } from '@/stores/adminSettings'
 import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import SubscriptionProgressMini from '@/components/common/SubscriptionProgressMini.vue'
 import AnnouncementBell from '@/components/common/AnnouncementBell.vue'
+import PushNotificationToggle from '@/components/common/PushNotificationToggle.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { sanitizeUrl } from '@/utils/url'
 import { useClipboard } from '@/composables/useClipboard'
 import { FeatureFlags, isFeatureFlagEnabled } from '@/utils/featureFlags'
-import {
-  getWechatGroupQR,
-  WECHAT_GROUP_QR_UPDATED_EVENT,
-  type WechatGroupQRInfo
-} from '@/api/wechatGroupQR'
 import { resolveRouteMetaKeys } from '@/router/title'
 import { resolveSiteBillingMode } from '@/utils/siteBillingMode'
 
@@ -637,17 +565,36 @@ const onboardingStore = useOnboardingStore()
 const remoteWidgetsStore = useRemoteWidgetsStore()
 const { copyToClipboard } = useClipboard()
 const { headerConfig: headerWidgetConfig } = storeToRefs(remoteWidgetsStore)
-
-const wechatGroup = ref({
-  groupName: 'LLM Free小小群',
-  qrUrl: '/llmfree/wechat-group-qr.png'
+const { status: lotterySocketStatus } = useLotterySocketStatus()
+const socketDotTitle = computed(() => {
+  switch (lotterySocketStatus.value) {
+    case 'open':
+      return '实时连接已建立'
+    case 'connecting':
+      return '正在连接'
+    case 'closed':
+      return '实时连接已断开'
+    default:
+      return ''
+  }
+})
+const socketDotClass = computed(() => {
+  switch (lotterySocketStatus.value) {
+    case 'open':
+      return 'bg-emerald-500'
+    case 'connecting':
+      return 'animate-pulse bg-amber-400'
+    default:
+      return 'bg-red-500'
+  }
 })
 
 const user = computed(() => authStore.user)
 const dropdownOpen = ref(false)
+const dropdownLocked = ref(false)
 const dropdownRef = ref<HTMLElement | null>(null)
 const mobileHeaderWidgetOpen = ref(false)
-const mobileHeaderWidgetTab = ref<'qq' | 'telegram' | 'wechat'>('qq')
+const mobileHeaderWidgetTab = ref<'qq' | 'telegram'>('qq')
 const mobileHeaderWidgetRef = ref<HTMLElement | null>(null)
 const contactInfo = computed(() => appStore.contactInfo)
 const docUrl = computed(() => sanitizeUrl(appStore.docUrl))
@@ -722,11 +669,35 @@ function toggleMobileSidebar() {
 }
 
 function toggleDropdown() {
+  if (dropdownLocked.value && dropdownOpen.value) return
   dropdownOpen.value = !dropdownOpen.value
 }
 
 function closeDropdown() {
+  if (dropdownLocked.value) return
   dropdownOpen.value = false
+}
+
+function openUserMenuForTour() {
+  dropdownOpen.value = true
+  dropdownLocked.value = true
+}
+
+function unlockUserMenu() {
+  dropdownLocked.value = false
+}
+
+function openQqGroupForTour() {
+  dropdownLocked.value = false
+  dropdownOpen.value = false
+  if (window.matchMedia('(max-width: 1023px)').matches) {
+    mobileHeaderWidgetTab.value = 'qq'
+    mobileHeaderWidgetOpen.value = true
+  }
+}
+
+function closeQqGroupForTour() {
+  mobileHeaderWidgetOpen.value = false
 }
 
 async function copyQqGroupNumber() {
@@ -761,6 +732,7 @@ function formatHeaderMoney(value: number) {
 }
 
 function handleClickOutside(event: MouseEvent) {
+  if (dropdownLocked.value) return
   if (dropdownRef.value && !dropdownRef.value.contains(event.target as Node)) {
     closeDropdown()
   }
@@ -772,33 +744,20 @@ function handleClickOutside(event: MouseEvent) {
   }
 }
 
-function applyWechatGroupQR(info: WechatGroupQRInfo) {
-  if (typeof info.image_url === 'string' && info.image_url.trim()) {
-    wechatGroup.value.qrUrl = info.image_url
-  }
-}
-
-async function loadWechatGroupQR() {
-  try {
-    applyWechatGroupQR(await getWechatGroupQR())
-  } catch (error) {
-    console.error('Failed to load WeChat group QR code:', error)
-  }
-}
-
-function handleWechatGroupQRUpdated(event: Event) {
-  applyWechatGroupQR((event as CustomEvent<WechatGroupQRInfo>).detail)
-}
-
 onMounted(() => {
   document.addEventListener('click', handleClickOutside)
-  window.addEventListener(WECHAT_GROUP_QR_UPDATED_EVENT, handleWechatGroupQRUpdated)
-  void loadWechatGroupQR()
+  window.addEventListener(OPEN_USER_MENU_EVENT, openUserMenuForTour)
+  window.addEventListener(PUSH_TOUR_UNLOCK_EVENT, unlockUserMenu)
+  window.addEventListener(OPEN_QQ_GROUP_EVENT, openQqGroupForTour)
+  window.addEventListener(CLOSE_QQ_GROUP_EVENT, closeQqGroupForTour)
 })
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', handleClickOutside)
-  window.removeEventListener(WECHAT_GROUP_QR_UPDATED_EVENT, handleWechatGroupQRUpdated)
+  window.removeEventListener(OPEN_USER_MENU_EVENT, openUserMenuForTour)
+  window.removeEventListener(PUSH_TOUR_UNLOCK_EVENT, unlockUserMenu)
+  window.removeEventListener(OPEN_QQ_GROUP_EVENT, openQqGroupForTour)
+  window.removeEventListener(CLOSE_QQ_GROUP_EVENT, closeQqGroupForTour)
 })
 </script>
 

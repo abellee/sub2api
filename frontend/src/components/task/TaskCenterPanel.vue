@@ -1,19 +1,22 @@
 <script setup lang="ts">
 /** 用户侧任务中心：进行中任务卡片 + 我的奖励（含兑换码）。 */
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { LotteryClient } from '@/api/lotteryClient'
 import { formatValue } from '@/api/lottery'
-import { fetchMyTaskRewards, fetchTaskPhase, fetchTaskVisibility, listTasks, type TaskReward, type TaskView } from '@/api/task'
+import { fetchMyTaskRewards, listTasks, type TaskRepeatPolicy, type TaskReward, type TaskView } from '@/api/task'
+import { refreshMenuStatus, useMenuStatus } from '@/composables/useMenuStatus'
+import { sanitizeSvg } from '@/utils/sanitize'
+import { addCalendarDays, beijingToday } from '@/utils/beijingTime'
 
 const props = defineProps<{ client: LotteryClient }>()
 
 const tasks = ref<TaskView[]>([])
 const rewards = ref<TaskReward[]>([])
+const { taskVisible, menuReady } = useMenuStatus()
+const showTaskBody = computed(() => !menuReady.value || taskVisible.value)
 const loading = ref(true)
 const error = ref('')
 const copiedCode = ref('')
-/** 任务中心对该用户是否可见（partial 模式白名单外显示未开放） */
-const userVisible = ref<boolean | null>(null)
 
 const hasActiveTask = computed(() => tasks.value.length > 0)
 
@@ -23,6 +26,134 @@ const sortedRewards = computed(() =>
 
 function fmtDate(s: string): string {
   return s ? s.slice(0, 10).replace(/-/g, '/') : '—'
+}
+
+/** 最后一天仍在进行，不能写成剩 0 天。已结束的任务不展示剩余。 */
+function remainLabel(t: TaskView): string {
+  if (t.status !== 'active') return ''
+  const today = beijingToday()
+  const end = (t.end_date ?? '').slice(0, 10)
+  if (!end || end < today) return ''
+  if (end === today) return '最后一天'
+  const left = t.days_left ?? 0
+  return left > 0 ? `剩 ${left} 天` : '最后一天'
+}
+
+/** 进行中且今天落在任务周期内时，展示今天这份消耗的结算时刻。 */
+function settlesTodayUsage(t: TaskView): boolean {
+  if (t.status !== 'active' || !t.settle_time) return false
+  const today = beijingToday()
+  const start = (t.start_date ?? '').slice(0, 10)
+  const end = (t.end_date ?? '').slice(0, 10)
+  return Boolean(start && end && today >= start && today <= end)
+}
+
+/** 当天消耗的结算时刻：次日 settle_time（北京时间）。 */
+function settleMomentText(t: TaskView): string {
+  const time = t.settle_time || ''
+  if (settlesTodayUsage(t)) return `${fmtDate(addCalendarDays(beijingToday(), 1))} ${time}`
+  return time ? `次日 ${time}` : '—'
+}
+
+const repeatPolicyLabel: Record<TaskRepeatPolicy, string> = {
+  unlimited: '不限（每日达标即发）',
+  join_once: '限参与一次',
+  achieved_once: '达成后不能再参与'
+}
+
+function tokensM(n: number | undefined): string {
+  const m = (n ?? 0) / 1e6
+  if (!Number.isFinite(m)) return '0'
+  const rounded = Math.round(m * 10) / 10
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1)
+}
+
+function progressPercent(t: TaskView): number {
+  const cap = t.progress_cap ?? 0
+  if (cap <= 0) return 0
+  const value = ((t.progress_tokens ?? 0) / cap) * 100
+  if (!Number.isFinite(value) || value < 0) return 0
+  return Math.min(100, value)
+}
+
+function stageRewardText(t: TaskView): string {
+  const units = t.progress_units && t.progress_units > 0 ? t.progress_units : 1
+  if (t.reward_type === 'balance') return `余额 ${formatValue(t.reward_value * units)}`
+  return `兑换码 ×${units}`
+}
+
+// 进度条颜色：管理端配置值按后端同款规则（#RGB / #RRGGBB）校验，非法或未配置时保持默认渐变。
+const HEX_COLOR = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/
+
+function barStyle(t: TaskView): Record<string, string> {
+  const style: Record<string, string> = { width: (shownPercent.value[t.id] ?? 0) + '%' }
+  const color = t.progress_color ?? ''
+  if (HEX_COLOR.test(color)) {
+    style['--progress-color'] = color
+    style['--progress-color-soft'] = `color-mix(in srgb, ${color} 70%, #ffffff)`
+  }
+  return style
+}
+
+/** 进度条小动画：管理端上传的 SVG 源码，清洗后按任务 ID 缓存，避免每次渲染重复过 DOMPurify。 */
+const progressSvg = computed<Record<number, string>>(() => {
+  const map: Record<number, string> = {}
+  for (const task of tasks.value) {
+    if (task.progress_svg) map[task.id] = sanitizeSvg(task.progress_svg)
+  }
+  return map
+})
+
+const PROGRESS_REFRESH_MS = 10 * 60 * 1000
+const PROGRESS_GROW_EPSILON = 0.05
+
+/** 当前展示宽度。进入页面时直接等于结果，不从 0 过渡。 */
+const shownPercent = ref<Record<number, number>>({})
+/** 仅停留刷新且百分比上升时为 true，用来打开宽度过渡。 */
+const progressAnimate = ref<Record<number, boolean>>({})
+
+let progressEpoch = 0
+let progressTimer: number | undefined
+let panelAlive = true
+
+/**
+ * 写入进度宽度。animateGrowth 为 false 时立刻停在结果上。
+ * 为 true 时，只有比上次展示值更高才在下一帧拉长；持平、下降或新出现的任务直接跳到结果。
+ */
+function applyShownProgress(list: TaskView[], animateGrowth: boolean, epoch: number): Promise<void> {
+  const previous = shownPercent.value
+  const nextShown: Record<number, number> = {}
+  const animateFlags: Record<number, boolean> = {}
+  const grown: { id: number; value: number }[] = []
+  for (const task of list) {
+    const next = progressPercent(task)
+    const old = previous[task.id]
+    if (animateGrowth && old !== undefined && next > old + PROGRESS_GROW_EPSILON) {
+      nextShown[task.id] = old
+      animateFlags[task.id] = true
+      grown.push({ id: task.id, value: next })
+    } else {
+      nextShown[task.id] = next
+      animateFlags[task.id] = false
+    }
+  }
+  shownPercent.value = nextShown
+  progressAnimate.value = animateFlags
+  if (grown.length === 0) return Promise.resolve()
+  return nextTick().then(() => new Promise((resolve) => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (!panelAlive || epoch !== progressEpoch) {
+          resolve()
+          return
+        }
+        const filled = { ...shownPercent.value }
+        for (const item of grown) filled[item.id] = item.value
+        shownPercent.value = filled
+        resolve()
+      })
+    })
+  }))
 }
 
 function copyCode(code: string) {
@@ -56,23 +187,32 @@ watch(lightboxOpen, (open) => {
 })
 
 onBeforeUnmount(() => {
+  panelAlive = false
+  if (progressTimer !== undefined) window.clearInterval(progressTimer)
   window.removeEventListener('keydown', onLightboxKeydown)
   document.body.style.overflow = ''
 })
+
+async function loadTaskCenter(animateGrowth: boolean) {
+  const epoch = ++progressEpoch
+  // 菜单可见范围由全局轮询更新，不挡任务列表和进度。
+  void refreshMenuStatus()
+  const [t, r] = await Promise.all([
+    listTasks(props.client),
+    fetchMyTaskRewards(props.client)
+  ])
+  if (!panelAlive || epoch !== progressEpoch) return
+  rewards.value = r
+  const paint = applyShownProgress(t, animateGrowth, epoch)
+  tasks.value = t
+  if (animateGrowth) await paint
+}
 
 async function refresh() {
   loading.value = true
   error.value = ''
   try {
-    userVisible.value = await fetchTaskVisibility(props.client)
-    if (userVisible.value) {
-      const [t, r] = await Promise.all([listTasks(props.client), fetchMyTaskRewards(props.client)])
-      tasks.value = t
-      rewards.value = r
-    } else {
-      tasks.value = []
-      rewards.value = []
-    }
+    await loadTaskCenter(false)
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
   } finally {
@@ -80,9 +220,21 @@ async function refresh() {
   }
 }
 
-onMounted(refresh)
-// phase 接口仅用于侧边栏角标，此处调用一次以保证角标及时出现
-onMounted(() => { void fetchTaskPhase(props.client).catch(() => {}) })
+async function refreshWhileStaying() {
+  try {
+    await loadTaskCenter(true)
+    if (panelAlive) error.value = ''
+  } catch {
+    // 停留期间刷新失败时保留当前卡片和进度。
+  }
+}
+
+onMounted(() => {
+  void refresh()
+  progressTimer = window.setInterval(() => {
+    void refreshWhileStaying()
+  }, PROGRESS_REFRESH_MS)
+})
 </script>
 
 <template>
@@ -92,17 +244,16 @@ onMounted(() => { void fetchTaskPhase(props.client).catch(() => {}) })
     </p>
     <p v-if="loading" class="py-8 text-center text-sm text-gray-400">加载中…</p>
 
-    <!-- 未开放（partial 模式白名单外） -->
-    <section v-if="!loading && userVisible === false" class="card">
+    <section v-if="!loading && menuReady && !taskVisible" class="card">
       <div class="flex flex-col items-center gap-2 px-6 py-12 text-center">
-        <span class="flex h-14 w-14 items-center justify-center rounded-full bg-gray-100 text-2xl dark:bg-dark-700">🚫</span>
-        <h3 class="text-base font-semibold text-gray-900 dark:text-white">任务中心未开放</h3>
-        <p class="text-sm text-gray-500 dark:text-dark-400">任务功能尚未对你的账号开放，敬请期待</p>
+        <span class="flex h-14 w-14 items-center justify-center rounded-full bg-gray-100 text-2xl dark:bg-dark-700">🎯</span>
+        <h3 class="text-base font-semibold text-gray-900 dark:text-white">任务中心菜单对当前账号未开放</h3>
+        <p class="text-sm text-gray-500 dark:text-dark-400">这由任务管理右上角设置里的菜单可见范围决定。调整后，这里会显示你能看到的任务</p>
       </div>
     </section>
 
-    <!-- 任务卡片 -->
-    <template v-if="userVisible !== false">
+    <!-- 任务卡片：进行中与已结束都展示，已归档由服务端不下发 -->
+    <template v-if="showTaskBody">
     <section v-for="t in tasks" :key="t.id" class="relative card">
       <span
         class="absolute right-4 top-4 z-10 inline-flex items-center gap-1.5 rounded-full bg-primary-100 px-3 py-1 text-xs font-semibold text-primary-700 dark:bg-primary-900/40 dark:text-primary-300"
@@ -144,8 +295,11 @@ onMounted(() => { void fetchTaskPhase(props.client).catch(() => {}) })
             <span
               class="inline-flex items-center gap-1.5 rounded-full bg-violet-100 px-3 py-1 text-xs font-semibold text-violet-700 dark:bg-violet-500/15 dark:text-violet-300"
             >🤖 {{ t.model ? `限定模型：${t.model}` : '不限模型' }}</span>
-            <span class="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700 dark:bg-amber-500/15 dark:text-amber-300">
-              ⏳ 剩 {{ t.days_left }} 天
+            <span
+              v-if="remainLabel(t)"
+              class="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700 dark:bg-amber-500/15 dark:text-amber-300"
+            >
+              ⏳ {{ remainLabel(t) }}
             </span>
           </div>
 
@@ -158,27 +312,73 @@ onMounted(() => { void fetchTaskPhase(props.client).catch(() => {}) })
               <dd class="mt-0.5 text-sm font-medium text-gray-900 dark:text-gray-100">{{ fmtDate(t.start_date) }} ~ {{ fmtDate(t.end_date ?? '') }}</dd>
             </div>
             <div>
-              <dt class="text-xs text-gray-400 dark:text-dark-500">结算时间</dt>
-              <dd class="mt-0.5 text-sm font-medium text-gray-900 dark:text-gray-100">每日 {{ t.settle_time }}（北京时间）结算前一天</dd>
+              <dt class="text-xs text-gray-400 dark:text-dark-500">今日消耗结算时间</dt>
+              <dd class="mt-0.5 text-sm font-medium text-gray-900 dark:text-gray-100">{{ settleMomentText(t) }}</dd>
+            </div>
+            <div>
+              <dt class="text-xs text-gray-400 dark:text-dark-500">达成条件</dt>
+              <dd class="mt-0.5 text-sm font-medium text-gray-900 dark:text-gray-100">每结算日 {{ tokensM(t.threshold_tokens) }}M</dd>
+            </div>
+            <div>
+              <dt class="text-xs text-gray-400 dark:text-dark-500">任务奖励</dt>
+              <dd class="mt-0.5 text-sm font-medium text-gray-900 dark:text-gray-100">
+                每 {{ tokensM(t.threshold_tokens) }}M → {{ t.reward_type === 'balance' ? '余额' : '兑换码' }} {{ formatValue(t.reward_value) }}
+              </dd>
+            </div>
+            <div>
+              <dt class="text-xs text-gray-400 dark:text-dark-500">重复参与策略</dt>
+              <dd class="mt-0.5 text-sm font-medium text-gray-900 dark:text-gray-100">{{ repeatPolicyLabel[t.repeat_policy] || '不限' }}</dd>
             </div>
             <div>
               <dt class="text-xs text-gray-400 dark:text-dark-500">参与条件</dt>
               <dd class="mt-0.5 text-sm font-medium text-gray-900 dark:text-gray-100">自动参与，无需报名</dd>
             </div>
           </dl>
+
+          <template v-if="t.status === 'active'">
+          <div v-if="t.progress_ready === false" class="text-xs text-gray-400 dark:text-dark-500">今日进度暂时无法获取</div>
+          <div v-else :class="progressSvg[t.id] ? 'pt-8' : ''">
+            <p class="relative z-0 mb-1.5 text-right text-xs text-gray-500 dark:text-dark-400">
+              今日进度 · 第 {{ t.progress_units || 1 }} 阶段
+            </p>
+            <div class="relative h-2.5">
+              <div class="h-2.5 overflow-hidden rounded-full bg-gray-100 dark:bg-dark-700">
+                <div
+                  class="task-stage-progress h-full rounded-full"
+                  :class="{ 'task-stage-progress-grow': progressAnimate[t.id] }"
+                  :style="barStyle(t)"
+                ></div>
+              </div>
+              <!-- 底部与进度条对齐。层级高于两侧文字，跟着进度头部移动。 -->
+              <span
+                v-if="progressSvg[t.id]"
+                class="task-stage-marker absolute bottom-0 z-30 h-16 w-16 -translate-x-1/2"
+                :class="{ 'task-stage-marker-grow': progressAnimate[t.id] }"
+                :style="{ left: (shownPercent[t.id] ?? 0) + '%' }"
+                v-html="progressSvg[t.id]"
+              ></span>
+            </div>
+            <div class="relative z-0 mt-1.5 flex items-center justify-between gap-3 text-xs">
+              <p class="text-gray-500 dark:text-dark-400">达成本阶段可获得 {{ stageRewardText(t) }}</p>
+              <p class="shrink-0 font-medium text-gray-700 dark:text-gray-200">
+                {{ tokensM(t.progress_tokens) }}M / {{ tokensM(t.progress_cap || t.threshold_tokens) }}M
+              </p>
+            </div>
+          </div>
+          </template>
         </div>
       </div>
     </section>
+    </template>
 
     <!-- 暂无任务 -->
-    <section v-if="!loading && !hasActiveTask" class="card">
+    <section v-if="!loading && showTaskBody && !hasActiveTask" class="card">
       <div class="flex flex-col items-center gap-2 px-6 py-12 text-center">
         <span class="flex h-14 w-14 items-center justify-center rounded-full bg-primary-100 text-2xl dark:bg-primary-500/15">🎯</span>
         <h3 class="text-base font-semibold text-gray-900 dark:text-white">暂无任务</h3>
         <p class="text-sm text-gray-500 dark:text-dark-400">有新任务时会在这里展示，敬请期待</p>
       </div>
     </section>
-    </template>
 
     <!-- 我的奖励 -->
     <section v-if="!loading && sortedRewards.length" class="card">
@@ -245,3 +445,58 @@ onMounted(() => { void fetchTaskPhase(props.client).catch(() => {}) })
     </Teleport>
   </div>
 </template>
+
+<style>
+.task-stage-progress {
+  background-image: linear-gradient(
+    90deg,
+    var(--progress-color, #6366f1) 0%,
+    var(--progress-color-soft, #a5b4fc) 25%,
+    var(--progress-color, #6366f1) 50%,
+    var(--progress-color-soft, #a5b4fc) 75%,
+    var(--progress-color, #6366f1) 100%
+  );
+  background-size: 200% 100%;
+  animation: task-stage-progress-flow 2.4s linear infinite;
+}
+
+@keyframes task-stage-progress-flow {
+  from {
+    background-position: 0% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.task-stage-marker {
+  z-index: 30;
+  line-height: 0;
+  pointer-events: none;
+}
+
+/* 动画铺满 64px 方框。viewBox 仍按自身比例放进这个方框，不另做拉伸。 */
+.task-stage-marker > svg {
+  display: block;
+  height: 100%;
+  width: 100%;
+}
+
+.task-stage-marker-grow {
+  transition: left 0.9s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.task-stage-progress-grow {
+  transition: width 0.9s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .task-stage-progress {
+    animation: none;
+  }
+  .task-stage-progress-grow,
+  .task-stage-marker-grow {
+    transition: none;
+  }
+}
+</style>

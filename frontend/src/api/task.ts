@@ -3,13 +3,17 @@ import type { LotteryClient } from './lotteryClient'
 import { unwrap } from './lotteryClient'
 import type { ConditionDef, PrizeType, VisibilitySettings } from './lottery'
 
-export type TaskStatus = 'active' | 'ended'
+export type TaskStatus = 'active' | 'ended' | 'archived'
 export type TaskRepeatPolicy = 'unlimited' | 'join_once' | 'achieved_once'
 
 export interface TaskView {
   id: number
   name: string
   cover?: string
+  /** 进度条小动画：管理端上传的 SVG 源码 */
+  progress_svg?: string
+  /** 进度条颜色：#RGB / #RRGGBB，空表示用默认色 */
+  progress_color?: string
   /** 任务说明，用户侧展示 */
   description?: string
   status: TaskStatus
@@ -27,9 +31,19 @@ export interface TaskView {
   reward_type: PrizeType
   reward_value: number
   repeat_policy: TaskRepeatPolicy
+  /** 当前结算日已消耗的 token。 */
+  progress_tokens?: number
+  /** 当前阶段进度条上限，是达成条件的整数倍。 */
+  progress_cap?: number
+  /** 达到当前上限时对应的奖励单位数。 */
+  progress_units?: number
+  /** 为 false 时今日用量暂时没取到。 */
+  progress_ready?: boolean
   whitelist?: string[]
   blacklist?: string[]
   conditions: ConditionDef[]
+  /** 这一条任务对谁可见。 */
+  visibility?: VisibilitySettings
   created_at?: string
   updated_at?: string
 }
@@ -38,11 +52,15 @@ export interface TaskView {
 export interface AdminTaskView extends TaskView {
   codes_available: number
   codes_granted: number
+  /** 结算后实际通知到的用户数（同一用户只计一次）。 */
+  notified_count?: number
 }
 
 export interface TaskInput {
   name: string
   cover: string
+  progress_svg: string
+  progress_color: string
   description: string
   group_id: number
   group_name: string
@@ -57,6 +75,7 @@ export interface TaskInput {
   whitelist: string[]
   blacklist: string[]
   conditions: ConditionDef[]
+  visibility?: VisibilitySettings
   status?: TaskStatus
 }
 
@@ -115,18 +134,6 @@ export async function fetchTaskPrompts(client: LotteryClient): Promise<TaskPromp
   return data.tasks ?? []
 }
 
-/** 用户侧角标探测：有进行中任务 → 'active'。 */
-export async function fetchTaskPhase(client: LotteryClient): Promise<'active' | 'none'> {
-  const data = await unwrap<{ phase: 'active' | 'none' }>(client.http.get('/v1/me/tasks/phase'))
-  return data.phase ?? 'none'
-}
-
-/** 用户侧：任务中心对该用户是否可见。 */
-export async function fetchTaskVisibility(client: LotteryClient): Promise<boolean> {
-  const data = await unwrap<{ visible: boolean }>(client.http.get('/v1/me/task-visibility'))
-  return data.visible ?? false
-}
-
 /** 管理端：读取任务显隐设置。 */
 export async function adminGetTaskSettings(
   client: LotteryClient
@@ -182,6 +189,27 @@ export async function adminUpdateTask(
 /** 管理端：删除任务（含码池与结算记录）。 */
 export async function adminDeleteTask(client: LotteryClient, id: number): Promise<void> {
   await unwrap(client.http.delete(`/v1/admin/tasks/${id}`))
+}
+
+/** 管理端：归档已结束的任务。用户侧不再展示，结算记录保留。 */
+export async function adminArchiveTask(client: LotteryClient, id: number): Promise<void> {
+  await unwrap(client.http.post(`/v1/admin/tasks/${id}/archive`))
+}
+
+export interface NotifiedTaskUser {
+  user_id: number
+  email: string
+}
+
+/** 管理端：该任务成功通知到的用户。 */
+export async function adminListTaskNotifications(
+  client: LotteryClient,
+  id: number
+): Promise<NotifiedTaskUser[]> {
+  const data = await unwrap<{ users: NotifiedTaskUser[] }>(
+    client.http.get(`/v1/admin/tasks/${id}/notifications`)
+  )
+  return data.users ?? []
 }
 
 /** 管理端：某任务的发放记录。 */

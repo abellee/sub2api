@@ -8,13 +8,17 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import {
   adminArchiveActivity,
+  adminDeleteActivity,
   adminCreateActivity,
   adminDraw,
   adminGetActivity,
   adminListActivities,
   adminListParticipants,
   adminUpdateActivity,
+  emptyNotifyStages,
   formatValue,
+  notifyStagesFrom,
+  selectedNotifyStages,
   type ActivityInput,
   type ActivityView,
   type ConditionDef,
@@ -69,15 +73,23 @@ const editingDailyId = ref<number | null>(null)
 const editingConfigId = ref<number>(0)
 // 正在关闭的活动 id（防重复点击）
 const closingId = ref<number | null>(null)
+const deletingId = ref<number | null>(null)
 // 当前活动（进行中）的参与名单
 const currentParticipants = ref<ParticipantRecord[]>([])
 const showCurrentParticipants = ref(true)
 
-// 排序：状态优先（进行中 > 未开始 > 已开奖/已归档），同状态内按开始时间倒序
+// 排序：进行中 > 未开始 > 已开奖 > 已关闭 > 已归档，同状态内按开始时间倒序。
+// 已关闭/已归档优先于时间阶段，避免它们的 phase 仍是 joining 时排到前面。
 function statusRank(a: ActivityView): number {
-  // 已关闭/已归档固定沉底（其 phase 是时间制的，可能仍为 joining）
-  if (a.status === 'closed' || a.status === 'archived') return 2
-  return a.phase === 'joining' ? 0 : a.phase === 'upcoming' ? 1 : 2
+  if (a.status === 'archived') return 4
+  if (a.status === 'closed') return 3
+  if (a.phase === 'joining') return 0
+  if (a.phase === 'upcoming') return 1
+  return 2
+}
+
+function canDeleteActivity(a: ActivityView): boolean {
+  return a.status === 'closed' || a.status === 'archived' || a.phase === 'drawn' || a.phase === 'fulfilled'
 }
 const allActivities = computed(() =>
   [...activities.value].sort((a, b) => {
@@ -118,9 +130,13 @@ const dialogOpen = ref(false)
 const dialogError = ref('')
 const settingsOpen = ref(false)
 const settingsInfo = ref<AdminSettingsInfo | null>(null)
-const visibilityForm = ref<VisibilitySettings>({ mode: 'all', allowed_emails: [] })
 const settingsKeyInput = ref('')
 const settingsSaving = ref(false)
+const settingsVisibilityMode = ref<'all' | 'partial'>('partial')
+const settingsVisibilityEmails = ref<string[]>([])
+const settingsUserSearchQuery = ref('')
+const settingsUserSearchResults = ref<SearchedUser[]>([])
+const settingsUserSearching = ref(false)
 const userSearchQuery = ref('')
 const userSearchResults = ref<SearchedUser[]>([])
 const userSearching = ref(false)
@@ -166,6 +182,10 @@ function emptyForm(): {
   repeatPolicy: 'unlimited' | 'join_once' | 'win_once'
   /** 共用参与组。相同名称的手动活动和日常定时配置共用次数。 */
   repeatGroup: string
+  /** 勾选后才发送的阶段通知。 */
+  notifyStages: ReturnType<typeof emptyNotifyStages>
+  visibilityMode: 'all' | 'partial' | 'eligible'
+  visibilityEmails: string[]
 } {
   return {
     name: '',
@@ -184,8 +204,24 @@ function emptyForm(): {
     dailyStartTime: '08:00',
     dailyDurationHours: 12,
     repeatPolicy: 'unlimited',
-    repeatGroup: ''
+    repeatGroup: '',
+    notifyStages: emptyNotifyStages(),
+    visibilityMode: 'all',
+    visibilityEmails: []
   }
+}
+
+const notifyStageOptions = [
+  { key: 'before_start' as const, label: '开始前 10 分钟' },
+  { key: 'started' as const, label: '正式开始' },
+  { key: 'before_draw' as const, label: '开奖前 5 分钟' },
+  { key: 'results' as const, label: '开奖结果（仅中奖用户）' }
+]
+
+function notifyStageSummary(stages: string[] | undefined, enabled: boolean): string {
+  const flags = notifyStagesFrom(stages, enabled && !(stages && stages.length))
+  const labels = notifyStageOptions.filter((item) => flags[item.key]).map((item) => item.label)
+  return labels.length ? labels.join('、') : ''
 }
 
 /** 拉取当前活动的参与名单。 */
@@ -218,6 +254,11 @@ function editDaily(c: DailyConfig) {
   form.value.dailyDurationHours = c.duration_hours
   form.value.repeatPolicy = c.repeat_policy || 'unlimited'
   form.value.repeatGroup = (c.repeat_group || '').trim()
+  form.value.notifyStages = notifyStagesFrom(c.notify_stages, c.notify === true)
+  form.value.visibilityMode = c.visibility?.mode === 'partial' || c.visibility?.mode === 'eligible' ? c.visibility.mode : 'all'
+  form.value.visibilityEmails = [...(c.visibility?.allowed_emails ?? [])]
+  userSearchQuery.value = ''
+  userSearchResults.value = []
   form.value.isDaily = true
   editingDailyId.value = c.id
   dialogError.value = ''
@@ -366,9 +407,12 @@ function fillForm(a: ActivityView) {
     autoBonusPercent: 25,
     repeatPolicy: ((a.repeat_policy || 'unlimited') as 'unlimited' | 'join_once' | 'win_once'),
     repeatGroup: (a.repeat_group || '').trim(),
+    visibilityMode: 'all',
+    visibilityEmails: [],
     isDaily: false, // 编辑已有活动：始终普通模式
     dailyStartTime: '08:00',
     dailyDurationHours: 12,
+    notifyStages: notifyStagesFrom(a.notifications?.stages, a.notifications?.enabled === true),
     conditions: [],
     prizes: a.prizes.map((p) => ({
       name: p.name,
@@ -391,6 +435,10 @@ function fillForm(a: ActivityView) {
     }
     form.value.conditions = detail.activity.conditions.map((c) => ({ ...c }))
     form.value.autoBonusPercent = detail.activity.auto_bonus_percent
+    form.value.notifyStages = notifyStagesFrom(detail.notify_stages, detail.notify === true)
+    const vis = detail.activity.visibility
+    form.value.visibilityMode = vis?.mode === 'partial' || vis?.mode === 'eligible' ? vis.mode : 'all'
+    form.value.visibilityEmails = [...(vis?.allowed_emails ?? [])]
     form.value.prizes = detail.activity.prizes.map((p) => ({
       name: p.name,
       prize_type: p.prize_type,
@@ -425,12 +473,12 @@ async function openSettings() {
   try {
     const s = await adminGetSettings(props.client)
     settingsInfo.value = s
-    // 后端可能返回 allowed_emails: null（Go nil 切片），归一化为数组避免模板读 .length 抛错
-    visibilityForm.value = {
-      mode: s.visibility.mode ?? 'all',
-      allowed_emails: s.visibility.allowed_emails ?? []
-    }
     settingsKeyInput.value = ''
+    const mode = s.visibility?.mode
+    settingsVisibilityMode.value = mode === 'all' ? 'all' : 'partial'
+    settingsVisibilityEmails.value = [...(s.visibility?.allowed_emails ?? [])]
+    settingsUserSearchQuery.value = ''
+    settingsUserSearchResults.value = []
     settingsOpen.value = true
   } catch (e) {
     error.value = (e as Error).message
@@ -461,25 +509,74 @@ function onUserSearchInput() {
 function addUserToWhitelist(u: SearchedUser) {
   const email = u.email.trim()
   if (!email) return
-  const list = visibilityForm.value.allowed_emails ?? []
+  const list = form.value.visibilityEmails
   if (!list.some((e) => e.toLowerCase() === email.toLowerCase())) {
-    visibilityForm.value.allowed_emails = [...list, email]
+    form.value.visibilityEmails = [...list, email]
   }
   userSearchQuery.value = ''
   userSearchResults.value = []
 }
 
 function removeUserFromWhitelist(email: string) {
-  visibilityForm.value.allowed_emails = (visibilityForm.value.allowed_emails ?? []).filter((e) => e !== email)
+  form.value.visibilityEmails = form.value.visibilityEmails.filter((e) => e !== email)
+}
+
+function visibilityInput(): VisibilitySettings {
+  return {
+    mode: form.value.visibilityMode,
+    allowed_emails: form.value.visibilityMode === 'partial' ? [...form.value.visibilityEmails] : []
+  }
+}
+
+function settingsVisibilityInput(): VisibilitySettings {
+  return {
+    mode: settingsVisibilityMode.value,
+    allowed_emails: settingsVisibilityMode.value === 'partial' ? [...settingsVisibilityEmails.value] : []
+  }
+}
+
+let settingsUserSearchTimer: ReturnType<typeof setTimeout> | null = null
+
+function onSettingsUserSearchInput() {
+  if (settingsUserSearchTimer) clearTimeout(settingsUserSearchTimer)
+  settingsUserSearchTimer = setTimeout(async () => {
+    const q = settingsUserSearchQuery.value.trim()
+    if (!q) {
+      settingsUserSearchResults.value = []
+      return
+    }
+    settingsUserSearching.value = true
+    try {
+      settingsUserSearchResults.value = await adminSearchUsers(props.client, q, 20)
+    } catch {
+      settingsUserSearchResults.value = []
+    } finally {
+      settingsUserSearching.value = false
+    }
+  }, 300)
+}
+
+function addSettingsUser(u: SearchedUser) {
+  const email = u.email.trim()
+  if (!email) return
+  if (!settingsVisibilityEmails.value.some((item) => item.toLowerCase() === email.toLowerCase())) {
+    settingsVisibilityEmails.value = [...settingsVisibilityEmails.value, email]
+  }
+  settingsUserSearchQuery.value = ''
+  settingsUserSearchResults.value = []
+}
+
+function removeSettingsUser(email: string) {
+  settingsVisibilityEmails.value = settingsVisibilityEmails.value.filter((item) => item !== email)
 }
 
 async function saveSettings() {
-  // Key 留空 = 只保存显隐配置（不修改已保存的 Key）
+  // Key 留空 = 只保存菜单可见范围（不修改已保存的 Key）
   const key = settingsKeyInput.value.trim()
   settingsSaving.value = true
   error.value = ''
   try {
-    await adminSaveSettings(props.client, key, visibilityForm.value)
+    await adminSaveSettings(props.client, key, settingsVisibilityInput())
     settingsOpen.value = false
     notice.value = '设置已保存，立即生效'
   } catch (e) {
@@ -493,6 +590,8 @@ function openCreate() {
   editingId.value = null
   editingDailyId.value = null
   editingConfigId.value = 0
+  userSearchQuery.value = ''
+  userSearchResults.value = []
   form.value = emptyForm()
   dialogError.value = ''
   dialogOpen.value = true
@@ -531,6 +630,9 @@ function buildInput(): ActivityInput {
     auto_bonus_percent: Number(form.value.autoBonusPercent) || 0,
     repeat_policy: form.value.repeatPolicy,
     repeat_group: form.value.repeatGroup.trim(),
+    visibility: visibilityInput(),
+    notify: selectedNotifyStages(form.value.notifyStages).length > 0,
+    notify_stages: selectedNotifyStages(form.value.notifyStages),
     ...buildSharedParts()
   }
 }
@@ -568,6 +670,9 @@ async function submit(regenerate = false) {
         description: form.value.description,
         max_participants: Number(form.value.maxParticipants) || 0,
         show_participant_count: form.value.showParticipantCount === true,
+        visibility: visibilityInput(),
+        notify: selectedNotifyStages(form.value.notifyStages).length > 0,
+        notify_stages: selectedNotifyStages(form.value.notifyStages),
         condition_match: form.value.conditionMatch,
         auto_bonus_percent: Number(form.value.autoBonusPercent) || 0,
         ...buildSharedParts()
@@ -675,6 +780,31 @@ function confirmDeleteDaily(c: DailyConfig) {
   askConfirm('删除日常抽奖', `确定删除日常抽奖「${c.name}」？已创建的场次不受影响，但之后不会再自动创建该场次。`, '删除', () => deleteDaily(c))
 }
 
+async function deleteActivity(a: ActivityView) {
+  if (deletingId.value != null) return
+  deletingId.value = a.id
+  error.value = ''
+  try {
+    await adminDeleteActivity(props.client, a.id)
+    notice.value = `已删除「${a.name}」`
+    if (expandedId.value === a.id) expandedId.value = null
+    await refresh()
+  } catch (e) {
+    error.value = (e as Error).message
+  } finally {
+    deletingId.value = null
+  }
+}
+
+function confirmDeleteActivity(a: ActivityView) {
+  askConfirm(
+    '删除场次',
+    `确定删除「${a.name}」？场次会从列表中移除，参与记录和中奖记录仍保留在数据库中。`,
+    '删除',
+    () => deleteActivity(a)
+  )
+}
+
 function closeActivity(a: ActivityView) {
   askConfirm(
     '关闭活动',
@@ -716,6 +846,10 @@ function runConfirm() {
   const c = confirmDialog.value
   confirmDialog.value = null
   c?.action()
+}
+
+function stageCount(count?: number): string {
+  return count == null ? '未发送' : `${count} 人`
 }
 
 function fmtDate(v: string): string {
@@ -951,6 +1085,16 @@ onMounted(refresh)
                 {{ fmtDate(a.starts_at) }} → {{ fmtDate(a.draws_at) }} · {{ a.participant_count ?? 0 }} 人参与
                 <template v-if="a.repeat_group"> · 共用组「{{ a.repeat_group }}」</template>
               </p>
+              <p class="mt-0.5 text-xs text-gray-400 dark:text-dark-500">
+                <template v-if="a.notifications?.enabled">
+                  通知阶段：{{ notifyStageSummary(a.notifications.stages, true) || '已勾选' }}
+                  · 人数：开始前 {{ stageCount(a.notifications.before_start) }}
+                  · 已开始 {{ stageCount(a.notifications.started) }}
+                  · 开奖前 {{ stageCount(a.notifications.before_draw) }}
+                  · 开奖结果 {{ stageCount(a.notifications.results) }}
+                </template>
+                <template v-else>不发送阶段通知</template>
+              </p>
             </div>
             <button class="btn btn-secondary btn-sm" @click="toggleWinners(a)">
               {{ expandedId === a.id ? '收起名单' : '中奖名单' }}
@@ -969,6 +1113,14 @@ onMounted(refresh)
               @click="closeActivity(a)"
             >
               {{ closingId === a.id ? '关闭中…' : '关闭' }}
+            </button>
+            <button
+              v-if="canDeleteActivity(a)"
+              class="btn btn-danger btn-sm"
+              :disabled="deletingId === a.id"
+              @click="confirmDeleteActivity(a)"
+            >
+              {{ deletingId === a.id ? '删除中…' : '删除' }}
             </button>
           </div>
           <!-- 行内中奖名单（懒加载，管理端完整邮箱 + 发放备注） -->
@@ -1039,7 +1191,7 @@ onMounted(refresh)
             v-if="editingId != null && editingConfigId > 0"
             class="rounded-xl bg-amber-50 px-4 py-3 text-xs text-amber-700 dark:bg-amber-500/10 dark:text-amber-300"
           >
-            该场次由日常定时抽奖自动生成。名称、时间和奖池的修改只影响这一场。重复参与策略和共用参与组会写回对应的定时配置，这一场和之后自动创建的场次一起生效。
+            该场次由日常定时抽奖自动生成。名称、时间和奖池的修改只影响这一场。重复参与策略、共用参与组和可见范围会写回对应的定时配置，这一场和之后自动创建的场次一起生效。
           </p>
           <div class="grid gap-4 sm:grid-cols-2">
             <label class="sm:col-span-2">
@@ -1078,6 +1230,20 @@ onMounted(refresh)
               <span class="input-label">最多参与人数（0 = 不限）</span>
               <input v-model.number="form.maxParticipants" type="number" min="0" class="input" />
             </label>
+            <div class="sm:col-span-2 rounded-xl border border-gray-100 px-4 py-3 dark:border-dark-700">
+              <p class="text-sm font-medium text-gray-800 dark:text-gray-100">发送阶段通知</p>
+              <p class="mt-1 text-xs text-gray-400 dark:text-dark-500">只通知勾选的阶段。前三项发给符合参与条件且已开启通知的用户，开奖结果只发给中奖用户。</p>
+              <div class="mt-3 grid gap-2 sm:grid-cols-2">
+                <label
+                  v-for="item in notifyStageOptions"
+                  :key="item.key"
+                  class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200"
+                >
+                  <input v-model="form.notifyStages[item.key]" type="checkbox" class="h-4 w-4" />
+                  {{ item.label }}
+                </label>
+              </div>
+            </div>
             <label class="sm:col-span-2 flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
               <input
                 type="checkbox"
@@ -1116,6 +1282,65 @@ onMounted(refresh)
                 placeholder="例如：新用户注册礼"
               />
             </label>
+            <div class="sm:col-span-2 rounded-xl border border-gray-100 px-4 py-3 dark:border-dark-700">
+              <FieldHint
+                label="可见范围"
+                hint="这一场按这里显示。仅符合条件的用户只看到自己能参与的场次，已参与或已中奖的仍会保留。部分用户可搜索现有用户。定时抽奖会把可见范围带到之后自动创建的场次，并更新当前还没开奖的场次。侧边栏抽奖菜单由右上角「设置」单独控制。管理员不受限。"
+              />
+              <LotterySelect
+                v-model="form.visibilityMode"
+                :options="[
+                  { value: 'eligible', label: '仅符合条件的用户' },
+                  { value: 'all', label: '全部用户' },
+                  { value: 'partial', label: '部分用户' }
+                ]"
+              />
+              <div v-if="form.visibilityMode === 'partial'" class="mt-3">
+                <span class="input-label">可见用户（搜索后点击添加）</span>
+                <div class="relative">
+                  <input
+                    v-model="userSearchQuery"
+                    type="text"
+                    class="input !py-2"
+                    placeholder="输入邮箱或用户名搜索用户…"
+                    @input="onUserSearchInput"
+                  />
+                  <span v-if="userSearching" class="absolute right-3 top-2 text-xs text-gray-400">搜索中…</span>
+                </div>
+                <div
+                  v-if="userSearchResults.length"
+                  class="mt-1 max-h-44 overflow-y-auto rounded-xl border border-gray-200 bg-white py-1 dark:border-dark-700 dark:bg-dark-800"
+                >
+                  <button
+                    v-for="u in userSearchResults"
+                    :key="u.id"
+                    type="button"
+                    class="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm text-gray-700 transition-colors hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-dark-700"
+                    @click="addUserToWhitelist(u)"
+                  >
+                    <span class="min-w-0 truncate">{{ u.email }}</span>
+                    <span class="text-xs text-primary-600 dark:text-primary-400">添加</span>
+                  </button>
+                </div>
+                <div v-if="form.visibilityEmails.length" class="mt-2 flex flex-wrap gap-1.5">
+                  <span
+                    v-for="email in form.visibilityEmails"
+                    :key="email"
+                    class="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2.5 py-1 text-xs text-gray-600 dark:bg-dark-700 dark:text-dark-300"
+                  >
+                    {{ email }}
+                    <button
+                      type="button"
+                      class="text-gray-400 transition-colors hover:text-red-500"
+                      @click="removeUserFromWhitelist(email)"
+                    >✕</button>
+                  </span>
+                </div>
+                <p v-if="!form.visibilityEmails.length" class="mt-1 text-xs text-red-500">
+                  名单为空时，除管理员外看不到这一场，也不会收到弹窗
+                </p>
+              </div>
+            </div>
             <label>
               <FieldHint label="条件关系" hint="多条可参与条件之间的组合方式：AND 要求全部满足；OR 满足任意一条即可。" />
               <LotterySelect v-model="form.conditionMatch" :options="conditionMatchOptions" />
@@ -1199,7 +1424,7 @@ onMounted(refresh)
     </Teleport>
   </div>
 
-  <!-- 设置弹窗：管理员 API Key -->
+  <!-- 设置弹窗：抽奖菜单可见范围与管理员 API Key -->
   <Teleport to="body">
   <div
     v-if="settingsOpen"
@@ -1216,67 +1441,6 @@ onMounted(refresh)
           <span class="text-gray-500 dark:text-dark-400">上游地址</span>
           <p class="mt-0.5 font-mono text-xs text-gray-700 dark:text-gray-300">{{ settingsInfo?.sub2api_url }}</p>
           <p class="mt-1 text-xs text-gray-400 dark:text-dark-500">lotteryd 启动参数配置，如需修改请调整启动命令</p>
-        </div>
-        <div class="rounded-xl border border-gray-100 bg-gray-50/60 p-4 dark:border-dark-700 dark:bg-dark-900/40">
-          <h3 class="mb-3 text-sm font-semibold text-gray-900 dark:text-white">👁️ 用户侧显隐</h3>
-          <label class="block">
-            <span class="input-label">可见范围（管理员不受限）</span>
-            <LotterySelect
-              v-model="visibilityForm.mode"
-              :options="[
-                { value: 'all', label: '全员可见' },
-                { value: 'partial', label: '部分人可见（按邮箱白名单）' }
-              ]"
-            />
-          </label>
-          <div v-if="visibilityForm.mode === 'partial'" class="mt-3">
-            <span class="input-label">白名单用户（搜索后点击添加）</span>
-            <div class="relative">
-              <input
-                v-model="userSearchQuery"
-                type="text"
-                class="input !py-2"
-                placeholder="输入邮箱或用户名搜索用户…"
-                @input="onUserSearchInput"
-              />
-              <span v-if="userSearching" class="absolute right-3 top-2 text-xs text-gray-400">搜索中…</span>
-            </div>
-            <div
-              v-if="userSearchResults.length"
-              class="mt-1 max-h-44 overflow-y-auto rounded-xl border border-gray-200 bg-white py-1 dark:border-dark-700 dark:bg-dark-800"
-            >
-              <button
-                v-for="u in userSearchResults"
-                :key="u.id"
-                type="button"
-                class="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm text-gray-700 transition-colors hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-dark-700"
-                @click="addUserToWhitelist(u)"
-              >
-                <span class="min-w-0 truncate">{{ u.email }}</span>
-                <span class="text-xs text-primary-600 dark:text-primary-400">添加</span>
-              </button>
-            </div>
-            <div v-if="visibilityForm.allowed_emails.length" class="mt-2 flex flex-wrap gap-1.5">
-              <span
-                v-for="email in visibilityForm.allowed_emails"
-                :key="email"
-                class="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2.5 py-1 text-xs text-gray-600 dark:bg-dark-700 dark:text-dark-300"
-              >
-                {{ email }}
-                <button
-                  type="button"
-                  class="text-gray-400 transition-colors hover:text-red-500"
-                  @click="removeUserFromWhitelist(email)"
-                >✕</button>
-              </span>
-            </div>
-            <p
-              v-if="visibilityForm.mode === 'partial' && !visibilityForm.allowed_emails.length"
-              class="mt-1 text-xs text-red-500"
-            >
-              部分人可见模式下白名单为空 = 除管理员外无人可见
-            </p>
-          </div>
         </div>
         <label>
           <span class="input-label flex items-center gap-1">
@@ -1297,6 +1461,64 @@ onMounted(refresh)
             用于拉取用量数据与发放奖品；在 Sub2API 管理后台「系统设置」生成。保存后立即生效，无需重启。
           </span>
         </label>
+        <div class="rounded-xl border border-gray-100 px-4 py-3 dark:border-dark-700">
+          <FieldHint
+            label="抽奖菜单可见范围"
+            hint="这里决定侧边栏抽奖菜单是否出现。每一场抽奖和定时抽奖在各自的表单里设置可见范围。全部用户时，登录用户都能看到菜单。部分用户只给名单里的邮箱。"
+          />
+          <LotterySelect
+            v-model="settingsVisibilityMode"
+            :options="[
+              { value: 'all', label: '全部用户' },
+              { value: 'partial', label: '部分用户' }
+            ]"
+          />
+          <div v-if="settingsVisibilityMode === 'partial'" class="mt-3">
+            <span class="input-label">可见用户（搜索后点击添加）</span>
+            <div class="relative">
+              <input
+                v-model="settingsUserSearchQuery"
+                type="text"
+                class="input !py-2"
+                placeholder="输入邮箱或用户名搜索用户…"
+                @input="onSettingsUserSearchInput"
+              />
+              <span v-if="settingsUserSearching" class="absolute right-3 top-2 text-xs text-gray-400">搜索中…</span>
+            </div>
+            <div
+              v-if="settingsUserSearchResults.length"
+              class="mt-1 max-h-44 overflow-y-auto rounded-xl border border-gray-200 bg-white py-1 dark:border-dark-700 dark:bg-dark-800"
+            >
+              <button
+                v-for="u in settingsUserSearchResults"
+                :key="u.id"
+                type="button"
+                class="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm text-gray-700 transition-colors hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-dark-700"
+                @click="addSettingsUser(u)"
+              >
+                <span class="min-w-0 truncate">{{ u.email }}</span>
+                <span class="text-xs text-primary-600 dark:text-primary-400">添加</span>
+              </button>
+            </div>
+            <div v-if="settingsVisibilityEmails.length" class="mt-2 flex flex-wrap gap-1.5">
+              <span
+                v-for="email in settingsVisibilityEmails"
+                :key="email"
+                class="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2.5 py-1 text-xs text-gray-600 dark:bg-dark-700 dark:text-dark-300"
+              >
+                {{ email }}
+                <button
+                  type="button"
+                  class="text-gray-400 transition-colors hover:text-red-500"
+                  @click="removeSettingsUser(email)"
+                >✕</button>
+              </span>
+            </div>
+            <p v-if="!settingsVisibilityEmails.length" class="mt-1 text-xs text-red-500">
+              名单为空时，除管理员外看不到抽奖菜单
+            </p>
+          </div>
+        </div>
       </div>
       <div class="flex justify-end gap-3 border-t border-gray-100 px-6 py-4 dark:border-dark-700">
         <button class="btn btn-secondary" @click="settingsOpen = false">取消</button>

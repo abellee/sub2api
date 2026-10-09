@@ -3,8 +3,9 @@
     <!-- Preview Box -->
     <div class="flex-shrink-0">
       <div
-        class="flex items-center justify-center overflow-hidden rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 dark:border-dark-600 dark:bg-dark-800"
+        class="flex cursor-pointer items-center justify-center overflow-hidden rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 dark:border-dark-600 dark:bg-dark-800"
         :class="[previewSizeClass, { 'border-solid': !!modelValue }]"
+        @click="fileInput?.click()"
       >
         <!-- SVG mode: render inline -->
         <span
@@ -44,6 +45,7 @@
       <div class="flex items-center gap-2">
         <label class="btn btn-secondary btn-sm cursor-pointer">
           <input
+            ref="fileInput"
             type="file"
             :accept="acceptTypes"
             class="hidden"
@@ -98,6 +100,7 @@ const emit = defineEmits<{
 }>()
 
 const error = ref('')
+const fileInput = ref<HTMLInputElement | null>(null)
 let reader: FileReader | null = null
 
 onBeforeUnmount(() => reader?.abort())

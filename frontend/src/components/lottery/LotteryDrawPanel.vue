@@ -6,9 +6,8 @@
  * 未开始的场次；全部结束后回落展示最近一场已开奖。
  * 样式使用 Sub2API 主站的 Tailwind 组件类（card/btn/input），并入后零适配。
  */
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
-  fetchMyVisibility,
   fetchMyWinnings,
   formatValue,
   listActivities,
@@ -17,19 +16,19 @@ import {
   type WinnerRecord
 } from '../../api/lottery'
 import type { LotteryClient } from '../../api/lotteryClient'
+import { refreshMenuStatus, useMenuStatus } from '@/composables/useMenuStatus'
 import LotteryFlipCountdown from './LotteryFlipCountdown.vue'
 import LotteryMarkdownCard from './LotteryMarkdownCard.vue'
 import PrizeIcon from './PrizeIcon.vue'
 import { formatBeijingDateTime } from '../../utils/beijingTime'
+import { guidePushIfDisabled } from '@/composables/usePushNotificationTour'
+import { LOTTERY_WIN_EVENT } from '@/composables/useLotteryWinPrompt'
 
 const props = defineProps<{ client: LotteryClient }>()
 
-// 用户侧显隐：partial 模式下白名单外用户整个页面按"未开放"呈现。
-// null = 未加载完成；接口失败按可见处理（服务端仍会强制校验）。
-const userVisible = ref<boolean | null>(null)
-
 const activities = ref<ActivityView[]>([])
 const myWinnings = ref<WinnerRecord[]>([])
+const { lotteryVisible, menuReady } = useMenuStatus()
 const loading = ref(true)
 const error = ref('')
 const joiningId = ref<number | null>(null)
@@ -131,8 +130,14 @@ function participationPctOf(a: ActivityView): number {
 async function refresh() {
   error.value = ''
   try {
-    activities.value = await listActivities(props.client)
-    myWinnings.value = await fetchMyWinnings(props.client)
+    // 菜单可见范围由全局轮询更新，不挡这一页的场次列表。
+    void refreshMenuStatus()
+    const [listed, wins] = await Promise.all([
+      listActivities(props.client),
+      fetchMyWinnings(props.client)
+    ])
+    activities.value = listed
+    myWinnings.value = wins
   } catch (e) {
     error.value = (e as Error).message
   } finally {
@@ -141,6 +146,7 @@ async function refresh() {
 }
 
 async function join(a: ActivityView) {
+  void guidePushIfDisabled()
   joiningId.value = a.id
   error.value = ''
   try {
@@ -157,13 +163,17 @@ function fmtDate(v: string): string {
   return formatBeijingDateTime(v)
 }
 
-onMounted(async () => {
-  try {
-    userVisible.value = (await fetchMyVisibility(props.client)).visible
-  } catch {
-    userVisible.value = true // 探测失败按可见处理，服务端仍会强制校验
-  }
-  if (userVisible.value) await refresh()
+function onLotteryWin() {
+  void refresh()
+}
+
+onMounted(() => {
+  void refresh()
+  window.addEventListener(LOTTERY_WIN_EVENT, onLotteryWin)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener(LOTTERY_WIN_EVENT, onLotteryWin)
 })
 </script>
 
@@ -173,12 +183,11 @@ onMounted(async () => {
       {{ error }}
     </p>
 
-    <!-- 未开放：partial 模式且不在白名单（服务端同时强制校验） -->
-    <div v-if="userVisible === false" class="card">
+    <div v-if="!loading && menuReady && !lotteryVisible" class="card">
       <div class="card-body flex flex-col items-center gap-3 py-16 text-center">
-        <div class="flex h-16 w-16 items-center justify-center rounded-full bg-gray-100 text-3xl dark:bg-dark-800">🚫</div>
-        <h2 class="text-lg font-semibold text-gray-900 dark:text-white">抽奖活动未开放</h2>
-        <p class="text-sm text-gray-500 dark:text-dark-400">当前没有面向你开放的抽奖活动</p>
+        <div class="flex h-16 w-16 items-center justify-center rounded-full bg-gray-100 text-3xl dark:bg-dark-700">🎁</div>
+        <h2 class="text-lg font-semibold text-gray-900 dark:text-white">抽奖菜单对当前账号未开放</h2>
+        <p class="text-sm text-gray-500 dark:text-dark-400">这由抽奖管理右上角设置里的菜单可见范围决定。调整后，这里会显示你能看到的场次</p>
       </div>
     </div>
 

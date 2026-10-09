@@ -1,9 +1,9 @@
 <script setup lang="ts">
 /**
  * LotteryPromptHost —— 全局抽奖 / 任务资格引导弹窗宿主。
- * 挂在 AppLayout 内，覆盖后台所有页面：
+ * 挂在 App.vue，登录后只挂载一次。菜单切换不会卸载它，已建立的 WebSocket 保持不动。
  *  - 主通道：WebSocket（lotteryd /v1/ws?token=）实时推送。活动或任务发布且用户符合
- *    可参与条件时立即弹窗。同一时刻只显示一个，其余排队。
+ *    可参与条件时立即弹窗。同一时刻只显示一个，其余排队。中奖消息优先弹出庆祝框。
  *  - 断线重连：连续尝试 5 次（间隔 3s），仍未成功则停 30s 后再来一轮，依次循环；
  *    页面失活导致定时器被节流时，依赖「重新可见/聚焦/网络恢复」事件立即补偿重连。
  *  - 回退：WS 断开期间退回轮询（路由切换 / 每 60s），双通道共用 localStorage 去重。
@@ -13,9 +13,13 @@ import { useRoute, useRouter } from 'vue-router'
 import { createDefaultLotteryClient } from '../../api/lotteryClient'
 import { useLotteryPrompt } from '../../composables/useLotteryPrompt'
 import { useTaskPrompt } from '../../composables/useTaskPrompt'
-import type { ActivityView } from '../../api/lottery'
+import type { ActivityView, WinnerRecord } from '../../api/lottery'
 import type { TaskPrompt } from '../../api/task'
+import { entryPopupsHeld } from '../../composables/entryPopupGate'
+import { setLotterySocketStatus } from '../../composables/useLotterySocketStatus'
+import { LOTTERY_WIN_EVENT, useLotteryWinPrompt } from '../../composables/useLotteryWinPrompt'
 import LotteryPromptModal from './LotteryPromptModal.vue'
+import LotteryWinModal from './LotteryWinModal.vue'
 import TaskPromptModal from '../task/TaskPromptModal.vue'
 
 const route = useRoute()
@@ -23,6 +27,9 @@ const router = useRouter()
 const client = createDefaultLotteryClient()
 const prompt = useLotteryPrompt(client)
 const taskPrompt = useTaskPrompt(client)
+const winPrompt = useLotteryWinPrompt(client)
+const onLotteryPage = computed(() => route.name === 'Lottery')
+const shownWin = computed(() => winPrompt.current.value)
 
 type PromptItem =
   | { kind: 'lottery'; id: number; activity: ActivityView }
@@ -32,6 +39,17 @@ const queue = ref<PromptItem[]>([])
 const current = computed(() => queue.value[0] ?? null)
 const currentActivity = computed(() => (current.value?.kind === 'lottery' ? current.value.activity : null))
 const currentTask = computed(() => (current.value?.kind === 'task' ? current.value.task : null))
+const shownActivity = computed(() => (entryPopupsHeld.value || shownWin.value ? null : currentActivity.value))
+const shownTask = computed(() => (entryPopupsHeld.value || shownWin.value ? null : currentTask.value))
+
+function onCloseWin(id: number) {
+  winPrompt.acknowledge(id)
+}
+
+function onViewWin(id: number) {
+  winPrompt.acknowledge(id)
+  if (route.name !== 'Lottery') void router.push('/lottery')
+}
 
 function enqueue(item: PromptItem) {
   const prompted = item.kind === 'lottery' ? prompt.promptedIds() : taskPrompt.promptedIds()
@@ -88,6 +106,8 @@ let pollTimer = 0
 let heartbeatTimer = 0
 let pongCheckTimer = 0
 let awaitingPong = false
+let winSyncTimer = 0
+const WIN_SYNC_MS = 15_000
 
 function wsUrl(): string {
   const token = localStorage.getItem('auth_token') ?? ''
@@ -125,19 +145,23 @@ function wsConnect() {
   const token = localStorage.getItem('auth_token')
   if (!token) {
     // 未登录：不连 WS，走轮询兜底（登录后路由切换会再次尝试）
+    setLotterySocketStatus('closed')
     schedulePolling()
     return
   }
+  setLotterySocketStatus('connecting')
   try {
     ws = new WebSocket(wsUrl())
   } catch {
     ws = null
+    setLotterySocketStatus('closed')
     scheduleReconnect()
     return
   }
   ws.onopen = () => {
     attempt = 0
     awaitingPong = false
+    setLotterySocketStatus('open')
     stopHeartbeat()
     startHeartbeat()
     stopPolling() // WS 正常：停掉轮询，避免双通道重复请求
@@ -145,11 +169,18 @@ function wsConnect() {
   ws.onmessage = (ev) => {
     awaitingPong = false
     try {
-      const msg = JSON.parse(ev.data) as { type?: string; activity?: ActivityView; task?: TaskPrompt }
+      const msg = JSON.parse(ev.data) as {
+        type?: string
+        activity?: ActivityView
+        task?: TaskPrompt
+        winner?: WinnerRecord
+      }
       if (msg.type === 'lottery_prompt' && msg.activity) {
         enqueue({ kind: 'lottery', id: msg.activity.id, activity: msg.activity })
       } else if (msg.type === 'task_prompt' && msg.task) {
         enqueue({ kind: 'task', id: msg.task.id, task: msg.task })
+      } else if (msg.type === 'lottery_win' && msg.winner) {
+        winPrompt.enqueue(msg.winner)
       }
     } catch {
       // 忽略非法消息
@@ -159,8 +190,11 @@ function wsConnect() {
     ws = null
     stopHeartbeat()
     if (!closedByUs) {
+      setLotterySocketStatus('closed')
       scheduleReconnect()
       schedulePolling() // 断线期间轮询兜底
+    } else {
+      setLotterySocketStatus('idle')
     }
   }
   ws.onerror = () => {
@@ -228,6 +262,7 @@ function onVisibilityChange() {
   // 页面重新可见：立即补偿重连/检查（后台标签页的定时器可能被浏览器节流）
   if (!ws || ws.readyState !== WebSocket.OPEN) reconnectNow()
   if (!current.value) void runPromptCheck()
+  void winPrompt.sync()
 }
 
 function onWindowFocus() {
@@ -239,8 +274,16 @@ function onOnline() {
   reconnectNow()
 }
 
+watch(() => winPrompt.current.value?.id, (id) => {
+  if (id) window.dispatchEvent(new CustomEvent(LOTTERY_WIN_EVENT))
+})
+
 onMounted(() => {
   void runPromptCheck()
+  void winPrompt.sync()
+  winSyncTimer = window.setInterval(() => {
+    if (!document.hidden) void winPrompt.sync()
+  }, WIN_SYNC_MS)
   wsConnect()
   window.addEventListener('focus', onWindowFocus)
   window.addEventListener('online', onOnline)
@@ -249,7 +292,9 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   closedByUs = true
+  setLotterySocketStatus('idle')
   if (reconnectTimer) window.clearTimeout(reconnectTimer)
+  if (winSyncTimer) window.clearInterval(winSyncTimer)
   wsClose()
   stopPolling()
   window.removeEventListener('focus', onWindowFocus)
@@ -267,6 +312,12 @@ watch(() => route.path, () => {
 </script>
 
 <template>
-  <LotteryPromptModal :activity="currentActivity" @confirm="onConfirm" @dismiss="onDismiss" />
-  <TaskPromptModal :task="currentTask" @confirm="onConfirmTask" @dismiss="onDismissTask" />
+  <LotteryWinModal
+    :win="shownWin"
+    :on-lottery-page="onLotteryPage"
+    @close="onCloseWin"
+    @view="onViewWin"
+  />
+  <LotteryPromptModal :activity="shownActivity" @confirm="onConfirm" @dismiss="onDismiss" />
+  <TaskPromptModal :task="shownTask" @confirm="onConfirmTask" @dismiss="onDismissTask" />
 </template>

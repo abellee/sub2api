@@ -230,9 +230,7 @@ import { sanitizeSvg } from '@/utils/sanitize'
 import { sanitizeUrl } from '@/utils/url'
 import { FeatureFlags, isChannelMonitorVisibleToUser, makeSidebarFlag } from '@/utils/featureFlags'
 import { resolveSiteBillingMode } from '@/utils/siteBillingMode'
-import { fetchMyVisibility } from '@/api/lottery'
-import { fetchTaskPhase, fetchTaskVisibility } from '@/api/task'
-import { createDefaultLotteryClient } from '@/api/lotteryClient'
+import { useMenuStatus } from '@/composables/useMenuStatus'
 
 interface NavItem {
   path: string
@@ -328,26 +326,6 @@ const KeyIcon = {
           'stroke-linecap': 'round',
           'stroke-linejoin': 'round',
           d: 'M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z'
-        })
-      ]
-    )
-}
-
-const BatchImageIcon = {
-  render: () =>
-    h(
-      'svg',
-      { fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', 'stroke-width': '1.5' },
-      [
-        h('path', {
-          'stroke-linecap': 'round',
-          'stroke-linejoin': 'round',
-          d: 'M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.25 2.25 0 00-1.906-1.059H9.554a2.25 2.25 0 00-1.906 1.059l-.821 1.316z'
-        }),
-        h('path', {
-          'stroke-linecap': 'round',
-          'stroke-linejoin': 'round',
-          d: 'M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0zM18.75 10.5h.008v.008h-.008V10.5z'
         })
       ]
     )
@@ -830,16 +808,16 @@ function buildSelfNavItems(withDashboard: boolean): NavItem[] {
       label: t('nav.lottery'),
       icon: LotteryIcon,
       hideInSimpleMode: true,
-      featureFlag: () => lotteryUserVisible.value,
-      badge: lotteryUserVisible.value !== false ? lotteryBadge.value : null
+      featureFlag: () => lotteryMenuVisible.value,
+      badge: lotteryBadge.value
     },
     {
       path: '/tasks',
       label: t('nav.tasks'),
       icon: TaskIcon,
       hideInSimpleMode: true,
-      featureFlag: () => taskUserVisible.value,
-      badge: taskUserVisible.value !== false ? taskBadge.value : null
+      featureFlag: () => taskMenuVisible.value,
+      badge: taskBadge.value
     },
     { path: '/affiliate', label: t('nav.affiliate'), icon: UsersIcon, hideInSimpleMode: true, featureFlag: flagAffiliate },
     { path: '/profile', label: t('nav.profile'), icon: UserIcon },
@@ -918,7 +896,7 @@ const adminNavItems = computed((): NavItem[] => {
     { path: '/admin/plugins', label: t('nav.plugins'), icon: PluginIcon, featureFlag: flagPluginManagement },
     { path: '/admin/app-catalog', label: t('nav.appCatalog'), icon: AppsIcon },
     { path: '/admin/announcements', label: t('nav.announcements'), icon: BellIcon },
-    { path: '/admin/wechat-group-qr', label: t('nav.wechatGroupQR'), icon: BatchImageIcon },
+    { path: '/admin/push-notifications', label: t('nav.pushNotifications'), icon: BellIcon },
     { path: '/admin/proxies', label: t('nav.proxies'), icon: ServerIcon },
     {
       path: '/admin/security-audit',
@@ -1079,12 +1057,21 @@ watch(
   { immediate: true }
 )
 
-// 抽奖菜单显隐：partial 模式下白名单外用户看不到「抽奖活动」菜单项。
-// undefined = 未加载（宽容语义，菜单不闪烁消失）；接口失败保持 undefined（服务端仍强制校验）。
-const lotteryUserVisible = ref<boolean | undefined>(undefined)
-// 当前抽奖状态角标（待开始/进行中/已开奖；进行中最显眼）。
-// phase 只统计该用户可参与或已参与的场次。
-const lotteryStatus = ref<{ text: string; cls: string; dot: string } | null>(null)
+// 抽奖和任务菜单默认隐藏，显隐和角标来自全局轮询。
+const { lotteryVisible: lotteryMenuVisible, lotteryPhase, taskVisible: taskMenuVisible, taskPhase } = useMenuStatus()
+const lotteryStatus = computed(() => {
+  if (!lotteryMenuVisible.value) return null
+  if (lotteryPhase.value === 'joining') {
+    return { text: '进行中', cls: 'bg-emerald-500 text-white', dot: 'bg-white animate-pulse' }
+  }
+  if (lotteryPhase.value === 'upcoming') {
+    return { text: '待开始', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300', dot: '' }
+  }
+  if (lotteryPhase.value === 'drawn') {
+    return { text: '已开奖', cls: 'bg-gray-100 text-gray-500 dark:bg-dark-700 dark:text-dark-400', dot: '' }
+  }
+  return null
+})
 // 角标所有页面都显示；但「已开奖」只在用户侧页面显示（管理员侧只显示进行中/待开始）
 const lotteryBadge = computed(() => {
   if (!lotteryStatus.value) return null
@@ -1092,46 +1079,17 @@ const lotteryBadge = computed(() => {
   return lotteryStatus.value
 })
 
-// 任务中心角标：该用户有可参与的进行中任务时显示「进行中」（与抽奖角标同款视觉）。
-const taskPhase = ref<'active' | 'none' | undefined>(undefined)
+// 任务中心角标：菜单可见且存在进行中任务时显示「进行中」。
 const taskBadge = computed(() =>
-  taskPhase.value === 'active'
+  taskMenuVisible.value && taskPhase.value === 'active'
     ? { text: '进行中', cls: 'bg-emerald-500 text-white', dot: 'bg-white animate-pulse' }
     : null
 )
-// 任务中心菜单显隐：partial 模式白名单外用户看不到入口（undefined = 未加载，宽容语义）
-const taskUserVisible = ref<boolean | undefined>(undefined)
 
 onMounted(() => {
   if (isAdmin.value) {
     adminSettingsStore.fetch()
   }
-  // 抽奖菜单显隐探测（管理员由 lotteryd 直接返回可见）
-  fetchMyVisibility(createDefaultLotteryClient())
-    .then((r) => {
-      lotteryUserVisible.value = r.visible
-      lotteryStatus.value =
-        r.phase === 'joining'
-          ? { text: '进行中', cls: 'bg-emerald-500 text-white', dot: 'bg-white animate-pulse' }
-          : r.phase === 'upcoming'
-            ? { text: '待开始', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300', dot: '' }
-            : r.phase === 'drawn'
-              ? { text: '已开奖', cls: 'bg-gray-100 text-gray-500 dark:bg-dark-700 dark:text-dark-400', dot: '' }
-              : null
-    })
-    .catch(() => {})
-  // 任务中心角标与显隐探测：partial 白名单外隐藏入口；失败保持宽容
-  const taskClient = createDefaultLotteryClient()
-  fetchTaskVisibility(taskClient)
-    .then((visible) => {
-      taskUserVisible.value = visible
-    })
-    .catch(() => {})
-  fetchTaskPhase(taskClient)
-    .then((phase) => {
-      taskPhase.value = phase
-    })
-    .catch(() => {})
   // Restore sidebar scroll position after route change re-mounts the component
   if (appStore.sidebarScrollTop > 0 && sidebarNavRef.value) {
     void nextTick(() => {

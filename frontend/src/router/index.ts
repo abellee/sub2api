@@ -654,15 +654,15 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
-    path: '/admin/wechat-group-qr',
-    name: 'AdminWechatGroupQR',
-    component: () => import('@/views/admin/WechatGroupQRView.vue'),
+    path: '/admin/push-notifications',
+    name: 'AdminPushNotifications',
+    component: () => import('@/views/admin/PushNotificationsView.vue'),
     meta: {
       requiresAuth: true,
       requiresAdmin: true,
-      title: 'WeChat Group QR',
-      titleKey: 'admin.wechatGroupQR.title',
-      descriptionKey: 'admin.wechatGroupQR.description'
+      title: 'Push Notifications',
+      titleKey: 'admin.pushNotifications.title',
+      descriptionKey: 'admin.pushNotifications.description'
     }
   },
   {

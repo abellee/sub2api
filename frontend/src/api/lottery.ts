@@ -97,6 +97,42 @@ export interface ActivityView {
   /** 管理端列表才有：当前生效的共用参与组。 */
   repeat_group?: string
   repeat_policy?: RepeatPolicy | string
+  /** 管理端：各阶段已通知的用户数。缺省字段表示该阶段尚未发送。 */
+  notifications?: {
+    enabled: boolean
+    /** 勾选后才会发送的阶段。旧数据只有 enabled 时，打开表示四个阶段都发。 */
+    stages?: string[]
+    before_start?: number
+    started?: number
+    before_draw?: number
+    results?: number
+  }
+}
+
+export const NOTIFY_STAGES = ['before_start', 'started', 'before_draw', 'results'] as const
+export type NotifyStage = (typeof NOTIFY_STAGES)[number]
+
+export function emptyNotifyStages(): Record<NotifyStage, boolean> {
+  return { before_start: false, started: false, before_draw: false, results: false }
+}
+
+/** 旧数据没有阶段列表、但总开关打开时，四个阶段都视为勾选。 */
+export function notifyStagesFrom(stages: string[] | undefined | null, legacyOn: boolean): Record<NotifyStage, boolean> {
+  const flags = emptyNotifyStages()
+  if (stages && stages.length) {
+    for (const stage of stages) {
+      if (stage in flags) flags[stage as NotifyStage] = true
+    }
+    return flags
+  }
+  if (legacyOn) {
+    for (const stage of NOTIFY_STAGES) flags[stage] = true
+  }
+  return flags
+}
+
+export function selectedNotifyStages(flags: Record<NotifyStage, boolean>): NotifyStage[] {
+  return NOTIFY_STAGES.filter((stage) => flags[stage])
 }
 
 /** 管理端活动详情（原始条件定义，供编辑）。 */
@@ -118,8 +154,11 @@ export interface AdminActivityDetail {
     daily_config_id?: number
     repeat_policy?: RepeatPolicy | string
     repeat_group?: string
+    visibility?: VisibilitySettings
   }
   winners: WinnerRecord[]
+  notify?: boolean
+  notify_stages?: string[]
 }
 
 export interface ActivityInput {
@@ -134,6 +173,11 @@ export interface ActivityInput {
   /** 手动活动的重复策略和共用参与组。定时场次由日常配置决定，编辑单场时服务端会忽略。 */
   repeat_policy?: RepeatPolicy
   repeat_group?: string
+  /** 这一场对谁可见。定时生成的场次保存时会写回对应的定时配置。 */
+  visibility?: VisibilitySettings
+  /** 为 true 且没有 notify_stages 时，四个阶段都通知。显式列表只通知勾选的阶段。 */
+  notify?: boolean
+  notify_stages?: string[]
   conditions: ConditionDef[]
   prizes: Array<{
     name: string
@@ -220,6 +264,11 @@ export async function adminArchiveActivity(client: LotteryClient, id: number): P
   await unwrap(client.http.delete(`/v1/admin/activities/${id}`))
 }
 
+/** 管理端：软删除已关闭、已归档或已开奖的场次。记录保留，列表不再展示。 */
+export async function adminDeleteActivity(client: LotteryClient, id: number): Promise<void> {
+  await unwrap(client.http.post(`/v1/admin/activities/${id}/delete`))
+}
+
 /** 管理端：参与者名单。 */
 export async function adminListParticipants(
   client: LotteryClient,
@@ -290,19 +339,12 @@ export async function adminSaveSettings(
 
 /** 用户侧显隐配置。 */
 export interface VisibilitySettings {
-  mode: 'all' | 'partial'
+  mode: 'all' | 'partial' | 'eligible'
   allowed_emails: string[]
 }
 
 /** 当前用户对抽奖功能的可见性。 */
 export type LotteryPhase = 'joining' | 'upcoming' | 'drawn' | ''
-
-/** 用户侧显隐结果 + 当前抽奖状态（phase 为空表示当前没有任何活动数据）。 */
-export async function fetchMyVisibility(
-  client: LotteryClient
-): Promise<{ visible: boolean; phase: LotteryPhase }> {
-  return unwrap<{ visible: boolean; phase: LotteryPhase }>(client.http.get('/v1/me/visibility'))
-}
 
 /** 用户搜索结果（白名单选择用）。 */
 export interface SearchedUser {
@@ -343,6 +385,11 @@ export interface DailyConfig {
   max_participants: number
   /** 缺省为不显示。为 true 时才向用户下发参与人数。 */
   show_participant_count?: boolean
+  /** 这条定时配置生成的场次对谁可见。未填写时按全部用户。 */
+  visibility?: VisibilitySettings
+  /** 为 true 且没有 notify_stages 时，四个阶段都通知。显式列表只通知勾选的阶段。 */
+  notify?: boolean
+  notify_stages?: string[]
   condition_match: ConditionMatch
   auto_bonus_percent: number
   conditions: ConditionDef[]

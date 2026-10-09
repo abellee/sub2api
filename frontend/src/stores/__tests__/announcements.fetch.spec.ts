@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import { useAnnouncementStore } from '../announcements'
+import { useAnnouncementStore, whenAnnouncementEntrySettled } from '../announcements'
+import { holdEntryPopups, releaseEntryPopups } from '@/composables/entryPopupGate'
 import type { UserAnnouncement } from '@/types'
 
 const list = vi.hoisted(() => vi.fn())
@@ -20,10 +21,14 @@ function pendingList() {
 
 beforeEach(() => {
   setActivePinia(createPinia())
+  releaseEntryPopups()
   vi.resetAllMocks()
   vi.spyOn(console, 'error').mockImplementation(() => {})
 })
-afterEach(() => vi.restoreAllMocks())
+afterEach(() => {
+  releaseEntryPopups()
+  vi.restoreAllMocks()
+})
 
 describe('announcement fetch ownership', () => {
   it('does not restore announcements or popups after logout resets the store', async () => {
@@ -89,6 +94,78 @@ describe('announcement fetch ownership', () => {
     await store.fetchAnnouncements()
     expect(list).toHaveBeenCalledTimes(2)
     expect(store.currentPopup?.id).toBe(1)
+  })
+
+  it('keeps a popup announcement queued until entry guides release it', async () => {
+    holdEntryPopups()
+    const store = useAnnouncementStore()
+    list.mockResolvedValueOnce([notice(3)])
+    await store.fetchAnnouncements(true)
+    expect(store.currentPopup).toBeNull()
+    releaseEntryPopups()
+    expect(store.currentPopup?.id).toBe(3)
+  })
+
+  it('lets the first tour start only after the last popup is closed', async () => {
+    const store = useAnnouncementStore()
+    let started = false
+    whenAnnouncementEntrySettled(() => { started = true })
+    list.mockResolvedValueOnce([notice(3), notice(4)])
+    await store.fetchAnnouncements(true)
+    expect(started).toBe(false)
+    expect(store.currentPopup?.id).toBe(3)
+
+    vi.useFakeTimers()
+    try {
+      store.dismissPopup()
+      expect(started).toBe(false)
+      await vi.advanceTimersByTimeAsync(300)
+      expect(store.currentPopup?.id).toBe(4)
+      expect(started).toBe(false)
+      store.dismissPopup()
+      expect(started).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not release the first tour from a throttled fetch while the request is still open', async () => {
+    const store = useAnnouncementStore()
+    let started = false
+    whenAnnouncementEntrySettled(() => { started = true })
+    const pending = pendingList()
+    list.mockReturnValueOnce(pending.promise)
+    const request = store.fetchAnnouncements()
+    await store.fetchAnnouncements()
+    expect(started).toBe(false)
+    pending.resolve([notice(1)])
+    await request
+    expect(store.currentPopup?.id).toBe(1)
+    expect(started).toBe(false)
+    store.dismissPopup()
+    expect(started).toBe(true)
+  })
+
+  it('starts the first tour as soon as a fetch has no popup', async () => {
+    const store = useAnnouncementStore()
+    let started = false
+    whenAnnouncementEntrySettled(() => { started = true })
+    list.mockResolvedValueOnce([])
+    await store.fetchAnnouncements()
+    expect(started).toBe(true)
+  })
+
+  it('does not let an old empty fetch release the next session tour', async () => {
+    const store = useAnnouncementStore()
+    const old = pendingList()
+    list.mockReturnValueOnce(old.promise)
+    const oldRequest = store.fetchAnnouncements()
+    store.reset()
+    let started = false
+    whenAnnouncementEntrySettled(() => { started = true })
+    old.resolve([])
+    await oldRequest
+    expect(started).toBe(false)
   })
 
   it('still throttles ordinary concurrent fetches', async () => {

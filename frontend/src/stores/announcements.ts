@@ -1,11 +1,43 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { announcementsAPI } from '@/api'
+import { entryPopupsHeld, whenEntryPopupsReleased } from '@/composables/entryPopupGate'
 import type { UserAnnouncement } from '@/types'
 
 const THROTTLE_MS = 20 * 60 * 1000 // 20 minutes
 
+// 本次登录的公告弹窗处理完之前，首次漫游引导先不开始。
+let announcementEntrySettled = false
+const announcementEntryWaiters: Array<() => void> = []
+
+function resetAnnouncementEntryGate() {
+  announcementEntrySettled = false
+  announcementEntryWaiters.length = 0
+}
+
+function markAnnouncementEntrySettled() {
+  if (announcementEntrySettled) return
+  announcementEntrySettled = true
+  const pending = announcementEntryWaiters.splice(0, announcementEntryWaiters.length)
+  for (const waiter of pending) waiter()
+}
+
+/** 公告弹窗已关闭或这次没有要弹的公告时执行。返回取消函数。 */
+export function whenAnnouncementEntrySettled(fn: () => void): () => void {
+  if (announcementEntrySettled) {
+    fn()
+    return () => {}
+  }
+  announcementEntryWaiters.push(fn)
+  return () => {
+    const index = announcementEntryWaiters.indexOf(fn)
+    if (index >= 0) announcementEntryWaiters.splice(index, 1)
+  }
+}
+
 export const useAnnouncementStore = defineStore('announcements', () => {
+  resetAnnouncementEntryGate()
+
   // State
   const announcements = ref<UserAnnouncement[]>([])
   const loading = ref(false)
@@ -16,6 +48,8 @@ export const useAnnouncementStore = defineStore('announcements', () => {
   // Session-scoped dedup set — not reactive, used as plain lookup only
   let shownPopupIds = new Set<number>()
   let fetchGeneration = 0
+  let fetchesInFlight = 0
+  let popupReleaseArmed = false
 
   // Getters
   const unreadCount = computed(() =>
@@ -23,15 +57,24 @@ export const useAnnouncementStore = defineStore('announcements', () => {
   )
 
   // Actions
+  function settleAnnouncementEntryIfIdle() {
+    // 请求还在飞时队列是空的，这时不能放行，否则引导会和随后弹出的公告叠在一起。
+    if (fetchesInFlight > 0) return
+    if (currentPopup.value || popupQueue.value.length > 0) return
+    markAnnouncementEntrySettled()
+  }
+
   async function fetchAnnouncements(force = false) {
     const now = Date.now()
     if (!force && lastFetchTime.value > 0 && now - lastFetchTime.value < THROTTLE_MS) {
+      settleAnnouncementEntryIfIdle()
       return
     }
 
     // Set immediately to prevent concurrent duplicate requests
     lastFetchTime.value = now
     const generation = ++fetchGeneration
+    fetchesInFlight++
 
     try {
       loading.value = true
@@ -45,7 +88,11 @@ export const useAnnouncementStore = defineStore('announcements', () => {
       lastFetchTime.value = 0
       console.error('Failed to fetch announcements:', err)
     } finally {
-      if (generation === fetchGeneration) loading.value = false
+      fetchesInFlight--
+      if (generation === fetchGeneration) {
+        loading.value = false
+        settleAnnouncementEntryIfIdle()
+      }
     }
   }
 
@@ -67,6 +114,16 @@ export const useAnnouncementStore = defineStore('announcements', () => {
   }
 
   function showNextPopup() {
+    if (entryPopupsHeld.value) {
+      if (!popupReleaseArmed) {
+        popupReleaseArmed = true
+        whenEntryPopupsReleased(() => {
+          popupReleaseArmed = false
+          if (!currentPopup.value) showNextPopup()
+        })
+      }
+      return
+    }
     if (popupQueue.value.length === 0) {
       currentPopup.value = null
       return
@@ -83,10 +140,12 @@ export const useAnnouncementStore = defineStore('announcements', () => {
     // Mark as read (fire-and-forget, UI already updated)
     markAsRead(id)
 
-    // Show next popup after a short delay
+    // Show next popup after a short delay. 全部关完后才允许首次引导。
     if (popupQueue.value.length > 0) {
       setTimeout(() => showNextPopup(), 300)
+      return
     }
+    settleAnnouncementEntryIfIdle()
   }
 
   async function markAsRead(id: number) {
@@ -122,6 +181,7 @@ export const useAnnouncementStore = defineStore('announcements', () => {
   }
 
   function reset() {
+    resetAnnouncementEntryGate()
     fetchGeneration++
     announcements.value = []
     lastFetchTime.value = 0

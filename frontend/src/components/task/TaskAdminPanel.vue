@@ -3,39 +3,61 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import type { LotteryClient } from '@/api/lotteryClient'
 import { addCalendarDays, beijingToday } from '@/utils/beijingTime'
-import { adminSearchUsers, formatValue, type SearchedUser } from '@/api/lottery'
+import { adminSearchUsers, formatValue, type SearchedUser, type VisibilitySettings } from '@/api/lottery'
 import type { ConditionDef } from '@/api/lottery'
 import {
+  adminArchiveTask,
   adminCreateTask,
-  adminDeleteTask,
   adminGetTaskSettings,
+  adminSaveTaskSettings,
+  adminDeleteTask,
   adminListTaskCodes,
+  adminListTaskNotifications,
   adminListTaskRewards,
   adminListTasks,
   adminRetryTaskFulfillment,
-  adminSaveTaskSettings,
   adminSetTaskCodes,
   adminTaskGroupModels,
   adminTaskGroups,
   adminUpdateTask,
   type AdminTaskView,
   type IntegrationGroup,
+  type NotifiedTaskUser,
   type TaskInput,
   type TaskReward
 } from '@/api/task'
-import type { VisibilitySettings } from '@/api/lottery'
 import LotteryConditionsEditor from '@/components/lottery/LotteryConditionsEditor.vue'
 import LotterySelect from '@/components/lottery/LotterySelect.vue'
 import FieldHint from '@/components/lottery/FieldHint.vue'
 import ImageUpload from '@/components/common/ImageUpload.vue'
 
 const props = defineProps<{ client: LotteryClient }>()
+const notifyTask = ref<AdminTaskView | null>(null)
+const notifyUsers = ref<NotifiedTaskUser[]>([])
+const notifyLoading = ref(false)
+const notifyError = ref('')
+
+async function openNotify(task: AdminTaskView) {
+  notifyTask.value = task
+  notifyUsers.value = []
+  notifyError.value = ''
+  notifyLoading.value = true
+  try {
+    notifyUsers.value = await adminListTaskNotifications(props.client, task.id)
+  } catch (e) {
+    notifyError.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    notifyLoading.value = false
+  }
+}
 
 type RepeatPolicy = 'unlimited' | 'join_once' | 'achieved_once'
 
 interface TaskForm {
   name: string
   cover: string
+  progressSvg: string
+  progressColor: string
   description: string
   /** '0' = 全部分组；其余为分组 ID 字符串（LotterySelect 仅支持字符串值） */
   groupId: string
@@ -50,6 +72,8 @@ interface TaskForm {
   whitelist: string[]
   blacklist: string[]
   conditions: ConditionDef[]
+  visibilityMode: 'all' | 'partial' | 'eligible'
+  visibilityEmails: string[]
 }
 
 const todayStr = () => beijingToday()
@@ -58,6 +82,8 @@ function emptyForm(): TaskForm {
   return {
     name: '',
     cover: '',
+    progressSvg: '',
+    progressColor: '',
     description: '',
     groupId: '0',
     model: '',
@@ -70,7 +96,9 @@ function emptyForm(): TaskForm {
     repeatPolicy: 'unlimited',
     whitelist: [],
     blacklist: [],
-    conditions: []
+    conditions: [],
+    visibilityMode: 'all',
+    visibilityEmails: []
   }
 }
 
@@ -101,17 +129,10 @@ const rewardsLoading = ref(false)
 
 const confirmDialog = ref<{ title: string; message: string; confirmText: string; action: () => void } | null>(null)
 
-// 显隐设置弹窗
-const settingsOpen = ref(false)
-const settingsLoading = ref(false)
-const settingsSaving = ref(false)
-const visibilityForm = ref<VisibilitySettings>({ mode: 'partial', allowed_emails: [] })
-
 // 弹窗打开时锁定背景滚动
 watch(dialogOpen, (open) => { document.body.style.overflow = open ? 'hidden' : '' })
 watch(codesOpen, (open) => { document.body.style.overflow = open ? 'hidden' : '' })
 watch(rewardsOpen, (open) => { document.body.style.overflow = open ? 'hidden' : '' })
-watch(settingsOpen, (open) => { document.body.style.overflow = open ? 'hidden' : '' })
 
 // 白名单/黑名单各自的搜索状态（互不同步）
 interface ListSearchState {
@@ -120,9 +141,10 @@ interface ListSearchState {
   searching: boolean
   open: boolean
 }
-const listSearch = ref<Record<'whitelist' | 'blacklist', ListSearchState>>({
+const listSearch = ref<Record<'whitelist' | 'blacklist' | 'audience', ListSearchState>>({
   whitelist: { query: '', results: [], searching: false, open: false },
-  blacklist: { query: '', results: [], searching: false, open: false }
+  blacklist: { query: '', results: [], searching: false, open: false },
+  audience: { query: '', results: [], searching: false, open: false }
 })
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -140,10 +162,15 @@ function fmtDate(s: string): string {
   return s ? s.slice(0, 10).replace(/-/g, '/') : '—'
 }
 
-/** 任务周期展示：起 ~ 止（剩余 N 天） */
+/** 任务周期展示。最后一天写「最后一天」，避免剩 0 天被看成已经结束。 */
 function periodText(t: AdminTaskView): string {
   const end = endDate(t)
-  return `${fmtDate(t.start_date)} ~ ${fmtDate(end)}（剩 ${calendarDaysLeft(end)} 天）`
+  const range = `${fmtDate(t.start_date)} ~ ${fmtDate(end)}`
+  if (t.status !== 'active') return range
+  const today = todayStr()
+  if (end < today) return range
+  if (end === today) return `${range}（最后一天）`
+  return `${range}（剩 ${calendarDaysLeft(end)} 天）`
 }
 
 function calendarDaysLeft(end: string): number {
@@ -166,6 +193,28 @@ const rewardTypeLabel: Record<string, string> = {
   balance: '余额',
   redeem_code: '兑换码'
 }
+
+// 进度条配色预置：色值取自仓库既有品牌色表（channel-monitor-v2-studio/studioBrand 官方填充色、
+// utils/platformColors ACCENT），Qwen 取 ModelIcon 厂商色。Grok 官方填充为纯黑，深色主题下进度条会看不见，
+// 因此这里用 platformColors 给 Grok 的 zinc 强调色。空串代表沿用默认靛蓝渐变。
+const progressColorPresets = [
+  { label: '默认', color: '' },
+  { label: 'Grok', color: '#71717a' },
+  { label: 'GPT', color: '#10a37f' },
+  { label: 'Claude', color: '#d97757' },
+  { label: 'DeepSeek', color: '#4d6bfe' },
+  { label: 'Qwen', color: '#615eff' },
+  { label: 'Gemini', color: '#3186ff' },
+  { label: 'Kimi', color: '#027aff' },
+  { label: '智谱', color: '#3859ff' },
+  { label: 'MiniMax', color: '#f23f5d' }
+]
+
+function isPresetActive(color: string): boolean {
+  return form.value.progressColor.toLowerCase() === color
+}
+
+const defaultBarGradient = 'linear-gradient(90deg, #6366f1 0%, #818cf8 100%)'
 
 async function refresh() {
   loading.value = true
@@ -210,6 +259,7 @@ function openCreate() {
   groupModels.value = []
   listSearch.value.whitelist = { query: '', results: [], searching: false, open: false }
   listSearch.value.blacklist = { query: '', results: [], searching: false, open: false }
+  listSearch.value.audience = { query: '', results: [], searching: false, open: false }
   dialogError.value = ''
   dialogOpen.value = true
   void loadGroups()
@@ -220,6 +270,8 @@ function editTask(t: AdminTaskView) {
   form.value = {
     name: t.name,
     cover: t.cover ?? '',
+    progressSvg: t.progress_svg ?? '',
+    progressColor: t.progress_color ?? '',
     description: t.description ?? '',
     groupId: t.group_id > 0 ? String(t.group_id) : '0',
     model: t.model ?? '',
@@ -232,10 +284,13 @@ function editTask(t: AdminTaskView) {
     repeatPolicy: (t.repeat_policy || 'unlimited') as RepeatPolicy,
     whitelist: [...(t.whitelist ?? [])],
     blacklist: [...(t.blacklist ?? [])],
-    conditions: (t.conditions ?? []).map((c) => ({ ...c, bonus_mode: 'none' as const }))
+    conditions: (t.conditions ?? []).map((c) => ({ ...c, bonus_mode: 'none' as const })),
+    visibilityMode: t.visibility?.mode === 'partial' || t.visibility?.mode === 'eligible' ? t.visibility.mode : 'all',
+    visibilityEmails: [...(t.visibility?.allowed_emails ?? [])]
   }
   listSearch.value.whitelist = { query: '', results: [], searching: false, open: false }
   listSearch.value.blacklist = { query: '', results: [], searching: false, open: false }
+  listSearch.value.audience = { query: '', results: [], searching: false, open: false }
   dialogError.value = ''
   dialogOpen.value = true
   void loadGroups().then(() => {
@@ -257,6 +312,8 @@ function buildInput(): TaskInput {
   return {
     name: form.value.name.trim(),
     cover: form.value.cover,
+    progress_svg: form.value.progressSvg,
+    progress_color: form.value.progressColor,
     description: form.value.description.trim(),
     group_id: gid,
     group_name: groups.value.find((g) => g.id === gid)?.name ?? '',
@@ -271,6 +328,10 @@ function buildInput(): TaskInput {
     whitelist: form.value.whitelist,
     blacklist: form.value.blacklist,
     conditions: form.value.conditions,
+    visibility: {
+      mode: form.value.visibilityMode,
+      allowed_emails: form.value.visibilityMode === 'partial' ? [...form.value.visibilityEmails] : []
+    },
     status: editingId.value != null ? 'active' : undefined
   }
 }
@@ -308,6 +369,18 @@ function runConfirm() {
   const action = confirmDialog.value?.action
   confirmDialog.value = null
   action?.()
+}
+
+function archiveTask(t: AdminTaskView) {
+  askConfirm('归档任务', `确定归档「${t.name}」？归档后用户侧不再显示，结算记录仍保留。`, '归档', async () => {
+    try {
+      await adminArchiveTask(props.client, t.id)
+      notice.value = '任务已归档'
+      await refresh()
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : String(e)
+    }
+  })
 }
 
 function deleteTask(t: AdminTaskView) {
@@ -386,28 +459,91 @@ function fulfillmentClass(f: string): string {
       : 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300'
 }
 
+function addAudience(email: string) {
+  if (email && !form.value.visibilityEmails.some((item) => item.toLowerCase() === email.toLowerCase())) {
+    form.value.visibilityEmails.push(email)
+  }
+  const state = listSearch.value.audience
+  state.query = ''
+  state.results = []
+  state.open = false
+}
+
+function removeAudience(email: string) {
+  form.value.visibilityEmails = form.value.visibilityEmails.filter((item) => item !== email)
+}
+
+const settingsOpen = ref(false)
+const settingsSaving = ref(false)
+const settingsVisibilityMode = ref<'all' | 'partial'>('partial')
+const settingsVisibilityEmails = ref<string[]>([])
+const settingsUserQuery = ref('')
+const settingsUserResults = ref<SearchedUser[]>([])
+const settingsUserSearching = ref(false)
+let settingsUserTimer: ReturnType<typeof setTimeout> | null = null
+
 async function openSettings() {
-  settingsOpen.value = true
-  settingsLoading.value = true
+  error.value = ''
   try {
     const s = await adminGetTaskSettings(props.client)
-    visibilityForm.value = {
-      mode: s.visibility?.mode ?? 'partial',
-      allowed_emails: Array.isArray(s.visibility?.allowed_emails) ? s.visibility.allowed_emails : []
-    }
-  } catch {
-    visibilityForm.value = { mode: 'partial', allowed_emails: [] }
-  } finally {
-    settingsLoading.value = false
+    const mode = s.visibility?.mode
+    settingsVisibilityMode.value = mode === 'all' ? 'all' : 'partial'
+    settingsVisibilityEmails.value = [...(s.visibility?.allowed_emails ?? [])]
+    settingsUserQuery.value = ''
+    settingsUserResults.value = []
+    settingsOpen.value = true
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e)
   }
+}
+
+function settingsVisibilityInput(): VisibilitySettings {
+  return {
+    mode: settingsVisibilityMode.value,
+    allowed_emails: settingsVisibilityMode.value === 'partial' ? [...settingsVisibilityEmails.value] : []
+  }
+}
+
+function onSettingsUserInput() {
+  if (settingsUserTimer) clearTimeout(settingsUserTimer)
+  settingsUserTimer = setTimeout(async () => {
+    const q = settingsUserQuery.value.trim()
+    if (!q) {
+      settingsUserResults.value = []
+      return
+    }
+    settingsUserSearching.value = true
+    try {
+      settingsUserResults.value = await adminSearchUsers(props.client, q, 20)
+    } catch {
+      settingsUserResults.value = []
+    } finally {
+      settingsUserSearching.value = false
+    }
+  }, 300)
+}
+
+function addSettingsUser(email: string) {
+  const value = email.trim()
+  if (!value) return
+  if (!settingsVisibilityEmails.value.some((item) => item.toLowerCase() === value.toLowerCase())) {
+    settingsVisibilityEmails.value = [...settingsVisibilityEmails.value, value]
+  }
+  settingsUserQuery.value = ''
+  settingsUserResults.value = []
+}
+
+function removeSettingsUser(email: string) {
+  settingsVisibilityEmails.value = settingsVisibilityEmails.value.filter((item) => item !== email)
 }
 
 async function saveSettings() {
   settingsSaving.value = true
+  error.value = ''
   try {
-    await adminSaveTaskSettings(props.client, { ...visibilityForm.value })
-    notice.value = '任务显隐设置已保存'
+    await adminSaveTaskSettings(props.client, settingsVisibilityInput())
     settingsOpen.value = false
+    notice.value = '设置已保存，立即生效'
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
   } finally {
@@ -415,45 +551,7 @@ async function saveSettings() {
   }
 }
 
-// 设置弹窗里的白名单搜索（独立于表单的白/黑名单搜索）
-const settingsSearch = ref<{ query: string; results: SearchedUser[]; searching: boolean }>({
-  query: '',
-  results: [],
-  searching: false
-})
-
-function onSettingsSearchInput() {
-  if (searchTimer) clearTimeout(searchTimer)
-  searchTimer = setTimeout(async () => {
-    const q = settingsSearch.value.query.trim()
-    if (!q) {
-      settingsSearch.value.results = []
-      return
-    }
-    settingsSearch.value.searching = true
-    try {
-      settingsSearch.value.results = await adminSearchUsers(props.client, q, 8)
-    } catch {
-      settingsSearch.value.results = []
-    } finally {
-      settingsSearch.value.searching = false
-    }
-  }, 300)
-}
-
-function addSettingsUser(email: string) {
-  if (email && !visibilityForm.value.allowed_emails.includes(email)) {
-    visibilityForm.value.allowed_emails.push(email)
-  }
-  settingsSearch.value.query = ''
-  settingsSearch.value.results = []
-}
-
-function removeSettingsUser(email: string) {
-  visibilityForm.value.allowed_emails = visibilityForm.value.allowed_emails.filter((e) => e !== email)
-}
-
-function onListSearchInput(target: 'whitelist' | 'blacklist') {
+function onListSearchInput(target: 'whitelist' | 'blacklist' | 'audience') {
   const state = listSearch.value[target]
   state.open = true
   if (searchTimer) clearTimeout(searchTimer)
@@ -505,8 +603,10 @@ onMounted(refresh)
         <h1 class="text-lg font-bold text-gray-900 dark:text-white">任务管理</h1>
         <p class="text-xs text-gray-500 dark:text-dark-400">持续型消耗任务：按结算日自动达成并发放奖励</p>
       </div>
-      <button class="btn btn-secondary" @click="openSettings">⚙️ 设置</button>
-      <button class="btn btn-primary" @click="openCreate">新建任务</button>
+      <div class="flex gap-2">
+        <button class="btn btn-secondary" @click="openSettings">⚙️ 设置</button>
+        <button class="btn btn-primary" @click="openCreate">新建任务</button>
+      </div>
     </div>
 
     <!-- 统计卡片 -->
@@ -548,7 +648,7 @@ onMounted(refresh)
                            ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/40 dark:text-primary-300'
                            : 'bg-gray-100 text-gray-500 dark:bg-dark-700 dark:text-dark-400']"
               >
-                {{ t.status === 'active' ? '进行中' : '已结束' }}
+                {{ t.status === 'active' ? '进行中' : t.status === 'archived' ? '已归档' : '已结束' }}
               </span>
             </div>
             <p class="mt-0.5 text-xs text-gray-500 dark:text-dark-400">
@@ -557,10 +657,12 @@ onMounted(refresh)
             <p v-if="t.description" class="mt-1 line-clamp-2 text-xs text-gray-500 dark:text-dark-400">{{ t.description }}</p>
           </div>
         </div>
-        <div class="flex flex-none gap-2">
+        <div class="flex flex-none flex-wrap justify-end gap-2">
+          <button type="button" class="btn btn-secondary btn-sm" @click="openNotify(t)">发送通知</button>
           <button class="btn btn-secondary btn-sm" @click="openRewards(t)">发放记录</button>
           <button v-if="t.reward_type === 'redeem_code'" class="btn btn-secondary btn-sm" @click="openCodes(t)">码池</button>
           <button class="btn btn-secondary btn-sm" @click="editTask(t)">编辑</button>
+          <button v-if="t.status === 'ended'" class="btn btn-secondary btn-sm" @click="archiveTask(t)">归档</button>
           <button class="btn btn-danger btn-sm" @click="deleteTask(t)">删除</button>
         </div>
       </div>
@@ -572,7 +674,13 @@ onMounted(refresh)
           </div>
           <div>
             <dt class="text-xs text-gray-400 dark:text-dark-500">结算时间</dt>
-            <dd class="mt-0.5 text-sm font-medium text-gray-900 dark:text-gray-100">每日 {{ t.settle_time }}（北京时间，结算前一天）</dd>
+            <dd class="mt-0.5 text-sm font-medium text-gray-900 dark:text-gray-100">
+              <template v-if="t.status === 'active' && todayStr() >= t.start_date.slice(0, 10) && todayStr() <= endDate(t)">
+                {{ fmtDate(addCalendarDays(todayStr(), 1)) }} {{ t.settle_time }}
+                <span class="mt-0.5 block text-xs font-normal text-gray-400 dark:text-dark-500">结算今日消耗</span>
+              </template>
+              <template v-else>次日 {{ t.settle_time }}</template>
+            </dd>
           </div>
           <div>
             <dt class="text-xs text-gray-400 dark:text-dark-500">达成条件</dt>
@@ -622,6 +730,49 @@ onMounted(refresh)
               <label>
                 <span class="input-label">封面</span>
                 <ImageUpload v-model="form.cover" upload-label="上传封面" remove-label="移除封面" hint="建议方形图，≤300KB" />
+              </label>
+              <div>
+                <span class="input-label">进度条小动画</span>
+                <ImageUpload
+                  v-model="form.progressSvg"
+                  mode="svg"
+                  size="sm"
+                  upload-label="上传 SVG"
+                  remove-label="移除动画"
+                  hint="SVG 动画文件，≤300KB"
+                />
+              </div>
+              <label>
+                <span class="input-label">进度条颜色</span>
+                <div class="flex items-center gap-2">
+                  <input v-model="form.progressColor" class="input font-mono" maxlength="7" placeholder="#22c55e，留空用默认色" />
+                  <input
+                    type="color"
+                    class="h-10 w-10 shrink-0 cursor-pointer rounded-lg border border-gray-300 bg-transparent dark:border-dark-600"
+                    :value="form.progressColor || '#6366f1'"
+                    @input="form.progressColor = ($event.target as HTMLInputElement).value"
+                  />
+                </div>
+                <div class="mt-2 flex flex-wrap gap-1.5">
+                  <button
+                    v-for="preset in progressColorPresets"
+                    :key="preset.label"
+                    type="button"
+                    class="inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-xs leading-none transition"
+                    :class="
+                      isPresetActive(preset.color)
+                        ? 'border-gray-900 bg-gray-900 text-white dark:border-gray-100 dark:bg-gray-100 dark:text-gray-900'
+                        : 'border-gray-200 text-gray-600 hover:border-gray-300 dark:border-dark-600 dark:text-gray-300 dark:hover:border-dark-500'
+                    "
+                    @click="form.progressColor = preset.color"
+                  >
+                    <span
+                      class="h-2.5 w-2.5 shrink-0 rounded-full"
+                      :style="preset.color ? { backgroundColor: preset.color } : { backgroundImage: defaultBarGradient }"
+                    ></span>
+                    {{ preset.label }}
+                  </button>
+                </div>
               </label>
               <label class="sm:col-span-2">
                 <span class="input-label">任务说明（展示给用户，支持换行）</span>
@@ -690,6 +841,54 @@ onMounted(refresh)
                   ]"
                 />
               </label>
+              <div class="sm:col-span-2 rounded-xl border border-gray-100 px-4 py-3 dark:border-dark-700">
+                <FieldHint
+                  label="可见范围"
+                  hint="这一条任务按这里显示。仅符合条件的用户只看到自己能参与的任务，已经拿到奖励的任务仍会保留。部分用户可搜索现有用户。侧边栏任务中心菜单由右上角「设置」单独控制。管理员不受限。"
+                />
+                <LotterySelect
+                  v-model="form.visibilityMode"
+                  :options="[
+                    { value: 'eligible', label: '仅符合条件的用户' },
+                    { value: 'all', label: '全部用户' },
+                    { value: 'partial', label: '部分用户' }
+                  ]"
+                />
+                <div v-if="form.visibilityMode === 'partial'" class="mt-3">
+                  <span class="input-label">可见用户（搜索后点击添加）</span>
+                  <input
+                    v-model="listSearch.audience.query"
+                    class="input"
+                    placeholder="搜索用户邮箱/用户名"
+                    @input="onListSearchInput('audience')"
+                  />
+                  <div v-if="listSearch.audience.query.trim() && listSearch.audience.results.length" class="mt-1.5 space-y-1 rounded-xl border border-gray-100 bg-white p-2 dark:border-dark-700 dark:bg-dark-800">
+                    <p v-if="listSearch.audience.searching" class="px-1 text-xs text-gray-400">搜索中…</p>
+                    <button
+                      v-for="u in listSearch.audience.results"
+                      :key="u.id"
+                      type="button"
+                      class="block w-full rounded-lg px-2 py-1 text-left text-xs text-gray-700 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-dark-700"
+                      @click="addAudience(u.email)"
+                    >
+                      {{ u.email }}<span v-if="u.username" class="text-gray-400">（{{ u.username }}）</span>
+                    </button>
+                  </div>
+                  <div v-if="form.visibilityEmails.length" class="mt-2 flex flex-wrap gap-1.5">
+                    <span
+                      v-for="email in form.visibilityEmails"
+                      :key="email"
+                      class="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2.5 py-1 text-xs text-gray-600 dark:bg-dark-700 dark:text-dark-300"
+                    >
+                      {{ email }}
+                      <button type="button" class="text-gray-400 hover:text-red-500" @click="removeAudience(email)">✕</button>
+                    </span>
+                  </div>
+                  <p v-if="!form.visibilityEmails.length" class="mt-1 text-xs text-red-500">
+                    名单为空时，除管理员外看不到这条任务，也不会收到弹窗
+                  </p>
+                </div>
+              </div>
             </div>
 
             <!-- 可参与条件 -->
@@ -699,7 +898,7 @@ onMounted(refresh)
 
               <!-- 白名单 -->
               <div class="mt-4">
-                <FieldHint label="白名单（可选）" hint="留空 = 全部用户可见可参与；填写后仅名单内用户能看到并参与该任务。" />
+                <FieldHint label="白名单（可选）" hint="留空 = 不额外限制；填写后仅名单内用户能参与并收到弹窗。可见范围选「仅符合条件的用户」时，名单外的用户也看不到这张任务。" />
                 <input
                   v-model="listSearch.whitelist.query"
                   class="input"
@@ -732,7 +931,7 @@ onMounted(refresh)
 
               <!-- 黑名单 -->
               <div class="mt-4">
-                <FieldHint label="黑名单（可选）" hint="名单内用户无法看到也无法参与该任务。" />
+                <FieldHint label="黑名单（可选）" hint="名单内用户不能参与，也不会收到弹窗。可见范围选「仅符合条件的用户」时，名单内用户也看不到这张任务。" />
                 <input
                   v-model="listSearch.blacklist.query"
                   class="input"
@@ -843,63 +1042,106 @@ onMounted(refresh)
       </div>
     </Teleport>
 
-    <!-- 显隐设置弹窗 -->
     <Teleport to="body">
-      <div v-if="settingsOpen" class="fixed inset-0 z-[1950] flex items-start justify-center overflow-y-auto bg-gray-900/60 px-4 py-8 backdrop-blur-sm">
-        <div class="w-full max-w-lg rounded-2xl bg-white shadow-glass dark:bg-dark-800">
+      <div
+        v-if="notifyTask"
+        class="fixed inset-0 z-[1900] flex items-start justify-center overflow-y-auto bg-gray-900/60 px-4 py-8 backdrop-blur-sm"
+        @click.self="notifyTask = null"
+      >
+        <div class="w-full max-w-md rounded-2xl bg-white shadow-glass dark:bg-dark-800">
           <div class="flex items-center justify-between border-b border-gray-100 px-6 py-4 dark:border-dark-700">
-            <h2 class="text-base font-semibold text-gray-900 dark:text-white">任务显隐设置</h2>
+            <div>
+              <h2 class="text-base font-semibold text-gray-900 dark:text-white">发送通知</h2>
+              <p class="mt-0.5 text-xs text-gray-500 dark:text-dark-400">{{ notifyTask.name }} · 成功通知 {{ notifyUsers.length }} 人</p>
+            </div>
+            <button class="btn btn-ghost btn-sm" @click="notifyTask = null">✕</button>
+          </div>
+          <div class="max-h-[60vh] overflow-y-auto px-6 py-5">
+            <p v-if="notifyLoading" class="py-6 text-center text-sm text-gray-400">加载中…</p>
+            <p v-else-if="notifyError" class="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
+              {{ notifyError }}
+            </p>
+            <p v-else-if="!notifyUsers.length" class="py-6 text-center text-sm text-gray-400">还没有成功通知的用户</p>
+            <ul v-else class="space-y-2">
+              <li
+                v-for="user in notifyUsers"
+                :key="user.user_id"
+                class="rounded-xl border border-gray-100 px-4 py-2.5 text-sm text-gray-800 dark:border-dark-700 dark:text-gray-100"
+              >
+                {{ user.email || '（无邮箱）' }}
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div
+        v-if="settingsOpen"
+        class="fixed inset-0 z-[1950] flex items-start justify-center overflow-y-auto bg-gray-900/60 px-4 py-8 backdrop-blur-sm"
+        @click.self="settingsOpen = false"
+      >
+        <div class="w-full max-w-2xl rounded-2xl bg-white shadow-glass dark:bg-dark-800">
+          <div class="flex items-center justify-between border-b border-gray-100 px-6 py-4 dark:border-dark-700">
+            <h2 class="text-base font-semibold text-gray-900 dark:text-white">设置</h2>
             <button class="btn btn-ghost btn-sm" @click="settingsOpen = false">✕</button>
           </div>
           <div class="space-y-4 px-6 py-5">
-            <p v-if="settingsLoading" class="py-4 text-center text-sm text-gray-400">加载中…</p>
-            <template v-else>
-              <label>
-                <span class="input-label">可见范围</span>
-                <LotterySelect
-                  v-model="visibilityForm.mode"
-                  :options="[
-                    { value: 'all', label: '全员可见' },
-                    { value: 'partial', label: '部分人可见（白名单）' }
-                  ]"
-                />
-                <p class="mt-1.5 text-xs text-gray-400 dark:text-dark-500">默认部分人可见；白名单为空时仅管理员可见任务中心。侧边栏菜单、任务列表与奖励结算均受此控制。</p>
-              </label>
-              <div v-if="visibilityForm.mode === 'partial'">
-                <span class="input-label">可见用户白名单</span>
+            <div class="rounded-xl border border-gray-100 px-4 py-3 dark:border-dark-700">
+              <FieldHint
+                label="任务中心菜单可见范围"
+                hint="这里决定侧边栏任务中心菜单是否出现。每一条任务在自己的表单里设置可见范围。全部用户时，登录用户都能看到菜单。部分用户只给名单里的邮箱。"
+              />
+              <LotterySelect
+                v-model="settingsVisibilityMode"
+                :options="[
+                  { value: 'all', label: '全部用户' },
+                  { value: 'partial', label: '部分用户' }
+                ]"
+              />
+              <div v-if="settingsVisibilityMode === 'partial'" class="mt-3">
+                <span class="input-label">可见用户（搜索后点击添加）</span>
                 <input
-                  v-model="settingsSearch.query"
+                  v-model="settingsUserQuery"
                   class="input"
-                  placeholder="搜索用户邮箱/用户名加入白名单"
-                  @input="onSettingsSearchInput"
+                  placeholder="搜索用户邮箱/用户名"
+                  @input="onSettingsUserInput"
                 />
-                <div v-if="settingsSearch.query.trim() && settingsSearch.results.length" class="mt-1.5 space-y-1 rounded-xl border border-gray-100 bg-white p-2 dark:border-dark-700 dark:bg-dark-800">
-                  <p v-if="settingsSearch.searching" class="px-1 text-xs text-gray-400">搜索中…</p>
+                <div
+                  v-if="settingsUserQuery.trim() && settingsUserResults.length"
+                  class="mt-1.5 space-y-1 rounded-xl border border-gray-100 bg-white p-2 dark:border-dark-700 dark:bg-dark-800"
+                >
+                  <p v-if="settingsUserSearching" class="px-1 text-xs text-gray-400">搜索中…</p>
                   <button
-                    v-for="u in settingsSearch.results"
+                    v-for="u in settingsUserResults"
                     :key="u.id"
+                    type="button"
                     class="block w-full rounded-lg px-2 py-1 text-left text-xs text-gray-700 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-dark-700"
                     @click="addSettingsUser(u.email)"
                   >
                     {{ u.email }}<span v-if="u.username" class="text-gray-400">（{{ u.username }}）</span>
                   </button>
                 </div>
-                <div v-if="visibilityForm.allowed_emails.length" class="mt-2 flex flex-wrap gap-1.5">
+                <div v-if="settingsVisibilityEmails.length" class="mt-2 flex flex-wrap gap-1.5">
                   <span
-                    v-for="email in visibilityForm.allowed_emails"
+                    v-for="email in settingsVisibilityEmails"
                     :key="email"
                     class="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2.5 py-1 text-xs text-gray-600 dark:bg-dark-700 dark:text-dark-300"
                   >
                     {{ email }}
-                    <button class="text-gray-400 hover:text-red-500" @click="removeSettingsUser(email)">✕</button>
+                    <button type="button" class="text-gray-400 hover:text-red-500" @click="removeSettingsUser(email)">✕</button>
                   </span>
                 </div>
+                <p v-if="!settingsVisibilityEmails.length" class="mt-1 text-xs text-red-500">
+                  名单为空时，除管理员外看不到任务中心菜单
+                </p>
               </div>
-            </template>
+            </div>
           </div>
           <div class="flex justify-end gap-3 border-t border-gray-100 px-6 py-4 dark:border-dark-700">
             <button class="btn btn-secondary" @click="settingsOpen = false">取消</button>
-            <button class="btn btn-primary" :disabled="settingsLoading || settingsSaving" @click="saveSettings">
+            <button class="btn btn-primary" :disabled="settingsSaving" @click="saveSettings">
               {{ settingsSaving ? '保存中…' : '保存' }}
             </button>
           </div>
