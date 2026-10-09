@@ -3,31 +3,59 @@
     <TablePageLayout>
       <template #filters>
         <div class="flex flex-col gap-3">
-          <div class="flex flex-wrap items-center gap-3">
-            <SearchInput
-              v-model="filterSearch"
-              :placeholder="t('keys.searchPlaceholder')"
-              class="w-full sm:w-64"
-              @search="onFilterChange"
-            />
-            <Select
-              :model-value="filterGroupId"
-              class="w-40"
-              :options="groupFilterOptions"
-              @update:model-value="onGroupFilterChange"
-            />
-            <Select
-              :model-value="filterStatus"
-              class="w-40"
-              :options="statusFilterOptions"
-              @update:model-value="onStatusFilterChange"
+          <div class="flex flex-wrap items-center justify-between gap-3" data-test="keys-filter-row">
+            <div class="flex min-w-0 flex-wrap items-center gap-3">
+              <SearchInput
+                v-model="filterSearch"
+                :placeholder="t('keys.searchPlaceholder')"
+                class="w-full sm:w-64"
+                @search="onFilterChange"
+              />
+              <Select
+                :model-value="filterGroupId"
+                class="w-40"
+                :options="groupFilterOptions"
+                @update:model-value="onGroupFilterChange"
+              />
+              <Select
+                :model-value="filterStatus"
+                class="w-40"
+                :options="statusFilterOptions"
+                @update:model-value="onStatusFilterChange"
+              />
+            </div>
+            <EndpointPopover
+              v-if="publicSettings?.api_base_url || (publicSettings?.custom_endpoints?.length ?? 0) > 0"
+              class="min-w-0 shrink-0"
+              :api-base-url="publicSettings?.api_base_url || ''"
+              :custom-endpoints="publicSettings?.custom_endpoints || []"
             />
           </div>
-          <EndpointPopover
-            v-if="publicSettings?.api_base_url || (publicSettings?.custom_endpoints?.length ?? 0) > 0"
-            :api-base-url="publicSettings?.api_base_url || ''"
-            :custom-endpoints="publicSettings?.custom_endpoints || []"
-          />
+          <section v-if="recommendedGroupOptions.length" class="recommended-groups-strip">
+            <div class="recommended-groups-heading">
+              <Icon name="badge" size="sm" class="text-amber-500" />
+              <span class="text-sm font-semibold text-gray-800 dark:text-gray-100">{{ t('keys.recommendedGroups') }}</span>
+            </div>
+            <div class="recommended-group-mini-list">
+              <button
+                v-for="option in recommendedGroupOptions"
+                :key="`filter-recommended-${option.value}`"
+                type="button"
+                class="recommended-group-mini-card"
+                :title="option.recommendationReason || option.description || option.label"
+                @click="createKeyFromRecommendation(option.value)"
+              >
+                <span class="truncate font-medium text-primary-700 dark:text-primary-300">{{ option.label }}</span>
+                <span class="shrink-0 text-xs text-gray-500 dark:text-gray-400">{{ formatGroupRate(option) }}x</span>
+                <span class="line-clamp-1 text-left text-xs text-gray-500 dark:text-gray-400">
+                  {{ option.recommendationReason || option.description || t('keys.recommendationReasonEmpty') }}
+                </span>
+                <span class="shrink-0 text-xs font-semibold text-amber-600 dark:text-amber-400">
+                  {{ formatRecommendationRating(option.recommendationRating) }}
+                </span>
+              </button>
+            </div>
+          </section>
           <div v-if="selectedIds.length" class="flex flex-wrap items-center gap-3 text-sm">
             <span class="text-gray-600 dark:text-gray-300">
               {{ t('keys.bulkEdit.selectedCount', { count: selectedIds.length }) }}
@@ -89,7 +117,7 @@
               </button>
             </div>
           </div>
-          <button @click="showCreateModal = true" class="btn btn-primary" data-tour="keys-create-btn">
+          <button @click="openCreateModal" class="btn btn-primary" data-tour="keys-create-btn">
             <Icon name="plus" size="md" class="mr-2" />
             {{ t('keys.createKey') }}
           </button>
@@ -447,7 +475,7 @@
               :title="t('keys.noKeysYet')"
               :description="t('keys.createFirstKey')"
               :action-text="t('keys.createKey')"
-              @action="showCreateModal = true"
+              @action="openCreateModal"
             />
           </template>
         </DataTable>
@@ -485,61 +513,46 @@
           />
         </div>
 
-        <fieldset v-if="!showEditModal" data-tour="key-form-provider">
-          <legend class="input-label">{{ t('keys.providerLabel') }}</legend>
-          <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <label
-              v-for="provider in createProviderOptions"
-              :key="provider.value"
-              class="relative min-w-0"
-              :class="provider.count === 0 ? 'cursor-not-allowed' : 'cursor-pointer'"
-            >
-              <input
-                type="radio"
-                name="key-provider"
-                :value="provider.value"
-                :checked="createProvider === provider.value"
-                :disabled="provider.count === 0"
-                class="peer sr-only"
-                @change="selectCreateProvider(provider.value)"
-              />
-              <span
-                class="flex h-full flex-col items-center gap-2 rounded-xl border border-gray-200 bg-white px-2 py-3 text-center transition-colors peer-checked:border-primary-500 peer-checked:bg-primary-50/60 peer-checked:ring-1 peer-checked:ring-primary-500 peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-primary-500 peer-disabled:opacity-40 dark:border-dark-600 dark:bg-dark-800 dark:peer-checked:border-primary-500 dark:peer-checked:bg-primary-500/10"
-                :class="provider.count > 0 && 'hover:border-primary-300 dark:hover:border-primary-700'"
-              >
-                <span class="flex h-8 items-center justify-center gap-1.5" aria-hidden="true">
-                  <span
-                    v-for="platform in KEY_GROUP_PROVIDER_ICONS[provider.value]"
-                    :key="platform"
-                    class="flex h-8 w-8 items-center justify-center rounded-lg"
-                    :class="platformBadgeLightClass(platform)"
-                  >
-                    <PlatformIcon :platform="platform" size="lg" />
-                  </span>
-                </span>
-                <span class="text-sm font-semibold text-gray-800 dark:text-gray-100">{{ provider.label }}</span>
-              </span>
-              <span
-                v-if="createProvider === provider.value"
-                class="absolute right-1.5 top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-primary-500 text-white"
-                aria-hidden="true"
-              >
-                <Icon name="check" size="xs" :stroke-width="3" />
-              </span>
-            </label>
-          </div>
-          <p class="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400" aria-live="polite">
-            {{ groups.length === 0 ? t('common.noGroupsAvailable') : t(`keys.providerHints.${createProvider}`) }}
-          </p>
-        </fieldset>
-
         <div>
-          <label class="input-label" for="key-form-group">{{ t('keys.groupLabel') }}</label>
+          <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+            <label class="input-label mb-0">{{ t('keys.groupLabel') }}</label>
+            <button
+              v-if="!showEditModal && groupPickerMode === 'native'"
+              type="button"
+              class="mb-1.5 text-xs font-medium text-primary-600 underline decoration-primary-300 underline-offset-4 transition-colors hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
+              @click="useCardGroupSelect"
+            >
+              {{ t('keys.useCardGroupSelect') }}
+            </button>
+          </div>
+          <button
+            v-if="!showEditModal && groupPickerMode === 'cards'"
+            type="button"
+            class="group-picker-trigger mt-1.5"
+            data-tour="key-form-group"
+            @click="openGroupPicker"
+          >
+            <GroupBadge
+              v-if="selectedGroupOption"
+              :name="selectedGroupOption.label"
+              :platform="selectedGroupOption.platform"
+              :subscription-type="selectedGroupOption.subscriptionType"
+              :rate-multiplier="selectedGroupOption.rate"
+              :user-rate-multiplier="selectedGroupOption.userRate"
+              :peak-rate-enabled="selectedGroupOption.peakRateEnabled"
+              :peak-start="selectedGroupOption.peakStart"
+              :peak-end="selectedGroupOption.peakEnd"
+              :peak-rate-multiplier="selectedGroupOption.peakRateMultiplier"
+            />
+            <span v-else class="text-gray-400">{{ t('keys.selectGroup') }}</span>
+            <Icon name="chevronDown" size="md" class="shrink-0 text-gray-400" />
+          </button>
           <Select
-            :key="showEditModal ? 'edit' : createProvider"
+            v-else
             id="key-form-group"
             :aria-label="t('keys.groupLabel')"
             v-model="formData.group_id"
+            class="mt-1.5"
             :options="formGroupOptions"
             :placeholder="t('keys.selectGroup')"
             :empty-text="t('common.noGroupsAvailable')"
@@ -578,6 +591,22 @@
               />
             </template>
           </Select>
+          <div v-if="!showEditModal && recommendedFormGroupOptions.length" class="mt-2.5 space-y-1.5">
+            <div class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('keys.recommendedGroups') }}</div>
+            <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+              <button
+                v-for="option in recommendedFormGroupOptions"
+                :key="`quick-${option.value}`"
+                type="button"
+                class="inline-flex max-w-full items-center gap-1 text-left text-sm text-primary-600 underline decoration-primary-300 underline-offset-4 transition-colors hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
+                :title="option.recommendationReason || option.description || option.label"
+                @click="selectRecommendedGroup(option.value)"
+              >
+                <span class="truncate">{{ option.label }}</span>
+                <span class="shrink-0 text-xs no-underline">{{ formatRecommendationRating(option.recommendationRating) }}</span>
+              </button>
+            </div>
+          </div>
         </div>
 
         <!-- Custom Key Section (only for create) -->
@@ -1025,6 +1054,143 @@
       </template>
     </BaseDialog>
 
+    <!-- Card-based group picker for new API keys -->
+    <BaseDialog
+      :show="showGroupPickerModal"
+      :title="t('keys.selectGroup')"
+      width="wide"
+      @close="closeGroupPicker"
+    >
+      <div class="group-picker-shell">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div class="relative min-w-0 flex-1">
+            <Icon name="search" size="sm" class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              v-model="groupCardSearch"
+              type="search"
+              class="input pl-9"
+              :placeholder="t('keys.searchGroup')"
+              :aria-label="t('keys.searchGroup')"
+            />
+          </div>
+          <button
+            type="button"
+            class="self-end text-sm font-medium text-primary-600 underline decoration-primary-300 underline-offset-4 transition-colors hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 sm:self-auto"
+            @click="useNativeGroupSelect"
+          >
+            {{ t('keys.useNativeGroupSelect') }}
+          </button>
+        </div>
+
+        <nav
+          v-if="groupCategoryTabs.length"
+          class="group-picker-tabs"
+          role="tablist"
+          :aria-label="t('keys.selectGroup')"
+        >
+          <button
+            v-for="tab in groupCategoryTabs"
+            :key="tab.id"
+            type="button"
+            role="tab"
+            class="group-picker-tab"
+            :class="{
+              'group-picker-tab-active': activeCategoryTab === tab.id,
+              'group-picker-tab-recommended': tab.recommended
+            }"
+            :aria-selected="activeCategoryTab === tab.id"
+            :title="tab.description || tab.name"
+            @click="activeCategoryTab = tab.id"
+          >
+            <Icon
+              v-if="tab.recommended"
+              name="trophy"
+              size="sm"
+              class="text-amber-500"
+            />
+            <span class="truncate">{{ tab.name }}</span>
+            <span class="text-[11px] font-normal text-gray-400 dark:text-gray-500">{{ tab.options.length }}</span>
+          </button>
+        </nav>
+
+        <div ref="groupPickerContentRef" class="group-picker-scroll">
+          <div v-if="activeCategoryBrandSections.length" class="space-y-5">
+            <section
+              v-for="section in activeCategoryBrandSections"
+              :key="section.platform"
+              class="space-y-2.5"
+            >
+              <div class="flex items-center gap-2 border-b border-gray-200 pb-2 dark:border-dark-700">
+                <PlatformIcon :platform="section.platform" size="sm" class="text-gray-500 dark:text-gray-300" />
+                <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-100">{{ section.label }}</h4>
+                <span class="text-xs text-gray-400 dark:text-gray-500">{{ section.options.length }}</span>
+              </div>
+              <div class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                <button
+                  v-for="option in section.options"
+                  :key="option.value"
+                  type="button"
+                  class="group-card"
+                  :data-group-id="option.value"
+                  :class="formData.group_id === option.value ? 'group-card-selected' : ''"
+                  @click="selectGroupFromCard(option.value)"
+                >
+                  <div class="flex min-w-0 w-full flex-col">
+                    <GroupOptionItem
+                      :name="option.label"
+                      :platform="option.platform"
+                      :subscription-type="option.subscriptionType"
+                      :rate-multiplier="option.rate"
+                      :user-rate-multiplier="option.userRate"
+                      :peak-rate-enabled="option.peakRateEnabled"
+                      :peak-start="option.peakStart"
+                      :peak-end="option.peakEnd"
+                      :peak-rate-multiplier="option.peakRateMultiplier"
+                      :description="option.description"
+                      :selected="formData.group_id === option.value"
+                      :show-rate-label="false"
+                      :reserve-description="true"
+                    />
+                    <div
+                      v-if="option.recommendationReason || option.recommendationRating != null"
+                      class="recommendation-note"
+                    >
+                      <div class="flex w-full items-center justify-between gap-3">
+                        <span class="recommendation-note-label">
+                          {{ t('keys.recommendationReason') }}
+                        </span>
+                        <span
+                          v-if="option.recommendationRating != null"
+                          class="recommendation-note-stars"
+                          :aria-label="t('keys.recommendationReason')"
+                        >
+                          <span
+                            v-for="index in 5"
+                            :key="index"
+                            class="recommendation-note-star"
+                          >{{ recommendationStarEmoji(option.recommendationRating, index) }}</span>
+                        </span>
+                      </div>
+                      <p
+                        v-if="option.recommendationReason"
+                        class="recommendation-note-text"
+                        :title="option.recommendationReason"
+                      >
+                        {{ option.recommendationReason }}
+                      </p>
+                    </div>
+                  </div>
+                </button>
+              </div>
+            </section>
+          </div>
+          <div v-else class="rounded-xl border border-dashed border-gray-300 px-4 py-8 text-center text-sm text-gray-500 dark:border-dark-600 dark:text-gray-400">
+            {{ t('keys.noGroupFound') }}
+          </div>
+        </div>
+      </div>
+    </BaseDialog>
+
     <BulkEditKeysModal
       :show="showBulkEditModal"
       :selected-keys="selectedApiKeys"
@@ -1199,7 +1365,7 @@
 </template>
 
 <script setup lang="ts">
-	import { ref, reactive, computed, watch, onMounted, onUnmounted, type ComponentPublicInstance } from 'vue'
+	import { ref, reactive, computed, watch, onMounted, onUnmounted, nextTick, type ComponentPublicInstance } from 'vue'
 	import { useI18n } from 'vue-i18n'
 	import { useAppStore } from '@/stores/app'
 	import { useOnboardingStore } from '@/stores/onboarding'
@@ -1208,6 +1374,7 @@ import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 
 const { t } = useI18n()
 import { keysAPI, authAPI, usageAPI, userGroupsAPI } from '@/api'
+import type { GroupCategory, GroupRecommendation } from '@/api/groups'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import BulkEditKeysModal from '@/components/keys/BulkEditKeysModal.vue'
@@ -1224,13 +1391,12 @@ import BulkEditKeysModal from '@/components/keys/BulkEditKeysModal.vue'
 	import GroupBadge from '@/components/common/GroupBadge.vue'
 	import GroupOptionItem from '@/components/common/GroupOptionItem.vue'
 	import type { ApiKey, Group, PublicSettings, SubscriptionType, GroupPlatform, UpdateApiKeyRequest } from '@/types'
+import { GROUP_PLATFORM_OPTIONS } from '@/constants/platforms'
 import type { Column } from '@/components/common/types'
 import type { BatchApiKeyUsageStats } from '@/api/usage'
 import { formatDateTime } from '@/utils/format'
 import { maskApiKey } from '@/utils/maskApiKey'
 import PlatformIcon from '@/components/common/PlatformIcon.vue'
-import { platformBadgeLightClass } from '@/utils/platformColors'
-import { KEY_GROUP_PROVIDERS, KEY_GROUP_PROVIDER_ICONS, getKeyGroupProvider, type KeyGroupProvider } from '@/utils/keyGroupProviders'
 import {
   CC_SWITCH_USAGE_SCRIPT,
   buildCcSwitchImportDeeplink,
@@ -1256,6 +1422,8 @@ interface GroupOption {
   peakRateMultiplier: number
   subscriptionType: SubscriptionType
   platform: GroupPlatform
+  recommendationReason?: string
+  recommendationRating?: number
 }
 
 const appStore = useAppStore()
@@ -1283,6 +1451,7 @@ const DEFAULT_HIDDEN_COLUMNS = ['id', 'rate_limit', 'last_used_at', 'last_used_i
 const HIDDEN_COLUMNS_KEY = 'api-key-hidden-columns'
 const COLUMN_SETTINGS_VERSION_KEY = 'api-key-column-settings-version'
 const COLUMN_SETTINGS_VERSION = 3
+const GROUP_PICKER_MODE_KEY = 'api-key-group-picker-mode'
 const VERSION_NEW_HIDDEN_COLUMNS: Record<number, string[]> = {
   2: ['last_used_ip'],
   3: ['id']
@@ -1293,6 +1462,17 @@ const toggleableColumns = computed(() =>
 )
 
 const hiddenColumns = reactive<Set<string>>(new Set())
+
+const getInitialGroupPickerMode = (): 'cards' | 'native' => {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage.getItem(GROUP_PICKER_MODE_KEY) === 'native') {
+      return 'native'
+    }
+  } catch (error) {
+    console.warn('Failed to load API key group picker preference:', error)
+  }
+  return 'cards'
+}
 
 const saveColumnsToStorage = () => {
   try {
@@ -1379,6 +1559,13 @@ const now = ref(new Date())
 let resetTimer: ReturnType<typeof setInterval> | null = null
 const usageStats = ref<Record<string, BatchApiKeyUsageStats>>({})
 const userGroupRates = ref<Record<number, number>>({})
+const groupRecommendations = ref<GroupRecommendation[]>([])
+const groupCategories = ref<GroupCategory[]>([])
+const groupCategoryAssignments = ref<Record<string, string>>({})
+const activeCategoryTab = ref('')
+const UNCATEGORIZED_TAB = '__uncategorized__'
+const RECOMMENDED_TAB = '__recommended__'
+const pendingScrollToSelected = ref(false)
 
 const pagination = ref({
   page: 1,
@@ -1404,6 +1591,10 @@ const showResetRateLimitDialog = ref(false)
 const showUseKeyModal = ref(false)
 const showCcsClientSelect = ref(false)
 const showColumnDropdown = ref(false)
+const showGroupPickerModal = ref(false)
+const groupPickerMode = ref<'cards' | 'native'>(getInitialGroupPickerMode())
+const groupCardSearch = ref('')
+const groupPickerContentRef = ref<HTMLElement | null>(null)
 const pendingCcsRow = ref<ApiKey | null>(null)
 const selectedKey = ref<ApiKey | null>(null)
 const copiedKeyId = ref<number | null>(null)
@@ -1527,35 +1718,213 @@ const groupOptions = computed(() =>
   }))
 )
 
-const createProvider = ref<KeyGroupProvider>('anthropic')
-const createProviderOptions = computed(() => KEY_GROUP_PROVIDERS.map((value) => ({
-  value,
-  label: t(`keys.providers.${value}`),
-  count: groups.value.filter((group) => getKeyGroupProvider(group.platform) === value).length
-})))
+const formGroupOptions = groupOptions
 
-const formGroupOptions = computed(() => showEditModal.value
-  ? groupOptions.value
-  : groupOptions.value.filter((group) => getKeyGroupProvider(group.platform) === createProvider.value)
-)
-
-const selectCreateProvider = (provider: KeyGroupProvider) => {
-  if (createProvider.value === provider) return
-  createProvider.value = provider
-  formData.value.group_id = null
-}
-
-// Also handles groups arriving after the create dialog has already opened.
-watch([showCreateModal, createProviderOptions], ([isOpen, providers], [wasOpen]) => {
-  if (!isOpen) return
-  if (!wasOpen || !providers.some((provider) => provider.value === createProvider.value && provider.count > 0)) {
-    selectCreateProvider(providers.find((provider) => provider.count > 0)?.value ?? 'anthropic')
+const recommendedGroupOptions = computed<GroupOption[]>(() => {
+  const optionsByID = new Map(groupOptions.value.map((option) => [option.value, option]))
+  const options: GroupOption[] = []
+  for (const recommendation of groupRecommendations.value) {
+    const option = optionsByID.get(recommendation.group_id)
+    if (option) {
+      options.push({
+        ...option,
+        recommendationReason: recommendation.reason,
+        recommendationRating: recommendation.rating
+      })
+    }
   }
-  if (!formGroupOptions.value.some((group) => group.value === formData.value.group_id)) {
-    formData.value.group_id = null
-  }
+  return options
 })
 
+const recommendedFormGroupOptions = computed(() => {
+  const allowedIDs = new Set(formGroupOptions.value.map((option) => option.value))
+  return recommendedGroupOptions.value.filter((option) => allowedIDs.has(option.value))
+})
+
+const formatGroupRate = (option: GroupOption) => option.userRate ?? option.rate
+
+const formatRecommendationRating = (rating?: number) => {
+  if (rating === undefined || rating === null || Number.isNaN(Number(rating))) return ''
+  const value = Number(rating)
+  return `${Number.isInteger(value) ? value : value.toFixed(1)}⭐`
+}
+
+const recommendationStarEmoji = (rating: number | undefined, index: number) => {
+  const value = Number(rating)
+  if (Number.isNaN(value) || value < index - 0.5) return '☆'
+  return '⭐'
+}
+
+const selectedGroupOption = computed(() =>
+  groupOptions.value.find((option) => option.value === formData.value.group_id) ?? null
+)
+
+const sortGroupOptions = (options: GroupOption[]) =>
+  [...options].sort((a, b) => {
+    const rateA = a.userRate ?? a.rate
+    const rateB = b.userRate ?? b.rate
+    return rateA - rateB || a.label.localeCompare(b.label)
+  })
+
+const groupCategoryTabs = computed(() => {
+  const query = groupCardSearch.value.trim().toLowerCase()
+  const filtered = formGroupOptions.value.filter((option) => {
+    if (!query) return true
+    return option.label.toLowerCase().includes(query) ||
+      Boolean(option.description && option.description.toLowerCase().includes(query))
+  })
+
+  const categoryById = new Map(groupCategories.value.map((category) => [category.id, category]))
+  const groupsByCategory = new Map<string, GroupOption[]>()
+  const uncategorized: GroupOption[] = []
+
+  for (const option of filtered) {
+    const categoryId = groupCategoryAssignments.value[String(option.value)]
+    if (categoryId && categoryById.has(categoryId)) {
+      const list = groupsByCategory.get(categoryId) ?? []
+      list.push(option)
+      groupsByCategory.set(categoryId, list)
+    } else {
+      uncategorized.push(option)
+    }
+  }
+
+  const toTab = (category: GroupCategory) => ({
+    id: category.id,
+    name: category.name,
+    description: category.description || '',
+    recommended: false,
+    options: sortGroupOptions(groupsByCategory.get(category.id) ?? [])
+  })
+
+  const tabs: Array<{
+    id: string
+    name: string
+    description: string
+    recommended: boolean
+    options: GroupOption[]
+  }> = []
+
+  if (recommendedFormGroupOptions.value.length) {
+    tabs.push({
+      id: RECOMMENDED_TAB,
+      name: t('keys.recommendedGroups'),
+      description: '',
+      recommended: true,
+      options: sortGroupOptions(recommendedFormGroupOptions.value.filter((option) => {
+        if (!query) return true
+        return option.label.toLowerCase().includes(query) ||
+          Boolean(option.description && option.description.toLowerCase().includes(query)) ||
+          Boolean(option.recommendationReason && option.recommendationReason.toLowerCase().includes(query))
+      }))
+    })
+  }
+
+  if (!groupCategories.value.length && !tabs.length) {
+    return [{
+      id: 'all',
+      name: t('keys.allGroups'),
+      description: '',
+      recommended: false,
+      options: sortGroupOptions(filtered)
+    }]
+  }
+
+  tabs.push(
+    ...[...groupCategories.value]
+      .sort((a, b) => (b.sort_order ?? 0) - (a.sort_order ?? 0))
+      .map(toTab)
+  )
+
+  if (uncategorized.length) {
+    tabs.push({
+      id: UNCATEGORIZED_TAB,
+      name: t('keys.uncategorizedGroups'),
+      description: '',
+      recommended: false,
+      options: sortGroupOptions(uncategorized)
+    })
+  }
+
+  return tabs
+})
+
+const defaultCategoryTabId = computed(() => {
+  const groupId = formData.value.group_id
+  if (groupId != null) {
+    const categoryId = groupCategoryAssignments.value[String(groupId)]
+    if (categoryId && groupCategoryTabs.value.some((tab) => tab.id === categoryId)) {
+      return categoryId
+    }
+    const otherTab = groupCategoryTabs.value.find((tab) => tab.id === UNCATEGORIZED_TAB)
+    if (otherTab?.options.some((option) => option.value === groupId)) {
+      return UNCATEGORIZED_TAB
+    }
+    const recommendedTab = groupCategoryTabs.value.find((tab) => tab.recommended)
+    if (recommendedTab?.options.some((option) => option.value === groupId)) {
+      return recommendedTab.id
+    }
+  }
+  const recommended = groupCategoryTabs.value.find((tab) => tab.recommended)
+  return recommended?.id || groupCategoryTabs.value[0]?.id || ''
+})
+
+const activeCategoryGroups = computed(() => {
+  const current = groupCategoryTabs.value.find((tab) => tab.id === activeCategoryTab.value)
+  return current?.options ?? []
+})
+
+const activeCategoryBrandSections = computed(() => {
+  const groupsByPlatform = new Map<GroupPlatform, GroupOption[]>()
+  for (const option of activeCategoryGroups.value) {
+    const list = groupsByPlatform.get(option.platform) ?? []
+    list.push(option)
+    groupsByPlatform.set(option.platform, list)
+  }
+  return GROUP_PLATFORM_OPTIONS
+    .filter((platform) => groupsByPlatform.has(platform.value))
+    .map((platform) => ({
+      platform: platform.value,
+      label: platform.label,
+      options: sortGroupOptions(groupsByPlatform.get(platform.value) ?? [])
+    }))
+})
+
+watch(
+  [groupCategoryTabs, () => showGroupPickerModal.value],
+  () => {
+    if (!showGroupPickerModal.value) return
+    if (!groupCategoryTabs.value.some((tab) => tab.id === activeCategoryTab.value)) {
+      activeCategoryTab.value = defaultCategoryTabId.value
+    }
+  }
+)
+
+const scrollSelectedGroupIntoView = () => {
+  const groupId = formData.value.group_id
+  const container = groupPickerContentRef.value
+  if (groupId == null || !container) return false
+  const el = container.querySelector<HTMLElement>(`[data-group-id="${groupId}"]`)
+  if (!el) return false
+  const containerRect = container.getBoundingClientRect()
+  const elRect = el.getBoundingClientRect()
+  const nextTop = container.scrollTop + (elRect.top - containerRect.top) - (container.clientHeight - elRect.height) / 2
+  container.scrollTo({ top: Math.max(0, nextTop), behavior: 'smooth' })
+  return true
+}
+
+watch(
+  [() => showGroupPickerModal.value, activeCategoryBrandSections],
+  async ([show]) => {
+    if (!show || !pendingScrollToSelected.value) return
+    await nextTick()
+    requestAnimationFrame(() => {
+      if (scrollSelectedGroupIntoView()) {
+        pendingScrollToSelected.value = false
+      }
+    })
+  }
+)
 // Group dropdown search
 const groupSearchQuery = ref('')
 const filteredGroupOptions = computed(() => {
@@ -1638,11 +2007,180 @@ const loadApiKeys = async () => {
   }
 }
 
+// Development-only fixtures keep the card layout inspectable when the local API is unavailable.
+const devGroupFixtures = [
+  {
+    id: 901,
+    name: 'GPT 标准池',
+    description: 'OpenAI 通用模型，适合日常对话与代码任务',
+    platform: 'openai',
+    rate_multiplier: 0.06,
+    subscription_type: 'standard',
+    peak_rate_enabled: false,
+    peak_start: '',
+    peak_end: '',
+    peak_rate_multiplier: 0.06
+  },
+  {
+    id: 902,
+    name: 'GPT 高速池',
+    description: 'OpenAI 高速线路，优先保障响应速度',
+    platform: 'openai',
+    rate_multiplier: 0.08,
+    subscription_type: 'standard',
+    peak_rate_enabled: true,
+    peak_start: '18:00',
+    peak_end: '23:00',
+    peak_rate_multiplier: 0.1
+  },
+  {
+    id: 903,
+    name: 'GPT 专属池',
+    description: '面向长任务的稳定线路',
+    platform: 'openai',
+    rate_multiplier: 0.16,
+    subscription_type: 'subscription',
+    peak_rate_enabled: false,
+    peak_start: '',
+    peak_end: '',
+    peak_rate_multiplier: 0.16
+  },
+  {
+    id: 904,
+    name: 'Claude 轻量池',
+    description: 'Anthropic 轻量模型线路',
+    platform: 'anthropic',
+    rate_multiplier: 0.12,
+    subscription_type: 'standard',
+    peak_rate_enabled: false,
+    peak_start: '',
+    peak_end: '',
+    peak_rate_multiplier: 0.12
+  },
+  {
+    id: 905,
+    name: 'Claude 深度池',
+    description: '适合复杂分析和长文本处理',
+    platform: 'anthropic',
+    rate_multiplier: 0.35,
+    subscription_type: 'subscription',
+    peak_rate_enabled: false,
+    peak_start: '',
+    peak_end: '',
+    peak_rate_multiplier: 0.35
+  },
+  {
+    id: 906,
+    name: 'Gemini 多模态池',
+    description: '支持文本、图片等多模态请求',
+    platform: 'gemini',
+    rate_multiplier: 0.08,
+    subscription_type: 'standard',
+    peak_rate_enabled: false,
+    peak_start: '',
+    peak_end: '',
+    peak_rate_multiplier: 0.08
+  },
+  {
+    id: 907,
+    name: 'DeepSeek 低价池',
+    description: 'DeepSeek 高性价比线路',
+    platform: 'deepseek',
+    rate_multiplier: 0.03,
+    subscription_type: 'standard',
+    peak_rate_enabled: false,
+    peak_start: '',
+    peak_end: '',
+    peak_rate_multiplier: 0.03
+  },
+  {
+    id: 908,
+    name: 'Grok 实时池',
+    description: '适合需要实时信息的请求',
+    platform: 'grok',
+    rate_multiplier: 0.11,
+    subscription_type: 'standard',
+    peak_rate_enabled: false,
+    peak_start: '',
+    peak_end: '',
+    peak_rate_multiplier: 0.11
+  },
+  {
+    id: 909,
+    name: 'Kimi 长文本池',
+    description: '长上下文任务专用线路',
+    platform: 'kimi',
+    rate_multiplier: 0.09,
+    subscription_type: 'subscription',
+    peak_rate_enabled: false,
+    peak_start: '',
+    peak_end: '',
+    peak_rate_multiplier: 0.09
+  }
+] as unknown as Group[]
+
+const devGroupRecommendationFixtures: GroupRecommendation[] = [
+  {
+    group_id: 901,
+    name: 'GPT 标准池',
+    rate_multiplier: 0.06,
+    reason: '日常使用稳定，适合大多数请求',
+    rating: 4.5
+  },
+  {
+    group_id: 904,
+    name: 'Claude 轻量池',
+    rate_multiplier: 0.12,
+    reason: '响应速度快，适合日常对话',
+    rating: 4
+  },
+  {
+    group_id: 907,
+    name: 'DeepSeek 低价池',
+    rate_multiplier: 0.03,
+    reason: '代码任务性价比高',
+    rating: 4.5
+  }
+]
+
 const loadGroups = async () => {
   try {
     groups.value = await userGroupsAPI.getAvailable()
   } catch (error) {
     console.error('Failed to load groups:', error)
+    if (import.meta.env.DEV && import.meta.env.VITE_ENABLE_ADMIN_MOCK === 'true') {
+      groups.value = devGroupFixtures
+    }
+  }
+}
+
+const loadGroupCategories = async () => {
+  try {
+    const snap = await userGroupsAPI.getCategories()
+    groupCategories.value = snap.categories
+    groupCategoryAssignments.value = snap.assignments
+  } catch (error) {
+    console.error('Failed to load group categories:', error)
+    groupCategories.value = []
+    groupCategoryAssignments.value = {}
+  }
+}
+
+const loadGroupRecommendations = async () => {
+  try {
+    const recommendations = await userGroupsAPI.getRecommendations()
+    if (recommendations.length > 0) {
+      groupRecommendations.value = recommendations
+    } else if (import.meta.env.DEV && import.meta.env.VITE_ENABLE_ADMIN_MOCK === 'true') {
+      groupRecommendations.value = devGroupRecommendationFixtures
+    } else {
+      groupRecommendations.value = []
+    }
+  } catch (error) {
+    console.error('Failed to load group recommendations:', error)
+    groupRecommendations.value = import.meta.env.DEV && import.meta.env.VITE_ENABLE_ADMIN_MOCK === 'true'
+      ? devGroupRecommendationFixtures
+      : []
   }
 }
 
@@ -1717,6 +2255,57 @@ const editKey = (key: ApiKey) => {
     expiration_date: key.expires_at ? formatDateTimeLocal(key.expires_at) : ''
   }
   showEditModal.value = true
+}
+
+const openCreateModal = () => {
+  groupCardSearch.value = ''
+  showCreateModal.value = true
+}
+
+const openGroupPicker = () => {
+  groupCardSearch.value = ''
+  activeCategoryTab.value = defaultCategoryTabId.value
+  pendingScrollToSelected.value = formData.value.group_id != null
+  showGroupPickerModal.value = true
+}
+
+const closeGroupPicker = () => {
+  showGroupPickerModal.value = false
+  groupCardSearch.value = ''
+  pendingScrollToSelected.value = false
+}
+
+const useNativeGroupSelect = () => {
+  groupPickerMode.value = 'native'
+  try {
+    window.localStorage.setItem(GROUP_PICKER_MODE_KEY, 'native')
+  } catch (error) {
+    console.warn('Failed to save API key group picker preference:', error)
+  }
+  closeGroupPicker()
+}
+
+const useCardGroupSelect = () => {
+  groupPickerMode.value = 'cards'
+  try {
+    window.localStorage.setItem(GROUP_PICKER_MODE_KEY, 'cards')
+  } catch (error) {
+    console.warn('Failed to save API key group picker preference:', error)
+  }
+}
+
+const selectGroupFromCard = (groupId: number) => {
+  formData.value.group_id = groupId
+  closeGroupPicker()
+}
+
+const selectRecommendedGroup = (groupId: number) => {
+  formData.value.group_id = groupId
+}
+
+const createKeyFromRecommendation = (groupId: number) => {
+  formData.value.group_id = groupId
+  openCreateModal()
 }
 
 const toggleKeyStatus = async (key: ApiKey) => {
@@ -1922,6 +2511,7 @@ const handleDelete = async () => {
 const closeModals = () => {
   showCreateModal.value = false
   showEditModal.value = false
+  closeGroupPicker()
   selectedKey.value = null
   formData.value = {
     name: '',
@@ -2082,6 +2672,8 @@ onMounted(() => {
   loadSavedColumns()
   loadApiKeys()
   loadGroups()
+  loadGroupRecommendations()
+  loadGroupCategories()
   loadUserGroupRates()
   loadPublicSettings()
   document.addEventListener('click', closeGroupSelector)
@@ -2093,3 +2685,105 @@ onUnmounted(() => {
   if (resetTimer) clearInterval(resetTimer)
 })
 </script>
+
+<style scoped>
+.group-picker-trigger {
+  @apply flex w-full cursor-pointer items-center justify-between gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-left text-sm text-gray-900 transition-all duration-200 hover:border-gray-300 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30 dark:border-dark-600 dark:bg-dark-800 dark:text-gray-100 dark:hover:border-dark-500;
+}
+
+.recommended-groups-strip {
+  @apply flex min-w-0 items-start gap-3 rounded-lg border border-amber-200/80 bg-amber-50/40 p-3 dark:border-amber-900/40 dark:bg-amber-900/10;
+}
+
+.recommended-groups-heading {
+  @apply flex shrink-0 items-center gap-2 pt-1;
+}
+
+.recommended-group-mini-list {
+  @apply flex min-w-0 flex-1 gap-2 overflow-x-auto pb-1;
+  scrollbar-width: thin;
+}
+
+.recommended-group-mini-card {
+  @apply grid min-w-[168px] max-w-[220px] shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-1.5 gap-y-0.5 rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-left text-xs transition-colors hover:border-primary-400 hover:bg-primary-50/50 dark:border-dark-600 dark:bg-dark-800 dark:hover:border-primary-500 dark:hover:bg-primary-900/20;
+}
+
+.group-picker-shell {
+  display: flex;
+  height: min(76vh, 720px, calc(90vh - 7rem));
+  min-height: min(400px, calc(90vh - 7rem));
+  min-width: 0;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.group-picker-tabs {
+  display: flex;
+  min-width: 0;
+  flex-shrink: 0;
+  gap: 0.25rem;
+  overflow-x: auto;
+  border-bottom: 1px solid rgb(229 231 235);
+  scrollbar-width: thin;
+}
+
+.dark .group-picker-tabs {
+  border-bottom-color: rgb(55 65 81);
+}
+
+.group-picker-tab {
+  @apply inline-flex shrink-0 items-center gap-1.5 border-b-2 border-transparent bg-transparent px-3 py-2 text-sm font-medium text-gray-500 shadow-none transition-colors hover:bg-transparent hover:text-gray-800 dark:bg-transparent dark:text-gray-400 dark:hover:bg-transparent dark:hover:text-gray-200;
+}
+
+.group-picker-tab-active {
+  @apply border-primary-500 text-primary-700 dark:border-primary-400 dark:text-primary-300;
+}
+
+.group-picker-tab-recommended {
+  @apply text-amber-700 dark:text-amber-300;
+}
+
+.group-picker-tab-recommended.group-picker-tab-active {
+  @apply border-amber-500 dark:border-amber-400;
+}
+
+.group-picker-scroll {
+  min-height: 0;
+  flex: 1 1 0%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-top: 0.5rem;
+  padding-right: 0.85rem;
+  padding-bottom: 0.5rem;
+  scrollbar-gutter: stable;
+  scroll-behavior: smooth;
+}
+
+.group-card {
+  @apply relative z-0 flex min-h-[92px] w-full items-start rounded-xl border border-gray-200 bg-white p-3 text-left transition-all hover:z-10 hover:-translate-y-0.5 hover:border-primary-400 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 dark:border-dark-600 dark:bg-dark-800 dark:hover:border-primary-500;
+}
+
+.recommendation-note {
+  @apply mt-2.5 w-full rounded-lg bg-amber-50/80 px-2.5 py-2 text-left dark:bg-amber-950/30;
+}
+
+.recommendation-note-label {
+  @apply text-[11px] font-semibold tracking-wide text-amber-800 dark:text-amber-200;
+}
+
+.recommendation-note-stars {
+  @apply flex shrink-0 items-center gap-px;
+}
+
+.recommendation-note-star {
+  @apply text-[13px] leading-none;
+}
+
+.recommendation-note-text {
+  @apply mt-1.5 w-full overflow-hidden text-left text-xs leading-relaxed text-amber-900/80 dark:text-amber-100/80 line-clamp-1;
+}
+
+.group-card-selected {
+  @apply border-primary-500 bg-primary-50/70 ring-2 ring-primary-500/20 dark:border-primary-400 dark:bg-primary-900/20;
+}
+</style>

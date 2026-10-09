@@ -94,6 +94,7 @@ interface Props {
 interface Emits {
   (e: 'update:startDate', value: string): void
   (e: 'update:endDate', value: string): void
+  (e: 'preset-change', range: { startDate: string; endDate: string; preset: string }): void
   (e: 'change', range: { startDate: string; endDate: string; preset: string | null }): void
 }
 
@@ -106,7 +107,7 @@ const isOpen = ref(false)
 const containerRef = ref<HTMLElement | null>(null)
 const localStartDate = ref(props.startDate)
 const localEndDate = ref(props.endDate)
-const activePreset = ref<string | null>('last24Hours')
+const activePreset = ref<string | null>(null)
 
 const today = () => formatDateToString(new Date())
 
@@ -211,6 +212,15 @@ const presets: DatePreset[] = [
   }
 ]
 
+const matchPreset = (start: string, end: string): string | null => {
+  for (const preset of presets) {
+    const range = preset.getRange()
+    if (range.start === start && range.end === end) return preset.value
+  }
+  return null
+}
+activePreset.value = matchPreset(localStartDate.value, localEndDate.value)
+
 const displayValue = computed(() => {
   if (activePreset.value) {
     const preset = presets.find((p) => p.value === activePreset.value)
@@ -242,18 +252,15 @@ const selectPreset = (preset: DatePreset) => {
   localStartDate.value = range.start
   localEndDate.value = range.end
   activePreset.value = preset.value
+  emit('preset-change', {
+    startDate: range.start,
+    endDate: range.end,
+    preset: preset.value,
+  })
 }
 
 const onDateChange = () => {
-  // Check if current dates match any preset
-  activePreset.value = null
-  for (const preset of presets) {
-    const range = preset.getRange()
-    if (range.start === localStartDate.value && range.end === localEndDate.value) {
-      activePreset.value = preset.value
-      break
-    }
-  }
+  activePreset.value = matchPreset(localStartDate.value, localEndDate.value)
 }
 
 const toggle = () => {
@@ -351,13 +358,14 @@ onUnmounted(() => {
 }
 
 .date-picker-dropdown {
-  @apply absolute left-0 z-[100] mt-2;
+  @apply absolute right-0 z-[100] mt-2;
   @apply bg-white dark:bg-dark-800;
   @apply rounded-xl;
   @apply border border-gray-200 dark:border-dark-700;
   @apply shadow-lg shadow-black/10 dark:shadow-black/30;
   @apply overflow-hidden;
-  @apply min-w-[320px];
+  width: min(320px, calc(100vw - 1rem));
+  max-width: calc(100vw - 1rem);
 }
 
 .date-picker-presets {

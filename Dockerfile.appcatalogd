@@ -1,0 +1,78 @@
+# syntax=docker/dockerfile:1.7
+# =============================================================================
+# appcatalogd image
+# =============================================================================
+# Published separately from weishaw/sub2api. A pricing or app-catalog release
+# does not rebuild or replace the main gateway image.
+# =============================================================================
+
+ARG GOLANG_IMAGE=golang:1.27.0-alpine
+ARG ALPINE_IMAGE=alpine:3.21
+ARG GOPROXY=https://goproxy.cn,direct
+ARG GOSUMDB=sum.golang.google.cn
+
+# Build on the native host arch and cross-compile. The binary is CGO_ENABLED=0.
+FROM --platform=${BUILDPLATFORM} ${GOLANG_IMAGE} AS backend-builder
+
+ARG VERSION=dev
+ARG COMMIT=unknown
+ARG DATE
+ARG GOPROXY
+ARG GOSUMDB
+ARG TARGETOS
+ARG TARGETARCH
+
+ENV GOPROXY=${GOPROXY}
+ENV GOSUMDB=${GOSUMDB}
+
+RUN apk add --no-cache git ca-certificates tzdata
+
+WORKDIR /src
+COPY backend/go.mod backend/go.sum ./
+RUN --mount=type=cache,id=sub2api-appcatalogd-gomod,target=/go/pkg/mod \
+    go mod download
+
+COPY backend/ ./
+
+RUN --mount=type=cache,id=sub2api-appcatalogd-gomod,target=/go/pkg/mod \
+    --mount=type=cache,id=sub2api-appcatalogd-gobuild,target=/root/.cache/go-build \
+    DATE_VALUE="${DATE:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}" && \
+    CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build \
+    -ldflags="-s -w -X main.Version=${VERSION} -X main.Commit=${COMMIT} -X main.Date=${DATE_VALUE}" \
+    -trimpath \
+    -o /out/appcatalogd \
+    ./cmd/appcatalogd
+
+FROM ${ALPINE_IMAGE}
+
+LABEL maintainer="Wei-Shaw <github.com/Wei-Shaw>"
+LABEL description="Sub2API app catalog and provider pricing sidecar"
+LABEL org.opencontainers.image.source="https://github.com/Wei-Shaw/sub2api"
+
+RUN apk add --no-cache \
+    ca-certificates \
+    tzdata \
+    su-exec \
+    && rm -rf /var/cache/apk/*
+
+RUN addgroup -g 1000 sub2api && \
+    adduser -u 1000 -G sub2api -s /bin/sh -D sub2api
+
+WORKDIR /app
+
+COPY --from=backend-builder --chown=sub2api:sub2api /out/appcatalogd /app/appcatalogd
+COPY --chown=sub2api:sub2api backend/resources/model-pricing /app/resources/model-pricing
+COPY --chown=sub2api:sub2api backend/resources/model-pricing/provider_pricing.json /app/config/provider_pricing.json
+
+RUN mkdir -p /app/data/appcatalog && chown -R sub2api:sub2api /app/data
+
+COPY deploy/appcatalogd-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh /app/appcatalogd
+
+EXPOSE 18099
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD wget -q -T 5 -O /dev/null http://127.0.0.1:18099/health || exit 1
+
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
+CMD ["-listen", "0.0.0.0:18099", "-sqlite-path", "/app/data/appcatalog/appcatalog.db", "-pricing-path", "/app/config/provider_pricing.json"]

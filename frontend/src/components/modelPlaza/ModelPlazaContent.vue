@@ -6,6 +6,25 @@
       <p class="mt-1.5 text-sm text-gray-500 dark:text-dark-400">{{ t('modelPlaza.description') }}</p>
     </div>
 
+    <div class="flex gap-3 rounded-lg border border-amber-200 border-l-4 bg-amber-50 px-4 py-3 text-xs leading-6 text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100" role="note">
+      <Icon name="infoCircle" size="sm" class="mt-1 h-4 w-4 shrink-0" />
+      <div class="min-w-0">
+        <strong class="block font-semibold">{{ t('modelPlaza.pricingNotice.title') }}</strong>
+        <span>{{ t('modelPlaza.pricingNotice.body') }}</span>
+        <span class="mt-1 flex flex-wrap gap-x-3 gap-y-1">
+          <a class="underline underline-offset-2" href="https://github.com/Wei-Shaw/model-price-repo" target="_blank" rel="noopener noreferrer">{{ t('modelPlaza.pricingNotice.data') }}</a>
+          <span class="text-amber-700/70 dark:text-amber-200/70">{{ t('modelPlaza.pricingNotice.official') }}:</span>
+          <a class="underline underline-offset-2" href="https://docs.anthropic.com/en/docs/about-claude/models/all-models" target="_blank" rel="noopener noreferrer">Anthropic</a>
+          <a class="underline underline-offset-2" href="https://platform.openai.com/docs/pricing" target="_blank" rel="noopener noreferrer">OpenAI</a>
+          <a class="underline underline-offset-2" href="https://ai.google.dev/gemini-api/docs/pricing" target="_blank" rel="noopener noreferrer">Gemini</a>
+          <a class="underline underline-offset-2" href="https://docs.x.ai/docs/models" target="_blank" rel="noopener noreferrer">Grok</a>
+          <a class="underline underline-offset-2" href="https://api-docs.deepseek.com/quick_start/pricing" target="_blank" rel="noopener noreferrer">DeepSeek</a>
+          <a class="underline underline-offset-2" href="https://platform.moonshot.cn/docs/pricing" target="_blank" rel="noopener noreferrer">Kimi</a>
+          <a class="underline underline-offset-2" href="https://open.bigmodel.cn/pricing" target="_blank" rel="noopener noreferrer">GLM</a>
+        </span>
+      </div>
+    </div>
+
     <!-- 全局价格说明(管理员配置,Markdown) -->
     <div
       v-if="descriptionHtml"
@@ -70,6 +89,7 @@ import DOMPurify from 'dompurify'
 import Icon from '@/components/icons/Icon.vue'
 import PlazaFilterBar from './PlazaFilterBar.vue'
 import PlazaGroupSection from './PlazaGroupSection.vue'
+import { modelPlazaEntryKind, modelPlazaProviderForGroup } from '@/components/model-plaza/modelPlaza'
 import type { ModelPlazaGroup, ModelPlazaResponse } from '@/api/modelPlaza'
 import { useAuthStore } from '@/stores/auth'
 
@@ -104,21 +124,51 @@ function effectiveRate(g: ModelPlazaGroup): number {
 }
 
 const platforms = computed(() =>
-  [...new Set((props.response?.groups ?? []).map((g) => g.platform).filter(Boolean))].sort()
+  [...new Set((props.response?.groups ?? []).map(modelPlazaProviderForGroup).filter(Boolean))].sort()
 )
 
+function isMediaGroup(group: ModelPlazaGroup): boolean {
+  return group.models.some((model) => {
+    const kind = modelPlazaEntryKind(group, model)
+    return kind === 'image' || kind === 'video'
+  })
+}
+
+function compareGroups(a: ModelPlazaGroup, b: ModelPlazaGroup): number {
+  const mediaOrder = Number(isMediaGroup(b)) - Number(isMediaGroup(a))
+  return mediaOrder || effectiveRate(a) - effectiveRate(b) || a.name.localeCompare(b.name)
+}
+
+const orderedGroups = computed(() => [...(props.response?.groups ?? [])].sort(compareGroups))
+
 const groupOptions = computed(() =>
-  (props.response?.groups ?? []).map((g) => ({
+  orderedGroups.value.map((g) => ({
     id: g.id,
     name: g.name,
-    platform: g.platform,
+    platform: modelPlazaProviderForGroup(g),
     rate: effectiveRate(g)
   }))
 )
 
+watch([selectedPlatform, groupOptions], () => {
+  if (
+    selectedGroupId.value !== 'all' &&
+    selectedPlatform.value !== 'all' &&
+    !groupOptions.value.some(
+      (group) => group.id === selectedGroupId.value && group.platform === selectedPlatform.value
+    )
+  ) {
+    selectedGroupId.value = 'all'
+  }
+})
+
 /** 全量生效倍率;当前组合下不可用的项由 FilterBar 置灰而非隐藏。 */
 const rates = computed(() =>
-  [...new Set((props.response?.groups ?? []).map(effectiveRate))].sort((a, b) => a - b)
+  [...new Set(
+    (props.response?.groups ?? [])
+      .filter((group) => selectedPlatform.value === 'all' || modelPlazaProviderForGroup(group) === selectedPlatform.value)
+      .map(effectiveRate)
+  )].sort((a, b) => a - b)
 )
 
 /** 数据刷新后选中的倍率可能不复存在,重置为全部。 */
@@ -129,9 +179,9 @@ watch(rates, (list) => {
 })
 
 const filteredGroups = computed(() => {
-  let groups = props.response?.groups ?? []
+  let groups = orderedGroups.value
   if (selectedPlatform.value !== 'all') {
-    groups = groups.filter((g) => g.platform === selectedPlatform.value)
+    groups = groups.filter((g) => modelPlazaProviderForGroup(g) === selectedPlatform.value)
   }
   if (selectedGroupId.value !== 'all') {
     groups = groups.filter((g) => g.id === selectedGroupId.value)
@@ -146,10 +196,8 @@ const filteredGroups = computed(() => {
       .map((g) => ({ ...g, models: g.models.filter((m) => m.name.toLowerCase().includes(q)) }))
       .filter((g) => g.models.length > 0)
   }
-  // 专属倍率会改变生效值,不能只依赖后端按默认倍率的排序。
-  return [...groups].sort(
-    (a, b) => effectiveRate(a) - effectiveRate(b) || a.name.localeCompare(b.name)
-  )
+  // 专属倍率会改变生效值；媒体分组始终优先于倍率排序。
+  return [...groups].sort(compareGroups)
 })
 </script>
 

@@ -91,11 +91,16 @@ func TestToModelPlazaGroupDTO_UserRateAndFieldWhitelist(t *testing.T) {
 		SubscriptionType: "standard", RateMultiplier: 1, IsExclusive: true,
 		VideoRateIndependent: true, VideoRateMultiplier: 0.7,
 		Models: []service.PlazaModel{{
-			Name:     "claude-sonnet",
-			Platform: "anthropic",
+			Name:                     "claude-sonnet",
+			Platform:                 "anthropic",
+			HasChannelContextPricing: true,
 			Pricing: &service.ChannelModelPricing{
 				BillingMode: service.BillingModeToken,
 				InputPrice:  testPtr(3e-6),
+				Intervals: []service.PricingInterval{{
+					MinTokens:  200000,
+					InputPrice: testPtr(6e-6),
+				}},
 			},
 			OfficialPricing: &service.PlazaOfficialPricing{
 				InputPrice:     testPtr(3e-6),
@@ -131,15 +136,17 @@ func TestToModelPlazaGroupDTO_UserRateAndFieldWhitelist(t *testing.T) {
 	model := models[0].(map[string]any)
 	require.Contains(t, model, "pricing")
 	require.Contains(t, model, "official_pricing")
+	pricing := model["pricing"].(map[string]any)
+	intervals := pricing["intervals"].([]any)
+	require.Len(t, intervals, 1, "模型广场应输出整单 token 长上下文阶梯")
+	interval := intervals[0].(map[string]any)
+	require.InDelta(t, 200000, interval["min_tokens"].(float64), 1e-9)
+	require.InDelta(t, 6e-6, interval["input_price"].(float64), 1e-15)
 	official := model["official_pricing"].(map[string]any)
 	require.Contains(t, official, "input_price")
 	require.Contains(t, official, "cache_read_price")
 	_, has1h := official["cache_write_1h_price"]
 	require.False(t, has1h, "1h 缓存写价为 nil 时应 omitempty")
-	_, hasOfficialIntervals := official["intervals"]
-	require.False(t, hasOfficialIntervals, "官方无阶梯时 intervals 应 omitempty")
-	_, hasBasis := model["long_context_basis"]
-	require.False(t, hasBasis, "单档模型不输出 long_context_basis")
 	_, hasTimePricing := model["time_pricing"]
 	require.False(t, hasTimePricing, "无分时时不输出 time_pricing")
 
@@ -153,58 +160,32 @@ func TestToModelPlazaGroupDTO_UserRateAndFieldWhitelist(t *testing.T) {
 	require.False(t, hasRate, "无专属倍率时 user_rate_multiplier 应 omitempty")
 }
 
-func TestToModelPlazaOfficialPricing_NilPassthrough(t *testing.T) {
-	require.Nil(t, toModelPlazaOfficialPricing(nil))
-}
-
-func TestToModelPlazaGroupDTO_LongContextTiersAndBasis(t *testing.T) {
-	maxTokens := 272000
-	g := service.PlazaGroup{
-		ID: 3, Name: "ladder", Platform: "openai", SubscriptionType: "standard", RateMultiplier: 1,
-		LongContextPricingEnabled: true,
-		Models: []service.PlazaModel{{
-			Name:     "gpt-5.4",
-			Platform: "openai",
+func TestToModelPlazaGroupDTO_HidesUnconfirmedTokenIntervals(t *testing.T) {
+	g := service.PlazaGroup{Models: []service.PlazaModel{
+		{
+			Name: "claude-sonnet",
 			Pricing: &service.ChannelModelPricing{
 				BillingMode: service.BillingModeToken,
-				InputPrice:  testPtr(2.5e-6),
-				Intervals: []service.PricingInterval{
-					{MinTokens: 0, MaxTokens: &maxTokens, TierLabel: "≤272K", InputPrice: testPtr(2.5e-6)},
-					{MinTokens: 272000, TierLabel: ">272K", InputPrice: testPtr(5e-6)},
-				},
+				Intervals:   []service.PricingInterval{{MinTokens: 200000, InputPrice: testPtr(6e-6)}},
 			},
-			OfficialPricing: &service.PlazaOfficialPricing{
-				InputPrice: testPtr(2.5e-6),
-				Intervals: []service.PricingInterval{
-					{MinTokens: 0, MaxTokens: &maxTokens, TierLabel: "≤272K", InputPrice: testPtr(2.5e-6)},
-					{MinTokens: 272000, TierLabel: ">272K", InputPrice: testPtr(5e-6)},
-				},
+		},
+		{
+			Name: "grok-imagine",
+			Pricing: &service.ChannelModelPricing{
+				BillingMode: service.BillingModeImage,
+				Intervals:   []service.PricingInterval{{TierLabel: "1K", PerRequestPrice: testPtr(0.03)}},
 			},
-			LongContextBasis: service.ContextPricingBasisWholeRequest,
-		}},
-	}
+		},
+	}}
 
-	raw, err := json.Marshal(toModelPlazaGroupDTO(&g, nil))
-	require.NoError(t, err)
-	var decoded map[string]any
-	require.NoError(t, json.Unmarshal(raw, &decoded))
-	require.Equal(t, true, decoded["long_context_pricing_enabled"])
+	dto := toModelPlazaGroupDTO(&g, nil)
+	models := dto.Models
+	require.Len(t, models[0].Pricing.Intervals, 1, "token 阶梯按上游计价结果原样展示")
+	require.Len(t, models[1].Pricing.Intervals, 1, "图片档位仍属于正常价格表达")
+}
 
-	model := decoded["models"].([]any)[0].(map[string]any)
-	require.Equal(t, "whole_request", model["long_context_basis"])
-
-	pricing := model["pricing"].(map[string]any)
-	paidTiers := pricing["intervals"].([]any)
-	require.Len(t, paidTiers, 2)
-	require.Equal(t, ">272K", paidTiers[1].(map[string]any)["tier_label"])
-
-	official := model["official_pricing"].(map[string]any)
-	officialTiers := official["intervals"].([]any)
-	require.Len(t, officialTiers, 2)
-	first := officialTiers[0].(map[string]any)
-	require.Equal(t, "≤272K", first["tier_label"])
-	require.InDelta(t, 272000, first["max_tokens"].(float64), 0)
-	require.Contains(t, first, "cache_write_price", "区间 DTO 字段齐全（nil 输出 null）")
+func TestToModelPlazaOfficialPricing_NilPassthrough(t *testing.T) {
+	require.Nil(t, toModelPlazaOfficialPricing(nil))
 }
 
 func testPtr(v float64) *float64 { return &v }

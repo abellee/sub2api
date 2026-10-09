@@ -60,7 +60,7 @@ export default {
     empty: { title: 'No data to display', description: 'Try changing the time range or filters' },
     bucket: { minutes: '{count}-minute buckets', hours: '{count}-hour buckets', days: '{count}-day buckets' },
     matrix: {
-      title: 'Availability trend', description: 'Each row is a channel dimension and each block is an aggregate interval; hover for details', wheelZoom: 'Scroll over blocks to zoom in (narrower range, wider blocks)', wheelZoomX: 'Scroll over blocks to zoom in (narrower range, wider blocks)', dimension: 'Channel dimension', emptyTitle: 'No matrix data for the selected window', legendAria: 'Health score legend', bad: 'Bad', good: 'Good', healthyLegend: 'Healthy (≥80)', warningLegend: 'Watch (50–79)', criticalLegend: 'Critical (<50)', unknownLegend: 'No traffic / insufficient samples', noTraffic: 'No traffic in this interval', noTrafficAt: '{time} · no traffic', scoreLine: 'Health score {score}', resetZoom: 'Reset zoom'
+      title: 'Availability trend', description: 'Each row is a channel dimension and each block is an aggregate interval; hover for details', wheelZoom: 'Scroll over blocks to zoom in (narrower range, wider blocks)', wheelZoomX: 'Scroll over blocks to zoom in (narrower range, wider blocks)', dimension: 'Channel dimension', emptyTitle: 'No matrix data for the selected window', legendAria: 'Health score legend', bad: 'Bad', good: 'Good', healthyLegend: 'Healthy (≥70)', warningLegend: 'Watch (50–69)', criticalLegend: 'Critical (<50)', unknownLegend: 'No traffic / insufficient samples', noTraffic: 'No traffic in this interval', noTrafficAt: '{time} · no traffic', scoreLine: 'Health score {score}', resetZoom: 'Reset zoom'
     },
     chart: {
       title: 'Availability trend', description: 'Smoothed trend: error rate · first token P50 · cache rate', emptyTitle: 'No trend data for the selected window', errorLegend: 'Error rate (left axis %)', cacheLegend: 'Cache rate (left axis %)', ttftLegend: 'First token P50 (right axis)', errorDataset: 'Error rate trend %', cacheDataset: 'Cache rate trend %', ttftDataset: 'First token trend P50 (ms)', percentAxis: 'Rate %', resetZoom: 'Reset zoom'
@@ -131,6 +131,63 @@ export default {
         trend: 'Trend can switch between pulse matrix and line chart (error · cache · first token)',
         latency: 'Latency shows AVG · P50 · P90; absolute request / error counts are not shown',
         models: 'Empty model lists show real names and never dump everything into “Other”',
+      },
+    },
+    studio: {
+      subtitle: 'Channel journey overview',
+      live: 'Live',
+      journey: {
+        title: 'Channel journey',
+        description: 'Each node is a channel dimension; click to filter that node',
+        empty: 'No channel nodes in this window',
+        stage: 'Stage {n}',
+        selectAria: 'Filter {label}',
+      },
+      health: {
+        title: 'Health score',
+        description: 'Blended from success rate, first token, and cache rate',
+        score: 'Health',
+        unknown: 'Not enough samples',
+      },
+      models: {
+        title: 'Models',
+        empty: 'No models in this window',
+        selectAria: 'Show interval status for {label}',
+      },
+      groups: {
+        title: 'Groups',
+        empty: 'No groups in this window',
+        selectAria: 'Show interval status for {label}',
+        userRate: 'User rate {n}x',
+        active: 'Active groups',
+        activeAria: 'Currently active groups',
+      },
+      brands: {
+        title: 'Brands',
+        sectionAria: '{label} groups',
+      },
+      status: {
+        label: 'Status',
+        healthy: 'Normal',
+        warning: 'Degraded',
+        critical: 'Failed',
+        unknown: 'Not enough samples',
+      },
+      faces: {
+        title: 'Interval status',
+        description: 'Each cell is one time bucket; hover for the same details as the old cells',
+        forModel: 'Interval status for {label}; hover for details',
+        recentCount: 'Last {count} intervals',
+        past: 'Past',
+        now: 'Now',
+        panHint: 'Hold Shift and scroll to pan; trackpads can swipe sideways',
+        prev: 'Scroll left',
+        next: 'Scroll right',
+        empty: 'No interval status in this window',
+        healthy: 'Healthy',
+        warning: 'Watch',
+        critical: 'Critical',
+        unknown: 'Not enough samples',
       },
     },
     admin: {

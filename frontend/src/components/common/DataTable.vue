@@ -1,7 +1,7 @@
 <template>
   <div v-if="!isDesktopViewport" class="space-y-3">
     <template v-if="loading">
-      <div v-for="i in 5" :key="i" class="rounded-lg border border-gray-200 bg-white p-4 dark:border-dark-700 dark:bg-dark-900">
+      <div v-for="i in skeletonRows" :key="i" class="rounded-lg border border-gray-200 bg-white p-4 dark:border-dark-700 dark:bg-dark-900">
         <div class="space-y-3">
           <div v-for="column in dataColumns" :key="column.key" class="flex justify-between">
             <div class="h-4 w-20 animate-pulse rounded bg-gray-200 dark:bg-dark-700"></div>
@@ -168,7 +168,7 @@
       </thead>
       <tbody class="table-body divide-y divide-gray-200 bg-white dark:divide-dark-700 dark:bg-dark-900">
         <!-- Loading skeleton -->
-        <tr v-if="loading" v-for="i in 5" :key="i">
+        <tr v-if="loading" v-for="i in skeletonRows" :key="i">
           <td v-if="selectable" class="w-11 min-w-11 px-3 py-4">
             <div class="mx-auto h-4 w-4 animate-pulse rounded bg-gray-200 dark:bg-dark-700"></div>
           </td>
@@ -471,6 +471,8 @@ interface Props {
   selectedKeys?: Array<string | number>
   /** Accessible label for a row selection checkbox. */
   selectionLabel?: string | ((row: any) => string)
+  /** Number of placeholder rows/cards to render while loading. */
+  skeletonRows?: number
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -481,7 +483,13 @@ const props = withDefaults(defineProps<Props>(), {
   defaultSortOrder: 'asc',
   serverSideSort: false,
   selectable: false,
-  selectedKeys: () => []
+  selectedKeys: () => [],
+  skeletonRows: 5
+})
+
+const skeletonRows = computed(() => {
+  const requested = Number.isFinite(props.skeletonRows) ? Math.floor(props.skeletonRows) : 5
+  return Math.max(1, requested)
 })
 
 const sortKey = ref<string>('')

@@ -18,7 +18,7 @@ vi.mock('@/stores/app', () => ({
   useAppStore: () => ({ cachedPublicSettings: null })
 }))
 
-function ladderModel(tiers: number): PlazaModel {
+function ladderModel(tiers = 2): PlazaModel {
   const intervals = Array.from({ length: tiers }, (_, i) => ({
     min_tokens: i * 272000,
     max_tokens: i === tiers - 1 ? null : (i + 1) * 272000,
@@ -140,6 +140,8 @@ describe('PlazaGroupSection 高峰配置传递', () => {
     // appStore mock 无 server_utc_offset,窗口描述不带时区标注
     expect(table.props('peakWindow')).toBe('14:00-18:00 ×1.5')
     expect(table.props('peakRateMultiplier')).toBe(1.5)
+    expect(table.props('imageRateIndependent')).toBe(false)
+    expect(table.props('videoRateIndependent')).toBe(false)
   })
 
   it('分组未启用高峰时窗口描述为空串', () => {

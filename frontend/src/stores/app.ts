@@ -34,6 +34,7 @@ export const useAppStore = defineStore('app', () => {
   const docUrl = ref<string>('')
   const cachedPublicSettings = ref<PublicSettings | null>(null)
   let publicSettingsRequest: Promise<PublicSettings | null> | null = null
+  let publicSettingsGeneration = 0
 
   // Version cache state
   const versionLoaded = ref<boolean>(false)
@@ -308,9 +309,10 @@ export const useAppStore = defineStore('app', () => {
    * @param force - Force refresh from API
    */
   function fetchPublicSettings(force = false): Promise<PublicSettings | null> {
-    // An active request always wins over cache/force semantics so every caller observes
-    // the same refresh result and no older request can overwrite a newer one.
-    if (publicSettingsRequest) {
+    // channel_monitor_visible is personalized per caller. Reuse an in-flight
+    // request only when the identity has not changed; login/logout pass force
+    // so a stale anonymous/admin response cannot leak the user nav.
+    if (publicSettingsRequest && !force) {
       return publicSettingsRequest
     }
 
@@ -369,6 +371,8 @@ export const useAppStore = defineStore('app', () => {
         account_quota_notify_enabled: false,
         balance_low_notify_threshold: 0,
         channel_monitor_enabled: true,
+        channel_monitor_visibility: 'selected',
+        channel_monitor_visible: false,
         channel_monitor_default_interval_seconds: 60,
         available_channels_enabled: false,
         subscription_enabled: true,
@@ -383,18 +387,25 @@ export const useAppStore = defineStore('app', () => {
       })
     }
 
+    const generation = ++publicSettingsGeneration
     publicSettingsLoading.value = true
     let apiRequest: Promise<PublicSettings>
     try {
       apiRequest = fetchPublicSettingsAPI()
     } catch (error) {
       console.error('Failed to fetch public settings:', error)
-      publicSettingsLoading.value = false
+      if (generation === publicSettingsGeneration) {
+        publicSettingsRequest = null
+        publicSettingsLoading.value = false
+      }
       return Promise.resolve(null)
     }
 
     const request = apiRequest
       .then((data) => {
+        if (generation !== publicSettingsGeneration) {
+          return data
+        }
         applySettings(data)
         return data
       })
@@ -403,7 +414,7 @@ export const useAppStore = defineStore('app', () => {
         return null
       })
       .finally(() => {
-        if (publicSettingsRequest === request) {
+        if (generation === publicSettingsGeneration) {
           publicSettingsRequest = null
           publicSettingsLoading.value = false
         }

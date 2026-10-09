@@ -13,6 +13,7 @@ import { useRoutePrefetch } from '@/composables/useRoutePrefetch'
 import { getSetupStatus } from '@/api/setup'
 import { resolveCompletedSetupRedirectPath } from './setupRedirect'
 import { resolveRouteDocumentTitle } from './title'
+import { isChannelMonitorVisibleToUser } from '@/utils/featureFlags'
 
 /**
  * Route definitions with lazy loading
@@ -33,10 +34,20 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/home',
     name: 'Home',
-    component: () => import('@/views/HomeView.vue'),
+    component: () => import('@/components/LlmFreeHomePage.vue'),
     meta: {
       requiresAuth: false,
-      title: 'Home'
+      title: 'Claude、GPT、Gemini API 中转站'
+    }
+  },
+  {
+    path: '/models',
+    name: 'PublicModelPlaza',
+    component: () => import('@/components/LlmFreeHomePage.vue'),
+    props: { page: 'models' },
+    meta: {
+      requiresAuth: false,
+      title: '模型广场 | OpenAI 与 Claude 官方 API 价格'
     }
   },
   {
@@ -175,17 +186,6 @@ const routes: RouteRecordRaw[] = [
       title: 'Legal Document'
     }
   },
-  {
-    path: '/model-plaza',
-    name: 'ModelPlaza',
-    component: () => import('@/views/ModelPlazaView.vue'),
-    meta: {
-      requiresAuth: false,
-      title: 'Model Plaza',
-      titleKey: 'modelPlaza.title'
-    }
-  },
-
   // ==================== User Routes ====================
   {
     path: '/',
@@ -241,6 +241,28 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/lottery',
+    name: 'Lottery',
+    component: () => import('@/views/user/LotteryView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'Lottery',
+      titleKey: 'nav.lottery'
+    }
+  },
+  {
+    path: '/tasks',
+    name: 'TaskCenter',
+    component: () => import('@/views/user/TaskCenterView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'Task Center',
+      titleKey: 'nav.tasks'
+    }
+  },
+  {
     path: '/redeem',
     name: 'Redeem',
     component: () => import('@/views/user/RedeemView.vue'),
@@ -274,6 +296,39 @@ const routes: RouteRecordRaw[] = [
       title: 'Available Channels',
       titleKey: 'availableChannels.title',
       descriptionKey: 'availableChannels.description'
+    }
+  },
+  {
+    path: '/model-plaza',
+    name: 'ModelPlaza',
+    component: () => import('@/views/user/ModelPlazaView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'Model Plaza',
+      titleKey: 'nav.modelPlaza'
+    }
+  },
+  {
+    path: '/app-center',
+    name: 'AppCenter',
+    component: () => import('@/views/user/AppCenterView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'App Center',
+      titleKey: 'nav.appCenter'
+    }
+  },
+  {
+    path: '/downgrade-radar',
+    name: 'DowngradeRadar',
+    component: () => import('@/views/user/DowngradeRadarView.vue'),
+    meta: {
+      requiresAuth: false,
+      requiresAdmin: false,
+      title: '降智雷达',
+      titleKey: 'nav.downgradeRadar'
     }
   },
   {
@@ -451,6 +506,18 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/ranking',
+    name: 'AdminRanking',
+    component: () => import('@/views/admin/RankingView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Leaderboard',
+      titleKey: 'admin.ranking.title',
+      descriptionKey: 'admin.ranking.description'
+    }
+  },
+  {
     path: '/admin/groups',
     name: 'AdminGroups',
     component: () => import('@/views/admin/GroupsView.vue'),
@@ -460,6 +527,18 @@ const routes: RouteRecordRaw[] = [
       title: 'Group Management',
       titleKey: 'admin.groups.title',
       descriptionKey: 'admin.groups.description'
+    }
+  },
+  {
+    path: '/admin/group-categories',
+    name: 'AdminGroupCategories',
+    component: () => import('@/views/admin/GroupCategoriesView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Group Categories',
+      titleKey: 'admin.groups.categories.title',
+      descriptionKey: 'admin.groups.categories.description'
     }
   },
   {
@@ -491,12 +570,25 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/channels/visibility',
+    name: 'AdminChannelMonitorVisibility',
+    component: () => import('@/views/admin/ChannelMonitorVisibilityView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Channel Status Visibility',
+      titleKey: 'admin.channelMonitor.visibility.title',
+      descriptionKey: 'admin.channelMonitor.visibility.description'
+    }
+  },
+  {
     path: '/monitor',
     name: 'ChannelStatus',
     component: () => import('@/views/user/ChannelStatusView.vue'),
     meta: {
       requiresAuth: true,
       requiresAdmin: false,
+      requiresChannelMonitor: true,
       title: 'Channel Status',
       titleKey: 'nav.channelStatus'
     }
@@ -538,6 +630,18 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/app-catalog',
+    name: 'AdminAppCatalog',
+    component: () => import('@/views/admin/AppCatalogView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'App Catalog',
+      titleKey: 'admin.appCatalog.title',
+      descriptionKey: 'admin.appCatalog.description'
+    }
+  },
+  {
     path: '/admin/announcements',
     name: 'AdminAnnouncements',
     component: () => import('@/views/admin/AnnouncementsView.vue'),
@@ -547,6 +651,18 @@ const routes: RouteRecordRaw[] = [
       title: 'Announcements',
       titleKey: 'admin.announcements.title',
       descriptionKey: 'admin.announcements.description'
+    }
+  },
+  {
+    path: '/admin/push-notifications',
+    name: 'AdminPushNotifications',
+    component: () => import('@/views/admin/PushNotificationsView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Push Notifications',
+      titleKey: 'admin.pushNotifications.title',
+      descriptionKey: 'admin.pushNotifications.description'
     }
   },
   {
@@ -571,6 +687,28 @@ const routes: RouteRecordRaw[] = [
       title: 'Redeem Code Management',
       titleKey: 'admin.redeem.title',
       descriptionKey: 'admin.redeem.description'
+    }
+  },
+  {
+    path: '/admin/lottery',
+    name: 'AdminLottery',
+    component: () => import('@/views/admin/LotteryAdminView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Lottery Management',
+      titleKey: 'nav.lotteryAdmin'
+    }
+  },
+  {
+    path: '/admin/tasks',
+    name: 'AdminTasks',
+    component: () => import('@/views/admin/TaskAdminView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Task Management',
+      titleKey: 'nav.tasksAdmin'
     }
   },
   {
@@ -831,7 +969,7 @@ router.beforeEach(async (to, _from, next) => {
       return
     }
     // Model Plaza:公开路由但受「启用开关 + 可选强制登录」双重控制(后端同口径 fail-closed)
-    if (to.path === '/model-plaza') {
+    if (to.path === '/model-plaza' || to.path === '/downgrade-radar') {
       if (!appStore.publicSettingsLoaded) {
         try {
           await appStore.fetchPublicSettings()
@@ -908,7 +1046,7 @@ router.beforeEach(async (to, _from, next) => {
   // 公共设置可能尚未加载（App.vue 的 onMounted 异步拉取晚于首次导航，且纯静态部署
   // 无 __APP_CONFIG__ 注入）。此时 cachedPublicSettings 为空会把 payment/risk_control
   // 误判为“未启用”而错误拦截，故这里先确保设置加载完成。
-  if ((to.meta.requiresPayment || to.meta.requiresRiskControl || to.meta.requiresSubscription) && !appStore.publicSettingsLoaded) {
+  if ((to.meta.requiresPayment || to.meta.requiresRiskControl || to.meta.requiresSubscription || to.meta.requiresChannelMonitor) && !appStore.publicSettingsLoaded) {
     try {
       await appStore.fetchPublicSettings()
     } catch (error) {
@@ -941,6 +1079,15 @@ router.beforeEach(async (to, _from, next) => {
     to.meta.requiresSubscription &&
     appStore.publicSettingsLoaded &&
     appStore.cachedPublicSettings?.subscription_enabled === false
+  ) {
+    next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
+    return
+  }
+
+  if (
+    to.meta.requiresChannelMonitor &&
+    appStore.publicSettingsLoaded &&
+    !isChannelMonitorVisibleToUser()
   ) {
     next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
     return

@@ -221,8 +221,16 @@ describe('user UsageView', () => {
     await flushPromises()
 
     expect(wrapper.findComponent(UsageTable).props('columns').map((column: { key: string }) => column.key)).toContain('latency')
-    expect(query).toHaveBeenCalled()
-    expect(getStats).toHaveBeenCalled()
+    const now = new Date()
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+    expect(query).toHaveBeenCalledWith(expect.objectContaining({
+      start_date: today,
+      end_date: today,
+    }), expect.anything())
+    expect(getStats).toHaveBeenCalledWith(expect.objectContaining({
+      start_date: today,
+      end_date: today,
+    }))
     expect(getDashboardModels).toHaveBeenCalled()
     expect(getDashboardSnapshotV2).toHaveBeenCalledWith(expect.objectContaining({
       include_trend: true,

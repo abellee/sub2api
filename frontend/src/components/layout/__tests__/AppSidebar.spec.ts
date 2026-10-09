@@ -80,3 +80,9 @@ describe('AppSidebar subscription feature flag', () => {
     expect(componentSource).toMatch(/path: '\/purchase'[^\n]*label: purchaseNavLabel\.value/)
   })
 })
+
+describe('AppSidebar batch image navigation', () => {
+  it('does not expose the batch image page in the sidebar', () => {
+    expect(componentSource).not.toContain("path: '/batch-image'")
+  })
+})

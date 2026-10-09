@@ -720,6 +720,32 @@ func TestUpstreamBillingRateAtHandlesDST(t *testing.T) {
 	require.Equal(t, 2.0, rate)
 }
 
+func TestAccount_UpstreamDeclaredRateUsesProbeNotBillingMultiplier(t *testing.T) {
+	billingRate := 0.35
+	account := &Account{
+		RateMultiplier: &billingRate,
+		Extra: map[string]any{
+			"upstream_billing_probe": map[string]any{
+				"status": "ok",
+				"data": map[string]any{
+					"billing_scope":             "token",
+					"resolved_rate_multiplier":  0.065,
+					"peak_rate_enabled":         false,
+					"effective_rate_multiplier": 0.065,
+				},
+			},
+		},
+	}
+
+	rate, ok := account.UpstreamDeclaredRate(time.Now())
+	require.True(t, ok)
+	require.InDelta(t, 0.065, rate, 1e-12)
+
+	empty := &Account{RateMultiplier: &billingRate}
+	_, ok = empty.UpstreamDeclaredRate(time.Now())
+	require.False(t, ok)
+}
+
 func TestUpstreamBillingProbeFailurePreservesLastSuccessAndRetryAfter(t *testing.T) {
 	receivedAt := time.Date(2026, time.July, 12, 12, 0, 0, 0, time.UTC)
 	initialRate := 0.35

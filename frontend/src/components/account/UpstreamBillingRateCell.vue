@@ -89,6 +89,7 @@ import { useI18n } from 'vue-i18n'
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { formatMultiplier } from '@/utils/formatters'
+import { currentUpstreamDeclaredRate } from '@/utils/upstreamDeclaredRate'
 import type { Account, UpstreamBillingProbeSnapshot } from '@/types'
 
 const props = withDefaults(defineProps<{
@@ -134,46 +135,7 @@ const stale = computed(() => {
   if (!validTimestamps.value) return true
   return props.now > freshUntil.value
 })
-const parseMinute = (value?: string) => {
-  if (typeof value !== 'string') return null
-  const match = /^(\d{2}):(\d{2})$/.exec(value)
-  if (!match) return null
-  const hour = Number(match[1])
-  const minute = Number(match[2])
-  return hour < 24 && minute < 60 ? hour * 60 + minute : null
-}
-const minuteInTimeZone = (timestamp: number, timeZone?: string) => {
-  if (!timeZone) return null
-  try {
-    const parts = new Intl.DateTimeFormat('en-GB', {
-      timeZone,
-      hour: '2-digit',
-      minute: '2-digit',
-      hourCycle: 'h23'
-    }).formatToParts(new Date(timestamp))
-    const hour = Number(parts.find(part => part.type === 'hour')?.value)
-    const minute = Number(parts.find(part => part.type === 'minute')?.value)
-    return Number.isInteger(hour) && Number.isInteger(minute) ? hour * 60 + minute : null
-  } catch {
-    return null
-  }
-}
-const currentEffectiveRate = computed(() => {
-  const billing = data.value
-  if (!billing) return null
-  if (billing.billing_scope !== 'token') return null
-  const base = billing.resolved_rate_multiplier
-  if (typeof base !== 'number' || !Number.isFinite(base) || base < 0) return null
-  if (typeof billing.peak_rate_enabled !== 'boolean') return null
-  if (!billing.peak_rate_enabled) return base
-  const start = parseMinute(billing.peak_start)
-  const end = parseMinute(billing.peak_end)
-  const minute = minuteInTimeZone(props.now, billing.timezone)
-  const peak = billing.peak_rate_multiplier
-  if (start == null || end == null || minute == null || start >= end || typeof peak !== 'number' || !Number.isFinite(peak) || peak < 0) return null
-  const value = minute >= start && minute < end ? base * peak : base
-  return Number.isFinite(value) ? value : null
-})
+const currentEffectiveRate = computed(() => currentUpstreamDeclaredRate(snapshot.value, props.now))
 const lastDetectedRate = computed(() => {
   const value = data.value?.effective_rate_multiplier
   return typeof value === 'number' && Number.isFinite(value) && value >= 0

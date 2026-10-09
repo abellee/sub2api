@@ -67,6 +67,8 @@ export interface User {
   id: number
   username: string
   email: string
+  /** 管理员备注；仅管理员使用记录等接口返回，普通用户接口不返回 */
+  notes?: string | null
   avatar_url?: string | null
   avatar_source?: string | UserProfileSourceContext | null
   username_source?: string | UserProfileSourceContext | null
@@ -267,6 +269,10 @@ export interface PublicSettings {
   account_quota_notify_enabled: boolean
   balance_low_notify_threshold: number
   channel_monitor_enabled: boolean
+  /** Public mode without allow-list IDs. Missing is treated as selected (admins only until listed). */
+  channel_monitor_visibility?: 'all' | 'selected'
+  /** Per-caller: whether user-facing Channel Status is visible. Missing fails closed unless mode is all. */
+  channel_monitor_visible?: boolean
   /** Exclusive mode: v1 active probes or v2 passive aggregation. Default v2. */
   channel_monitor_mode?: 'v1' | 'v2'
   channel_monitor_default_interval_seconds: number
@@ -1816,6 +1822,12 @@ export interface UsageLog {
 export interface UsageLogAccountSummary {
   id: number
   name: string
+  /** 上游声明倍率（extra.upstream_billing_probe），管理员使用记录悬停展示 */
+  upstream_rate_multiplier?: number | null
+  /** 旧字段：账号计费倍率。不得当作上游声明倍率展示 */
+  rate_multiplier?: number | null
+  /** 上游 API 地址（credentials.base_url），非敏感字段 */
+  base_url?: string | null
 }
 
 export interface AdminUsageLog extends UsageLog {

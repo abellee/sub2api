@@ -505,6 +505,19 @@ export default {
       failedToLoadUsages: '加载使用记录失败'
     },
 
+    ranking: {
+      title: '排行榜',
+      description: '查看所选时间范围内所有有消耗记录用户的排行',
+      metricLabel: '排行指标',
+      metrics: {
+        tokens: 'Token 消耗',
+        cost: '金额消耗'
+      },
+      tokenSubtitle: '按当前筛选与时间范围统计每个用户的 Token 用量',
+      costSubtitle: '按当前筛选与时间范围统计每个用户的金额消耗',
+      rangeHint: '点击用户可查看对应的用量明细'
+    },
+
     // Usage Records
     usage: {
       title: '使用记录',
@@ -553,6 +566,8 @@ export default {
 	  upstreamModelMismatchOnly: '仅不一致',
 	  upstreamModelMatchedOnly: '仅一致',
       ipAddress: 'IP',
+      upstreamMultiplier: '上游倍率',
+      apiAddress: 'API地址',
       clickToViewBalance: '点击查看充值记录',
       failedToLoadUser: '加载用户信息失败',
       userDeletedBadge: '已删除',
@@ -560,6 +575,8 @@ export default {
         subtitle: '按当前筛选与时间范围统计每个用户的 Token 用量',
         rowHint: '点击查看该用户的用量明细',
         userCount: '共 {count} 位用户',
+        totalTokens: '总 Token: {value}',
+        totalCost: '总金额消耗: {value}',
         columns: {
           user: '用户',
           requests: '请求数',

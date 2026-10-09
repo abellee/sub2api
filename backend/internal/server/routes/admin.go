@@ -2,10 +2,14 @@
 package routes
 
 import (
+	"path/filepath"
+
 	"github.com/Wei-Shaw/sub2api/internal/handler"
+	adminhandler "github.com/Wei-Shaw/sub2api/internal/handler/admin"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/Wei-Shaw/sub2api/internal/setup"
 
 	"github.com/gin-gonic/gin"
 )
@@ -43,11 +47,19 @@ func RegisterAdminRoutes(
 		// 分组管理
 		registerGroupRoutes(admin, h)
 
+		// 分组分类（JSON 落盘，二开）
+		registerGroupCategoryRoutes(admin)
+
 		// 账号管理
 		registerAccountRoutes(admin, h, stepUpAuth)
 
 		// 公告管理
 		registerAnnouncementRoutes(admin, h)
+
+		// 微信群二维码管理
+		registerWechatGroupQRRoutes(admin, h)
+
+		registerAppCatalogRoutes(admin, h)
 
 		// OpenAI OAuth
 		registerOpenAIOAuthRoutes(admin, h)
@@ -130,6 +142,29 @@ func RegisterAdminRoutes(
 
 		// 操作审计日志
 		registerAuditLogRoutes(admin, h, stepUpAuth)
+	}
+}
+
+func registerAppCatalogRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	if h.Admin == nil || h.Admin.AppCatalog == nil {
+		return
+	}
+	apps := admin.Group("/app-catalog")
+	{
+		apps.GET("/agent/health", h.Admin.AppCatalog.GetAgentHealth)
+		apps.GET("", h.Admin.AppCatalog.List)
+		apps.POST("", h.Admin.AppCatalog.Create)
+		apps.POST("/fetch", h.Admin.AppCatalog.Fetch)
+		apps.PUT("/:id", h.Admin.AppCatalog.Update)
+		apps.DELETE("/:id", h.Admin.AppCatalog.Delete)
+	}
+}
+
+func registerWechatGroupQRRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	wechatQR := admin.Group("/wechat-group-qr")
+	{
+		wechatQR.GET("", h.Admin.WechatGroupQR.Get)
+		wechatQR.POST("", h.Admin.WechatGroupQR.Upload)
 	}
 }
 
@@ -331,6 +366,7 @@ func registerGroupRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		groups.GET("/all", h.Admin.Group.GetAll)
 		groups.GET("/usage-summary", h.Admin.Group.GetUsageSummary)
 		groups.GET("/capacity-summary", h.Admin.Group.GetCapacitySummary)
+		groups.GET("/recommendations", h.Admin.Group.GetRecommendations)
 		groups.GET("/live-capability", h.Admin.Group.GetLiveCapability)
 		groups.PUT("/sort-order", h.Admin.Group.UpdateSortOrder)
 		groups.GET("/:id/model-allowlist-candidates", h.Admin.Group.GetGroupModelAllowlistCandidates)
@@ -340,6 +376,8 @@ func registerGroupRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		groups.PUT("/:id/composite-routes/:route_id", h.Admin.Group.UpdateCompositeRoute)
 		groups.DELETE("/:id/composite-routes/:route_id", h.Admin.Group.DeleteCompositeRoute)
 		groups.GET("/:id", h.Admin.Group.GetByID)
+		groups.PUT("/:id/recommendation", h.Admin.Group.SetRecommendation)
+		groups.DELETE("/:id/recommendation", h.Admin.Group.DeleteRecommendation)
 		groups.POST("", h.Admin.Group.Create)
 		groups.POST("/:id/duplicate", h.Admin.Group.Duplicate)
 		groups.PUT("/:id", h.Admin.Group.Update)
@@ -351,6 +389,25 @@ func registerGroupRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		groups.PUT("/:id/rpm-overrides", h.Admin.Group.BatchSetGroupRPMOverrides)
 		groups.DELETE("/:id/rpm-overrides", h.Admin.Group.ClearGroupRPMOverrides)
 		groups.GET("/:id/api-keys", h.Admin.Group.GetGroupAPIKeys)
+	}
+}
+
+func newGroupCategoryHandler() *adminhandler.GroupCategoryHandler {
+	return adminhandler.NewGroupCategoryHandler(
+		service.NewGroupCategoryStore(filepath.Join(setup.GetDataDir(), "group_categories.json")),
+	)
+}
+
+func registerGroupCategoryRoutes(admin *gin.RouterGroup) {
+	h := newGroupCategoryHandler()
+	cats := admin.Group("/group-categories")
+	{
+		cats.GET("", h.List)
+		cats.POST("", h.Create)
+		cats.PUT("/assignments/:group_id", h.Assign)
+		cats.PUT("/sort-order", h.Reorder)
+		cats.PUT("/:id", h.Update)
+		cats.DELETE("/:id", h.Delete)
 	}
 }
 
@@ -868,6 +925,30 @@ func registerChannelMonitorV2Routes(admin *gin.RouterGroup, h *handler.Handlers,
 func channelMonitorAdminFeatureGuard(settingService *service.SettingService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if settingService != nil && settingService.GetChannelMonitorRuntime(c.Request.Context()).Enabled {
+			c.Next()
+			return
+		}
+		response.ErrorFrom(c, service.ErrChannelMonitorDisabled)
+		c.Abort()
+	}
+}
+
+// channelMonitorUserVisibilityGuard blocks user-facing channel-status APIs when
+// the caller is outside the allow-list. Admins always pass when the feature is on.
+func channelMonitorUserVisibilityGuard(settingService *service.SettingService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if settingService == nil {
+			response.ErrorFrom(c, service.ErrChannelMonitorDisabled)
+			c.Abort()
+			return
+		}
+		rt := settingService.GetChannelMonitorRuntime(c.Request.Context())
+		userID := int64(0)
+		if subject, ok := middleware.GetAuthSubjectFromContext(c); ok {
+			userID = subject.UserID
+		}
+		role, _ := middleware.GetUserRoleFromContext(c)
+		if rt.VisibleToUser(userID, role == service.RoleAdmin) {
 			c.Next()
 			return
 		}

@@ -6,6 +6,14 @@
 import { apiClient } from './client'
 import type { Group } from '@/types'
 
+export interface GroupRecommendation {
+  group_id: number
+  name: string
+  rate_multiplier: number
+  reason: string
+  rating: number
+}
+
 /**
  * Get available groups that the current user can bind to API keys
  * This returns groups based on user's permissions:
@@ -27,9 +35,36 @@ export async function getUserGroupRates(): Promise<Record<number, number>> {
   return data || {}
 }
 
+export async function getRecommendations(): Promise<GroupRecommendation[]> {
+  const { data } = await apiClient.get<GroupRecommendation[]>('/groups/recommendations')
+  return data
+}
+
+export interface GroupCategory {
+  id: string
+  name: string
+  description?: string
+  sort_order?: number
+}
+
+export interface GroupCategorySnapshot {
+  categories: GroupCategory[]
+  assignments: Record<string, string>
+}
+
+export async function getCategories(): Promise<GroupCategorySnapshot> {
+  const { data } = await apiClient.get<GroupCategorySnapshot>('/groups/categories')
+  return {
+    categories: data?.categories ?? [],
+    assignments: data?.assignments ?? {}
+  }
+}
+
 export const userGroupsAPI = {
   getAvailable,
-  getUserGroupRates
+  getUserGroupRates,
+  getRecommendations,
+  getCategories
 }
 
 export default userGroupsAPI

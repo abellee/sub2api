@@ -87,6 +87,8 @@ func RegisterUserRoutes(
 		{
 			groups.GET("/available", h.APIKey.GetAvailableGroups)
 			groups.GET("/rates", h.APIKey.GetUserGroupRates)
+			groups.GET("/recommendations", h.APIKey.GetRecommendedGroups)
+			groups.GET("/categories", newGroupCategoryHandler().List)
 		}
 
 		// 用户可用渠道（非管理员接口）
@@ -142,10 +144,11 @@ func RegisterUserRoutes(
 			monitors.GET("/:id/status", h.ChannelMonitor.GetStatus)
 		}
 
-		// V2 passive views require feature on + mode=v2.
+		// V2 passive views require feature on + mode=v2 + user-side visibility.
 		monitorV2 := authenticated.Group("/channel-monitor-v2")
 		monitorV2.Use(panelRateLimiter.Heavy())
 		monitorV2.Use(channelMonitorModeV2Guard(settingService))
+		monitorV2.Use(channelMonitorUserVisibilityGuard(settingService))
 		{
 			monitorV2.GET("/dimensions", h.ChannelMonitorV2.Dimensions)
 			monitorV2.GET("/snapshot", h.ChannelMonitorV2.Snapshot)

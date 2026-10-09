@@ -26,6 +26,9 @@ const appStore = vi.hoisted(() => ({
     payment_enabled?: boolean
     risk_control_enabled?: boolean
     subscription_enabled?: boolean
+    channel_monitor_enabled?: boolean
+    channel_monitor_visibility?: 'all' | 'selected'
+    channel_monitor_visible?: boolean
     custom_menu_items?: []
   },
   fetchPublicSettings: vi.fn(),
@@ -144,6 +147,7 @@ describe('feature route guard', () => {
     ['payment', { requiresPayment: true }, '/purchase'],
     ['risk control', { requiresRiskControl: true }, '/admin/risk-control'],
     ['subscription', { requiresSubscription: true }, '/subscriptions'],
+    ['channel monitor', { requiresChannelMonitor: true }, '/monitor'],
   ])('does not treat a failed %s settings load as explicitly disabled', async (_name, meta, path) => {
     authStore.isAdmin = meta.requiresRiskControl === true
     appStore.fetchPublicSettings.mockResolvedValue(null)
@@ -165,6 +169,12 @@ describe('feature route guard', () => {
       '/admin/settings',
     ],
     ['subscription', { requiresSubscription: true }, { subscription_enabled: false }, '/dashboard'],
+    [
+      'channel monitor',
+      { requiresChannelMonitor: true },
+      { channel_monitor_enabled: true, channel_monitor_visible: false },
+      '/dashboard',
+    ],
   ])('redirects when loaded settings explicitly disable %s', async (_name, meta, settings, target) => {
     authStore.isAdmin = meta.requiresRiskControl === true
     appStore.cachedPublicSettings = settings
@@ -208,5 +218,59 @@ describe('subscription route guard (opt-out flag)', () => {
     await navigation
 
     expect(next).toHaveBeenCalledWith('/admin/dashboard')
+  })
+})
+
+describe('channel monitor route guard', () => {
+  beforeEach(() => {
+    authStore.isAdmin = false
+    authStore.isSimpleMode = false
+    appStore.publicSettingsLoaded = true
+    appStore.fetchPublicSettings.mockReset()
+  })
+
+  it('hides /monitor on old backends that omit visibility fields', async () => {
+    appStore.cachedPublicSettings = { channel_monitor_enabled: true }
+
+    const { navigation, next } = runGuard({ requiresChannelMonitor: true }, '/monitor')
+    await navigation
+
+    expect(next).toHaveBeenCalledWith('/dashboard')
+  })
+
+  it('lets admins through on old backends that omit visibility fields', async () => {
+    authStore.isAdmin = true
+    appStore.cachedPublicSettings = { channel_monitor_enabled: true }
+
+    const { navigation, next } = runGuard({ requiresChannelMonitor: true }, '/monitor')
+    await navigation
+
+    expect(next).toHaveBeenCalledOnce()
+    expect(next).toHaveBeenCalledWith()
+  })
+
+  it('hides /monitor in selected mode even when per-caller visible is missing', async () => {
+    appStore.cachedPublicSettings = {
+      channel_monitor_enabled: true,
+      channel_monitor_visibility: 'selected',
+    }
+
+    const { navigation, next } = runGuard({ requiresChannelMonitor: true }, '/monitor')
+    await navigation
+
+    expect(next).toHaveBeenCalledWith('/dashboard')
+  })
+
+  it('lets an allow-listed caller through in selected mode', async () => {
+    appStore.cachedPublicSettings = {
+      channel_monitor_enabled: true,
+      channel_monitor_visibility: 'selected',
+      channel_monitor_visible: true,
+    }
+
+    const { navigation, next } = runGuard({ requiresChannelMonitor: true }, '/monitor')
+    await navigation
+
+    expect(next).toHaveBeenCalledWith()
   })
 })

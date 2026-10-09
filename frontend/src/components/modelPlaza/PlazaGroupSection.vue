@@ -120,4 +120,5 @@ const longContextNote = computed(() => {
   )
   return hasOfficialLadder ? t('modelPlaza.detail.longContextDisabledNote') : ''
 })
+
 </script>
