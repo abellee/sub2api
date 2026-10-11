@@ -16,5 +16,9 @@ export default {
     selectedCount: '{selected}/{total} selected',
     selectAll: 'Select all',
     clearAll: 'Clear',
+    selectScope: 'Select groups and accounts',
+    selectorTitle: 'Select groups and accounts',
+    editSelection: 'Edit selection',
+    selectedSummary: '{groups} groups · {accounts} accounts selected',
   },
 }
