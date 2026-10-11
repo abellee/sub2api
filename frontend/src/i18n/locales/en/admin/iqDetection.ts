@@ -33,7 +33,6 @@ export default {
     pageInfo: 'Page {page} / {pages} · {total} accounts',
     prevPage: 'Prev',
     nextPage: 'Next',
-    modelsLabel: 'Models',
     selectionSaved: 'Selection saved',
   },
 }

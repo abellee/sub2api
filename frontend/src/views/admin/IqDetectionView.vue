@@ -418,11 +418,23 @@
                   </span>
                   <span
                     v-if="accountModels(account).length > 0"
-                    class="block truncate text-xs text-gray-400 dark:text-gray-500"
-                    :title="accountModels(account).join(', ')"
+                    class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1"
                     :data-testid="`account-models-${account.id}`"
                   >
-                    {{ t('admin.iqDetection.modelsLabel') }}: {{ accountModels(account).join(', ') }}
+                    <label
+                      v-for="model in accountModels(account)"
+                      :key="model"
+                      class="flex cursor-pointer items-center gap-1 text-xs text-gray-500 dark:text-gray-400"
+                    >
+                      <input
+                        type="checkbox"
+                        class="h-3 w-3 cursor-pointer rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                        :checked="isModelSelected(account.id, model)"
+                        :data-testid="`account-model-${account.id}-${model}`"
+                        @change="toggleModel(account, model)"
+                      />
+                      <span class="font-mono">{{ model }}</span>
+                    </label>
                   </span>
                 </span>
                 <span class="flex-shrink-0 text-xs text-gray-400">
@@ -466,8 +478,6 @@ const accountsLoading = ref(false)
 
 // 聚焦分组的在途请求：切换分组前先取消，避免旧响应浪费和晚到覆盖。
 let focusAbort: AbortController | null = null
-// checkbox 触发的后台按组拉取：同组重复触发时取消上一次，互不影响聚焦请求。
-const toggleFetchAborts = new Map<number, AbortController>()
 
 function isRequestCanceled(error: unknown): boolean {
   return (error as { code?: string })?.code === 'ERR_CANCELED'
@@ -549,9 +559,13 @@ async function saveAccountCredential(account: AccountListItem) {
   }
 }
 
-// 分组账号列表与勾选状态按分组缓存；新拉取的分组默认全部选中。
+// 分组账号列表与勾选状态按分组缓存；分组与账号默认都不选中。
 const accountsByGroup = reactive(new Map<number, AccountListItem[]>())
 const accountSelection = reactive(new Map<number, Set<number>>())
+// 未加载账号的分组被"全选"时先记意图，加载后物化为具体 id 集合。
+const groupAllIntent = reactive(new Set<number>())
+// 每个账号勾选的模型集合；无记录 = 全部模型。
+const modelSelection = reactive(new Map<number, Set<string>>())
 
 const selectedGroup = computed(() => groups.value.find((g) => g.id === selectedGroupId.value) || null)
 const platformOptions = computed(() =>
@@ -572,11 +586,15 @@ const selectedGroupEntries = computed(() =>
   groups.value
     .map((group) => ({ group, state: groupCheckState(group) }))
     .filter((entry) => entry.state !== false)
-    .map((entry) => ({
-      id: entry.group.id,
-      name: entry.group.name,
-      count: accountSelection.get(entry.group.id)?.size ?? entry.group.account_count ?? 0
-    }))
+    .map((entry) => {
+      const set = accountSelection.get(entry.group.id)
+      const count = set
+        ? set.size
+        : groupAllIntent.has(entry.group.id)
+          ? entry.group.account_count ?? 0
+          : 0
+      return { id: entry.group.id, name: entry.group.name, count }
+    })
 )
 
 const selectionSummary = computed(() => ({
@@ -607,16 +625,15 @@ async function openSelector() {
 async function loadSavedSelection() {
   try {
     const saved = await adminAPI.iqDetection.getSelection()
-    if (!saved.updated_at) return // 从未保存过，保持默认全选
+    if (!saved.updated_at) return // 从未保存过，保持默认不选中
     selectionSavedAt.value = saved.updated_at
-    const savedById = new Map(saved.groups.map((g) => [g.id, g]))
-    for (const group of groups.value) {
-      const savedGroup = savedById.get(group.id)
-      if (savedGroup) {
-        accountSelection.set(group.id, new Set((savedGroup.accounts || []).map((a) => a.id)))
-      } else {
-        // 已保存过的选择里没有的分组显式置空，避免回落到"默认全选"
-        accountSelection.set(group.id, new Set<number>())
+    for (const savedGroup of saved.groups) {
+      groupAllIntent.delete(savedGroup.id)
+      const accounts = savedGroup.accounts || []
+      accountSelection.set(savedGroup.id, new Set(accounts.map((a) => a.id)))
+      for (const account of accounts) {
+        // 保存的模型集合（可能为空集 = 明确不选任何模型）
+        modelSelection.set(account.id, new Set(account.models || []))
       }
     }
   } catch {
@@ -631,7 +648,7 @@ async function saveSelection() {
     const payloadGroups: SelectionGroup[] = []
     for (const group of groups.value) {
       if (groupCheckState(group) === false) continue
-      // 未加载过账号的分组先拉取，确保能落具体的账号 id 与模型
+      // 未加载过账号的分组先拉取，物化"全选"意图并落具体 id 与模型
       if (!accountsByGroup.has(group.id)) {
         await fetchAccounts(group.id)
       }
@@ -643,7 +660,15 @@ async function saveSelection() {
         rate_multiplier: group.rate_multiplier,
         accounts: accounts
           .filter((a) => selected.has(a.id))
-          .map((a) => ({ id: a.id, name: a.name, models: accountModels(a) }))
+          .map((a) => {
+            const all = accountModels(a)
+            const picked = modelSelection.get(a.id)
+            return {
+              id: a.id,
+              name: a.name,
+              models: picked ? all.filter((m) => picked.has(m)) : all
+            }
+          })
       })
     }
     const saved = await adminAPI.iqDetection.saveSelection(payloadGroups)
@@ -654,6 +679,27 @@ async function saveSelection() {
   } finally {
     selectionSaving.value = false
   }
+}
+
+// 模型勾选：无记录 = 全部选中；首次手动操作时以该账号当前模型集初始化。
+function isModelSelected(accountId: number, model: string): boolean {
+  const picked = modelSelection.get(accountId)
+  if (!picked) return true
+  return picked.has(model)
+}
+
+function toggleModel(account: AccountListItem, model: string) {
+  let picked = modelSelection.get(account.id)
+  if (!picked) {
+    picked = new Set(accountModels(account))
+    modelSelection.set(account.id, picked)
+  }
+  if (picked.has(model)) {
+    picked.delete(model)
+  } else {
+    picked.add(model)
+  }
+  modelSelection.set(account.id, picked)
 }
 
 async function reload() {
@@ -685,9 +731,13 @@ async function fetchAccounts(groupId: number, signal?: AbortSignal): Promise<Acc
   const resp = await adminAPI.accounts.list(1, 200, { group: String(groupId) }, { signal })
   const items = resp?.items || []
   accountsByGroup.set(groupId, items)
-  if (!accountSelection.has(groupId)) {
-    // 默认全部选中
+  if (groupAllIntent.has(groupId)) {
+    // "全选"意图落地为具体 id 集合
     accountSelection.set(groupId, new Set(items.map((a) => a.id)))
+    groupAllIntent.delete(groupId)
+  } else if (!accountSelection.has(groupId)) {
+    // 默认不选中
+    accountSelection.set(groupId, new Set<number>())
   }
   return items
 }
@@ -722,40 +772,34 @@ async function focusGroup(groupId: number) {
 }
 
 // 分组 checkbox 三态：true = 账号全选；false = 全不选；'partial' = 部分选中。
-// 从未加载过的分组默认视为全选。
+// 从未操作过的分组默认全不选。
 function groupCheckState(group: AdminGroup): boolean | 'partial' {
+  if (groupAllIntent.has(group.id)) return true
   const set = accountSelection.get(group.id)
-  if (!set) return true
+  if (!set || set.size === 0) return false
   const total = accountsByGroup.get(group.id)?.length ?? group.account_count ?? 0
-  if (set.size === 0) return false
   if (total > 0 && set.size >= total) return true
   return 'partial'
 }
 
 async function toggleGroupCheck(group: AdminGroup) {
   const turnOn = groupCheckState(group) !== true
-  if (!accountsByGroup.has(group.id)) {
-    toggleFetchAborts.get(group.id)?.abort()
-    const controller = new AbortController()
-    toggleFetchAborts.set(group.id, controller)
-    try {
-      await fetchAccounts(group.id, controller.signal)
-    } catch (error) {
-      if (!isRequestCanceled(error)) {
-        appStore.showError(extractApiErrorMessage(error, t('common.error')))
-      }
-      return
-    } finally {
-      if (toggleFetchAborts.get(group.id) === controller) {
-        toggleFetchAborts.delete(group.id)
-      }
+  if (turnOn) {
+    if (accountsByGroup.has(group.id)) {
+      const ids = (accountsByGroup.get(group.id) ?? []).map((a) => a.id)
+      accountSelection.set(group.id, new Set(ids))
+    } else {
+      // 未加载：记意图，账号加载后再物化
+      accountSelection.delete(group.id)
+      groupAllIntent.add(group.id)
     }
+  } else {
+    groupAllIntent.delete(group.id)
+    accountSelection.set(group.id, new Set<number>())
   }
-  const ids = (accountsByGroup.get(group.id) ?? []).map((a) => a.id)
-  accountSelection.set(group.id, turnOn ? new Set(ids) : new Set<number>())
 }
 
-// 分组全选/清空只作用于当前筛选可见的分组；未加载的分组用「删除记录 = 默认全选」表达。
+// 分组全选/清空只作用于当前筛选可见的分组。
 function selectAllGroups() {
   for (const group of filteredGroups.value) {
     const cached = accountsByGroup.get(group.id)
@@ -763,12 +807,14 @@ function selectAllGroups() {
       accountSelection.set(group.id, new Set(cached.map((a) => a.id)))
     } else {
       accountSelection.delete(group.id)
+      groupAllIntent.add(group.id)
     }
   }
 }
 
 function clearAllGroups() {
   for (const group of filteredGroups.value) {
+    groupAllIntent.delete(group.id)
     accountSelection.set(group.id, new Set<number>())
   }
 }
