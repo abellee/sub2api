@@ -16,6 +16,15 @@
           <button
             type="button"
             class="btn btn-secondary"
+            data-testid="open-account-manager"
+            @click="openAccountManager"
+          >
+            <Icon name="users" size="sm" />
+            {{ t('admin.iqDetection.accountManagement') }}
+          </button>
+          <button
+            type="button"
+            class="btn btn-secondary"
             :title="t('admin.iqDetection.selectScope')"
             data-testid="open-selector"
             @click="openSelector"
@@ -124,17 +133,18 @@
         </div>
       </div>
 
-      <!-- 账号管理：分页加载全部账号，逐个保存 API 地址与 API Key 到 iqdetectd -->
-      <section
-        class="overflow-hidden rounded-lg border border-gray-200 dark:border-dark-700"
-        data-testid="account-management"
+      <!-- 账号管理模态框：分页加载全部账号，逐个保存 API 地址与 API Key 到 iqdetectd -->
+      <BaseDialog
+        :show="accountManagerOpen"
+        :title="t('admin.iqDetection.accountManagement')"
+        width="wide"
+        data-testid="account-manager-dialog"
+        @close="accountManagerOpen = false"
       >
+      <section data-testid="account-management">
         <div
-          class="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 px-4 py-3 dark:border-dark-700"
+          class="flex flex-wrap items-center justify-end gap-3 border-b border-gray-200 px-4 py-3 dark:border-dark-700"
         >
-          <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
-            {{ t('admin.iqDetection.accountManagement') }}
-          </h3>
           <select
             v-model="mgGroupFilter"
             class="input h-8 w-56 py-0 text-xs"
@@ -232,6 +242,7 @@
           </div>
         </template>
       </section>
+      </BaseDialog>
     </div>
 
     <!-- 分组/账号选择弹窗 -->
@@ -428,6 +439,7 @@ const loading = ref(false)
 const health = ref<IQDetectAgentHealth | null>(null)
 
 const selectorOpen = ref(false)
+const accountManagerOpen = ref(false)
 
 const groups = ref<AdminGroup[]>([])
 const groupsLoading = ref(false)
@@ -559,6 +571,14 @@ function openSelector() {
   selectorOpen.value = true
   if (groups.value.length === 0 && !groupsLoading.value) {
     void loadGroups()
+  }
+}
+
+function openAccountManager() {
+  accountManagerOpen.value = true
+  if (mgAccounts.value.length === 0 && !mgLoading.value) {
+    void loadSavedCredentials()
+    void loadManagementAccounts()
   }
 }
 
@@ -706,9 +726,5 @@ function clearAccountSelection() {
   accountSelection.set(selectedGroupId.value, new Set<number>())
 }
 
-onMounted(() => {
-  void reload()
-  void loadSavedCredentials()
-  void loadManagementAccounts()
-})
+onMounted(reload)
 </script>
