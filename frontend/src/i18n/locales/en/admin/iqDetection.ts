@@ -21,5 +21,8 @@ export default {
     editSelection: 'Edit selection',
     selectedSummary: '{groups} groups · {accounts} accounts selected',
     noSelection: 'No groups selected yet — open the settings dialog to choose',
+    pelicanTest: 'Pelican Test',
+    candyTest: 'Candy Test',
+    customProbePlaceholder: 'Custom probe prompt; leave empty to use the built-in probes',
   },
 }

@@ -21,5 +21,8 @@ export default {
     editSelection: '修改选择',
     selectedSummary: '已选 {groups} 个分组 · {accounts} 个账号',
     noSelection: '尚未选择分组，点击右上角设置按钮进行选择',
+    pelicanTest: '鹈鹕测试',
+    candyTest: '糖果测试',
+    customProbePlaceholder: '自定义测试提示词，留空则使用内置探针',
   },
 }
