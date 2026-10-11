@@ -9,6 +9,7 @@ import promptAudit from './promptAudit'
 import plugins from './plugins'
 import wechatGroupQR from './wechatGroupQR'
 import appCatalog from './appCatalog'
+import iqDetection from './iqDetection'
 import pushNotifications from './pushNotifications'
 
 export default {
@@ -23,5 +24,6 @@ export default {
   ...plugins,
   ...wechatGroupQR,
   ...appCatalog,
+  ...iqDetection,
   ...pushNotifications,
 }

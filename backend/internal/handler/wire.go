@@ -49,6 +49,7 @@ func ProvideAdminHandlers(
 	auditLogHandler *admin.AuditLogHandler,
 	wechatGroupQRHandler *admin.WechatGroupQRHandler,
 	appCatalogHandler *admin.AppCatalogHandler,
+	iqDetectHandler *admin.IQDetectHandler,
 	upstreamBillingProbe *service.UpstreamBillingProbeService,
 	ollamaCloudUsage *service.OllamaCloudUsageService,
 	opencodeGoUsage *service.OpenCodeGoUsageService,
@@ -97,6 +98,7 @@ func ProvideAdminHandlers(
 		AuditLog:               auditLogHandler,
 		WechatGroupQR:          wechatGroupQRHandler,
 		AppCatalog:             appCatalogHandler,
+		IQDetect:               iqDetectHandler,
 	}
 }
 
@@ -307,6 +309,7 @@ var ProviderSet = wire.NewSet(
 	admin.NewAuditLogHandler,
 	admin.NewWechatGroupQRHandler,
 	admin.NewAppCatalogHandler,
+	admin.NewIQDetectHandler,
 
 	// AdminHandlers and Handlers constructors
 	ProvideAdminHandlers,
