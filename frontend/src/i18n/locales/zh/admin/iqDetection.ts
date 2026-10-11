@@ -34,5 +34,9 @@ export default {
     prevPage: '上一页',
     nextPage: '下一页',
     selectionSaved: '选择已保存',
+    detectionModelSettings: '检测模型设置',
+    modelsHint: '配置用于检测的模型名称，每行一个；保存后整体替换现有列表。',
+    modelsPlaceholder: '每行一个模型名称',
+    modelsSaved: '检测模型已保存',
   },
 }

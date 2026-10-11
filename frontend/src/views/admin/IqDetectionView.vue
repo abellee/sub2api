@@ -16,6 +16,15 @@
           <button
             type="button"
             class="btn btn-secondary"
+            data-testid="open-model-settings"
+            @click="openModelSettings"
+          >
+            <Icon name="cpu" size="sm" />
+            {{ t('admin.iqDetection.detectionModelSettings') }}
+          </button>
+          <button
+            type="button"
+            class="btn btn-secondary"
             data-testid="open-account-manager"
             @click="openAccountManager"
           >
@@ -303,6 +312,47 @@
           </div>
         </template>
       </section>
+      </BaseDialog>
+
+      <!-- 检测模型设置弹窗 -->
+      <BaseDialog
+        :show="modelSettingsOpen"
+        :title="t('admin.iqDetection.detectionModelSettings')"
+        width="normal"
+        data-testid="model-settings-dialog"
+        @close="modelSettingsOpen = false"
+      >
+        <div class="space-y-4">
+          <p class="text-sm text-gray-500 dark:text-gray-400">
+            {{ t('admin.iqDetection.modelsHint') }}
+          </p>
+          <div v-if="modelSettingsLoading" class="flex justify-center py-10 text-sm text-gray-500">
+            {{ t('common.loading') }}
+          </div>
+          <template v-else>
+            <textarea
+              v-model="modelSettingsText"
+              class="input min-h-40 font-mono text-xs"
+              rows="8"
+              :placeholder="t('admin.iqDetection.modelsPlaceholder')"
+              data-testid="detection-models-input"
+            />
+            <div class="flex items-center justify-end gap-2">
+              <button type="button" class="btn btn-secondary btn-sm" @click="modelSettingsOpen = false">
+                {{ t('common.cancel') }}
+              </button>
+              <button
+                type="button"
+                class="btn btn-primary btn-sm"
+                :disabled="modelSettingsSaving"
+                data-testid="save-detection-models"
+                @click="saveDetectionModels"
+              >
+                {{ t('admin.iqDetection.save') }}
+              </button>
+            </div>
+          </template>
+        </div>
       </BaseDialog>
     </div>
 
@@ -696,6 +746,43 @@ function openAccountManager() {
   if (mgAccounts.value.length === 0 && !mgLoading.value) {
     void loadSavedCredentials()
     void loadManagementAccounts()
+  }
+}
+
+// ---- 检测模型设置 ----
+const modelSettingsOpen = ref(false)
+const modelSettingsLoading = ref(false)
+const modelSettingsSaving = ref(false)
+const modelSettingsText = ref('')
+
+async function openModelSettings() {
+  modelSettingsOpen.value = true
+  modelSettingsLoading.value = true
+  try {
+    const resp = await adminAPI.iqDetection.getDetectionModels()
+    modelSettingsText.value = resp.items.map((m) => m.name).join('\n')
+  } catch (error) {
+    appStore.showError(extractApiErrorMessage(error, t('common.error')))
+  } finally {
+    modelSettingsLoading.value = false
+  }
+}
+
+async function saveDetectionModels() {
+  if (modelSettingsSaving.value) return
+  modelSettingsSaving.value = true
+  try {
+    const names = modelSettingsText.value
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line !== '')
+    await adminAPI.iqDetection.saveDetectionModels(names)
+    appStore.showSuccess(t('admin.iqDetection.modelsSaved'))
+    modelSettingsOpen.value = false
+  } catch (error) {
+    appStore.showError(extractApiErrorMessage(error, t('common.error')))
+  } finally {
+    modelSettingsSaving.value = false
   }
 }
 

@@ -128,6 +128,32 @@ func (s *IQDetectService) SaveDetectionSelection(ctx context.Context, groups []i
 	return &selection, nil
 }
 
+func (s *IQDetectService) GetDetectionModels(ctx context.Context) ([]iqdetectd.DetectionModel, error) {
+	var payload struct {
+		Items []iqdetectd.DetectionModel `json:"items"`
+	}
+	if err := s.getJSON(ctx, "/v1/detection-models", &payload); err != nil {
+		return nil, err
+	}
+	if payload.Items == nil {
+		return []iqdetectd.DetectionModel{}, nil
+	}
+	return payload.Items, nil
+}
+
+func (s *IQDetectService) ReplaceDetectionModels(ctx context.Context, names []string) ([]iqdetectd.DetectionModel, error) {
+	var payload struct {
+		Items []iqdetectd.DetectionModel `json:"items"`
+	}
+	if err := s.doJSON(ctx, http.MethodPut, "/v1/detection-models", iqdetectd.PutDetectionModelsInput{Names: names}, &payload); err != nil {
+		return nil, err
+	}
+	if payload.Items == nil {
+		return []iqdetectd.DetectionModel{}, nil
+	}
+	return payload.Items, nil
+}
+
 func (s *IQDetectService) getJSON(ctx context.Context, path string, dest any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.BaseURL()+path, nil)
 	if err != nil {

@@ -173,6 +173,8 @@ func registerIQDetectRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		iqd.PUT("/account-credentials", h.Admin.IQDetect.UpsertAccountCredential)
 		iqd.GET("/selection", h.Admin.IQDetect.GetSelection)
 		iqd.PUT("/selection", h.Admin.IQDetect.SaveSelection)
+		iqd.GET("/detection-models", h.Admin.IQDetect.GetDetectionModels)
+		iqd.PUT("/detection-models", h.Admin.IQDetect.ReplaceDetectionModels)
 	}
 }
 

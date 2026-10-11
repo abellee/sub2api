@@ -144,3 +144,15 @@ type DetectionSelection struct {
 	Groups    []SelectionGroup `json:"groups"`
 	UpdatedAt *time.Time       `json:"updated_at,omitempty"`
 }
+
+// DetectionModel is one model name configured for detection runs.
+type DetectionModel struct {
+	ID        int64     `json:"id"`
+	Name      string    `json:"name"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// PutDetectionModelsInput replaces the whole detection model list.
+type PutDetectionModelsInput struct {
+	Names []string `json:"names"`
+}

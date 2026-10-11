@@ -32,6 +32,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /v1/account-credentials", s.handleUpsertAccountCredential)
 	mux.HandleFunc("GET /v1/selection", s.handleGetSelection)
 	mux.HandleFunc("PUT /v1/selection", s.handleSaveSelection)
+	mux.HandleFunc("GET /v1/detection-models", s.handleListDetectionModels)
+	mux.HandleFunc("PUT /v1/detection-models", s.handleReplaceDetectionModels)
 	return mux
 }
 
@@ -202,6 +204,29 @@ func (s *Server) handleSaveSelection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, selection)
+}
+
+func (s *Server) handleListDetectionModels(w http.ResponseWriter, r *http.Request) {
+	items, err := s.Store.ListDetectionModels(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items, "total": len(items)})
+}
+
+func (s *Server) handleReplaceDetectionModels(w http.ResponseWriter, r *http.Request) {
+	var input PutDetectionModelsInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	items, err := s.Store.ReplaceDetectionModels(r.Context(), input.Names)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items, "total": len(items)})
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {

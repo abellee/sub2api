@@ -191,3 +191,26 @@ func TestStoreDetectionSelection(t *testing.T) {
 		t.Errorf("empty save = %+v, %v", empty2, err)
 	}
 }
+
+func TestStoreDetectionModels(t *testing.T) {
+	store := openTestStore(t)
+	ctx := context.Background()
+
+	items, err := store.ListDetectionModels(ctx)
+	if err != nil || len(items) != 0 {
+		t.Fatalf("initial list = %v, %v", items, err)
+	}
+
+	items, err = store.ReplaceDetectionModels(ctx, []string{"gpt-4o", " GPT-4O ", "claude-x", ""})
+	if err != nil {
+		t.Fatalf("replace: %v", err)
+	}
+	if len(items) != 2 || items[0].Name != "gpt-4o" || items[1].Name != "claude-x" {
+		t.Errorf("unexpected items: %+v", items)
+	}
+
+	items, err = store.ReplaceDetectionModels(ctx, []string{"only-one"})
+	if err != nil || len(items) != 1 || items[0].Name != "only-one" {
+		t.Errorf("replace again = %+v, %v", items, err)
+	}
+}

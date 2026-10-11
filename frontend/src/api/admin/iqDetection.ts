@@ -75,5 +75,34 @@ export async function saveSelection(groups: SelectionGroup[]): Promise<Detection
   return data
 }
 
-const iqDetectionAPI = { getHealth, listAccountCredentials, saveAccountCredential, getSelection, saveSelection }
+export interface DetectionModel {
+  id: number
+  name: string
+  created_at: string
+}
+
+export async function getDetectionModels(): Promise<{ items: DetectionModel[]; total: number }> {
+  const { data } = await apiClient.get<{ items: DetectionModel[]; total: number }>(
+    '/admin/iq-detection/detection-models'
+  )
+  return { items: data?.items || [], total: data?.total || 0 }
+}
+
+export async function saveDetectionModels(names: string[]): Promise<{ items: DetectionModel[]; total: number }> {
+  const { data } = await apiClient.put<{ items: DetectionModel[]; total: number }>(
+    '/admin/iq-detection/detection-models',
+    { names }
+  )
+  return { items: data?.items || [], total: data?.total || 0 }
+}
+
+const iqDetectionAPI = {
+  getHealth,
+  listAccountCredentials,
+  saveAccountCredential,
+  getSelection,
+  saveSelection,
+  getDetectionModels,
+  saveDetectionModels
+}
 export default iqDetectionAPI
