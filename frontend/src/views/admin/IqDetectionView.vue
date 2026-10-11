@@ -418,23 +418,11 @@
                   </span>
                   <span
                     v-if="accountModels(account).length > 0"
-                    class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1"
+                    class="block truncate text-xs text-gray-400 dark:text-gray-500"
+                    :title="accountModels(account).join(', ')"
                     :data-testid="`account-models-${account.id}`"
                   >
-                    <label
-                      v-for="model in accountModels(account)"
-                      :key="model"
-                      class="flex cursor-pointer items-center gap-1 text-xs text-gray-500 dark:text-gray-400"
-                    >
-                      <input
-                        type="checkbox"
-                        class="h-3 w-3 cursor-pointer rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                        :checked="isModelSelected(account.id, model)"
-                        :data-testid="`account-model-${account.id}-${model}`"
-                        @change="toggleModel(account, model)"
-                      />
-                      <span class="font-mono">{{ model }}</span>
-                    </label>
+                    {{ accountModels(account).join(', ') }}
                   </span>
                 </span>
                 <span class="flex-shrink-0 text-xs text-gray-400">
@@ -564,8 +552,6 @@ const accountsByGroup = reactive(new Map<number, AccountListItem[]>())
 const accountSelection = reactive(new Map<number, Set<number>>())
 // 未加载账号的分组被"全选"时先记意图，加载后物化为具体 id 集合。
 const groupAllIntent = reactive(new Set<number>())
-// 每个账号勾选的模型集合；无记录 = 全部模型。
-const modelSelection = reactive(new Map<number, Set<string>>())
 
 const selectedGroup = computed(() => groups.value.find((g) => g.id === selectedGroupId.value) || null)
 const platformOptions = computed(() =>
@@ -629,12 +615,7 @@ async function loadSavedSelection() {
     selectionSavedAt.value = saved.updated_at
     for (const savedGroup of saved.groups) {
       groupAllIntent.delete(savedGroup.id)
-      const accounts = savedGroup.accounts || []
-      accountSelection.set(savedGroup.id, new Set(accounts.map((a) => a.id)))
-      for (const account of accounts) {
-        // 保存的模型集合（可能为空集 = 明确不选任何模型）
-        modelSelection.set(account.id, new Set(account.models || []))
-      }
+      accountSelection.set(savedGroup.id, new Set((savedGroup.accounts || []).map((a) => a.id)))
     }
   } catch {
     // sidecar 未启动时静默降级，保持默认
@@ -660,15 +641,7 @@ async function saveSelection() {
         rate_multiplier: group.rate_multiplier,
         accounts: accounts
           .filter((a) => selected.has(a.id))
-          .map((a) => {
-            const all = accountModels(a)
-            const picked = modelSelection.get(a.id)
-            return {
-              id: a.id,
-              name: a.name,
-              models: picked ? all.filter((m) => picked.has(m)) : all
-            }
-          })
+          .map((a) => ({ id: a.id, name: a.name, models: accountModels(a) }))
       })
     }
     const saved = await adminAPI.iqDetection.saveSelection(payloadGroups)
@@ -679,27 +652,6 @@ async function saveSelection() {
   } finally {
     selectionSaving.value = false
   }
-}
-
-// 模型勾选：无记录 = 全部选中；首次手动操作时以该账号当前模型集初始化。
-function isModelSelected(accountId: number, model: string): boolean {
-  const picked = modelSelection.get(accountId)
-  if (!picked) return true
-  return picked.has(model)
-}
-
-function toggleModel(account: AccountListItem, model: string) {
-  let picked = modelSelection.get(account.id)
-  if (!picked) {
-    picked = new Set(accountModels(account))
-    modelSelection.set(account.id, picked)
-  }
-  if (picked.has(model)) {
-    picked.delete(model)
-  } else {
-    picked.add(model)
-  }
-  modelSelection.set(account.id, picked)
 }
 
 async function reload() {
