@@ -214,16 +214,48 @@ func TestStoreDetectionModels(t *testing.T) {
 		t.Errorf("replace again = %+v, %v", items, err)
 	}
 
-	// prompts: 默认为空，保存后可读回
-	pelican, candy, err := store.GetDetectionPrompts(ctx)
-	if err != nil || pelican != "" || candy != "" {
-		t.Fatalf("initial prompts = %q, %q, %v", pelican, candy, err)
+	// prompts: 默认为空，保存后可读回（含推理等级与温度）
+	prompts, err := store.GetDetectionPrompts(ctx)
+	if err != nil || prompts.PelicanPrompt != "" || prompts.CandyPrompt != "" {
+		t.Fatalf("initial prompts = %+v, %v", prompts, err)
 	}
-	if err := store.UpsertDetectionPrompts(ctx, "pelican-prompt", "candy-prompt"); err != nil {
+	if err := store.UpsertDetectionPrompts(ctx, DetectionPrompts{
+		PelicanPrompt: "pelican-prompt", CandyPrompt: "candy-prompt",
+		ReasoningEffort: "high", Temperature: floatPtr(0.7),
+	}); err != nil {
 		t.Fatalf("upsert prompts: %v", err)
 	}
-	pelican, candy, err = store.GetDetectionPrompts(ctx)
-	if err != nil || pelican != "pelican-prompt" || candy != "candy-prompt" {
-		t.Errorf("saved prompts = %q, %q, %v", pelican, candy, err)
+	prompts, err = store.GetDetectionPrompts(ctx)
+	if err != nil || prompts.PelicanPrompt != "pelican-prompt" || prompts.CandyPrompt != "candy-prompt" {
+		t.Errorf("saved prompts = %+v, %v", prompts, err)
+	}
+	if prompts.ReasoningEffort != "high" || prompts.Temperature == nil || *prompts.Temperature != 0.7 {
+		t.Errorf("saved settings = %+v", prompts)
+	}
+
+	// test_results 保留策略：每账号最多 keep 条
+	for i := 0; i < 65; i++ {
+		if _, err := store.InsertTestResult(ctx, TestResult{
+			AccountID: 1, AccountName: "acc", Model: "m",
+			PelicanPath: "results/1/x.html", CandyAnswer: "ok",
+		}); err != nil {
+			t.Fatalf("insert result: %v", err)
+		}
+	}
+	removed, err := store.TrimTestResults(ctx, 1, 60)
+	if err != nil {
+		t.Fatalf("trim: %v", err)
+	}
+	if len(removed) != 5 {
+		t.Errorf("removed = %d, want 5", len(removed))
+	}
+	var count int
+	if err := store.db.QueryRow(`SELECT COUNT(1) FROM test_results WHERE account_id = 1`).Scan(&count); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if count != 60 {
+		t.Errorf("remaining = %d, want 60", count)
 	}
 }
+
+func floatPtr(v float64) *float64 { return &v }

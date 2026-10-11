@@ -92,9 +92,20 @@
               })
             }}
           </span>
-          <button type="button" class="btn btn-secondary btn-sm" @click="openSelector">
-            {{ t('admin.iqDetection.editSelection') }}
-          </button>
+          <div class="flex items-center gap-2">
+            <button
+              type="button"
+              class="btn btn-primary btn-sm"
+              :disabled="testRunning"
+              data-testid="run-test"
+              @click="runTest"
+            >
+              {{ t('admin.iqDetection.test') }}
+            </button>
+            <button type="button" class="btn btn-secondary btn-sm" @click="openSelector">
+              {{ t('admin.iqDetection.editSelection') }}
+            </button>
+          </div>
         </div>
         <div v-if="selectedGroupEntries.length > 0" class="mt-3 grid gap-3 border-t border-gray-100 pt-3 dark:border-dark-700/60 lg:grid-cols-[240px,1fr]">
           <!-- 左侧：选中的分组竖向列表 -->
@@ -314,6 +325,36 @@
                 :placeholder="t('admin.iqDetection.modelsPlaceholder')"
                 data-testid="detection-models-input"
               />
+            </div>
+            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label class="input-label" for="detection-effort">{{ t('admin.iqDetection.reasoningEffort') }}</label>
+                <select
+                  id="detection-effort"
+                  v-model="reasoningEffort"
+                  class="input"
+                  data-testid="detection-effort-input"
+                >
+                  <option value="">{{ t('admin.iqDetection.effortDefault') }}</option>
+                  <option value="low">{{ t('admin.iqDetection.effortLow') }}</option>
+                  <option value="medium">{{ t('admin.iqDetection.effortMedium') }}</option>
+                  <option value="high">{{ t('admin.iqDetection.effortHigh') }}</option>
+                </select>
+              </div>
+              <div>
+                <label class="input-label" for="detection-temperature">{{ t('admin.iqDetection.temperature') }}</label>
+                <input
+                  id="detection-temperature"
+                  v-model="temperatureInput"
+                  type="number"
+                  min="0"
+                  max="2"
+                  step="0.1"
+                  class="input"
+                  :placeholder="t('admin.iqDetection.temperaturePlaceholder')"
+                  data-testid="detection-temperature-input"
+                />
+              </div>
             </div>
             <div>
               <label class="input-label" for="pelican-test">{{ t('admin.iqDetection.pelicanTest') }}</label>
@@ -754,6 +795,8 @@ const modelSettingsOpen = ref(false)
 const modelSettingsLoading = ref(false)
 const modelSettingsSaving = ref(false)
 const modelSettingsText = ref('')
+const reasoningEffort = ref('')
+const temperatureInput = ref('')
 
 async function openModelSettings() {
   modelSettingsOpen.value = true
@@ -761,6 +804,10 @@ async function openModelSettings() {
   try {
     const resp = await adminAPI.iqDetection.getDetectionModels()
     modelSettingsText.value = resp.items.map((m) => m.name).join('\n')
+    pelicanPrompt.value = resp.pelican_prompt
+    candyPrompt.value = resp.candy_prompt
+    reasoningEffort.value = resp.reasoning_effort || ''
+    temperatureInput.value = resp.temperature == null ? '' : String(resp.temperature)
   } catch (error) {
     appStore.showError(extractApiErrorMessage(error, t('common.error')))
   } finally {
@@ -776,10 +823,13 @@ async function saveDetectionModels() {
       .split('\n')
       .map((line) => line.trim())
       .filter((line) => line !== '')
+    const temperature = temperatureInput.value.trim() === '' ? null : Number(temperatureInput.value)
     await adminAPI.iqDetection.saveDetectionModels({
       names,
       pelican_prompt: pelicanPrompt.value,
-      candy_prompt: candyPrompt.value
+      candy_prompt: candyPrompt.value,
+      reasoning_effort: reasoningEffort.value,
+      temperature: temperature != null && Number.isFinite(temperature) ? temperature : null
     })
     appStore.showSuccess(t('admin.iqDetection.modelsSaved'))
     modelSettingsOpen.value = false
@@ -787,6 +837,26 @@ async function saveDetectionModels() {
     appStore.showError(extractApiErrorMessage(error, t('common.error')))
   } finally {
     modelSettingsSaving.value = false
+  }
+}
+
+// ---- 发起测试 ----
+const testRunning = ref(false)
+
+async function runTest() {
+  if (testRunning.value) return
+  testRunning.value = true
+  try {
+    const plan = await adminAPI.iqDetection.triggerTestRun()
+    if (plan.triggered > 0) {
+      appStore.showSuccess(t('admin.iqDetection.testTriggered', { n: plan.triggered }))
+    } else {
+      appStore.showError(t('admin.iqDetection.testNothing'))
+    }
+  } catch (error) {
+    appStore.showError(extractApiErrorMessage(error, t('common.error')))
+  } finally {
+    testRunning.value = false
   }
 }
 

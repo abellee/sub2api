@@ -19,6 +19,7 @@ var Version = "dev"
 func main() {
 	listen := flag.String("listen", iqdetectd.DefaultListen, "HTTP listen address")
 	sqlitePath := flag.String("sqlite-path", "data/iqdetect.db", "SQLite database path")
+	resultsDir := flag.String("results-dir", "data/test-results", "Directory for pelican HTML test results")
 	upstreamBase := flag.String("api-base-url", iqdetectd.DefaultUpstreamBaseURL, "OpenAI-compatible upstream base URL the probes are sent to")
 	apiKey := flag.String("api-key", os.Getenv("IQ_DETECT_API_KEY"), "Bearer key for the upstream API (env IQ_DETECT_API_KEY)")
 	timeoutSecs := flag.Int("request-timeout", 60, "Per-probe upstream request timeout in seconds")
@@ -39,11 +40,13 @@ func main() {
 	defer func() { _ = store.Close() }()
 
 	runner := iqdetectd.NewRunner(store, *upstreamBase, *apiKey, time.Duration(*timeoutSecs)*time.Second, logger)
+	testRunner := iqdetectd.NewTestRunner(store, *resultsDir, time.Duration(*timeoutSecs)*time.Second, logger)
 	srv := &iqdetectd.Server{
-		Store:     store,
-		Runner:    runner,
-		StartedAt: time.Now().UTC(),
-		Version:   Version,
+		Store:      store,
+		Runner:     runner,
+		TestRunner: testRunner,
+		StartedAt:  time.Now().UTC(),
+		Version:    Version,
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

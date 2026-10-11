@@ -153,17 +153,59 @@ type DetectionModel struct {
 }
 
 // DetectionModelSettings is the payload/response of the detection settings
-// endpoints: the model list plus the custom probe prompts.
+// endpoints: the model list plus the custom probe prompts and call settings.
 type DetectionModelSettings struct {
-	Items         []DetectionModel `json:"items"`
-	Total         int              `json:"total"`
-	PelicanPrompt string           `json:"pelican_prompt"`
-	CandyPrompt   string           `json:"candy_prompt"`
+	Items           []DetectionModel `json:"items"`
+	Total           int              `json:"total"`
+	PelicanPrompt   string           `json:"pelican_prompt"`
+	CandyPrompt     string           `json:"candy_prompt"`
+	ReasoningEffort string           `json:"reasoning_effort"`
+	Temperature     *float64         `json:"temperature,omitempty"`
 }
 
-// PutDetectionModelsInput replaces the model list and the custom prompts.
+// PutDetectionModelsInput replaces the model list, prompts and call settings.
 type PutDetectionModelsInput struct {
-	Names         []string `json:"names"`
-	PelicanPrompt string   `json:"pelican_prompt"`
-	CandyPrompt   string   `json:"candy_prompt"`
+	Names           []string `json:"names"`
+	PelicanPrompt   string   `json:"pelican_prompt"`
+	CandyPrompt     string   `json:"candy_prompt"`
+	ReasoningEffort string   `json:"reasoning_effort"`
+	Temperature     *float64 `json:"temperature,omitempty"`
+}
+
+// DetectionPrompts is the stored custom probe prompts and call settings.
+type DetectionPrompts struct {
+	PelicanPrompt   string   `json:"pelican_prompt"`
+	CandyPrompt     string   `json:"candy_prompt"`
+	ReasoningEffort string   `json:"reasoning_effort"`
+	Temperature     *float64 `json:"temperature,omitempty"`
+}
+
+// TestResult is one detection outcome pair (pelican + candy) for an account.
+type TestResult struct {
+	ID               int64     `json:"id"`
+	AccountID        int64     `json:"account_id"`
+	AccountName      string    `json:"account_name"`
+	Model            string    `json:"model"`
+	PelicanPath      string    `json:"pelican_path,omitempty"`
+	PelicanError     string    `json:"pelican_error,omitempty"`
+	PelicanLatencyMS int64     `json:"pelican_latency_ms,omitempty"`
+	CandyAnswer      string    `json:"candy_answer,omitempty"`
+	CandyError       string    `json:"candy_error,omitempty"`
+	CandyLatencyMS   int64     `json:"candy_latency_ms,omitempty"`
+	CreatedAt        time.Time `json:"created_at"`
+}
+
+// TestRunPlanItem reports what a triggered test run will do per model.
+type TestRunPlanItem struct {
+	Model       string `json:"model"`
+	AccountID   int64  `json:"account_id,omitempty"`
+	AccountName string `json:"account_name,omitempty"`
+	Skipped     bool   `json:"skipped"`
+	Reason      string `json:"reason,omitempty"`
+}
+
+// TestRunPlan is the immediate response of triggering a test run.
+type TestRunPlan struct {
+	Items     []TestRunPlanItem `json:"items"`
+	Triggered int               `json:"triggered"`
 }

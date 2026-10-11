@@ -86,12 +86,16 @@ export interface DetectionModelSettings {
   total: number
   pelican_prompt: string
   candy_prompt: string
+  reasoning_effort?: string
+  temperature?: number | null
 }
 
 export interface SaveDetectionSettingsPayload {
   names: string[]
   pelican_prompt: string
   candy_prompt: string
+  reasoning_effort?: string
+  temperature?: number | null
 }
 
 export async function getDetectionModels(): Promise<DetectionModelSettings> {
@@ -100,7 +104,9 @@ export async function getDetectionModels(): Promise<DetectionModelSettings> {
     items: data?.items || [],
     total: data?.total || 0,
     pelican_prompt: data?.pelican_prompt || '',
-    candy_prompt: data?.candy_prompt || ''
+    candy_prompt: data?.candy_prompt || '',
+    reasoning_effort: data?.reasoning_effort || '',
+    temperature: data?.temperature ?? null
   }
 }
 
@@ -114,6 +120,24 @@ export async function saveDetectionModels(
   return data
 }
 
+export interface TestRunPlanItem {
+  model: string
+  account_id?: number
+  account_name?: string
+  skipped: boolean
+  reason?: string
+}
+
+export interface TestRunPlan {
+  items: TestRunPlanItem[]
+  triggered: number
+}
+
+export async function triggerTestRun(): Promise<TestRunPlan> {
+  const { data } = await apiClient.post<TestRunPlan>('/admin/iq-detection/test-runs', {})
+  return { items: data?.items || [], triggered: data?.triggered || 0 }
+}
+
 const iqDetectionAPI = {
   getHealth,
   listAccountCredentials,
@@ -121,6 +145,7 @@ const iqDetectionAPI = {
   getSelection,
   saveSelection,
   getDetectionModels,
-  saveDetectionModels
+  saveDetectionModels,
+  triggerTestRun
 }
 export default iqDetectionAPI
