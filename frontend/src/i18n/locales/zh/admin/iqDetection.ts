@@ -33,7 +33,6 @@ export default {
     pageInfo: '第 {page} / {pages} 页 · 共 {total} 条',
     prevPage: '上一页',
     nextPage: '下一页',
-    modelsLabel: '模型',
     selectionSaved: '选择已保存',
   },
 }
