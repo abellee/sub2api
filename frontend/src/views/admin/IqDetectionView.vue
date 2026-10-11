@@ -241,17 +241,26 @@
           <ul v-else class="flex-1 divide-y divide-gray-100 overflow-y-auto dark:divide-dark-700/60">
             <li v-for="account in focusedAccounts" :key="account.id">
               <label
-                class="flex cursor-pointer items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-gray-50 dark:hover:bg-dark-800"
+                class="flex cursor-pointer items-start gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-gray-50 dark:hover:bg-dark-800"
                 :data-testid="`account-item-${account.id}`"
               >
                 <input
                   type="checkbox"
-                  class="h-4 w-4 cursor-pointer rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                  class="mt-0.5 h-4 w-4 cursor-pointer rounded border-gray-300 text-primary-600 focus:ring-primary-500"
                   :checked="selectedAccountIds.has(account.id)"
                   @change="toggleAccount(account.id)"
                 />
-                <span class="min-w-0 flex-1 truncate text-gray-700 dark:text-gray-300">
-                  {{ account.name }}
+                <span class="min-w-0 flex-1">
+                  <span class="block truncate text-gray-700 dark:text-gray-300">
+                    {{ account.name }}
+                  </span>
+                  <span
+                    v-if="accountBaseUrl(account)"
+                    class="block truncate font-mono text-xs text-gray-400 dark:text-gray-500"
+                    :title="accountBaseUrl(account)"
+                  >
+                    {{ accountBaseUrl(account) }}
+                  </span>
                 </span>
                 <span class="flex-shrink-0 text-xs text-gray-400">
                   {{ account.platform }}
@@ -431,6 +440,12 @@ function clearAllGroups() {
   for (const group of filteredGroups.value) {
     accountSelection.set(group.id, new Set<number>())
   }
+}
+
+// 账号的上游 API 地址（credentials.base_url 为非敏感字段，接口明文返回）。
+function accountBaseUrl(account: AccountListItem): string {
+  const raw = account.credentials?.base_url
+  return typeof raw === 'string' ? raw.trim() : ''
 }
 
 function toggleAccount(accountId: number) {
