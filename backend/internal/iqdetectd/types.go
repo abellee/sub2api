@@ -104,3 +104,21 @@ type ScoreSummary struct {
 type TriggerRunInput struct {
 	Models []string `json:"models,omitempty"`
 }
+
+// AccountCredential is the per-account upstream credential stored locally by
+// iqdetectd. The API key itself is write-only: it is never returned by the
+// API, only its presence (HasAPIKey).
+type AccountCredential struct {
+	AccountID int64     `json:"account_id"`
+	APIURL    string    `json:"api_url"`
+	HasAPIKey bool      `json:"has_api_key"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// UpsertAccountCredentialInput saves or updates the credential of one account.
+// An empty APIKey keeps the previously stored key.
+type UpsertAccountCredentialInput struct {
+	AccountID int64  `json:"account_id"`
+	APIURL    string `json:"api_url"`
+	APIKey    string `json:"api_key,omitempty"`
+}

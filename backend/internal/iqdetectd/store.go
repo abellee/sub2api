@@ -84,6 +84,12 @@ CREATE TABLE IF NOT EXISTS probe_results (
 );
 CREATE INDEX IF NOT EXISTS idx_probe_results_run ON probe_results(run_id);
 CREATE INDEX IF NOT EXISTS idx_probe_results_model ON probe_results(model, id DESC);
+CREATE TABLE IF NOT EXISTS account_credentials (
+  account_id INTEGER PRIMARY KEY,
+  api_url TEXT NOT NULL DEFAULT '',
+  api_key TEXT NOT NULL DEFAULT '',
+  updated_at TEXT NOT NULL
+);
 `)
 	return err
 }
@@ -442,6 +448,65 @@ func scanResultRow(row rowScanner) (*ModelResult, error) {
 	_ = json.Unmarshal([]byte(detailsJSON), &res.Details)
 	res.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
 	return &res, nil
+}
+
+// ---- per-account credentials ----
+
+// UpsertAccountCredential saves the account's API URL and (optionally) API
+// key. An empty key keeps the previously stored one.
+func (s *Store) UpsertAccountCredential(ctx context.Context, input UpsertAccountCredentialInput) (*AccountCredential, error) {
+	if input.AccountID <= 0 {
+		return nil, fmt.Errorf("account_id is required")
+	}
+	now := time.Now().UTC()
+	_, err := s.db.ExecContext(ctx, `
+INSERT INTO account_credentials (account_id, api_url, api_key, updated_at)
+VALUES (?, ?, ?, ?)
+ON CONFLICT(account_id) DO UPDATE SET
+  api_url = excluded.api_url,
+  api_key = CASE WHEN excluded.api_key != '' THEN excluded.api_key ELSE account_credentials.api_key END,
+  updated_at = excluded.updated_at`,
+		input.AccountID, strings.TrimSpace(input.APIURL), strings.TrimSpace(input.APIKey),
+		now.Format(time.RFC3339Nano))
+	if err != nil {
+		return nil, err
+	}
+	return s.GetAccountCredential(ctx, input.AccountID)
+}
+
+func (s *Store) GetAccountCredential(ctx context.Context, accountID int64) (*AccountCredential, error) {
+	row := s.db.QueryRowContext(ctx, `
+SELECT account_id, api_url, api_key, updated_at FROM account_credentials WHERE account_id = ?`, accountID)
+	return scanAccountCredential(row)
+}
+
+func (s *Store) ListAccountCredentials(ctx context.Context) ([]AccountCredential, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT account_id, api_url, api_key, updated_at FROM account_credentials ORDER BY updated_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	items := []AccountCredential{}
+	for rows.Next() {
+		c, err := scanAccountCredential(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, *c)
+	}
+	return items, rows.Err()
+}
+
+func scanAccountCredential(row rowScanner) (*AccountCredential, error) {
+	var c AccountCredential
+	var apiKey, updated string
+	if err := row.Scan(&c.AccountID, &c.APIURL, &apiKey, &updated); err != nil {
+		return nil, err
+	}
+	c.HasAPIKey = strings.TrimSpace(apiKey) != ""
+	c.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updated)
+	return &c, nil
 }
 
 type rowScanner interface {

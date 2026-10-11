@@ -112,3 +112,41 @@ func TestStoreRunsAndScores(t *testing.T) {
 		t.Errorf("unexpected history: %+v", s.History)
 	}
 }
+
+func TestStoreAccountCredentials(t *testing.T) {
+	store := openTestStore(t)
+	ctx := context.Background()
+
+	created, err := store.UpsertAccountCredential(ctx, UpsertAccountCredentialInput{
+		AccountID: 7, APIURL: "https://api.example.com", APIKey: "sk-secret",
+	})
+	if err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	if !created.HasAPIKey || created.APIURL != "https://api.example.com" {
+		t.Errorf("unexpected credential: %+v", created)
+	}
+
+	// 空 apiKey 保留旧 key；api_url 可单独更新。
+	updated, err := store.UpsertAccountCredential(ctx, UpsertAccountCredentialInput{
+		AccountID: 7, APIURL: "https://api2.example.com",
+	})
+	if err != nil {
+		t.Fatalf("upsert without key: %v", err)
+	}
+	if !updated.HasAPIKey {
+		t.Error("empty api_key should keep the stored key")
+	}
+	if updated.APIURL != "https://api2.example.com" {
+		t.Errorf("api_url = %q", updated.APIURL)
+	}
+
+	items, err := store.ListAccountCredentials(ctx)
+	if err != nil || len(items) != 1 || items[0].AccountID != 7 {
+		t.Fatalf("list = %v, %v", items, err)
+	}
+
+	if _, err := store.UpsertAccountCredential(ctx, UpsertAccountCredentialInput{AccountID: 0}); err == nil {
+		t.Error("missing account_id should fail")
+	}
+}

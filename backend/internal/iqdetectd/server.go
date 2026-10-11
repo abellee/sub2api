@@ -28,6 +28,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/runs", s.handleListRuns)
 	mux.HandleFunc("GET /v1/runs/{id}", s.handleGetRun)
 	mux.HandleFunc("GET /v1/scores", s.handleListScores)
+	mux.HandleFunc("GET /v1/account-credentials", s.handleListAccountCredentials)
+	mux.HandleFunc("PUT /v1/account-credentials", s.handleUpsertAccountCredential)
 	return mux
 }
 
@@ -152,6 +154,29 @@ func (s *Server) handleListScores(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": scores, "total": len(scores)})
+}
+
+func (s *Server) handleListAccountCredentials(w http.ResponseWriter, r *http.Request) {
+	items, err := s.Store.ListAccountCredentials(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items, "total": len(items)})
+}
+
+func (s *Server) handleUpsertAccountCredential(w http.ResponseWriter, r *http.Request) {
+	var input UpsertAccountCredentialInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	credential, err := s.Store.UpsertAccountCredential(r.Context(), input)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, credential)
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {
