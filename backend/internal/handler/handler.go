@@ -45,6 +45,7 @@ type AdminHandlers struct {
 	AuditLog               *admin.AuditLogHandler
 	WechatGroupQR          *admin.WechatGroupQRHandler
 	AppCatalog             *admin.AppCatalogHandler
+	IQDetect               *admin.IQDetectHandler
 }
 
 // Handlers contains all HTTP handlers
