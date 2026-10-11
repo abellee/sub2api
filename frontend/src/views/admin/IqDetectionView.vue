@@ -78,32 +78,6 @@
         </span>
       </div>
 
-      <!-- 自定义探针 -->
-      <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <div>
-          <label class="input-label" for="pelican-test">{{ t('admin.iqDetection.pelicanTest') }}</label>
-          <textarea
-            id="pelican-test"
-            v-model="pelicanPrompt"
-            class="input min-h-28"
-            rows="4"
-            :placeholder="t('admin.iqDetection.customProbePlaceholder')"
-            data-testid="pelican-test-input"
-          />
-        </div>
-        <div>
-          <label class="input-label" for="candy-test">{{ t('admin.iqDetection.candyTest') }}</label>
-          <textarea
-            id="candy-test"
-            v-model="candyPrompt"
-            class="input min-h-28"
-            rows="4"
-            :placeholder="t('admin.iqDetection.customProbePlaceholder')"
-            data-testid="candy-test-input"
-          />
-        </div>
-      </div>
-
       <!-- 当前选择概览：分组名 + 各组选中账号数 -->
       <div
         class="border border-gray-200 px-4 py-3 text-sm dark:border-dark-700"
@@ -330,13 +304,39 @@
             {{ t('common.loading') }}
           </div>
           <template v-else>
-            <textarea
-              v-model="modelSettingsText"
-              class="input min-h-40 font-mono text-xs"
-              rows="8"
-              :placeholder="t('admin.iqDetection.modelsPlaceholder')"
-              data-testid="detection-models-input"
-            />
+            <div>
+              <label class="input-label" for="detection-models-input">{{ t('admin.iqDetection.modelsLabel') }}</label>
+              <textarea
+                id="detection-models-input"
+                v-model="modelSettingsText"
+                class="input min-h-32 font-mono text-xs"
+                rows="6"
+                :placeholder="t('admin.iqDetection.modelsPlaceholder')"
+                data-testid="detection-models-input"
+              />
+            </div>
+            <div>
+              <label class="input-label" for="pelican-test">{{ t('admin.iqDetection.pelicanTest') }}</label>
+              <textarea
+                id="pelican-test"
+                v-model="pelicanPrompt"
+                class="input min-h-24"
+                rows="3"
+                :placeholder="t('admin.iqDetection.customProbePlaceholder')"
+                data-testid="pelican-test-input"
+              />
+            </div>
+            <div>
+              <label class="input-label" for="candy-test">{{ t('admin.iqDetection.candyTest') }}</label>
+              <textarea
+                id="candy-test"
+                v-model="candyPrompt"
+                class="input min-h-24"
+                rows="3"
+                :placeholder="t('admin.iqDetection.customProbePlaceholder')"
+                data-testid="candy-test-input"
+              />
+            </div>
             <div class="flex items-center justify-end gap-2">
               <button type="button" class="btn btn-secondary btn-sm" @click="modelSettingsOpen = false">
                 {{ t('common.cancel') }}
@@ -776,7 +776,11 @@ async function saveDetectionModels() {
       .split('\n')
       .map((line) => line.trim())
       .filter((line) => line !== '')
-    await adminAPI.iqDetection.saveDetectionModels(names)
+    await adminAPI.iqDetection.saveDetectionModels({
+      names,
+      pelican_prompt: pelicanPrompt.value,
+      candy_prompt: candyPrompt.value
+    })
     appStore.showSuccess(t('admin.iqDetection.modelsSaved'))
     modelSettingsOpen.value = false
   } catch (error) {

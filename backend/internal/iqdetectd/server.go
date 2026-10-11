@@ -212,7 +212,17 @@ func (s *Server) handleListDetectionModels(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": items, "total": len(items)})
+	pelican, candy, err := s.Store.GetDetectionPrompts(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, DetectionModelSettings{
+		Items:         items,
+		Total:         len(items),
+		PelicanPrompt: pelican,
+		CandyPrompt:   candy,
+	})
 }
 
 func (s *Server) handleReplaceDetectionModels(w http.ResponseWriter, r *http.Request) {
@@ -226,7 +236,16 @@ func (s *Server) handleReplaceDetectionModels(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": items, "total": len(items)})
+	if err := s.Store.UpsertDetectionPrompts(r.Context(), input.PelicanPrompt, input.CandyPrompt); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, DetectionModelSettings{
+		Items:         items,
+		Total:         len(items),
+		PelicanPrompt: input.PelicanPrompt,
+		CandyPrompt:   input.CandyPrompt,
+	})
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {

@@ -213,4 +213,17 @@ func TestStoreDetectionModels(t *testing.T) {
 	if err != nil || len(items) != 1 || items[0].Name != "only-one" {
 		t.Errorf("replace again = %+v, %v", items, err)
 	}
+
+	// prompts: 默认为空，保存后可读回
+	pelican, candy, err := store.GetDetectionPrompts(ctx)
+	if err != nil || pelican != "" || candy != "" {
+		t.Fatalf("initial prompts = %q, %q, %v", pelican, candy, err)
+	}
+	if err := store.UpsertDetectionPrompts(ctx, "pelican-prompt", "candy-prompt"); err != nil {
+		t.Fatalf("upsert prompts: %v", err)
+	}
+	pelican, candy, err = store.GetDetectionPrompts(ctx)
+	if err != nil || pelican != "pelican-prompt" || candy != "candy-prompt" {
+		t.Errorf("saved prompts = %q, %q, %v", pelican, candy, err)
+	}
 }
