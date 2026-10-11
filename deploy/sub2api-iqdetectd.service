@@ -1,0 +1,26 @@
+[Unit]
+Description=Sub2API IQ Detect Daemon
+After=network.target
+Wants=network.target
+Before=sub2api.service
+
+[Service]
+Type=simple
+User=sub2api
+Group=sub2api
+WorkingDirectory=/opt/sub2api
+EnvironmentFile=-/etc/sub2api/iqdetectd.env
+ExecStart=/opt/sub2api/iqdetectd \
+  -listen 127.0.0.1:18100 \
+  -sqlite-path /var/lib/sub2api/iqdetect/iqdetect.db \
+  -api-base-url ${IQ_DETECT_API_BASE_URL:-http://127.0.0.1:8080} \
+  -api-key ${IQ_DETECT_API_KEY}
+Restart=always
+RestartSec=5s
+LimitNOFILE=65535
+NoNewPrivileges=true
+PrivateTmp=true
+StateDirectory=sub2api/iqdetect
+
+[Install]
+WantedBy=multi-user.target
