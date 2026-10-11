@@ -160,6 +160,81 @@ function proxyAppCatalogDirect(target: string): Plugin {
   }
 }
 
+function mapIQDetectPath(pathname: string, method = 'GET'): string | null {
+  const verb = method.toUpperCase()
+  if (verb !== 'GET' && verb !== 'HEAD') {
+    return null
+  }
+  const prefix = '/api/v1/admin/iq-detection'
+  if (pathname !== prefix && !pathname.startsWith(`${prefix}/`)) {
+    return null
+  }
+  const rest = pathname.slice(prefix.length) || '/'
+  if (rest === '/agent/health') return '/health'
+  return null
+}
+
+/**
+ * Dev-only: keep login/API traffic on VITE_DEV_PROXY_TARGET, but serve
+ * 智商检测 from a local iqdetectd (SQLite sidecar) with the main API envelope.
+ */
+function proxyIQDetectDirect(target: string): Plugin {
+  const base = target.replace(/\/+$/, '')
+  return {
+    name: 'proxy-iq-detect-direct',
+    apply: 'serve',
+    configureServer(server) {
+      server.middlewares.use(async (req, res, next) => {
+        const url = req.url || ''
+        const pathname = url.split('?')[0]
+        const mapped = mapIQDetectPath(pathname, req.method)
+        if (!mapped || !req.method) {
+          next()
+          return
+        }
+        try {
+          const upstream = await fetch(`${base}${mapped}`, {
+            method: req.method.toUpperCase(),
+            signal: AbortSignal.timeout(10000),
+          })
+          const raw = await upstream.text()
+          let parsed: unknown = null
+          if (raw) {
+            try {
+              parsed = JSON.parse(raw)
+            } catch {
+              parsed = { error: raw }
+            }
+          }
+          const health = (parsed && typeof parsed === 'object' ? parsed : {}) as Record<string, unknown>
+          sendJSON(res, 200, {
+            code: 0,
+            message: 'success',
+            data: {
+              enabled: upstream.ok,
+              reason: upstream.ok ? undefined : 'IQ_DETECT_AGENT_UNAVAILABLE',
+              base_url: base,
+              status: health.status,
+              version: health.version,
+              uptime_seconds: health.uptime_seconds,
+            },
+          })
+        } catch (error) {
+          sendJSON(res, 200, {
+            code: 0,
+            message: 'success',
+            data: {
+              enabled: false,
+              reason: 'IQ_DETECT_AGENT_UNAVAILABLE',
+              base_url: base,
+            },
+          })
+        }
+      })
+    },
+  }
+}
+
 function injectPublicSettings(backendUrl: string): Plugin {
   return {
     name: 'inject-public-settings',
@@ -194,11 +269,13 @@ export default defineConfig(({ mode }) => {
   const pushNotifierUrl = env.VITE_PUSH_PROXY_TARGET || 'http://127.0.0.1:8091'
   const devPort = Number(env.VITE_DEV_PORT || 3000)
   const appCatalogDirect = (process.env.VITE_APP_CATALOG_DIRECT || env.VITE_APP_CATALOG_DIRECT || '').trim()
+  const iqDetectDirect = (process.env.VITE_IQ_DETECT_DIRECT || env.VITE_IQ_DETECT_DIRECT || '').trim()
 
   return {
     plugins: [
       vue(),
       ...(appCatalogDirect ? [proxyAppCatalogDirect(appCatalogDirect)] : []),
+      ...(iqDetectDirect ? [proxyIQDetectDirect(iqDetectDirect)] : []),
       injectPublicSettings(backendUrl)
     ],
   resolve: {
