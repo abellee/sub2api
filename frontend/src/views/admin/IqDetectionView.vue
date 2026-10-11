@@ -60,22 +60,42 @@
         </span>
       </div>
 
-      <!-- 当前选择概览 -->
+      <!-- 当前选择概览：分组名 + 各组选中账号数 -->
       <div
-        class="flex flex-wrap items-center justify-between gap-3 border border-gray-200 px-4 py-3 text-sm dark:border-dark-700"
+        class="border border-gray-200 px-4 py-3 text-sm dark:border-dark-700"
         data-testid="selection-summary"
       >
-        <span class="text-gray-700 dark:text-gray-300">
-          {{
-            t('admin.iqDetection.selectedSummary', {
-              groups: selectionSummary.groups,
-              accounts: selectionSummary.accounts
-            })
-          }}
-        </span>
-        <button type="button" class="btn btn-secondary btn-sm" @click="openSelector">
-          {{ t('admin.iqDetection.editSelection') }}
-        </button>
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <span class="text-gray-700 dark:text-gray-300">
+            {{
+              t('admin.iqDetection.selectedSummary', {
+                groups: selectionSummary.groups,
+                accounts: selectionSummary.accounts
+              })
+            }}
+          </span>
+          <button type="button" class="btn btn-secondary btn-sm" @click="openSelector">
+            {{ t('admin.iqDetection.editSelection') }}
+          </button>
+        </div>
+        <div
+          v-if="selectedGroupEntries.length > 0"
+          class="mt-3 flex flex-wrap gap-2 border-t border-gray-100 pt-3 dark:border-dark-700/60"
+          data-testid="selected-group-chips"
+        >
+          <span
+            v-for="entry in selectedGroupEntries"
+            :key="entry.id"
+            class="inline-flex items-center gap-1.5 rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-700 dark:bg-dark-800 dark:text-gray-300"
+            :data-testid="`selected-group-chip-${entry.id}`"
+          >
+            <span class="max-w-48 truncate font-medium">{{ entry.name }}</span>
+            <span class="text-gray-500 dark:text-gray-400">· {{ entry.count }}</span>
+          </span>
+        </div>
+        <p v-else class="mt-3 border-t border-gray-100 pt-3 text-xs text-gray-500 dark:border-dark-700/60 dark:text-gray-400">
+          {{ t('admin.iqDetection.noSelection') }}
+        </p>
       </div>
     </div>
 
@@ -292,18 +312,22 @@ const selectedAccountIds = computed<Set<number>>(
   () => accountSelection.get(selectedGroupId.value ?? -1) ?? new Set()
 )
 
-// 主页面概览：勾选中的分组数与账号总数（未加载的分组按 account_count 估算）。
-const selectionSummary = computed(() => {
-  let groupCount = 0
-  let accountTotal = 0
-  for (const group of groups.value) {
-    if (groupCheckState(group) === false) continue
-    groupCount++
-    const set = accountSelection.get(group.id)
-    accountTotal += set ? set.size : group.account_count ?? 0
-  }
-  return { groups: groupCount, accounts: accountTotal }
-})
+// 主页面概览：每个勾选中的分组 + 该组选中账号数（未加载的分组按 account_count 估算）。
+const selectedGroupEntries = computed(() =>
+  groups.value
+    .map((group) => ({ group, state: groupCheckState(group) }))
+    .filter((entry) => entry.state !== false)
+    .map((entry) => ({
+      id: entry.group.id,
+      name: entry.group.name,
+      count: accountSelection.get(entry.group.id)?.size ?? entry.group.account_count ?? 0
+    }))
+)
+
+const selectionSummary = computed(() => ({
+  groups: selectedGroupEntries.value.length,
+  accounts: selectedGroupEntries.value.reduce((sum, entry) => sum + entry.count, 0)
+}))
 
 function openSelector() {
   selectorOpen.value = true

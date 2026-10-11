@@ -20,5 +20,6 @@ export default {
     selectorTitle: '选择分组与账号',
     editSelection: '修改选择',
     selectedSummary: '已选 {groups} 个分组 · {accounts} 个账号',
+    noSelection: '尚未选择分组，点击右上角设置按钮进行选择',
   },
 }
