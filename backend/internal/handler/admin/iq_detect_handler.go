@@ -52,6 +52,35 @@ func (h *IQDetectHandler) UpsertAccountCredential(c *gin.Context) {
 	response.Success(c, credential)
 }
 
+func (h *IQDetectHandler) GetSelection(c *gin.Context) {
+	if !h.requireEnabled(c) {
+		return
+	}
+	selection, err := h.svc.GetDetectionSelection(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, selection)
+}
+
+func (h *IQDetectHandler) SaveSelection(c *gin.Context) {
+	if !h.requireEnabled(c) {
+		return
+	}
+	var req iqdetectd.DetectionSelection
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, 400, "invalid json")
+		return
+	}
+	selection, err := h.svc.SaveDetectionSelection(c.Request.Context(), req.Groups)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, selection)
+}
+
 func (h *IQDetectHandler) requireEnabled(c *gin.Context) bool {
 	if err := h.svc.EnsureEnabled(c.Request.Context()); err != nil {
 		response.ErrorFrom(c, err)

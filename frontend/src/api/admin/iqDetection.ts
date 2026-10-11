@@ -47,5 +47,33 @@ export async function saveAccountCredential(
   return data
 }
 
-const iqDetectionAPI = { getHealth, listAccountCredentials, saveAccountCredential }
+export interface SelectionAccount {
+  id: number
+  name?: string
+  models?: string[]
+}
+
+export interface SelectionGroup {
+  id: number
+  name: string
+  rate_multiplier: number
+  accounts: SelectionAccount[]
+}
+
+export interface DetectionSelection {
+  groups: SelectionGroup[]
+  updated_at?: string | null
+}
+
+export async function getSelection(): Promise<DetectionSelection> {
+  const { data } = await apiClient.get<DetectionSelection>('/admin/iq-detection/selection')
+  return { groups: data?.groups || [], updated_at: data?.updated_at ?? null }
+}
+
+export async function saveSelection(groups: SelectionGroup[]): Promise<DetectionSelection> {
+  const { data } = await apiClient.put<DetectionSelection>('/admin/iq-detection/selection', { groups })
+  return data
+}
+
+const iqDetectionAPI = { getHealth, listAccountCredentials, saveAccountCredential, getSelection, saveSelection }
 export default iqDetectionAPI

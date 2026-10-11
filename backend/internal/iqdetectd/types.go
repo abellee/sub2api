@@ -122,3 +122,25 @@ type UpsertAccountCredentialInput struct {
 	APIURL    string `json:"api_url"`
 	APIKey    string `json:"api_key,omitempty"`
 }
+
+// SelectionAccount is one account chosen for detection with its model list.
+type SelectionAccount struct {
+	ID     int64    `json:"id"`
+	Name   string   `json:"name,omitempty"`
+	Models []string `json:"models,omitempty"`
+}
+
+// SelectionGroup is one chosen group with its metadata and chosen accounts.
+type SelectionGroup struct {
+	ID             int64              `json:"id"`
+	Name           string             `json:"name"`
+	RateMultiplier float64            `json:"rate_multiplier"`
+	Accounts       []SelectionAccount `json:"accounts"`
+}
+
+// DetectionSelection is the persisted group/account/model selection. A nil
+// UpdatedAt means nothing has been saved yet.
+type DetectionSelection struct {
+	Groups    []SelectionGroup `json:"groups"`
+	UpdatedAt *time.Time       `json:"updated_at,omitempty"`
+}

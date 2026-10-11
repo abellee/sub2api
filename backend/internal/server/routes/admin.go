@@ -171,6 +171,8 @@ func registerIQDetectRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		iqd.GET("/agent/health", h.Admin.IQDetect.GetAgentHealth)
 		iqd.GET("/account-credentials", h.Admin.IQDetect.ListAccountCredentials)
 		iqd.PUT("/account-credentials", h.Admin.IQDetect.UpsertAccountCredential)
+		iqd.GET("/selection", h.Admin.IQDetect.GetSelection)
+		iqd.PUT("/selection", h.Admin.IQDetect.SaveSelection)
 	}
 }
 

@@ -30,6 +30,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/scores", s.handleListScores)
 	mux.HandleFunc("GET /v1/account-credentials", s.handleListAccountCredentials)
 	mux.HandleFunc("PUT /v1/account-credentials", s.handleUpsertAccountCredential)
+	mux.HandleFunc("GET /v1/selection", s.handleGetSelection)
+	mux.HandleFunc("PUT /v1/selection", s.handleSaveSelection)
 	return mux
 }
 
@@ -177,6 +179,29 @@ func (s *Server) handleUpsertAccountCredential(w http.ResponseWriter, r *http.Re
 		return
 	}
 	writeJSON(w, http.StatusOK, credential)
+}
+
+func (s *Server) handleGetSelection(w http.ResponseWriter, r *http.Request) {
+	selection, err := s.Store.GetSelection(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, selection)
+}
+
+func (s *Server) handleSaveSelection(w http.ResponseWriter, r *http.Request) {
+	var input DetectionSelection
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	selection, err := s.Store.SaveSelection(r.Context(), input.Groups)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, selection)
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {
