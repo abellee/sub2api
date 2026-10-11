@@ -11,7 +11,7 @@ Group=sub2api
 WorkingDirectory=/opt/sub2api
 EnvironmentFile=-/etc/sub2api/iqdetectd.env
 ExecStart=/opt/sub2api/iqdetectd \
-  -listen 127.0.0.1:18100 \
+  -listen 127.0.0.1:18102 \
   -sqlite-path /var/lib/sub2api/iqdetect/iqdetect.db \
   -api-base-url ${IQ_DETECT_API_BASE_URL:-http://127.0.0.1:8080} \
   -api-key ${IQ_DETECT_API_KEY}

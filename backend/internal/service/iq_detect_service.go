@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	DefaultIQDetectBaseURL         = "http://127.0.0.1:18100"
+	DefaultIQDetectBaseURL         = "http://127.0.0.1:18102"
 	IQDetectAgentUnavailableReason = "IQ_DETECT_AGENT_UNAVAILABLE"
 )
 
