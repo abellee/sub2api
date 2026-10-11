@@ -666,6 +666,12 @@ download_and_extract() {
         chmod +x "$INSTALL_DIR/appcatalogd"
     fi
 
+    # Copy the IQ detection sidecar when the release archive includes it.
+    if [ -f "$TEMP_DIR/iqdetectd" ]; then
+        cp "$TEMP_DIR/iqdetectd" "$INSTALL_DIR/iqdetectd"
+        chmod +x "$INSTALL_DIR/iqdetectd"
+    fi
+
     # Copy deploy files if they exist in the archive
     if [ -d "$TEMP_DIR/deploy" ]; then
         cp -r "$TEMP_DIR/deploy/"* "$INSTALL_DIR/" 2>/dev/null || true
@@ -771,6 +777,7 @@ EOF
     systemctl daemon-reload
 
     install_appcatalogd_service
+    install_iqdetectd_service
 
     print_success "$(msg 'service_installed')"
 }
@@ -804,6 +811,30 @@ install_appcatalogd_service() {
     fi
 
     cp "$unit_src" /etc/systemd/system/sub2api-appcatalogd.service
+    systemctl daemon-reload
+}
+
+# Install the optional IQ detection sidecar as a sibling systemd unit.
+install_iqdetectd_service() {
+    if [ ! -f "$INSTALL_DIR/iqdetectd" ]; then
+        return 0
+    fi
+
+    mkdir -p /var/lib/sub2api/iqdetect
+    chown -R "$SERVICE_USER:$SERVICE_USER" /var/lib/sub2api/iqdetect
+
+    local unit_src=""
+    if [ -f "$INSTALL_DIR/sub2api-iqdetectd.service" ]; then
+        unit_src="$INSTALL_DIR/sub2api-iqdetectd.service"
+    elif [ -f "$TEMP_DIR/deploy/sub2api-iqdetectd.service" ]; then
+        unit_src="$TEMP_DIR/deploy/sub2api-iqdetectd.service"
+    fi
+    if [ -z "$unit_src" ]; then
+        print_warning "iqdetectd binary is present but the systemd unit was not found"
+        return 0
+    fi
+
+    cp "$unit_src" /etc/systemd/system/sub2api-iqdetectd.service
     systemctl daemon-reload
 }
 
@@ -960,6 +991,7 @@ upgrade() {
         chown "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR/appcatalogd"
     fi
     install_appcatalogd_service
+    install_iqdetectd_service
 
     # Start service
     print_info "$(msg 'starting_service')"
@@ -1033,6 +1065,7 @@ install_version() {
         chown "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR/appcatalogd"
     fi
     install_appcatalogd_service
+    install_iqdetectd_service
 
     # Start service
     print_info "$(msg 'starting_service')"

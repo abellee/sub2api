@@ -6,6 +6,7 @@ LDFLAGS ?= -s -w -X main.Version=$(VERSION)
 build:
 	CGO_ENABLED=0 go build -ldflags="$(LDFLAGS)" -trimpath -o bin/server ./cmd/server
 	CGO_ENABLED=0 go build -ldflags="$(LDFLAGS)" -trimpath -o bin/appcatalogd ./cmd/appcatalogd
+	CGO_ENABLED=0 go build -ldflags="$(LDFLAGS)" -trimpath -o bin/iqdetectd ./cmd/iqdetectd
 
 generate:
 	go generate ./ent
