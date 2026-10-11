@@ -7,6 +7,7 @@ export default {
     version: '版本',
     baseUrl: '服务地址',
     groups: '分组',
+    allPlatforms: '全部厂商',
     accounts: '账号',
     noGroups: '暂无分组',
     noAccounts: '该分组下暂无账号',

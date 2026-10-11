@@ -59,8 +59,20 @@
           >
             {{ t('admin.iqDetection.groups') }}
             <span class="text-xs font-normal text-gray-500 dark:text-gray-400">
-              {{ groups.length }}
+              {{ filteredGroups.length }}
             </span>
+          </div>
+          <div class="border-b border-gray-200 px-3 py-2 dark:border-dark-700">
+            <select
+              v-model="platformFilter"
+              class="input h-8 w-full py-0 text-xs"
+              data-testid="group-platform-filter"
+            >
+              <option value="">{{ t('admin.iqDetection.allPlatforms') }}</option>
+              <option v-for="platform in platformOptions" :key="platform" :value="platform">
+                {{ platform }}
+              </option>
+            </select>
           </div>
           <div v-if="groupsLoading" class="flex flex-1 items-center justify-center py-10 text-sm text-gray-500">
             {{ t('common.loading') }}
@@ -69,7 +81,7 @@
             {{ t('admin.iqDetection.noGroups') }}
           </div>
           <ul v-else class="flex-1 divide-y divide-gray-100 overflow-y-auto dark:divide-dark-700/60">
-            <li v-for="group in groups" :key="group.id">
+            <li v-for="group in filteredGroups" :key="group.id">
               <div
                 class="flex w-full cursor-pointer items-center gap-2 px-3 py-2.5 text-left text-sm transition-colors"
                 :class="
@@ -201,11 +213,20 @@ const groupsLoading = ref(false)
 const selectedGroupId = ref<number | null>(null)
 const accountsLoading = ref(false)
 
+// 按模型厂商（platform）筛选分组；空串 = 全部。
+const platformFilter = ref('')
+
 // 分组账号列表与勾选状态按分组缓存；新拉取的分组默认全部选中。
 const accountsByGroup = reactive(new Map<number, AccountListItem[]>())
 const accountSelection = reactive(new Map<number, Set<number>>())
 
 const selectedGroup = computed(() => groups.value.find((g) => g.id === selectedGroupId.value) || null)
+const platformOptions = computed(() =>
+  Array.from(new Set(groups.value.map((g) => g.platform))).sort()
+)
+const filteredGroups = computed(() =>
+  platformFilter.value ? groups.value.filter((g) => g.platform === platformFilter.value) : groups.value
+)
 const focusedAccounts = computed<AccountListItem[]>(() =>
   selectedGroupId.value == null ? [] : accountsByGroup.get(selectedGroupId.value) ?? []
 )

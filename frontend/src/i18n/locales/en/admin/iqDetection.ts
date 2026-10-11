@@ -7,6 +7,7 @@ export default {
     version: 'Version',
     baseUrl: 'Service URL',
     groups: 'Groups',
+    allPlatforms: 'All vendors',
     accounts: 'Accounts',
     noGroups: 'No groups yet',
     noAccounts: 'No accounts in this group',
