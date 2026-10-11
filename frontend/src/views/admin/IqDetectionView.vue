@@ -300,6 +300,15 @@ const groupsLoading = ref(false)
 const selectedGroupId = ref<number | null>(null)
 const accountsLoading = ref(false)
 
+// 聚焦分组的在途请求：切换分组前先取消，避免旧响应浪费和晚到覆盖。
+let focusAbort: AbortController | null = null
+// checkbox 触发的后台按组拉取：同组重复触发时取消上一次，互不影响聚焦请求。
+const toggleFetchAborts = new Map<number, AbortController>()
+
+function isRequestCanceled(error: unknown): boolean {
+  return (error as { code?: string })?.code === 'ERR_CANCELED'
+}
+
 // 按模型厂商（platform）筛选分组；空串 = 全部。
 const platformFilter = ref('')
 
@@ -370,8 +379,8 @@ async function loadGroups() {
   }
 }
 
-async function fetchAccounts(groupId: number): Promise<AccountListItem[]> {
-  const resp = await adminAPI.accounts.list(1, 200, { group: String(groupId) })
+async function fetchAccounts(groupId: number, signal?: AbortSignal): Promise<AccountListItem[]> {
+  const resp = await adminAPI.accounts.list(1, 200, { group: String(groupId) }, { signal })
   const items = resp?.items || []
   accountsByGroup.set(groupId, items)
   if (!accountSelection.has(groupId)) {
@@ -384,17 +393,24 @@ async function fetchAccounts(groupId: number): Promise<AccountListItem[]> {
 async function focusGroup(groupId: number) {
   if (selectedGroupId.value === groupId) return
   selectedGroupId.value = groupId
+  // 取消上一个未完成的账号列表请求（无论新分组是否命中缓存）。
+  focusAbort?.abort()
+  focusAbort = null
   if (accountsByGroup.has(groupId)) return
+  const controller = new AbortController()
+  focusAbort = controller
   accountsLoading.value = true
   try {
-    await fetchAccounts(groupId)
+    await fetchAccounts(groupId, controller.signal)
   } catch (error) {
-    if (selectedGroupId.value === groupId) {
+    if (selectedGroupId.value === groupId && !isRequestCanceled(error)) {
       appStore.showError(extractApiErrorMessage(error, t('common.error')))
     }
   } finally {
+    // 被同组的新请求顶替时由新请求管理 loading；被其他分组顶替时 selectedGroupId 已变。
     if (selectedGroupId.value === groupId) {
       accountsLoading.value = false
+      if (focusAbort === controller) focusAbort = null
     }
   }
 }
@@ -413,11 +429,20 @@ function groupCheckState(group: AdminGroup): boolean | 'partial' {
 async function toggleGroupCheck(group: AdminGroup) {
   const turnOn = groupCheckState(group) !== true
   if (!accountsByGroup.has(group.id)) {
+    toggleFetchAborts.get(group.id)?.abort()
+    const controller = new AbortController()
+    toggleFetchAborts.set(group.id, controller)
     try {
-      await fetchAccounts(group.id)
+      await fetchAccounts(group.id, controller.signal)
     } catch (error) {
-      appStore.showError(extractApiErrorMessage(error, t('common.error')))
+      if (!isRequestCanceled(error)) {
+        appStore.showError(extractApiErrorMessage(error, t('common.error')))
+      }
       return
+    } finally {
+      if (toggleFetchAborts.get(group.id) === controller) {
+        toggleFetchAborts.delete(group.id)
+      }
     }
   }
   const ids = (accountsByGroup.get(group.id) ?? []).map((a) => a.id)
