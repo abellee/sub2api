@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"github.com/Wei-Shaw/sub2api/internal/iqdetectd"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -20,4 +21,41 @@ func NewIQDetectHandler(svc *service.IQDetectService) *IQDetectHandler {
 func (h *IQDetectHandler) GetAgentHealth(c *gin.Context) {
 	health := h.svc.GetAgentHealth(c.Request.Context())
 	response.Success(c, health)
+}
+
+func (h *IQDetectHandler) ListAccountCredentials(c *gin.Context) {
+	if !h.requireEnabled(c) {
+		return
+	}
+	items, err := h.svc.ListAccountCredentials(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"items": items, "total": len(items)})
+}
+
+func (h *IQDetectHandler) UpsertAccountCredential(c *gin.Context) {
+	if !h.requireEnabled(c) {
+		return
+	}
+	var req iqdetectd.UpsertAccountCredentialInput
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, 400, "invalid json")
+		return
+	}
+	credential, err := h.svc.UpsertAccountCredential(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, credential)
+}
+
+func (h *IQDetectHandler) requireEnabled(c *gin.Context) bool {
+	if err := h.svc.EnsureEnabled(c.Request.Context()); err != nil {
+		response.ErrorFrom(c, err)
+		return false
+	}
+	return true
 }

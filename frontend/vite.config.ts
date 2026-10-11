@@ -162,15 +162,17 @@ function proxyAppCatalogDirect(target: string): Plugin {
 
 function mapIQDetectPath(pathname: string, method = 'GET'): string | null {
   const verb = method.toUpperCase()
-  if (verb !== 'GET' && verb !== 'HEAD') {
-    return null
-  }
   const prefix = '/api/v1/admin/iq-detection'
   if (pathname !== prefix && !pathname.startsWith(`${prefix}/`)) {
     return null
   }
   const rest = pathname.slice(prefix.length) || '/'
-  if (rest === '/agent/health') return '/health'
+  if (rest === '/agent/health') {
+    return verb === 'GET' || verb === 'HEAD' ? '/health' : null
+  }
+  if (rest === '/account-credentials') {
+    return verb === 'GET' || verb === 'HEAD' || verb === 'PUT' ? '/v1/account-credentials' : null
+  }
   return null
 }
 
@@ -193,8 +195,13 @@ function proxyIQDetectDirect(target: string): Plugin {
           return
         }
         try {
+          const method = req.method!.toUpperCase()
+          const hasBody = method !== 'GET' && method !== 'HEAD'
+          const body = hasBody ? await readRequestBody(req) : undefined
           const upstream = await fetch(`${base}${mapped}`, {
-            method: req.method.toUpperCase(),
+            method,
+            headers: hasBody ? { 'Content-Type': req.headers['content-type'] || 'application/json' } : undefined,
+            body,
             signal: AbortSignal.timeout(10000),
           })
           const raw = await upstream.text()
@@ -206,19 +213,31 @@ function proxyIQDetectDirect(target: string): Plugin {
               parsed = { error: raw }
             }
           }
-          const health = (parsed && typeof parsed === 'object' ? parsed : {}) as Record<string, unknown>
-          sendJSON(res, 200, {
-            code: 0,
-            message: 'success',
-            data: {
-              enabled: upstream.ok,
-              reason: upstream.ok ? undefined : 'IQ_DETECT_AGENT_UNAVAILABLE',
-              base_url: base,
-              status: health.status,
-              version: health.version,
-              uptime_seconds: health.uptime_seconds,
-            },
-          })
+          if (mapped === '/health') {
+            const health = (parsed && typeof parsed === 'object' ? parsed : {}) as Record<string, unknown>
+            sendJSON(res, 200, {
+              code: 0,
+              message: 'success',
+              data: {
+                enabled: upstream.ok,
+                reason: upstream.ok ? undefined : 'IQ_DETECT_AGENT_UNAVAILABLE',
+                base_url: base,
+                status: health.status,
+                version: health.version,
+                uptime_seconds: health.uptime_seconds,
+              },
+            })
+            return
+          }
+          if (!upstream.ok) {
+            const err = (parsed && typeof parsed === 'object' ? parsed : {}) as { error?: string }
+            sendJSON(res, upstream.status, {
+              code: upstream.status,
+              message: err.error || raw || `iq detect HTTP ${upstream.status}`,
+            })
+            return
+          }
+          sendJSON(res, 200, { code: 0, message: 'success', data: parsed })
         } catch (error) {
           sendJSON(res, 200, {
             code: 0,

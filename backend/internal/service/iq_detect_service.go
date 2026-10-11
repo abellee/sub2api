@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/iqdetectd"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 )
 
@@ -80,6 +82,29 @@ func (s *IQDetectService) EnsureEnabled(ctx context.Context) error {
 		WithMetadata(map[string]string{"base_url": s.BaseURL()})
 }
 
+// ListAccountCredentials returns the per-account upstream credentials stored
+// in the sidecar (API keys are write-only and never included).
+func (s *IQDetectService) ListAccountCredentials(ctx context.Context) ([]iqdetectd.AccountCredential, error) {
+	var payload struct {
+		Items []iqdetectd.AccountCredential `json:"items"`
+	}
+	if err := s.getJSON(ctx, "/v1/account-credentials", &payload); err != nil {
+		return nil, err
+	}
+	if payload.Items == nil {
+		return []iqdetectd.AccountCredential{}, nil
+	}
+	return payload.Items, nil
+}
+
+func (s *IQDetectService) UpsertAccountCredential(ctx context.Context, input iqdetectd.UpsertAccountCredentialInput) (*iqdetectd.AccountCredential, error) {
+	var credential iqdetectd.AccountCredential
+	if err := s.doJSON(ctx, http.MethodPut, "/v1/account-credentials", input, &credential); err != nil {
+		return nil, err
+	}
+	return &credential, nil
+}
+
 func (s *IQDetectService) getJSON(ctx context.Context, path string, dest any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.BaseURL()+path, nil)
 	if err != nil {
@@ -103,6 +128,49 @@ func (s *IQDetectService) getJSON(ctx context.Context, path string, dest any) er
 		return infraerrors.InternalServer(IQDetectAgentUnavailableReason, msg)
 	}
 	if len(raw) == 0 {
+		return nil
+	}
+	return json.Unmarshal(raw, dest)
+}
+
+func (s *IQDetectService) doJSON(ctx context.Context, method, path string, body any, dest any) error {
+	var reader io.Reader
+	if body != nil {
+		payload, err := json.Marshal(body)
+		if err != nil {
+			return err
+		}
+		reader = bytes.NewReader(payload)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, s.BaseURL()+path, reader)
+	if err != nil {
+		return err
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return infraerrors.ServiceUnavailable(IQDetectAgentUnavailableReason, err.Error()).
+			WithMetadata(map[string]string{"base_url": s.BaseURL()})
+	}
+	defer func() { _ = resp.Body.Close() }()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode >= 400 {
+		var envelope struct {
+			Error string `json:"error"`
+		}
+		_ = json.Unmarshal(raw, &envelope)
+		msg := strings.TrimSpace(envelope.Error)
+		if msg == "" {
+			msg = fmt.Sprintf("iq detect service HTTP %d", resp.StatusCode)
+		}
+		return infraerrors.InternalServer(IQDetectAgentUnavailableReason, msg)
+	}
+	if dest == nil || len(raw) == 0 {
 		return nil
 	}
 	return json.Unmarshal(raw, dest)

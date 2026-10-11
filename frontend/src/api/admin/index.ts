@@ -137,4 +137,4 @@ export type {
   PluginTestResult
 } from './plugins'
 export type { CatalogApp, CatalogAppDraft, AppCatalogAgentHealth } from './appCatalog'
-export type { IQDetectAgentHealth } from './iqDetection'
+export type { IQDetectAgentHealth, SavedAccountCredential, SaveAccountCredentialPayload } from './iqDetection'

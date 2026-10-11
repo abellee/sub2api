@@ -17,5 +17,35 @@ export async function getHealth(): Promise<IQDetectAgentHealth> {
   return data
 }
 
-const iqDetectionAPI = { getHealth }
+export interface SavedAccountCredential {
+  account_id: number
+  api_url: string
+  has_api_key: boolean
+  updated_at: string
+}
+
+export interface SaveAccountCredentialPayload {
+  account_id: number
+  api_url: string
+  api_key?: string
+}
+
+export async function listAccountCredentials(): Promise<{ items: SavedAccountCredential[]; total: number }> {
+  const { data } = await apiClient.get<{ items: SavedAccountCredential[]; total: number }>(
+    '/admin/iq-detection/account-credentials'
+  )
+  return { items: data?.items || [], total: data?.total || 0 }
+}
+
+export async function saveAccountCredential(
+  payload: SaveAccountCredentialPayload
+): Promise<SavedAccountCredential> {
+  const { data } = await apiClient.put<SavedAccountCredential>(
+    '/admin/iq-detection/account-credentials',
+    payload
+  )
+  return data
+}
+
+const iqDetectionAPI = { getHealth, listAccountCredentials, saveAccountCredential }
 export default iqDetectionAPI
