@@ -396,7 +396,11 @@ async function focusGroup(groupId: number) {
   // 取消上一个未完成的账号列表请求（无论新分组是否命中缓存）。
   focusAbort?.abort()
   focusAbort = null
-  if (accountsByGroup.has(groupId)) return
+  if (accountsByGroup.has(groupId)) {
+    // 上一个分组的加载可能残留 loading，命中缓存时直接就绪。
+    accountsLoading.value = false
+    return
+  }
   const controller = new AbortController()
   focusAbort = controller
   accountsLoading.value = true
