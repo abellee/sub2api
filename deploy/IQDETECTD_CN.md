@@ -27,7 +27,7 @@ docker compose up -d iqdetectd
 
 ## 1. 行为
 
-- 独立进程，默认监听 `127.0.0.1:18100`
+- 独立进程，默认监听 `127.0.0.1:18102`
 - SQLite 持久化受管模型、检测批次与每模型得分，不依赖主库
 - 主进程通过 `iq_detect.base_url`（环境变量 `IQ_DETECT_BASE_URL`）把管理端「智商检测」页面转发到 sidecar
 - 进程自身提供 `GET /health`、`GET /v1/probes`、受管模型 CRUD、`POST /v1/runs`（触发检测）、`GET /v1/runs/{id}`、`GET /v1/scores`
@@ -56,7 +56,7 @@ curl -sSL https://raw.githubusercontent.com/Wei-Shaw/sub2api/main/deploy/install
 ```bash
 sudo systemctl status sub2api-iqdetectd
 sudo journalctl -u sub2api-iqdetectd -f
-curl -s http://127.0.0.1:18100/health
+curl -s http://127.0.0.1:18102/health
 ```
 
 上游 API 凭据写在 `/etc/sub2api/iqdetectd.env`（systemd EnvironmentFile）：
@@ -70,7 +70,7 @@ IQ_DETECT_API_KEY=sk-xxxx
 
 ```yaml
 iq_detect:
-  base_url: "http://127.0.0.1:18100"
+  base_url: "http://127.0.0.1:18102"
 ```
 
 ## 4. Docker Compose
@@ -87,7 +87,7 @@ iqdetectd:
 主服务环境变量：
 
 ```bash
-IQ_DETECT_BASE_URL=http://iqdetectd:18100
+IQ_DETECT_BASE_URL=http://iqdetectd:18102
 IQ_DETECT_API_KEY=sk-xxxx
 IQ_DETECT_IMAGE=sub2api-iqdetectd:0.1.0
 ```
@@ -103,7 +103,7 @@ docker build -f Dockerfile.iqdetectd -t sub2api-iqdetectd:dev .
 ```bash
 make -C backend build
 ./backend/bin/iqdetectd \
-  -listen 127.0.0.1:18100 \
+  -listen 127.0.0.1:18102 \
   -sqlite-path data/iqdetect.db \
   -api-base-url http://127.0.0.1:8080 \
   -api-key sk-xxxx

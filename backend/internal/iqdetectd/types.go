@@ -4,7 +4,7 @@ import "time"
 
 const (
 	// DefaultListen is the default HTTP listen address of iqdetectd.
-	DefaultListen = "127.0.0.1:18100"
+	DefaultListen = "127.0.0.1:18102"
 	// DefaultUpstreamBaseURL is the default OpenAI-compatible endpoint the
 	// probes are sent to. In a standard sub2api deployment this is the main
 	// gateway itself.

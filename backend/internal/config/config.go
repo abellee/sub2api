@@ -2044,7 +2044,7 @@ func configureConfigSource(setConfigFile, addConfigPath func(string)) {
 func setDefaults() {
 	viper.SetDefault("run_mode", RunModeStandard)
 	viper.SetDefault("app_catalog.base_url", "http://127.0.0.1:18099")
-	viper.SetDefault("iq_detect.base_url", "http://127.0.0.1:18100")
+	viper.SetDefault("iq_detect.base_url", "http://127.0.0.1:18102")
 	viper.SetDefault("simple_mode.auto_create_default_groups", true)
 	viper.SetDefault("simple_mode_key_rate_limit_enabled", false)
 
