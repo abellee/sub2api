@@ -106,7 +106,30 @@ CREATE TABLE IF NOT EXISTS detection_prompts (
   candy_prompt TEXT NOT NULL DEFAULT '',
   updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS test_results (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  account_id INTEGER NOT NULL,
+  account_name TEXT NOT NULL DEFAULT '',
+  model TEXT NOT NULL,
+  pelican_path TEXT NOT NULL DEFAULT '',
+  pelican_error TEXT NOT NULL DEFAULT '',
+  candy_answer TEXT NOT NULL DEFAULT '',
+  candy_error TEXT NOT NULL DEFAULT '',
+  pelican_latency_ms INTEGER NOT NULL DEFAULT 0,
+  candy_latency_ms INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_test_results_account ON test_results(account_id, id DESC);
 `)
+	// 旧库升级：detection_prompts 增列（新库 CREATE 已包含，ALTER 报 duplicate column 时忽略）
+	for _, stmt := range []string{
+		`ALTER TABLE detection_prompts ADD COLUMN reasoning_effort TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE detection_prompts ADD COLUMN temperature REAL`,
+	} {
+		if _, err := s.db.Exec(stmt); err != nil && !strings.Contains(err.Error(), "duplicate column") {
+			return err
+		}
+	}
 	return err
 }
 
@@ -634,28 +657,108 @@ func (s *Store) ReplaceDetectionModels(ctx context.Context, names []string) ([]D
 	return s.ListDetectionModels(ctx)
 }
 
-// GetDetectionPrompts returns the saved custom probe prompts (empty when
-// never saved).
-func (s *Store) GetDetectionPrompts(ctx context.Context) (pelican, candy string, err error) {
+// GetDetectionPrompts returns the saved custom probe prompts and call
+// settings (zero values when never saved).
+func (s *Store) GetDetectionPrompts(ctx context.Context) (*DetectionPrompts, error) {
+	var prompts DetectionPrompts
+	var temperature sql.NullFloat64
 	row := s.db.QueryRowContext(ctx,
-		`SELECT pelican_prompt, candy_prompt FROM detection_prompts WHERE id = 1`)
-	err = row.Scan(&pelican, &candy)
+		`SELECT pelican_prompt, candy_prompt, reasoning_effort, temperature FROM detection_prompts WHERE id = 1`)
+	err := row.Scan(&prompts.PelicanPrompt, &prompts.CandyPrompt, &prompts.ReasoningEffort, &temperature)
+	if err == sql.ErrNoRows {
+		return &DetectionPrompts{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if temperature.Valid {
+		prompts.Temperature = &temperature.Float64
+	}
+	return &prompts, nil
+}
+
+// UpsertDetectionPrompts saves the custom probe prompts and call settings.
+func (s *Store) UpsertDetectionPrompts(ctx context.Context, prompts DetectionPrompts) error {
+	_, err := s.db.ExecContext(ctx, `
+INSERT INTO detection_prompts (id, pelican_prompt, candy_prompt, reasoning_effort, temperature, updated_at)
+VALUES (1, ?, ?, ?, ?, ?)
+ON CONFLICT(id) DO UPDATE SET
+  pelican_prompt = excluded.pelican_prompt,
+  candy_prompt = excluded.candy_prompt,
+  reasoning_effort = excluded.reasoning_effort,
+  temperature = excluded.temperature,
+  updated_at = excluded.updated_at`,
+		prompts.PelicanPrompt, prompts.CandyPrompt, prompts.ReasoningEffort, nullFloat(prompts.Temperature),
+		time.Now().UTC().Format(time.RFC3339Nano))
+	return err
+}
+
+func nullFloat(v *float64) any {
+	if v == nil {
+		return nil
+	}
+	return *v
+}
+
+// ---- test results ----
+
+// InsertTestResult persists one result pair and returns its row id.
+func (s *Store) InsertTestResult(ctx context.Context, result TestResult) (int64, error) {
+	res, err := s.db.ExecContext(ctx, `
+INSERT INTO test_results (account_id, account_name, model, pelican_path, pelican_error,
+                          candy_answer, candy_error, pelican_latency_ms, candy_latency_ms, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		result.AccountID, result.AccountName, result.Model, result.PelicanPath, result.PelicanError,
+		result.CandyAnswer, result.CandyError, result.PelicanLatencyMS, result.CandyLatencyMS,
+		time.Now().UTC().Format(time.RFC3339Nano))
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+// TrimTestResults keeps only the newest `keep` result pairs of an account and
+// returns the pelican HTML paths of the removed rows.
+func (s *Store) TrimTestResults(ctx context.Context, accountID int64, keep int) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT id, pelican_path FROM test_results WHERE account_id = ? ORDER BY id DESC LIMIT -1 OFFSET ?`,
+		accountID, keep)
+	if err != nil {
+		return nil, err
+	}
+	var staleIDs []int64
+	var stalePaths []string
+	for rows.Next() {
+		var id int64
+		var path string
+		if err := rows.Scan(&id, &path); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		staleIDs = append(staleIDs, id)
+		if path != "" {
+			stalePaths = append(stalePaths, path)
+		}
+	}
+	_ = rows.Close()
+	for _, id := range staleIDs {
+		if _, err := s.db.ExecContext(ctx, `DELETE FROM test_results WHERE id = ?`, id); err != nil {
+			return stalePaths, err
+		}
+	}
+	return stalePaths, nil
+}
+
+// GetAccountCallCreds returns the stored upstream URL and API key of an
+// account for making probe calls. Empty values mean the account is not usable.
+func (s *Store) GetAccountCallCreds(ctx context.Context, accountID int64) (apiURL, apiKey string, err error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT api_url, api_key FROM account_credentials WHERE account_id = ?`, accountID)
+	err = row.Scan(&apiURL, &apiKey)
 	if err == sql.ErrNoRows {
 		return "", "", nil
 	}
 	return
-}
-
-// UpsertDetectionPrompts saves the custom probe prompts.
-func (s *Store) UpsertDetectionPrompts(ctx context.Context, pelican, candy string) error {
-	_, err := s.db.ExecContext(ctx, `
-INSERT INTO detection_prompts (id, pelican_prompt, candy_prompt, updated_at) VALUES (1, ?, ?, ?)
-ON CONFLICT(id) DO UPDATE SET
-  pelican_prompt = excluded.pelican_prompt,
-  candy_prompt = excluded.candy_prompt,
-  updated_at = excluded.updated_at`,
-		pelican, candy, time.Now().UTC().Format(time.RFC3339Nano))
-	return err
 }
 
 type rowScanner interface {

@@ -110,6 +110,18 @@ func (h *IQDetectHandler) ReplaceDetectionModels(c *gin.Context) {
 	response.Success(c, settings)
 }
 
+func (h *IQDetectHandler) TriggerTestRun(c *gin.Context) {
+	if !h.requireEnabled(c) {
+		return
+	}
+	plan, err := h.svc.TriggerTestRun(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, plan)
+}
+
 func (h *IQDetectHandler) requireEnabled(c *gin.Context) bool {
 	if err := h.svc.EnsureEnabled(c.Request.Context()); err != nil {
 		response.ErrorFrom(c, err)

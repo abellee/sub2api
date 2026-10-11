@@ -179,6 +179,9 @@ function mapIQDetectPath(pathname: string, method = 'GET'): string | null {
   if (rest === '/detection-models') {
     return verb === 'GET' || verb === 'HEAD' || verb === 'PUT' ? '/v1/detection-models' : null
   }
+  if (rest === '/test-runs') {
+    return verb === 'POST' ? '/v1/test-runs' : null
+  }
   return null
 }
 

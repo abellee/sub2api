@@ -213,7 +213,11 @@ func (r *Runner) chat(ctx context.Context, model, prompt string) (string, time.D
 // chatCompletionsURL normalizes common base URL shapes to the chat completions
 // endpoint: bare host gains /v1, /v1 keeps /chat/completions appended.
 func (r *Runner) chatCompletionsURL() string {
-	base := strings.TrimRight(r.UpstreamBase, "/")
+	return chatCompletionsURLFor(r.UpstreamBase)
+}
+
+func chatCompletionsURLFor(base string) string {
+	base = strings.TrimRight(strings.TrimSpace(base), "/")
 	switch {
 	case strings.HasSuffix(base, "/chat/completions"):
 		return base

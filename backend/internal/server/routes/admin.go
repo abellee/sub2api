@@ -175,6 +175,7 @@ func registerIQDetectRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		iqd.PUT("/selection", h.Admin.IQDetect.SaveSelection)
 		iqd.GET("/detection-models", h.Admin.IQDetect.GetDetectionModels)
 		iqd.PUT("/detection-models", h.Admin.IQDetect.ReplaceDetectionModels)
+		iqd.POST("/test-runs", h.Admin.IQDetect.TriggerTestRun)
 	}
 }
 

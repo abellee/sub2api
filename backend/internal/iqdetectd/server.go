@@ -10,10 +10,11 @@ import (
 
 // Server is the HTTP layer of iqdetectd.
 type Server struct {
-	Store     *Store
-	Runner    *Runner
-	StartedAt time.Time
-	Version   string
+	Store      *Store
+	Runner     *Runner
+	TestRunner *TestRunner
+	StartedAt  time.Time
+	Version    string
 }
 
 func (s *Server) Handler() http.Handler {
@@ -34,6 +35,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /v1/selection", s.handleSaveSelection)
 	mux.HandleFunc("GET /v1/detection-models", s.handleListDetectionModels)
 	mux.HandleFunc("PUT /v1/detection-models", s.handleReplaceDetectionModels)
+	mux.HandleFunc("POST /v1/test-runs", s.handleTriggerTestRun)
 	return mux
 }
 
@@ -212,16 +214,18 @@ func (s *Server) handleListDetectionModels(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	pelican, candy, err := s.Store.GetDetectionPrompts(r.Context())
+	prompts, err := s.Store.GetDetectionPrompts(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, DetectionModelSettings{
-		Items:         items,
-		Total:         len(items),
-		PelicanPrompt: pelican,
-		CandyPrompt:   candy,
+		Items:           items,
+		Total:           len(items),
+		PelicanPrompt:   prompts.PelicanPrompt,
+		CandyPrompt:     prompts.CandyPrompt,
+		ReasoningEffort: prompts.ReasoningEffort,
+		Temperature:     prompts.Temperature,
 	})
 }
 
@@ -236,16 +240,36 @@ func (s *Server) handleReplaceDetectionModels(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if err := s.Store.UpsertDetectionPrompts(r.Context(), input.PelicanPrompt, input.CandyPrompt); err != nil {
+	if err := s.Store.UpsertDetectionPrompts(r.Context(), DetectionPrompts{
+		PelicanPrompt:   input.PelicanPrompt,
+		CandyPrompt:     input.CandyPrompt,
+		ReasoningEffort: input.ReasoningEffort,
+		Temperature:     input.Temperature,
+	}); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, DetectionModelSettings{
-		Items:         items,
-		Total:         len(items),
-		PelicanPrompt: input.PelicanPrompt,
-		CandyPrompt:   input.CandyPrompt,
+		Items:           items,
+		Total:           len(items),
+		PelicanPrompt:   input.PelicanPrompt,
+		CandyPrompt:     input.CandyPrompt,
+		ReasoningEffort: input.ReasoningEffort,
+		Temperature:     input.Temperature,
 	})
+}
+
+func (s *Server) handleTriggerTestRun(w http.ResponseWriter, r *http.Request) {
+	if s.TestRunner == nil {
+		writeError(w, http.StatusInternalServerError, "test runner unavailable")
+		return
+	}
+	plan, err := s.TestRunner.TriggerTestRun(r.Context())
+	if err != nil {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusAccepted, plan)
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {

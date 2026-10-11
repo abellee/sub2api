@@ -150,6 +150,19 @@ func (s *IQDetectService) ReplaceDetectionModels(ctx context.Context, input iqde
 	return &payload, nil
 }
 
+// TriggerTestRun launches a detection test run on the sidecar and returns the
+// per-model plan immediately (calls execute in the background).
+func (s *IQDetectService) TriggerTestRun(ctx context.Context) (*iqdetectd.TestRunPlan, error) {
+	var plan iqdetectd.TestRunPlan
+	if err := s.doJSON(ctx, http.MethodPost, "/v1/test-runs", nil, &plan); err != nil {
+		return nil, err
+	}
+	if plan.Items == nil {
+		plan.Items = []iqdetectd.TestRunPlanItem{}
+	}
+	return &plan, nil
+}
+
 func (s *IQDetectService) getJSON(ctx context.Context, path string, dest any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.BaseURL()+path, nil)
 	if err != nil {
