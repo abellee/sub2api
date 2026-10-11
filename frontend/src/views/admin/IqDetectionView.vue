@@ -87,20 +87,81 @@
             {{ t('admin.iqDetection.editSelection') }}
           </button>
         </div>
-        <div
-          v-if="selectedGroupEntries.length > 0"
-          class="mt-3 flex flex-wrap gap-2 border-t border-gray-100 pt-3 dark:border-dark-700/60"
-          data-testid="selected-group-chips"
-        >
-          <span
-            v-for="entry in selectedGroupEntries"
-            :key="entry.id"
-            class="inline-flex items-center gap-1.5 rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-700 dark:bg-dark-800 dark:text-gray-300"
-            :data-testid="`selected-group-chip-${entry.id}`"
+        <div v-if="selectedGroupEntries.length > 0" class="mt-3 grid gap-3 border-t border-gray-100 pt-3 dark:border-dark-700/60 lg:grid-cols-[240px,1fr]">
+          <!-- 左侧：选中的分组竖向列表 -->
+          <aside
+            class="max-h-80 divide-y divide-gray-100 overflow-y-auto rounded-lg border border-gray-200 dark:divide-dark-700/60 dark:border-dark-700"
+            data-testid="summary-group-list"
           >
-            <span class="max-w-48 truncate font-medium">{{ entry.name }}</span>
-            <span class="text-gray-500 dark:text-gray-400">· {{ entry.count }}</span>
-          </span>
+            <button
+              v-for="entry in selectedGroupEntries"
+              :key="entry.id"
+              type="button"
+              class="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm transition-colors"
+              :class="
+                entry.id === summaryGroupId
+                  ? 'bg-primary-50 font-medium text-primary-700 dark:bg-primary-900/30 dark:text-primary-300'
+                  : 'text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-dark-800'
+              "
+              :data-testid="`summary-group-item-${entry.id}`"
+              @click="focusSummaryGroup(entry.id)"
+            >
+              <span class="min-w-0 flex-1 truncate">{{ entry.name }}</span>
+              <span class="flex-shrink-0 text-xs text-gray-400">{{ entry.count }}</span>
+            </button>
+          </aside>
+
+          <!-- 右侧：该分组选中的账号卡片 -->
+          <section class="min-w-0">
+            <div v-if="summaryLoading" class="flex h-32 items-center justify-center text-sm text-gray-500">
+              {{ t('common.loading') }}
+            </div>
+            <div
+              v-else-if="!summaryGroup"
+              class="flex h-32 items-center justify-center text-sm text-gray-500 dark:text-gray-400"
+            >
+              {{ t('admin.iqDetection.selectGroupHint') }}
+            </div>
+            <div
+              v-else-if="summaryAccounts.length === 0"
+              class="flex h-32 items-center justify-center text-sm text-gray-500 dark:text-gray-400"
+            >
+              {{ t('admin.iqDetection.noAccounts') }}
+            </div>
+            <div v-else class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" data-testid="summary-account-cards">
+              <div
+                v-for="account in summaryAccounts"
+                :key="account.id"
+                class="min-w-0 rounded-lg border border-gray-200 p-3 dark:border-dark-700"
+                :data-testid="`summary-card-${account.id}`"
+              >
+                <div class="flex items-center justify-between gap-2">
+                  <span class="min-w-0 truncate text-sm font-medium text-gray-800 dark:text-gray-200">
+                    {{ account.name }}
+                  </span>
+                  <span class="flex-shrink-0 text-xs text-gray-400">
+                    {{ account.platform }}<template v-if="account.type"> · {{ account.type }}</template>
+                  </span>
+                </div>
+                <div
+                  v-if="accountBaseUrl(account)"
+                  class="mt-1 truncate font-mono text-xs text-gray-400 dark:text-gray-500"
+                  :title="accountBaseUrl(account)"
+                >
+                  {{ accountBaseUrl(account) }}
+                </div>
+                <div v-if="accountModels(account).length > 0" class="mt-2 flex flex-wrap gap-1">
+                  <span
+                    v-for="model in accountModels(account)"
+                    :key="model"
+                    class="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[10px] text-gray-600 dark:bg-dark-800 dark:text-gray-400"
+                  >
+                    {{ model }}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </section>
         </div>
         <p v-else class="mt-3 border-t border-gray-100 pt-3 text-xs text-gray-500 dark:border-dark-700/60 dark:text-gray-400">
           {{ t('admin.iqDetection.noSelection') }}
@@ -439,7 +500,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI, type IQDetectAgentHealth, type SavedAccountCredential, type SelectionGroup } from '@/api/admin'
 import type { AdminGroup, AccountListItem } from '@/types'
@@ -587,6 +648,48 @@ const selectionSummary = computed(() => ({
   groups: selectedGroupEntries.value.length,
   accounts: selectedGroupEntries.value.reduce((sum, entry) => sum + entry.count, 0)
 }))
+
+// ---- 主页面选择概览：左侧分组列表 + 右侧账号卡片 ----
+const summaryGroupId = ref<number | null>(null)
+const summaryLoading = ref(false)
+
+const summaryGroup = computed(
+  () => selectedGroupEntries.value.find((entry) => entry.id === summaryGroupId.value) || null
+)
+const summaryAccounts = computed<AccountListItem[]>(() => {
+  if (summaryGroupId.value == null) return []
+  const all = accountsByGroup.get(summaryGroupId.value) ?? []
+  const selected = accountSelection.get(summaryGroupId.value)
+  if (!selected) return all
+  return all.filter((a) => selected.has(a.id))
+})
+
+// 焦点分组被取消选择时自动落到第一个仍然选中的分组
+watch(
+  () => selectedGroupEntries.value.map((entry) => entry.id),
+  (ids) => {
+    if (!summaryGroupId.value || !ids.includes(summaryGroupId.value)) {
+      summaryGroupId.value = ids[0] ?? null
+    }
+  }
+)
+
+async function focusSummaryGroup(groupId: number) {
+  summaryGroupId.value = groupId
+  if (accountsByGroup.has(groupId)) return
+  summaryLoading.value = true
+  try {
+    await fetchAccounts(groupId)
+  } catch (error) {
+    if (summaryGroupId.value === groupId) {
+      appStore.showError(extractApiErrorMessage(error, t('common.error')))
+    }
+  } finally {
+    if (summaryGroupId.value === groupId) {
+      summaryLoading.value = false
+    }
+  }
+}
 
 function openAccountManager() {
   accountManagerOpen.value = true
