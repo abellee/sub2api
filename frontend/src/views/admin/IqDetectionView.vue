@@ -69,6 +69,32 @@
         </span>
       </div>
 
+      <!-- 自定义探针 -->
+      <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div>
+          <label class="input-label" for="pelican-test">{{ t('admin.iqDetection.pelicanTest') }}</label>
+          <textarea
+            id="pelican-test"
+            v-model="pelicanPrompt"
+            class="input min-h-28"
+            rows="4"
+            :placeholder="t('admin.iqDetection.customProbePlaceholder')"
+            data-testid="pelican-test-input"
+          />
+        </div>
+        <div>
+          <label class="input-label" for="candy-test">{{ t('admin.iqDetection.candyTest') }}</label>
+          <textarea
+            id="candy-test"
+            v-model="candyPrompt"
+            class="input min-h-28"
+            rows="4"
+            :placeholder="t('admin.iqDetection.customProbePlaceholder')"
+            data-testid="candy-test-input"
+          />
+        </div>
+      </div>
+
       <!-- 当前选择概览：分组名 + 各组选中账号数 -->
       <div
         class="border border-gray-200 px-4 py-3 text-sm dark:border-dark-700"
@@ -166,32 +192,6 @@
         <p v-else class="mt-3 border-t border-gray-100 pt-3 text-xs text-gray-500 dark:border-dark-700/60 dark:text-gray-400">
           {{ t('admin.iqDetection.noSelection') }}
         </p>
-      </div>
-
-      <!-- 自定义探针 -->
-      <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <div>
-          <label class="input-label" for="pelican-test">{{ t('admin.iqDetection.pelicanTest') }}</label>
-          <textarea
-            id="pelican-test"
-            v-model="pelicanPrompt"
-            class="input min-h-28"
-            rows="4"
-            :placeholder="t('admin.iqDetection.customProbePlaceholder')"
-            data-testid="pelican-test-input"
-          />
-        </div>
-        <div>
-          <label class="input-label" for="candy-test">{{ t('admin.iqDetection.candyTest') }}</label>
-          <textarea
-            id="candy-test"
-            v-model="candyPrompt"
-            class="input min-h-28"
-            rows="4"
-            :placeholder="t('admin.iqDetection.customProbePlaceholder')"
-            data-testid="candy-test-input"
-          />
-        </div>
       </div>
 
       <!-- 账号管理模态框：分页加载全部账号，逐个保存 API 地址与 API Key 到 iqdetectd -->
