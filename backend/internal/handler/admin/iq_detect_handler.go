@@ -81,6 +81,35 @@ func (h *IQDetectHandler) SaveSelection(c *gin.Context) {
 	response.Success(c, selection)
 }
 
+func (h *IQDetectHandler) GetDetectionModels(c *gin.Context) {
+	if !h.requireEnabled(c) {
+		return
+	}
+	items, err := h.svc.GetDetectionModels(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"items": items, "total": len(items)})
+}
+
+func (h *IQDetectHandler) ReplaceDetectionModels(c *gin.Context) {
+	if !h.requireEnabled(c) {
+		return
+	}
+	var req iqdetectd.PutDetectionModelsInput
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, 400, "invalid json")
+		return
+	}
+	items, err := h.svc.ReplaceDetectionModels(c.Request.Context(), req.Names)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"items": items, "total": len(items)})
+}
+
 func (h *IQDetectHandler) requireEnabled(c *gin.Context) bool {
 	if err := h.svc.EnsureEnabled(c.Request.Context()); err != nil {
 		response.ErrorFrom(c, err)

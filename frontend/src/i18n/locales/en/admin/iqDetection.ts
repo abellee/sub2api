@@ -34,5 +34,9 @@ export default {
     prevPage: 'Prev',
     nextPage: 'Next',
     selectionSaved: 'Selection saved',
+    detectionModelSettings: 'Detection model settings',
+    modelsHint: 'Configure the models used for detection, one per line; saving replaces the whole list.',
+    modelsPlaceholder: 'One model name per line',
+    modelsSaved: 'Detection models saved',
   },
 }

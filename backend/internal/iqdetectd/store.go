@@ -95,6 +95,11 @@ CREATE TABLE IF NOT EXISTS detection_selection (
   payload TEXT NOT NULL DEFAULT '[]',
   updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS detection_models (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL
+);
 `)
 	return err
 }
@@ -561,6 +566,66 @@ ON CONFLICT(id) DO UPDATE SET payload = excluded.payload, updated_at = excluded.
 		return nil, err
 	}
 	return s.GetSelection(ctx)
+}
+
+// ---- detection model settings ----
+
+func (s *Store) ListDetectionModels(ctx context.Context) ([]DetectionModel, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id, name, created_at FROM detection_models ORDER BY id ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	items := []DetectionModel{}
+	for rows.Next() {
+		var m DetectionModel
+		var created string
+		if err := rows.Scan(&m.ID, &m.Name, &created); err != nil {
+			return nil, err
+		}
+		m.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
+		items = append(items, m)
+	}
+	return items, rows.Err()
+}
+
+// ReplaceDetectionModels swaps the whole list. Names are trimmed, emptied-out
+// entries dropped and duplicates removed (case-insensitive).
+func (s *Store) ReplaceDetectionModels(ctx context.Context, names []string) ([]DetectionModel, error) {
+	seen := make(map[string]struct{}, len(names))
+	cleaned := make([]string, 0, len(names))
+	for _, name := range names {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		key := strings.ToLower(name)
+		if _, dup := seen[key]; dup {
+			continue
+		}
+		seen[key] = struct{}{}
+		cleaned = append(cleaned, name)
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM detection_models`); err != nil {
+		_ = tx.Rollback()
+		return nil, err
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	for _, name := range cleaned {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO detection_models (name, created_at) VALUES (?, ?)`, name, now); err != nil {
+			_ = tx.Rollback()
+			return nil, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return s.ListDetectionModels(ctx)
 }
 
 type rowScanner interface {
