@@ -224,6 +224,7 @@ func (s *Server) handleListDetectionModels(w http.ResponseWriter, r *http.Reques
 		Total:           len(items),
 		PelicanPrompt:   prompts.PelicanPrompt,
 		CandyPrompt:     prompts.CandyPrompt,
+		CandyAnswer:     prompts.CandyAnswer,
 		ReasoningEffort: prompts.ReasoningEffort,
 		Temperature:     prompts.Temperature,
 	})
@@ -243,6 +244,7 @@ func (s *Server) handleReplaceDetectionModels(w http.ResponseWriter, r *http.Req
 	if err := s.Store.UpsertDetectionPrompts(r.Context(), DetectionPrompts{
 		PelicanPrompt:   input.PelicanPrompt,
 		CandyPrompt:     input.CandyPrompt,
+		CandyAnswer:     input.CandyAnswer,
 		ReasoningEffort: input.ReasoningEffort,
 		Temperature:     input.Temperature,
 	}); err != nil {
@@ -254,6 +256,7 @@ func (s *Server) handleReplaceDetectionModels(w http.ResponseWriter, r *http.Req
 		Total:           len(items),
 		PelicanPrompt:   input.PelicanPrompt,
 		CandyPrompt:     input.CandyPrompt,
+		CandyAnswer:     input.CandyAnswer,
 		ReasoningEffort: input.ReasoningEffort,
 		Temperature:     input.Temperature,
 	})

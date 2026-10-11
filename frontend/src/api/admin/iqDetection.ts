@@ -86,6 +86,7 @@ export interface DetectionModelSettings {
   total: number
   pelican_prompt: string
   candy_prompt: string
+  candy_answer?: string
   reasoning_effort?: string
   temperature?: number | null
 }
@@ -94,6 +95,7 @@ export interface SaveDetectionSettingsPayload {
   names: string[]
   pelican_prompt: string
   candy_prompt: string
+  candy_answer?: string
   reasoning_effort?: string
   temperature?: number | null
 }
@@ -105,6 +107,7 @@ export async function getDetectionModels(): Promise<DetectionModelSettings> {
     total: data?.total || 0,
     pelican_prompt: data?.pelican_prompt || '',
     candy_prompt: data?.candy_prompt || '',
+    candy_answer: data?.candy_answer || '',
     reasoning_effort: data?.reasoning_effort || '',
     temperature: data?.temperature ?? null
   }

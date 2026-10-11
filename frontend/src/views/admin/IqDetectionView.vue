@@ -378,6 +378,20 @@
                 data-testid="candy-test-input"
               />
             </div>
+            <div>
+              <label class="input-label" for="candy-answer">{{ t('admin.iqDetection.candyAnswer') }}</label>
+              <input
+                id="candy-answer"
+                v-model="candyAnswer"
+                type="text"
+                class="input"
+                :placeholder="t('admin.iqDetection.candyAnswerPlaceholder')"
+                data-testid="candy-answer-input"
+              />
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {{ t('admin.iqDetection.candyAnswerHint') }}
+              </p>
+            </div>
             <div class="flex items-center justify-end gap-2">
               <button type="button" class="btn btn-secondary btn-sm" @click="modelSettingsOpen = false">
                 {{ t('common.cancel') }}
@@ -797,6 +811,7 @@ const modelSettingsSaving = ref(false)
 const modelSettingsText = ref('')
 const reasoningEffort = ref('')
 const temperatureInput = ref('')
+const candyAnswer = ref('')
 
 async function openModelSettings() {
   modelSettingsOpen.value = true
@@ -806,6 +821,7 @@ async function openModelSettings() {
     modelSettingsText.value = resp.items.map((m) => m.name).join('\n')
     pelicanPrompt.value = resp.pelican_prompt
     candyPrompt.value = resp.candy_prompt
+    candyAnswer.value = resp.candy_answer || ''
     reasoningEffort.value = resp.reasoning_effort || ''
     temperatureInput.value = resp.temperature == null ? '' : String(resp.temperature)
   } catch (error) {
@@ -828,6 +844,7 @@ async function saveDetectionModels() {
       names,
       pelican_prompt: pelicanPrompt.value,
       candy_prompt: candyPrompt.value,
+      candy_answer: candyAnswer.value.trim(),
       reasoning_effort: reasoningEffort.value,
       temperature: temperature != null && Number.isFinite(temperature) ? temperature : null
     })
