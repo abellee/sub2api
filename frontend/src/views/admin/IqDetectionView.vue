@@ -97,6 +97,32 @@
           {{ t('admin.iqDetection.noSelection') }}
         </p>
       </div>
+
+      <!-- 自定义探针 -->
+      <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div>
+          <label class="input-label" for="pelican-test">{{ t('admin.iqDetection.pelicanTest') }}</label>
+          <textarea
+            id="pelican-test"
+            v-model="pelicanPrompt"
+            class="input min-h-28"
+            rows="4"
+            :placeholder="t('admin.iqDetection.customProbePlaceholder')"
+            data-testid="pelican-test-input"
+          />
+        </div>
+        <div>
+          <label class="input-label" for="candy-test">{{ t('admin.iqDetection.candyTest') }}</label>
+          <textarea
+            id="candy-test"
+            v-model="candyPrompt"
+            class="input min-h-28"
+            rows="4"
+            :placeholder="t('admin.iqDetection.customProbePlaceholder')"
+            data-testid="candy-test-input"
+          />
+        </div>
+      </div>
     </div>
 
     <!-- 分组/账号选择弹窗 -->
@@ -311,6 +337,10 @@ function isRequestCanceled(error: unknown): boolean {
 
 // 按模型厂商（platform）筛选分组；空串 = 全部。
 const platformFilter = ref('')
+
+// 自定义探针内容（鹈鹕测试 / 糖果测试），后续随检测请求一起提交。
+const pelicanPrompt = ref('')
+const candyPrompt = ref('')
 
 // 分组账号列表与勾选状态按分组缓存；新拉取的分组默认全部选中。
 const accountsByGroup = reactive(new Map<number, AccountListItem[]>())
