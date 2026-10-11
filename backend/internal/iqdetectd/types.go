@@ -152,7 +152,18 @@ type DetectionModel struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// PutDetectionModelsInput replaces the whole detection model list.
+// DetectionModelSettings is the payload/response of the detection settings
+// endpoints: the model list plus the custom probe prompts.
+type DetectionModelSettings struct {
+	Items         []DetectionModel `json:"items"`
+	Total         int              `json:"total"`
+	PelicanPrompt string           `json:"pelican_prompt"`
+	CandyPrompt   string           `json:"candy_prompt"`
+}
+
+// PutDetectionModelsInput replaces the model list and the custom prompts.
 type PutDetectionModelsInput struct {
-	Names []string `json:"names"`
+	Names         []string `json:"names"`
+	PelicanPrompt string   `json:"pelican_prompt"`
+	CandyPrompt   string   `json:"candy_prompt"`
 }

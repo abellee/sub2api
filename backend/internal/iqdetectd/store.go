@@ -100,6 +100,12 @@ CREATE TABLE IF NOT EXISTS detection_models (
   name TEXT NOT NULL UNIQUE,
   created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS detection_prompts (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  pelican_prompt TEXT NOT NULL DEFAULT '',
+  candy_prompt TEXT NOT NULL DEFAULT '',
+  updated_at TEXT NOT NULL
+);
 `)
 	return err
 }
@@ -626,6 +632,30 @@ func (s *Store) ReplaceDetectionModels(ctx context.Context, names []string) ([]D
 		return nil, err
 	}
 	return s.ListDetectionModels(ctx)
+}
+
+// GetDetectionPrompts returns the saved custom probe prompts (empty when
+// never saved).
+func (s *Store) GetDetectionPrompts(ctx context.Context) (pelican, candy string, err error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT pelican_prompt, candy_prompt FROM detection_prompts WHERE id = 1`)
+	err = row.Scan(&pelican, &candy)
+	if err == sql.ErrNoRows {
+		return "", "", nil
+	}
+	return
+}
+
+// UpsertDetectionPrompts saves the custom probe prompts.
+func (s *Store) UpsertDetectionPrompts(ctx context.Context, pelican, candy string) error {
+	_, err := s.db.ExecContext(ctx, `
+INSERT INTO detection_prompts (id, pelican_prompt, candy_prompt, updated_at) VALUES (1, ?, ?, ?)
+ON CONFLICT(id) DO UPDATE SET
+  pelican_prompt = excluded.pelican_prompt,
+  candy_prompt = excluded.candy_prompt,
+  updated_at = excluded.updated_at`,
+		pelican, candy, time.Now().UTC().Format(time.RFC3339Nano))
+	return err
 }
 
 type rowScanner interface {

@@ -81,19 +81,37 @@ export interface DetectionModel {
   created_at: string
 }
 
-export async function getDetectionModels(): Promise<{ items: DetectionModel[]; total: number }> {
-  const { data } = await apiClient.get<{ items: DetectionModel[]; total: number }>(
-    '/admin/iq-detection/detection-models'
-  )
-  return { items: data?.items || [], total: data?.total || 0 }
+export interface DetectionModelSettings {
+  items: DetectionModel[]
+  total: number
+  pelican_prompt: string
+  candy_prompt: string
 }
 
-export async function saveDetectionModels(names: string[]): Promise<{ items: DetectionModel[]; total: number }> {
-  const { data } = await apiClient.put<{ items: DetectionModel[]; total: number }>(
+export interface SaveDetectionSettingsPayload {
+  names: string[]
+  pelican_prompt: string
+  candy_prompt: string
+}
+
+export async function getDetectionModels(): Promise<DetectionModelSettings> {
+  const { data } = await apiClient.get<DetectionModelSettings>('/admin/iq-detection/detection-models')
+  return {
+    items: data?.items || [],
+    total: data?.total || 0,
+    pelican_prompt: data?.pelican_prompt || '',
+    candy_prompt: data?.candy_prompt || ''
+  }
+}
+
+export async function saveDetectionModels(
+  payload: SaveDetectionSettingsPayload
+): Promise<DetectionModelSettings> {
+  const { data } = await apiClient.put<DetectionModelSettings>(
     '/admin/iq-detection/detection-models',
-    { names }
+    payload
   )
-  return { items: data?.items || [], total: data?.total || 0 }
+  return data
 }
 
 const iqDetectionAPI = {

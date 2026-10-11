@@ -128,30 +128,26 @@ func (s *IQDetectService) SaveDetectionSelection(ctx context.Context, groups []i
 	return &selection, nil
 }
 
-func (s *IQDetectService) GetDetectionModels(ctx context.Context) ([]iqdetectd.DetectionModel, error) {
-	var payload struct {
-		Items []iqdetectd.DetectionModel `json:"items"`
-	}
+func (s *IQDetectService) GetDetectionModels(ctx context.Context) (*iqdetectd.DetectionModelSettings, error) {
+	var payload iqdetectd.DetectionModelSettings
 	if err := s.getJSON(ctx, "/v1/detection-models", &payload); err != nil {
 		return nil, err
 	}
 	if payload.Items == nil {
-		return []iqdetectd.DetectionModel{}, nil
+		payload.Items = []iqdetectd.DetectionModel{}
 	}
-	return payload.Items, nil
+	return &payload, nil
 }
 
-func (s *IQDetectService) ReplaceDetectionModels(ctx context.Context, names []string) ([]iqdetectd.DetectionModel, error) {
-	var payload struct {
-		Items []iqdetectd.DetectionModel `json:"items"`
-	}
-	if err := s.doJSON(ctx, http.MethodPut, "/v1/detection-models", iqdetectd.PutDetectionModelsInput{Names: names}, &payload); err != nil {
+func (s *IQDetectService) ReplaceDetectionModels(ctx context.Context, input iqdetectd.PutDetectionModelsInput) (*iqdetectd.DetectionModelSettings, error) {
+	var payload iqdetectd.DetectionModelSettings
+	if err := s.doJSON(ctx, http.MethodPut, "/v1/detection-models", input, &payload); err != nil {
 		return nil, err
 	}
 	if payload.Items == nil {
-		return []iqdetectd.DetectionModel{}, nil
+		payload.Items = []iqdetectd.DetectionModel{}
 	}
-	return payload.Items, nil
+	return &payload, nil
 }
 
 func (s *IQDetectService) getJSON(ctx context.Context, path string, dest any) error {

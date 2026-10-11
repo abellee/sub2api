@@ -85,12 +85,12 @@ func (h *IQDetectHandler) GetDetectionModels(c *gin.Context) {
 	if !h.requireEnabled(c) {
 		return
 	}
-	items, err := h.svc.GetDetectionModels(c.Request.Context())
+	settings, err := h.svc.GetDetectionModels(c.Request.Context())
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
-	response.Success(c, gin.H{"items": items, "total": len(items)})
+	response.Success(c, settings)
 }
 
 func (h *IQDetectHandler) ReplaceDetectionModels(c *gin.Context) {
@@ -102,12 +102,12 @@ func (h *IQDetectHandler) ReplaceDetectionModels(c *gin.Context) {
 		response.Error(c, 400, "invalid json")
 		return
 	}
-	items, err := h.svc.ReplaceDetectionModels(c.Request.Context(), req.Names)
+	settings, err := h.svc.ReplaceDetectionModels(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
-	response.Success(c, gin.H{"items": items, "total": len(items)})
+	response.Success(c, settings)
 }
 
 func (h *IQDetectHandler) requireEnabled(c *gin.Context) bool {
