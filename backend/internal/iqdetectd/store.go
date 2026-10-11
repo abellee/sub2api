@@ -90,6 +90,11 @@ CREATE TABLE IF NOT EXISTS account_credentials (
   api_key TEXT NOT NULL DEFAULT '',
   updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS detection_selection (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  payload TEXT NOT NULL DEFAULT '[]',
+  updated_at TEXT NOT NULL
+);
 `)
 	return err
 }
@@ -507,6 +512,55 @@ func scanAccountCredential(row rowScanner) (*AccountCredential, error) {
 	c.HasAPIKey = strings.TrimSpace(apiKey) != ""
 	c.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updated)
 	return &c, nil
+}
+
+// ---- detection selection (single-row JSON blob) ----
+
+// GetSelection returns the persisted selection; Groups is always non-nil and
+// UpdatedAt is nil when nothing has been saved yet.
+func (s *Store) GetSelection(ctx context.Context) (*DetectionSelection, error) {
+	var payload string
+	var updated sql.NullString
+	err := s.db.QueryRowContext(ctx, `SELECT payload, updated_at FROM detection_selection WHERE id = 1`).Scan(&payload, &updated)
+	if err == sql.ErrNoRows {
+		return &DetectionSelection{Groups: []SelectionGroup{}}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	selection := DetectionSelection{Groups: []SelectionGroup{}}
+	if err := json.Unmarshal([]byte(payload), &selection.Groups); err != nil {
+		return nil, fmt.Errorf("corrupt selection payload: %w", err)
+	}
+	if selection.Groups == nil {
+		selection.Groups = []SelectionGroup{}
+	}
+	if updated.Valid && updated.String != "" {
+		if t, err := time.Parse(time.RFC3339Nano, updated.String); err == nil {
+			selection.UpdatedAt = &t
+		}
+	}
+	return &selection, nil
+}
+
+// SaveSelection replaces the persisted selection as a whole.
+func (s *Store) SaveSelection(ctx context.Context, groups []SelectionGroup) (*DetectionSelection, error) {
+	if groups == nil {
+		groups = []SelectionGroup{}
+	}
+	encoded, err := json.Marshal(groups)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	_, err = s.db.ExecContext(ctx, `
+INSERT INTO detection_selection (id, payload, updated_at) VALUES (1, ?, ?)
+ON CONFLICT(id) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at`,
+		string(encoded), now.Format(time.RFC3339Nano))
+	if err != nil {
+		return nil, err
+	}
+	return s.GetSelection(ctx)
 }
 
 type rowScanner interface {

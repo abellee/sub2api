@@ -173,6 +173,9 @@ function mapIQDetectPath(pathname: string, method = 'GET'): string | null {
   if (rest === '/account-credentials') {
     return verb === 'GET' || verb === 'HEAD' || verb === 'PUT' ? '/v1/account-credentials' : null
   }
+  if (rest === '/selection') {
+    return verb === 'GET' || verb === 'HEAD' || verb === 'PUT' ? '/v1/selection' : null
+  }
   return null
 }
 

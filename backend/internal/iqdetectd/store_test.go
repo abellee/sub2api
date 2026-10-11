@@ -150,3 +150,44 @@ func TestStoreAccountCredentials(t *testing.T) {
 		t.Error("missing account_id should fail")
 	}
 }
+
+func TestStoreDetectionSelection(t *testing.T) {
+	store := openTestStore(t)
+	ctx := context.Background()
+
+	// 从未保存过：UpdatedAt 为 nil、空列表
+	empty, err := store.GetSelection(ctx)
+	if err != nil {
+		t.Fatalf("get empty selection: %v", err)
+	}
+	if empty.UpdatedAt != nil || len(empty.Groups) != 0 {
+		t.Errorf("unexpected empty selection: %+v", empty)
+	}
+
+	groups := []SelectionGroup{
+		{ID: 2, Name: "福利", RateMultiplier: 0.08, Accounts: []SelectionAccount{
+			{ID: 154, Name: "acc", Models: []string{"gpt-4o", "gpt-4o-mini"}},
+		}},
+	}
+	saved, err := store.SaveSelection(ctx, groups)
+	if err != nil {
+		t.Fatalf("save selection: %v", err)
+	}
+	if saved.UpdatedAt == nil || len(saved.Groups) != 1 || saved.Groups[0].Accounts[0].Models[0] != "gpt-4o" {
+		t.Errorf("unexpected saved selection: %+v", saved)
+	}
+
+	loaded, err := store.GetSelection(ctx)
+	if err != nil || len(loaded.Groups) != 1 || loaded.Groups[0].Name != "福利" {
+		t.Fatalf("reload = %+v, %v", loaded, err)
+	}
+
+	// 保存空选择应保留记录（区分"从未保存"）
+	if _, err := store.SaveSelection(ctx, nil); err != nil {
+		t.Fatalf("save empty: %v", err)
+	}
+	empty2, err := store.GetSelection(ctx)
+	if err != nil || empty2.UpdatedAt == nil || len(empty2.Groups) != 0 {
+		t.Errorf("empty save = %+v, %v", empty2, err)
+	}
+}

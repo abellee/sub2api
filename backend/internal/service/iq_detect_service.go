@@ -105,6 +105,29 @@ func (s *IQDetectService) UpsertAccountCredential(ctx context.Context, input iqd
 	return &credential, nil
 }
 
+// GetDetectionSelection returns the persisted group/account/model selection.
+func (s *IQDetectService) GetDetectionSelection(ctx context.Context) (*iqdetectd.DetectionSelection, error) {
+	var selection iqdetectd.DetectionSelection
+	if err := s.getJSON(ctx, "/v1/selection", &selection); err != nil {
+		return nil, err
+	}
+	if selection.Groups == nil {
+		selection.Groups = []iqdetectd.SelectionGroup{}
+	}
+	return &selection, nil
+}
+
+func (s *IQDetectService) SaveDetectionSelection(ctx context.Context, groups []iqdetectd.SelectionGroup) (*iqdetectd.DetectionSelection, error) {
+	var selection iqdetectd.DetectionSelection
+	if err := s.doJSON(ctx, http.MethodPut, "/v1/selection", iqdetectd.DetectionSelection{Groups: groups}, &selection); err != nil {
+		return nil, err
+	}
+	if selection.Groups == nil {
+		selection.Groups = []iqdetectd.SelectionGroup{}
+	}
+	return &selection, nil
+}
+
 func (s *IQDetectService) getJSON(ctx context.Context, path string, dest any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.BaseURL()+path, nil)
 	if err != nil {

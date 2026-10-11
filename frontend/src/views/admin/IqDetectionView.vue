@@ -366,6 +366,15 @@
               <button type="button" class="btn btn-secondary btn-sm" :disabled="accountsLoading" @click="clearAccountSelection">
                 {{ t('admin.iqDetection.clearAll') }}
               </button>
+              <button
+                type="button"
+                class="btn btn-primary btn-sm"
+                :disabled="selectionSaving"
+                data-testid="save-selection"
+                @click="saveSelection"
+              >
+                {{ t('admin.iqDetection.save') }}
+              </button>
             </div>
           </div>
 
@@ -407,6 +416,14 @@
                   >
                     {{ accountBaseUrl(account) }}
                   </span>
+                  <span
+                    v-if="accountModels(account).length > 0"
+                    class="block truncate text-xs text-gray-400 dark:text-gray-500"
+                    :title="accountModels(account).join(', ')"
+                    :data-testid="`account-models-${account.id}`"
+                  >
+                    {{ t('admin.iqDetection.modelsLabel') }}: {{ accountModels(account).join(', ') }}
+                  </span>
                 </span>
                 <span class="flex-shrink-0 text-xs text-gray-400">
                   {{ account.platform }}
@@ -424,7 +441,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { adminAPI, type IQDetectAgentHealth, type SavedAccountCredential } from '@/api/admin'
+import { adminAPI, type IQDetectAgentHealth, type SavedAccountCredential, type SelectionGroup } from '@/api/admin'
 import type { AdminGroup, AccountListItem } from '@/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
@@ -567,18 +584,75 @@ const selectionSummary = computed(() => ({
   accounts: selectedGroupEntries.value.reduce((sum, entry) => sum + entry.count, 0)
 }))
 
-function openSelector() {
-  selectorOpen.value = true
-  if (groups.value.length === 0 && !groupsLoading.value) {
-    void loadGroups()
-  }
-}
-
 function openAccountManager() {
   accountManagerOpen.value = true
   if (mgAccounts.value.length === 0 && !mgLoading.value) {
     void loadSavedCredentials()
     void loadManagementAccounts()
+  }
+}
+
+// ---- 选择保存 / 回显 ----
+const selectionSaving = ref(false)
+const selectionSavedAt = ref<string | null>(null)
+
+async function openSelector() {
+  selectorOpen.value = true
+  if (groups.value.length === 0 && !groupsLoading.value) {
+    await loadGroups()
+  }
+  await loadSavedSelection()
+}
+
+async function loadSavedSelection() {
+  try {
+    const saved = await adminAPI.iqDetection.getSelection()
+    if (!saved.updated_at) return // 从未保存过，保持默认全选
+    selectionSavedAt.value = saved.updated_at
+    const savedById = new Map(saved.groups.map((g) => [g.id, g]))
+    for (const group of groups.value) {
+      const savedGroup = savedById.get(group.id)
+      if (savedGroup) {
+        accountSelection.set(group.id, new Set((savedGroup.accounts || []).map((a) => a.id)))
+      } else {
+        // 已保存过的选择里没有的分组显式置空，避免回落到"默认全选"
+        accountSelection.set(group.id, new Set<number>())
+      }
+    }
+  } catch {
+    // sidecar 未启动时静默降级，保持默认
+  }
+}
+
+async function saveSelection() {
+  if (selectionSaving.value) return
+  selectionSaving.value = true
+  try {
+    const payloadGroups: SelectionGroup[] = []
+    for (const group of groups.value) {
+      if (groupCheckState(group) === false) continue
+      // 未加载过账号的分组先拉取，确保能落具体的账号 id 与模型
+      if (!accountsByGroup.has(group.id)) {
+        await fetchAccounts(group.id)
+      }
+      const accounts = accountsByGroup.get(group.id) ?? []
+      const selected = accountSelection.get(group.id) ?? new Set<number>()
+      payloadGroups.push({
+        id: group.id,
+        name: group.name,
+        rate_multiplier: group.rate_multiplier,
+        accounts: accounts
+          .filter((a) => selected.has(a.id))
+          .map((a) => ({ id: a.id, name: a.name, models: accountModels(a) }))
+      })
+    }
+    const saved = await adminAPI.iqDetection.saveSelection(payloadGroups)
+    selectionSavedAt.value = saved.updated_at ?? null
+    appStore.showSuccess(t('admin.iqDetection.selectionSaved'))
+  } catch (error) {
+    appStore.showError(extractApiErrorMessage(error, t('common.error')))
+  } finally {
+    selectionSaving.value = false
   }
 }
 
@@ -703,6 +777,15 @@ function clearAllGroups() {
 function accountBaseUrl(account: AccountListItem): string {
   const raw = account.credentials?.base_url
   return typeof raw === 'string' ? raw.trim() : ''
+}
+
+// 账号可用的模型列表：取 credentials.model_mapping 的键（非敏感字段）。
+function accountModels(account: AccountListItem): string[] {
+  const mapping = account.credentials?.model_mapping
+  if (mapping && typeof mapping === 'object' && !Array.isArray(mapping)) {
+    return Object.keys(mapping).map(String).filter((m) => m.trim() !== '').sort()
+  }
+  return []
 }
 
 function toggleAccount(accountId: number) {
