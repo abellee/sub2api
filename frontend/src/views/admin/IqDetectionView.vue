@@ -12,16 +12,28 @@
             {{ t('admin.iqDetection.description') }}
           </p>
         </div>
-        <button
-          type="button"
-          class="btn btn-secondary flex-shrink-0"
-          :disabled="loading"
-          :title="t('common.refresh')"
-          @click="reload"
-        >
-          <Icon name="refresh" size="sm" :class="loading ? 'animate-spin' : ''" />
-          <span class="sr-only">{{ t('common.refresh') }}</span>
-        </button>
+        <div class="flex flex-shrink-0 items-center gap-2">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            :title="t('admin.iqDetection.selectScope')"
+            data-testid="open-selector"
+            @click="openSelector"
+          >
+            <Icon name="cog" size="sm" />
+            <span class="sr-only">{{ t('admin.iqDetection.selectScope') }}</span>
+          </button>
+          <button
+            type="button"
+            class="btn btn-secondary"
+            :disabled="loading"
+            :title="t('common.refresh')"
+            @click="reload"
+          >
+            <Icon name="refresh" size="sm" :class="loading ? 'animate-spin' : ''" />
+            <span class="sr-only">{{ t('common.refresh') }}</span>
+          </button>
+        </div>
       </section>
 
       <div
@@ -48,24 +60,51 @@
         </span>
       </div>
 
+      <!-- 当前选择概览 -->
+      <div
+        class="flex flex-wrap items-center justify-between gap-3 border border-gray-200 px-4 py-3 text-sm dark:border-dark-700"
+        data-testid="selection-summary"
+      >
+        <span class="text-gray-700 dark:text-gray-300">
+          {{
+            t('admin.iqDetection.selectedSummary', {
+              groups: selectionSummary.groups,
+              accounts: selectionSummary.accounts
+            })
+          }}
+        </span>
+        <button type="button" class="btn btn-secondary btn-sm" @click="openSelector">
+          {{ t('admin.iqDetection.editSelection') }}
+        </button>
+      </div>
+    </div>
+
+    <!-- 分组/账号选择弹窗 -->
+    <BaseDialog
+      :show="selectorOpen"
+      :title="t('admin.iqDetection.selectorTitle')"
+      width="wide"
+      data-testid="selector-dialog"
+      @close="selectorOpen = false"
+    >
       <div class="grid grid-cols-1 gap-4 lg:grid-cols-[280px,1fr]">
         <!-- 左侧：分组列表（checkbox = 该分组账号全选开关，点击行 = 聚焦查看） -->
         <aside
-          class="flex max-h-[560px] flex-col overflow-hidden rounded-lg border border-gray-200 dark:border-dark-700"
+          class="flex max-h-[50vh] flex-col overflow-hidden rounded-lg border border-gray-200 dark:border-dark-700"
           data-testid="group-list"
         >
           <div
-            class="flex items-center justify-between border-b border-gray-200 px-4 py-3 text-sm font-medium text-gray-900 dark:border-dark-700 dark:text-white"
+            class="flex items-center justify-between border-b border-gray-200 px-4 py-2.5 text-sm font-medium text-gray-900 dark:border-dark-700 dark:text-white"
           >
             {{ t('admin.iqDetection.groups') }}
             <span class="text-xs font-normal text-gray-500 dark:text-gray-400">
               {{ filteredGroups.length }}
             </span>
           </div>
-          <div class="border-b border-gray-200 px-3 py-2 dark:border-dark-700">
+          <div class="flex items-center gap-2 border-b border-gray-200 px-3 py-2 dark:border-dark-700">
             <select
               v-model="platformFilter"
-              class="input h-8 w-full py-0 text-xs"
+              class="input h-8 min-w-0 flex-1 py-0 text-xs"
               data-testid="group-platform-filter"
             >
               <option value="">{{ t('admin.iqDetection.allPlatforms') }}</option>
@@ -73,11 +112,27 @@
                 {{ platform }}
               </option>
             </select>
+            <button
+              type="button"
+              class="btn btn-secondary btn-sm flex-shrink-0"
+              :title="t('admin.iqDetection.selectAll')"
+              @click="selectAllGroups"
+            >
+              {{ t('admin.iqDetection.selectAll') }}
+            </button>
+            <button
+              type="button"
+              class="btn btn-secondary btn-sm flex-shrink-0"
+              :title="t('admin.iqDetection.clearAll')"
+              @click="clearAllGroups"
+            >
+              {{ t('admin.iqDetection.clearAll') }}
+            </button>
           </div>
           <div v-if="groupsLoading" class="flex flex-1 items-center justify-center py-10 text-sm text-gray-500">
             {{ t('common.loading') }}
           </div>
-          <div v-else-if="groups.length === 0" class="flex flex-1 items-center justify-center px-4 py-10 text-sm text-gray-500">
+          <div v-else-if="filteredGroups.length === 0" class="flex flex-1 items-center justify-center px-4 py-10 text-sm text-gray-500">
             {{ t('admin.iqDetection.noGroups') }}
           </div>
           <ul v-else class="flex-1 divide-y divide-gray-100 overflow-y-auto dark:divide-dark-700/60">
@@ -123,11 +178,11 @@
 
         <!-- 右侧：分组背后的账号 -->
         <section
-          class="flex max-h-[560px] flex-col overflow-hidden rounded-lg border border-gray-200 dark:border-dark-700"
+          class="flex max-h-[50vh] flex-col overflow-hidden rounded-lg border border-gray-200 dark:border-dark-700"
           data-testid="account-panel"
         >
           <div
-            class="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-4 py-3 dark:border-dark-700"
+            class="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-4 py-2.5 dark:border-dark-700"
           >
             <div class="min-w-0 text-sm font-medium text-gray-900 dark:text-white">
               <template v-if="selectedGroup">
@@ -187,7 +242,7 @@
           </ul>
         </section>
       </div>
-    </div>
+    </BaseDialog>
   </AppLayout>
 </template>
 
@@ -197,6 +252,7 @@ import { useI18n } from 'vue-i18n'
 import { adminAPI, type IQDetectAgentHealth } from '@/api/admin'
 import type { AdminGroup, AccountListItem } from '@/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
+import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { extractApiErrorMessage } from '@/utils/apiError'
 import { useAppStore } from '@/stores'
@@ -206,6 +262,8 @@ const appStore = useAppStore()
 
 const loading = ref(false)
 const health = ref<IQDetectAgentHealth | null>(null)
+
+const selectorOpen = ref(false)
 
 const groups = ref<AdminGroup[]>([])
 const groupsLoading = ref(false)
@@ -233,6 +291,26 @@ const focusedAccounts = computed<AccountListItem[]>(() =>
 const selectedAccountIds = computed<Set<number>>(
   () => accountSelection.get(selectedGroupId.value ?? -1) ?? new Set()
 )
+
+// 主页面概览：勾选中的分组数与账号总数（未加载的分组按 account_count 估算）。
+const selectionSummary = computed(() => {
+  let groupCount = 0
+  let accountTotal = 0
+  for (const group of groups.value) {
+    if (groupCheckState(group) === false) continue
+    groupCount++
+    const set = accountSelection.get(group.id)
+    accountTotal += set ? set.size : group.account_count ?? 0
+  }
+  return { groups: groupCount, accounts: accountTotal }
+})
+
+function openSelector() {
+  selectorOpen.value = true
+  if (groups.value.length === 0 && !groupsLoading.value) {
+    void loadGroups()
+  }
+}
 
 async function reload() {
   loading.value = true
@@ -311,6 +389,24 @@ async function toggleGroupCheck(group: AdminGroup) {
   }
   const ids = (accountsByGroup.get(group.id) ?? []).map((a) => a.id)
   accountSelection.set(group.id, turnOn ? new Set(ids) : new Set<number>())
+}
+
+// 分组全选/清空只作用于当前筛选可见的分组；未加载的分组用「删除记录 = 默认全选」表达。
+function selectAllGroups() {
+  for (const group of filteredGroups.value) {
+    const cached = accountsByGroup.get(group.id)
+    if (cached) {
+      accountSelection.set(group.id, new Set(cached.map((a) => a.id)))
+    } else {
+      accountSelection.delete(group.id)
+    }
+  }
+}
+
+function clearAllGroups() {
+  for (const group of filteredGroups.value) {
+    accountSelection.set(group.id, new Set<number>())
+  }
 }
 
 function toggleAccount(accountId: number) {

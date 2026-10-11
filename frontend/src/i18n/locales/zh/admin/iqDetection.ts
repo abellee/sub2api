@@ -16,5 +16,9 @@ export default {
     selectedCount: '已选 {selected}/{total}',
     selectAll: '全选',
     clearAll: '清空',
+    selectScope: '选择分组与账号',
+    selectorTitle: '选择分组与账号',
+    editSelection: '修改选择',
+    selectedSummary: '已选 {groups} 个分组 · {accounts} 个账号',
   },
 }
