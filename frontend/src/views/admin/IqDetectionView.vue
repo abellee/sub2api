@@ -49,7 +49,7 @@
       </div>
 
       <div class="grid grid-cols-1 gap-4 lg:grid-cols-[280px,1fr]">
-        <!-- 左侧：分组列表 -->
+        <!-- 左侧：分组列表（checkbox = 该分组账号全选开关，点击行 = 聚焦查看） -->
         <aside
           class="flex max-h-[560px] flex-col overflow-hidden rounded-lg border border-gray-200 dark:border-dark-700"
           data-testid="group-list"
@@ -70,17 +70,25 @@
           </div>
           <ul v-else class="flex-1 divide-y divide-gray-100 overflow-y-auto dark:divide-dark-700/60">
             <li v-for="group in groups" :key="group.id">
-              <button
-                type="button"
-                class="flex w-full items-center justify-between gap-2 px-4 py-2.5 text-left text-sm transition-colors"
+              <div
+                class="flex w-full cursor-pointer items-center gap-2 px-3 py-2.5 text-left text-sm transition-colors"
                 :class="
                   group.id === selectedGroupId
-                    ? 'bg-primary-50 font-medium text-primary-700 dark:bg-primary-900/30 dark:text-primary-300'
+                    ? 'bg-primary-50 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300'
                     : 'text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-dark-800'
                 "
                 :data-testid="`group-item-${group.id}`"
-                @click="selectGroup(group.id)"
+                @click="focusGroup(group.id)"
               >
+                <input
+                  type="checkbox"
+                  class="h-4 w-4 flex-shrink-0 cursor-pointer rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                  :checked="groupCheckState(group) === true"
+                  :indeterminate="groupCheckState(group) === 'partial'"
+                  :data-testid="`group-checkbox-${group.id}`"
+                  @click.stop
+                  @change="toggleGroupCheck(group)"
+                />
                 <span class="min-w-0 flex-1 truncate">
                   {{ group.name }}
                   <span
@@ -96,7 +104,7 @@
                     · {{ group.account_count }}
                   </template>
                 </span>
-              </button>
+              </div>
             </li>
           </ul>
         </aside>
@@ -113,12 +121,12 @@
               <template v-if="selectedGroup">
                 {{ selectedGroup.name }}
                 <span class="ml-2 text-xs font-normal text-gray-500 dark:text-gray-400">
-                  {{ t('admin.iqDetection.selectedCount', { selected: selectedAccountIds.size, total: accounts.length }) }}
+                  {{ t('admin.iqDetection.selectedCount', { selected: selectedAccountIds.size, total: focusedAccounts.length }) }}
                 </span>
               </template>
               <template v-else>{{ t('admin.iqDetection.accounts') }}</template>
             </div>
-            <div v-if="selectedGroupId && accounts.length > 0" class="flex flex-shrink-0 items-center gap-2">
+            <div v-if="selectedGroupId && focusedAccounts.length > 0" class="flex flex-shrink-0 items-center gap-2">
               <button type="button" class="btn btn-secondary btn-sm" :disabled="accountsLoading" @click="selectAllAccounts">
                 {{ t('admin.iqDetection.selectAll') }}
               </button>
@@ -139,12 +147,12 @@
             {{ t('common.loading') }}
           </div>
 
-          <div v-else-if="accounts.length === 0" class="flex flex-1 items-center justify-center px-6 py-12 text-sm text-gray-500">
+          <div v-else-if="focusedAccounts.length === 0" class="flex flex-1 items-center justify-center px-6 py-12 text-sm text-gray-500">
             {{ t('admin.iqDetection.noAccounts') }}
           </div>
 
           <ul v-else class="flex-1 divide-y divide-gray-100 overflow-y-auto dark:divide-dark-700/60">
-            <li v-for="account in accounts" :key="account.id">
+            <li v-for="account in focusedAccounts" :key="account.id">
               <label
                 class="flex cursor-pointer items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-gray-50 dark:hover:bg-dark-800"
                 :data-testid="`account-item-${account.id}`"
@@ -191,15 +199,18 @@ const groups = ref<AdminGroup[]>([])
 const groupsLoading = ref(false)
 
 const selectedGroupId = ref<number | null>(null)
-const accounts = ref<AccountListItem[]>([])
 const accountsLoading = ref(false)
 
-// 每个分组的账号勾选独立保存，切回时恢复；新分组默认全选。
-const selectionByGroup = reactive(new Map<number, Set<number>>())
+// 分组账号列表与勾选状态按分组缓存；新拉取的分组默认全部选中。
+const accountsByGroup = reactive(new Map<number, AccountListItem[]>())
+const accountSelection = reactive(new Map<number, Set<number>>())
 
 const selectedGroup = computed(() => groups.value.find((g) => g.id === selectedGroupId.value) || null)
+const focusedAccounts = computed<AccountListItem[]>(() =>
+  selectedGroupId.value == null ? [] : accountsByGroup.get(selectedGroupId.value) ?? []
+)
 const selectedAccountIds = computed<Set<number>>(
-  () => selectionByGroup.get(selectedGroupId.value ?? -1) ?? new Set()
+  () => accountSelection.get(selectedGroupId.value ?? -1) ?? new Set()
 )
 
 async function reload() {
@@ -227,24 +238,24 @@ async function loadGroups() {
   }
 }
 
-async function selectGroup(groupId: number) {
-  if (selectedGroupId.value === groupId) return
-  selectedGroupId.value = groupId
-  await loadAccounts(groupId)
+async function fetchAccounts(groupId: number): Promise<AccountListItem[]> {
+  const resp = await adminAPI.accounts.list(1, 200, { group: String(groupId) })
+  const items = resp?.items || []
+  accountsByGroup.set(groupId, items)
+  if (!accountSelection.has(groupId)) {
+    // 默认全部选中
+    accountSelection.set(groupId, new Set(items.map((a) => a.id)))
+  }
+  return items
 }
 
-async function loadAccounts(groupId: number) {
+async function focusGroup(groupId: number) {
+  if (selectedGroupId.value === groupId) return
+  selectedGroupId.value = groupId
+  if (accountsByGroup.has(groupId)) return
   accountsLoading.value = true
-  accounts.value = []
   try {
-    const resp = await adminAPI.accounts.list(1, 200, { group: String(groupId) })
-    // 用户可能快速切换分组，只接受仍是当前分组的响应。
-    if (selectedGroupId.value !== groupId) return
-    accounts.value = resp?.items || []
-    if (!selectionByGroup.has(groupId)) {
-      // 默认全部选中
-      selectionByGroup.set(groupId, new Set(accounts.value.map((a) => a.id)))
-    }
+    await fetchAccounts(groupId)
   } catch (error) {
     if (selectedGroupId.value === groupId) {
       appStore.showError(extractApiErrorMessage(error, t('common.error')))
@@ -256,25 +267,50 @@ async function loadAccounts(groupId: number) {
   }
 }
 
+// 分组 checkbox 三态：true = 账号全选；false = 全不选；'partial' = 部分选中。
+// 从未加载过的分组默认视为全选。
+function groupCheckState(group: AdminGroup): boolean | 'partial' {
+  const set = accountSelection.get(group.id)
+  if (!set) return true
+  const total = accountsByGroup.get(group.id)?.length ?? group.account_count ?? 0
+  if (set.size === 0) return false
+  if (total > 0 && set.size >= total) return true
+  return 'partial'
+}
+
+async function toggleGroupCheck(group: AdminGroup) {
+  const turnOn = groupCheckState(group) !== true
+  if (!accountsByGroup.has(group.id)) {
+    try {
+      await fetchAccounts(group.id)
+    } catch (error) {
+      appStore.showError(extractApiErrorMessage(error, t('common.error')))
+      return
+    }
+  }
+  const ids = (accountsByGroup.get(group.id) ?? []).map((a) => a.id)
+  accountSelection.set(group.id, turnOn ? new Set(ids) : new Set<number>())
+}
+
 function toggleAccount(accountId: number) {
   if (selectedGroupId.value == null) return
-  const set = selectionByGroup.get(selectedGroupId.value) ?? new Set<number>()
+  const set = accountSelection.get(selectedGroupId.value) ?? new Set<number>()
   if (set.has(accountId)) {
     set.delete(accountId)
   } else {
     set.add(accountId)
   }
-  selectionByGroup.set(selectedGroupId.value, set)
+  accountSelection.set(selectedGroupId.value, set)
 }
 
 function selectAllAccounts() {
   if (selectedGroupId.value == null) return
-  selectionByGroup.set(selectedGroupId.value, new Set(accounts.value.map((a) => a.id)))
+  accountSelection.set(selectedGroupId.value, new Set(focusedAccounts.value.map((a) => a.id)))
 }
 
 function clearAccountSelection() {
   if (selectedGroupId.value == null) return
-  selectionByGroup.set(selectedGroupId.value, new Set<number>())
+  accountSelection.set(selectedGroupId.value, new Set<number>())
 }
 
 onMounted(reload)
