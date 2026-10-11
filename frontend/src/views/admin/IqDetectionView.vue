@@ -123,6 +123,115 @@
           />
         </div>
       </div>
+
+      <!-- 账号管理：分页加载全部账号，逐个保存 API 地址与 API Key 到 iqdetectd -->
+      <section
+        class="overflow-hidden rounded-lg border border-gray-200 dark:border-dark-700"
+        data-testid="account-management"
+      >
+        <div
+          class="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 px-4 py-3 dark:border-dark-700"
+        >
+          <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
+            {{ t('admin.iqDetection.accountManagement') }}
+          </h3>
+          <select
+            v-model="mgGroupFilter"
+            class="input h-8 w-56 py-0 text-xs"
+            data-testid="management-group-filter"
+            @change="onManagementGroupChange"
+          >
+            <option value="">{{ t('admin.iqDetection.allGroups') }}</option>
+            <option v-for="group in groups" :key="group.id" :value="String(group.id)">
+              {{ group.name }}
+            </option>
+          </select>
+        </div>
+
+        <div v-if="mgLoading" class="flex justify-center py-10 text-sm text-gray-500">
+          {{ t('common.loading') }}
+        </div>
+        <template v-else>
+          <div
+            v-if="mgAccounts.length === 0"
+            class="py-10 text-center text-sm text-gray-500"
+            data-testid="management-empty"
+          >
+            {{ t('admin.iqDetection.noAccounts') }}
+          </div>
+          <ul v-else class="divide-y divide-gray-100 dark:divide-dark-700/60">
+            <li
+              v-for="account in mgAccounts"
+              :key="account.id"
+              class="flex flex-wrap items-center gap-3 px-4 py-3"
+              :data-testid="`management-account-${account.id}`"
+            >
+              <div class="min-w-0 flex-1">
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="truncate text-sm text-gray-800 dark:text-gray-200">
+                    {{ account.name }}
+                  </span>
+                  <span class="text-xs text-gray-400">
+                    {{ account.platform }}<template v-if="account.type"> · {{ account.type }}</template>
+                  </span>
+                  <span
+                    v-if="savedCredentials[account.id]?.has_api_key"
+                    class="rounded-full bg-green-50 px-2 py-0.5 text-xs text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                  >
+                    {{ t('admin.iqDetection.savedBadge') }}
+                  </span>
+                </div>
+                <div
+                  v-if="managementApiUrl(account)"
+                  class="truncate font-mono text-xs text-gray-400 dark:text-gray-500"
+                  :title="managementApiUrl(account)"
+                >
+                  {{ managementApiUrl(account) }}
+                </div>
+              </div>
+              <div class="flex items-center gap-2">
+                <input
+                  v-model="apiKeyInputs[account.id]"
+                  type="password"
+                  autocomplete="new-password"
+                  class="input h-8 w-56 py-0 text-xs"
+                  :placeholder="t('admin.iqDetection.apiKeyPlaceholder')"
+                  :data-testid="`api-key-input-${account.id}`"
+                />
+                <button
+                  type="button"
+                  class="btn btn-primary btn-sm"
+                  :disabled="mgSaving.has(account.id)"
+                  :data-testid="`save-credential-${account.id}`"
+                  @click="saveAccountCredential(account)"
+                >
+                  {{ t('admin.iqDetection.save') }}
+                </button>
+              </div>
+            </li>
+          </ul>
+          <div
+            class="flex items-center justify-between border-t border-gray-200 px-4 py-2 text-xs text-gray-500 dark:border-dark-700 dark:text-gray-400"
+          >
+            <span>
+              {{ t('admin.iqDetection.pageInfo', { page: mgPage, pages: mgPages, total: mgTotal }) }}
+            </span>
+            <div class="flex gap-2">
+              <button type="button" class="btn btn-secondary btn-sm" :disabled="mgPage <= 1" @click="mgPage--; void loadManagementAccounts()">
+                {{ t('admin.iqDetection.prevPage') }}
+              </button>
+              <button
+                type="button"
+                class="btn btn-secondary btn-sm"
+                :disabled="mgPage >= mgPages"
+                @click="mgPage++; void loadManagementAccounts()"
+              >
+                {{ t('admin.iqDetection.nextPage') }}
+              </button>
+            </div>
+          </div>
+        </template>
+      </section>
     </div>
 
     <!-- 分组/账号选择弹窗 -->
@@ -304,7 +413,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { adminAPI, type IQDetectAgentHealth } from '@/api/admin'
+import { adminAPI, type IQDetectAgentHealth, type SavedAccountCredential } from '@/api/admin'
 import type { AdminGroup, AccountListItem } from '@/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
@@ -341,6 +450,75 @@ const platformFilter = ref('')
 // 自定义探针内容（鹈鹕测试 / 糖果测试），后续随检测请求一起提交。
 const pelicanPrompt = ref('')
 const candyPrompt = ref('')
+
+// ---- 账号管理 ----
+const mgAccounts = ref<AccountListItem[]>([])
+const mgPage = ref(1)
+const mgPageSize = 20
+const mgTotal = ref(0)
+const mgGroupFilter = ref('')
+const mgLoading = ref(false)
+const mgSaving = reactive(new Set<number>())
+const apiKeyInputs = reactive<Record<number, string>>({})
+const savedCredentials = reactive<Record<number, SavedAccountCredential>>({})
+
+const mgPages = computed(() => Math.max(1, Math.ceil(mgTotal.value / mgPageSize)))
+
+async function loadSavedCredentials() {
+  try {
+    const resp = await adminAPI.iqDetection.listAccountCredentials()
+    for (const item of resp.items) {
+      savedCredentials[item.account_id] = item
+    }
+  } catch {
+    // sidecar 未启动时静默降级，账号列表仍可浏览
+  }
+}
+
+async function loadManagementAccounts() {
+  mgLoading.value = true
+  try {
+    const filters = mgGroupFilter.value ? { group: mgGroupFilter.value } : undefined
+    const resp = await adminAPI.accounts.list(mgPage.value, mgPageSize, filters)
+    mgAccounts.value = resp?.items || []
+    mgTotal.value = resp?.total || 0
+  } catch (error) {
+    mgAccounts.value = []
+    mgTotal.value = 0
+    appStore.showError(extractApiErrorMessage(error, t('common.error')))
+  } finally {
+    mgLoading.value = false
+  }
+}
+
+function onManagementGroupChange() {
+  mgPage.value = 1
+  void loadManagementAccounts()
+}
+
+// 保存优先使用 sidecar 已存的地址，其次取账号当前配置的 base_url。
+function managementApiUrl(account: AccountListItem): string {
+  return savedCredentials[account.id]?.api_url || accountBaseUrl(account)
+}
+
+async function saveAccountCredential(account: AccountListItem) {
+  if (mgSaving.has(account.id)) return
+  mgSaving.add(account.id)
+  try {
+    const saved = await adminAPI.iqDetection.saveAccountCredential({
+      account_id: account.id,
+      api_url: accountBaseUrl(account),
+      api_key: (apiKeyInputs[account.id] || '').trim() || undefined
+    })
+    savedCredentials[account.id] = saved
+    delete apiKeyInputs[account.id]
+    appStore.showSuccess(t('admin.iqDetection.saved'))
+  } catch (error) {
+    appStore.showError(extractApiErrorMessage(error, t('common.error')))
+  } finally {
+    mgSaving.delete(account.id)
+  }
+}
 
 // 分组账号列表与勾选状态按分组缓存；新拉取的分组默认全部选中。
 const accountsByGroup = reactive(new Map<number, AccountListItem[]>())
@@ -528,5 +706,9 @@ function clearAccountSelection() {
   accountSelection.set(selectedGroupId.value, new Set<number>())
 }
 
-onMounted(reload)
+onMounted(() => {
+  void reload()
+  void loadSavedCredentials()
+  void loadManagementAccounts()
+})
 </script>
