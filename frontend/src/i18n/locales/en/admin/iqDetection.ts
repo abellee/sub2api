@@ -1,12 +1,19 @@
 export default {
   iqDetection: {
     title: 'IQ Detection',
-    description: 'Evaluate model intelligence with built-in reasoning probes, powered by the dedicated iqdetectd sidecar.',
+    description: 'Pick groups and accounts to evaluate model intelligence with built-in reasoning probes, powered by the dedicated iqdetectd sidecar.',
     serviceUp: 'iqdetectd is running',
     serviceDown: 'IQ detection service is not running. Please start iqdetectd separately (default http://127.0.0.1:18102).',
     version: 'Version',
     baseUrl: 'Service URL',
-    comingSoon: 'Detection page under construction',
-    comingSoonHint: 'Model management, detection runs and IQ rankings are coming soon.',
+    groups: 'Groups',
+    accounts: 'Accounts',
+    noGroups: 'No groups yet',
+    noAccounts: 'No accounts in this group',
+    selectGroupHint: 'Select a group on the left to see its accounts',
+    inactive: 'inactive',
+    selectedCount: '{selected}/{total} selected',
+    selectAll: 'Select all',
+    clearAll: 'Clear',
   },
 }
