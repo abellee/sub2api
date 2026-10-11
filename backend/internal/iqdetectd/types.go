@@ -159,6 +159,7 @@ type DetectionModelSettings struct {
 	Total           int              `json:"total"`
 	PelicanPrompt   string           `json:"pelican_prompt"`
 	CandyPrompt     string           `json:"candy_prompt"`
+	CandyAnswer     string           `json:"candy_answer"`
 	ReasoningEffort string           `json:"reasoning_effort"`
 	Temperature     *float64         `json:"temperature,omitempty"`
 }
@@ -168,6 +169,7 @@ type PutDetectionModelsInput struct {
 	Names           []string `json:"names"`
 	PelicanPrompt   string   `json:"pelican_prompt"`
 	CandyPrompt     string   `json:"candy_prompt"`
+	CandyAnswer     string   `json:"candy_answer"`
 	ReasoningEffort string   `json:"reasoning_effort"`
 	Temperature     *float64 `json:"temperature,omitempty"`
 }
@@ -176,22 +178,25 @@ type PutDetectionModelsInput struct {
 type DetectionPrompts struct {
 	PelicanPrompt   string   `json:"pelican_prompt"`
 	CandyPrompt     string   `json:"candy_prompt"`
+	CandyAnswer     string   `json:"candy_answer"`
 	ReasoningEffort string   `json:"reasoning_effort"`
 	Temperature     *float64 `json:"temperature,omitempty"`
 }
 
 // TestResult is one detection outcome pair (pelican + candy) for an account.
+// CandyCorrect is nil when no correct answer is configured.
 type TestResult struct {
 	ID               int64     `json:"id"`
 	AccountID        int64     `json:"account_id"`
 	AccountName      string    `json:"account_name"`
 	Model            string    `json:"model"`
-	PelicanPath      string    `json:"pelican_path,omitempty"`
+	PelicanHTML      string    `json:"pelican_html,omitempty"`
 	PelicanError     string    `json:"pelican_error,omitempty"`
 	PelicanLatencyMS int64     `json:"pelican_latency_ms,omitempty"`
 	CandyAnswer      string    `json:"candy_answer,omitempty"`
 	CandyError       string    `json:"candy_error,omitempty"`
 	CandyLatencyMS   int64     `json:"candy_latency_ms,omitempty"`
+	CandyCorrect     *bool     `json:"candy_correct,omitempty"`
 	CreatedAt        time.Time `json:"created_at"`
 }
 

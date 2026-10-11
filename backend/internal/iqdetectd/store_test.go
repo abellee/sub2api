@@ -233,21 +233,18 @@ func TestStoreDetectionModels(t *testing.T) {
 		t.Errorf("saved settings = %+v", prompts)
 	}
 
-	// test_results 保留策略：每账号最多 keep 条
+	// test_results 保留策略：每账号最多 keep 条；candy 正确性判定
 	for i := 0; i < 65; i++ {
+		correct := i%2 == 0
 		if _, err := store.InsertTestResult(ctx, TestResult{
 			AccountID: 1, AccountName: "acc", Model: "m",
-			PelicanPath: "results/1/x.html", CandyAnswer: "ok",
+			PelicanHTML: "<html>x</html>", CandyAnswer: "ok", CandyCorrect: &correct,
 		}); err != nil {
 			t.Fatalf("insert result: %v", err)
 		}
 	}
-	removed, err := store.TrimTestResults(ctx, 1, 60)
-	if err != nil {
+	if err := store.TrimTestResults(ctx, 1, 60); err != nil {
 		t.Fatalf("trim: %v", err)
-	}
-	if len(removed) != 5 {
-		t.Errorf("removed = %d, want 5", len(removed))
 	}
 	var count int
 	if err := store.db.QueryRow(`SELECT COUNT(1) FROM test_results WHERE account_id = 1`).Scan(&count); err != nil {

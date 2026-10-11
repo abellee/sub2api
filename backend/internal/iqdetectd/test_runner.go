@@ -9,8 +9,7 @@ import (
 	"log/slog"
 	"math/rand"
 	"net/http"
-	"os"
-	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -19,6 +18,11 @@ import (
 
 // testResultsRetention is how many result pairs are kept per account.
 const testResultsRetention = 60
+
+// maxStoredHTML caps the pelican HTML stored per result row.
+const maxStoredHTML = 2 << 20
+
+var finalAnswerPattern = regexp.MustCompile(`(?is)<final_answer>(.*?)</final_answer>`)
 
 type testJob struct {
 	model       string
@@ -32,28 +36,26 @@ type testJob struct {
 // random account (from the saved selection) that exposes the model, calls the
 // account's own upstream concurrently with the two configured probe prompts
 // and stores the result pair. Per account only the newest
-// testResultsRetention pairs — and their pelican HTML files — are kept.
+// testResultsRetention pairs are kept.
 type TestRunner struct {
-	Store      *Store
-	ResultsDir string
-	Timeout    time.Duration
-	Client     *http.Client
-	Logger     *slog.Logger
+	Store   *Store
+	Timeout time.Duration
+	Client  *http.Client
+	Logger  *slog.Logger
 
 	mu      sync.Mutex
 	running bool
 }
 
-func NewTestRunner(store *Store, resultsDir string, timeout time.Duration, logger *slog.Logger) *TestRunner {
+func NewTestRunner(store *Store, timeout time.Duration, logger *slog.Logger) *TestRunner {
 	if timeout <= 0 {
 		timeout = 60 * time.Second
 	}
 	return &TestRunner{
-		Store:      store,
-		ResultsDir: resultsDir,
-		Timeout:    timeout,
-		Client:     &http.Client{Timeout: timeout},
-		Logger:     logger,
+		Store:   store,
+		Timeout: timeout,
+		Client:  &http.Client{Timeout: timeout},
+		Logger:  logger,
 	}
 }
 
@@ -156,11 +158,7 @@ func (r *TestRunner) execute(ctx context.Context, jobs []testJob, prompts *Detec
 			logger.Error("iqdetectd: persist test result", "account", job.accountID, "model", job.model, "err", err)
 			continue
 		}
-		if stale, err := r.Store.TrimTestResults(ctx, job.accountID, testResultsRetention); err == nil {
-			for _, path := range stale {
-				_ = os.Remove(path)
-			}
-		} else {
+		if err := r.Store.TrimTestResults(ctx, job.accountID, testResultsRetention); err != nil {
 			logger.Error("iqdetectd: trim test results", "account", job.accountID, "err", err)
 		}
 		logger.Info("iqdetectd: test pair finished", "account", job.accountID, "model", job.model,
@@ -168,8 +166,8 @@ func (r *TestRunner) execute(ctx context.Context, jobs []testJob, prompts *Detec
 	}
 }
 
-// runPair fires the two probe calls concurrently (pelican → HTML file,
-// candy → stored text) and returns one result pair.
+// runPair fires the two probe calls concurrently (pelican → HTML stored in
+// SQLite, candy → graded answer) and returns one result pair.
 func (r *TestRunner) runPair(ctx context.Context, job testJob, prompts *DetectionPrompts) *TestResult {
 	result := &TestResult{AccountID: job.accountID, AccountName: job.accountName, Model: job.model}
 	var wg sync.WaitGroup
@@ -186,12 +184,7 @@ func (r *TestRunner) runPair(ctx context.Context, job testJob, prompts *Detectio
 				result.PelicanError = err.Error()
 				return
 			}
-			path, err := r.saveHTML(job.accountID, answer)
-			if err != nil {
-				result.PelicanError = err.Error()
-				return
-			}
-			result.PelicanPath = path
+			result.PelicanHTML = truncate(answer, maxStoredHTML)
 		}()
 	}
 
@@ -208,11 +201,41 @@ func (r *TestRunner) runPair(ctx context.Context, job testJob, prompts *Detectio
 				return
 			}
 			result.CandyAnswer = truncate(answer, 10000)
+			// 抽取 <final_answer>…</final_answer> 与配置的正确答案比对
+			if expected := strings.TrimSpace(prompts.CandyAnswer); expected != "" {
+				correct := gradeCandyAnswer(answer, expected)
+				result.CandyCorrect = &correct
+			}
 		}()
 	}
 
 	wg.Wait()
 	return result
+}
+
+// extractFinalAnswer pulls the value between <final_answer> and
+// </final_answer> out of a candy answer; empty when the tag is missing.
+func extractFinalAnswer(answer string) string {
+	m := finalAnswerPattern.FindStringSubmatch(answer)
+	if len(m) >= 2 {
+		return strings.TrimSpace(m[1])
+	}
+	return ""
+}
+
+// gradeCandyAnswer compares the extracted final answer with the configured
+// expected answer (exact or numeric equality).
+func gradeCandyAnswer(answer, expected string) bool {
+	got := extractFinalAnswer(answer)
+	if got == "" {
+		return false
+	}
+	if strings.EqualFold(got, expected) {
+		return true
+	}
+	gotN, gotErr := strconv.ParseFloat(got, 64)
+	wantN, wantErr := strconv.ParseFloat(expected, 64)
+	return gotErr == nil && wantErr == nil && gotN == wantN
 }
 
 // callUpstream sends one chat completion to the account's own upstream using
@@ -267,19 +290,4 @@ func (r *TestRunner) callUpstream(ctx context.Context, apiURL, apiKey, model, pr
 		return "", time.Since(start), fmt.Errorf("upstream returned no choices")
 	}
 	return strings.TrimSpace(decoded.Choices[0].Message.Content), time.Since(start), nil
-}
-
-// saveHTML writes the pelican answer as an HTML file under
-// <ResultsDir>/<account_id>/ and returns the stored path.
-func (r *TestRunner) saveHTML(accountID int64, html string) (string, error) {
-	dir := filepath.Join(r.ResultsDir, strconv.FormatInt(accountID, 10))
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", err
-	}
-	name := fmt.Sprintf("%s.html", time.Now().UTC().Format("20060102-150405.000000000"))
-	path := filepath.Join(dir, name)
-	if err := os.WriteFile(path, []byte(html), 0o644); err != nil {
-		return "", err
-	}
-	return path, nil
 }
