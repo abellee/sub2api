@@ -20,7 +20,7 @@ import (
 
 	"lotteryd/internal/app"
 	"lotteryd/internal/lottery"
-	"lotteryd/internal/store"
+	"lotteryd/internal/store/storetest"
 	"lotteryd/internal/sub2api"
 )
 
@@ -138,9 +138,7 @@ type testEnv struct {
 
 func newTestEnv(t *testing.T) *testEnv {
 	fake := newFakeSub2API(t)
-	st, err := store.Open(":memory:")
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = st.Close() })
+	st := storetest.Open(t)
 
 	client := sub2api.NewClient(fake.srv.URL, "test-admin-key")
 	ap := app.New(st, client, app.Config{BackfillDays: 35})

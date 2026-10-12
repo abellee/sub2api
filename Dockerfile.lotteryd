@@ -71,4 +71,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
     CMD wget -q -T 5 -O /dev/null http://127.0.0.1:18100/health || exit 1
 
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
-CMD ["-listen", "0.0.0.0:18100", "-sqlite-path", "/app/data/lottery/lottery.db", "-sub2api-url", "http://127.0.0.1:8080", "-auth-mode", "introspect"]
+# Storage is PostgreSQL: pass the DSN via -pg-dsn or the LOTTERYD_PG_DSN
+# environment variable. When switching an existing SQLite deployment over,
+# run once first:  lotteryd -migrate-from-sqlite /app/data/lottery/lottery.db
+CMD ["-listen", "0.0.0.0:18100", "-sub2api-url", "http://127.0.0.1:8080", "-auth-mode", "introspect"]

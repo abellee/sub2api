@@ -10,13 +10,13 @@ import (
 
 const notifySchemaSQL = `
 CREATE TABLE IF NOT EXISTS activity_notify (
-	activity_id INTEGER PRIMARY KEY,
-	enabled INTEGER NOT NULL,
+	activity_id BIGINT PRIMARY KEY,
+	enabled BOOLEAN NOT NULL,
 	stages TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS activity_push_log (
-	activity_id INTEGER NOT NULL,
+	activity_id BIGINT NOT NULL,
 	stage TEXT NOT NULL,
 	notified INTEGER NOT NULL,
 	sent_at TEXT NOT NULL,
@@ -24,10 +24,10 @@ CREATE TABLE IF NOT EXISTS activity_push_log (
 );
 
 CREATE TABLE IF NOT EXISTS task_reward_push (
-	reward_id INTEGER PRIMARY KEY,
-	task_id INTEGER NOT NULL,
-	user_id INTEGER NOT NULL,
-	notified INTEGER NOT NULL,
+	reward_id BIGINT PRIMARY KEY,
+	task_id BIGINT NOT NULL,
+	user_id BIGINT NOT NULL,
+	notified BOOLEAN NOT NULL,
 	sent_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_task_reward_push_task ON task_reward_push(task_id, notified);
@@ -37,29 +37,29 @@ func (s *Store) migrateNotify() error {
 	if _, err := s.db.Exec(notifySchemaSQL); err != nil {
 		return err
 	}
-	return s.ensureColumn("activity_notify", "stages", "TEXT NOT NULL DEFAULT ''")
+	return nil
 }
 
 // SetActivityNotify 保存勾选的通知阶段。空列表表示不发送。
 func (s *Store) SetActivityNotify(activityID int64, stages []string) error {
 	normalized := lottery.NormalizeNotifyStages(stages)
-	flag := 0
+	enabled := false
 	if len(normalized) > 0 {
-		flag = 1
+		enabled = true
 	}
 	_, err := s.db.Exec(`
-		INSERT INTO activity_notify(activity_id, enabled, stages) VALUES(?, ?, ?)
+		INSERT INTO activity_notify(activity_id, enabled, stages) VALUES($1, $2, $3)
 		ON CONFLICT(activity_id) DO UPDATE SET enabled = excluded.enabled, stages = excluded.stages
-	`, activityID, flag, strings.Join(normalized, ","))
+	`, activityID, enabled, strings.Join(normalized, ","))
 	return err
 }
 
 // ActivityNotifyStages 返回这场活动勾选的阶段。
 // 旧数据只记了 enabled=1、没有阶段列表时，视为四个阶段都勾选。没有记录时为空。
 func (s *Store) ActivityNotifyStages(activityID int64) ([]string, error) {
-	var enabled int
+	var enabled bool
 	var raw string
-	err := s.db.QueryRow(`SELECT enabled, stages FROM activity_notify WHERE activity_id = ?`, activityID).Scan(&enabled, &raw)
+	err := s.db.QueryRow(`SELECT enabled, stages FROM activity_notify WHERE activity_id = $1`, activityID).Scan(&enabled, &raw)
 	if err == sql.ErrNoRows {
 		return []string{}, nil
 	}
@@ -79,7 +79,7 @@ func (s *Store) ListActivityNotifyStages() (map[int64][]string, error) {
 	out := map[int64][]string{}
 	for rows.Next() {
 		var id int64
-		var enabled int
+		var enabled bool
 		var raw string
 		if err := rows.Scan(&id, &enabled, &raw); err != nil {
 			return nil, err
@@ -89,7 +89,7 @@ func (s *Store) ListActivityNotifyStages() (map[int64][]string, error) {
 	return out, rows.Err()
 }
 
-func decodeNotifyStages(enabled int, raw string) []string {
+func decodeNotifyStages(enabled bool, raw string) []string {
 	parts := make([]string, 0)
 	for _, part := range strings.Split(raw, ",") {
 		if strings.TrimSpace(part) != "" {
@@ -99,7 +99,7 @@ func decodeNotifyStages(enabled int, raw string) []string {
 	if len(parts) > 0 {
 		return lottery.NormalizeNotifyStages(parts)
 	}
-	if enabled != 0 {
+	if enabled {
 		return lottery.AllNotifyStages()
 	}
 	return []string{}
@@ -131,7 +131,7 @@ func (s *Store) ListActivityPushLogs() (map[int64]map[string]int, error) {
 // MarkActivityPush 记录一个阶段已经通知过，避免调度器重复发送。
 func (s *Store) MarkActivityPush(activityID int64, stage string, notified int) error {
 	_, err := s.db.Exec(`
-		INSERT INTO activity_push_log(activity_id, stage, notified, sent_at) VALUES(?, ?, ?, ?)
+		INSERT INTO activity_push_log(activity_id, stage, notified, sent_at) VALUES($1, $2, $3, $4)
 		ON CONFLICT(activity_id, stage) DO UPDATE SET notified = excluded.notified, sent_at = excluded.sent_at
 	`, activityID, stage, notified, time.Now().UTC().Format(time.RFC3339))
 	return err
@@ -172,20 +172,16 @@ func (s *Store) ListUnnotifiedDoneTaskRewards() ([]TaskRewardPush, error) {
 
 // MarkTaskRewardNotified 记下这条奖励已经通知过。notified 为 false 表示对方当时没有开通知。
 func (s *Store) MarkTaskRewardNotified(rewardID, taskID, userID int64, notified bool) error {
-	flag := 0
-	if notified {
-		flag = 1
-	}
 	_, err := s.db.Exec(`
-		INSERT INTO task_reward_push(reward_id, task_id, user_id, notified, sent_at) VALUES(?, ?, ?, ?, ?)
+		INSERT INTO task_reward_push(reward_id, task_id, user_id, notified, sent_at) VALUES($1, $2, $3, $4, $5)
 		ON CONFLICT(reward_id) DO UPDATE SET notified = excluded.notified, sent_at = excluded.sent_at
-	`, rewardID, taskID, userID, flag, time.Now().UTC().Format(time.RFC3339))
+	`, rewardID, taskID, userID, notified, time.Now().UTC().Format(time.RFC3339))
 	return err
 }
 
 // CountNotifiedTaskUsers 统计每个任务实际通知到的不同用户数。
 func (s *Store) CountNotifiedTaskUsers() (map[int64]int64, error) {
-	rows, err := s.db.Query(`SELECT task_id, COUNT(DISTINCT user_id) FROM task_reward_push WHERE notified = 1 GROUP BY task_id`)
+	rows, err := s.db.Query(`SELECT task_id, COUNT(DISTINCT user_id) FROM task_reward_push WHERE notified = TRUE GROUP BY task_id`)
 	if err != nil {
 		return nil, err
 	}
@@ -213,9 +209,9 @@ func (s *Store) ListNotifiedTaskUsers(taskID int64) ([]NotifiedTaskUser, error) 
 		SELECT p.user_id, COALESCE(MAX(r.email), '')
 		FROM task_reward_push p
 		LEFT JOIN task_rewards r ON r.id = p.reward_id
-		WHERE p.task_id = ? AND p.notified = 1
+		WHERE p.task_id = $1 AND p.notified = TRUE
 		GROUP BY p.user_id
-		ORDER BY 2 COLLATE NOCASE, p.user_id
+		ORDER BY lower(COALESCE(MAX(r.email), '')), p.user_id
 	`, taskID)
 	if err != nil {
 		return nil, err

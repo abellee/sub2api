@@ -28,7 +28,7 @@ var (
 // CountParticipants returns the number of participants of an activity.
 func (s *Store) CountParticipants(activityID int64) (int64, error) {
 	var n int64
-	err := s.db.QueryRow(`SELECT COUNT(*) FROM participants WHERE activity_id = ?`, activityID).Scan(&n)
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM participants WHERE activity_id = $1`, activityID).Scan(&n)
 	return n, err
 }
 
@@ -36,7 +36,7 @@ func (s *Store) CountParticipants(activityID int64) (int64, error) {
 func (s *Store) HasParticipant(activityID, userID int64) (bool, error) {
 	var n int
 	err := s.db.QueryRow(
-		`SELECT COUNT(*) FROM participants WHERE activity_id = ? AND user_id = ?`, activityID, userID).Scan(&n)
+		`SELECT COUNT(*) FROM participants WHERE activity_id = $1 AND user_id = $2`, activityID, userID).Scan(&n)
 	return n > 0, err
 }
 
@@ -52,7 +52,7 @@ func (s *Store) AddParticipant(activityID, userID int64, email string, weight fl
 	if maxParticipants > 0 {
 		var n int64
 		if err := tx.QueryRow(
-			`SELECT COUNT(*) FROM participants WHERE activity_id = ?`, activityID).Scan(&n); err != nil {
+			`SELECT COUNT(*) FROM participants WHERE activity_id = $1`, activityID).Scan(&n); err != nil {
 			return err
 		}
 		if n >= maxParticipants {
@@ -60,7 +60,7 @@ func (s *Store) AddParticipant(activityID, userID int64, email string, weight fl
 		}
 	}
 	_, err = tx.Exec(
-		`INSERT INTO participants (activity_id, user_id, email, weight, joined_at) VALUES (?, ?, ?, ?, ?)`,
+		`INSERT INTO participants (activity_id, user_id, email, weight, joined_at) VALUES ($1, $2, $3, $4, $5)`,
 		activityID, userID, email, weight, fmtTime(time.Now().UTC()),
 	)
 	if err != nil {
@@ -72,7 +72,7 @@ func (s *Store) AddParticipant(activityID, userID int64, email string, weight fl
 // ListParticipants returns all participants of an activity.
 func (s *Store) ListParticipants(activityID int64) ([]lottery.Participant, error) {
 	rows, err := s.db.Query(
-		`SELECT id, activity_id, user_id, email, weight, joined_at FROM participants WHERE activity_id = ? ORDER BY id`,
+		`SELECT id, activity_id, user_id, email, weight, joined_at FROM participants WHERE activity_id = $1 ORDER BY id`,
 		activityID,
 	)
 	if err != nil {
@@ -96,7 +96,7 @@ func (s *Store) ListParticipants(activityID int64) ([]lottery.Participant, error
 func (s *Store) HasWinner(activityID, userID int64) (bool, error) {
 	var n int
 	err := s.db.QueryRow(
-		`SELECT COUNT(*) FROM winners WHERE activity_id = ? AND user_id = ?`, activityID, userID).Scan(&n)
+		`SELECT COUNT(*) FROM winners WHERE activity_id = $1 AND user_id = $2`, activityID, userID).Scan(&n)
 	return n > 0, err
 }
 
@@ -111,14 +111,14 @@ func (s *Store) InsertWinner(w *lottery.Winner) error {
 	defer func() { _ = tx.Rollback() }()
 	if _, err := tx.Exec(
 		`INSERT INTO winners (activity_id, user_id, email, prize_id, prize_name, prize_type, value, fulfillment, redeem_code, note, error, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
 		w.ActivityID, w.UserID, w.Email, w.PrizeID, w.PrizeName, w.PrizeType, w.Value,
 		w.Fulfillment, w.RedeemCode, w.Note, w.Error, fmtTime(w.CreatedAt),
 	); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(
-		`UPDATE prizes SET granted_count = granted_count + 1 WHERE id = ?`, w.PrizeID); err != nil {
+		`UPDATE prizes SET granted_count = granted_count + 1 WHERE id = $1`, w.PrizeID); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -127,7 +127,7 @@ func (s *Store) InsertWinner(w *lottery.Winner) error {
 // UpdateWinnerFulfillment updates the fulfillment state of a winner record.
 func (s *Store) UpdateWinnerFulfillment(id int64, fulfillment, redeemCode, note, errMsg string) error {
 	_, err := s.db.Exec(
-		`UPDATE winners SET fulfillment=?, redeem_code=?, note=?, error=? WHERE id=?`,
+		`UPDATE winners SET fulfillment=$1, redeem_code=$2, note=$3, error=$4 WHERE id=$5`,
 		fulfillment, redeemCode, note, errMsg, id,
 	)
 	return err
@@ -153,7 +153,7 @@ const winnerColumns = `id, activity_id, user_id, email, prize_id, prize_name, pr
 // ListWinnersByActivity returns all winner records of an activity (raw email).
 func (s *Store) ListWinnersByActivity(activityID int64) ([]lottery.Winner, error) {
 	rows, err := s.db.Query(
-		`SELECT `+winnerColumns+` FROM winners WHERE activity_id = ? ORDER BY id`, activityID)
+		`SELECT `+winnerColumns+` FROM winners WHERE activity_id = $1 ORDER BY id`, activityID)
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +170,7 @@ func (s *Store) ListWinnersByUser(userID int64) ([]lottery.Winner, error) {
 		        w.user_id, w.email, w.prize_id, w.prize_name, w.prize_type, w.value,
 		        w.fulfillment, w.redeem_code, w.note, w.error, w.created_at
 		 FROM winners w
-		 WHERE w.user_id = ? ORDER BY w.created_at DESC, w.id DESC`, userID)
+		 WHERE w.user_id = $1 ORDER BY w.created_at DESC, w.id DESC`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -192,7 +192,7 @@ func (s *Store) ListWinnersByUser(userID int64) ([]lottery.Winner, error) {
 // ListUnfulfilledWinners returns pending/failed winner records of an activity.
 func (s *Store) ListUnfulfilledWinners(activityID int64) ([]lottery.Winner, error) {
 	rows, err := s.db.Query(
-		`SELECT `+winnerColumns+` FROM winners WHERE activity_id = ? AND fulfillment IN ('pending','failed') ORDER BY id`,
+		`SELECT `+winnerColumns+` FROM winners WHERE activity_id = $1 AND fulfillment IN ('pending','failed') ORDER BY id`,
 		activityID,
 	)
 	if err != nil {
@@ -205,7 +205,7 @@ func (s *Store) ListUnfulfilledWinners(activityID int64) ([]lottery.Winner, erro
 // CountWinners returns the number of winners of an activity.
 func (s *Store) CountWinners(activityID int64) (int64, error) {
 	var n int64
-	err := s.db.QueryRow(`SELECT COUNT(*) FROM winners WHERE activity_id = ?`, activityID).Scan(&n)
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM winners WHERE activity_id = $1`, activityID).Scan(&n)
 	return n, err
 }
 
@@ -220,7 +220,7 @@ func (s *Store) UpsertDailyTokens(date string, tokens []lottery.DailyToken) erro
 	defer func() { _ = tx.Rollback() }()
 	for _, t := range tokens {
 		if _, err := tx.Exec(
-			`INSERT INTO user_daily_tokens (date, user_id, email, total_tokens) VALUES (?, ?, ?, ?)
+			`INSERT INTO user_daily_tokens (date, user_id, email, total_tokens) VALUES ($1, $2, $3, $4)
 			 ON CONFLICT(date, user_id) DO UPDATE SET email = excluded.email, total_tokens = excluded.total_tokens`,
 			date, t.UserID, t.Email, t.TotalTokens,
 		); err != nil {
@@ -234,7 +234,7 @@ func (s *Store) UpsertDailyTokens(date string, tokens []lottery.DailyToken) erro
 func (s *Store) DailyTokensWindow(start, end string) (map[int64]*lottery.UserUsage, error) {
 	rows, err := s.db.Query(
 		`SELECT date, user_id, email, total_tokens FROM user_daily_tokens
-		 WHERE date >= ? AND date <= ? ORDER BY date ASC`, start, end)
+		 WHERE date >= $1 AND date <= $2 ORDER BY date ASC`, start, end)
 	if err != nil {
 		return nil, err
 	}
@@ -265,7 +265,7 @@ func (s *Store) DailyTokensWindow(start, end string) (map[int64]*lottery.UserUsa
 // GetState returns a state value ("" when absent).
 func (s *Store) GetState(key string) (string, error) {
 	var v string
-	err := s.db.QueryRow(`SELECT value FROM sync_state WHERE key = ?`, key).Scan(&v)
+	err := s.db.QueryRow(`SELECT value FROM sync_state WHERE key = $1`, key).Scan(&v)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}
@@ -275,7 +275,7 @@ func (s *Store) GetState(key string) (string, error) {
 // SetState stores a state value.
 func (s *Store) SetState(key, value string) error {
 	_, err := s.db.Exec(
-		`INSERT INTO sync_state (key, value) VALUES (?, ?)
+		`INSERT INTO sync_state (key, value) VALUES ($1, $2)
 		 ON CONFLICT(key) DO UPDATE SET value = excluded.value`, key, value)
 	return err
 }
@@ -285,7 +285,7 @@ func (s *Store) SetState(key, value string) error {
 // GetRegisteredAt 返回缓存的用户注册时间（未缓存时返回 nil, nil）。
 func (s *Store) GetRegisteredAt(userID int64) (*time.Time, error) {
 	var raw string
-	err := s.db.QueryRow(`SELECT registered_at FROM user_registered WHERE user_id = ?`, userID).Scan(&raw)
+	err := s.db.QueryRow(`SELECT registered_at FROM user_registered WHERE user_id = $1`, userID).Scan(&raw)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -302,7 +302,7 @@ func (s *Store) GetRegisteredAt(userID int64) (*time.Time, error) {
 // UpsertRegisteredAt 缓存用户注册时间（注册时间不可变，重复写入无害）。
 func (s *Store) UpsertRegisteredAt(userID int64, email string, t time.Time) error {
 	_, err := s.db.Exec(
-		`INSERT INTO user_registered (user_id, email, registered_at) VALUES (?, ?, ?)
+		`INSERT INTO user_registered (user_id, email, registered_at) VALUES ($1, $2, $3)
 		 ON CONFLICT(user_id) DO UPDATE SET email = excluded.email, registered_at = excluded.registered_at`,
 		userID, email, fmtTime(t))
 	return err
@@ -315,7 +315,7 @@ func (s *Store) HasUserParticipatedInConfig(configID, userID int64) (bool, error
 	var n int
 	err := s.db.QueryRow(
 		`SELECT COUNT(*) FROM participants p JOIN activities a ON p.activity_id = a.id
-		 WHERE a.daily_config_id = ? AND p.user_id = ?`, configID, userID).Scan(&n)
+		 WHERE a.daily_config_id = $1 AND p.user_id = $2`, configID, userID).Scan(&n)
 	return n > 0, err
 }
 
@@ -324,7 +324,7 @@ func (s *Store) HasUserWonInConfig(configID, userID int64) (bool, error) {
 	var n int
 	err := s.db.QueryRow(
 		`SELECT COUNT(*) FROM winners w JOIN activities a ON w.activity_id = a.id
-		 WHERE a.daily_config_id = ? AND w.user_id = ?`, configID, userID).Scan(&n)
+		 WHERE a.daily_config_id = $1 AND w.user_id = $2`, configID, userID).Scan(&n)
 	return n > 0, err
 }
 
@@ -346,24 +346,26 @@ func (s *Store) HasUserRecordInRepeatSet(kind, group string, configIDs []int64, 
 	if kind == "win" {
 		table = "winners"
 	}
-	args := make([]any, 0, 2+len(ids))
-	args = append(args, userID)
+	args := make([]any, 0, 1+len(ids))
 	clauses := make([]string, 0, 2)
 	if group != "" {
-		clauses = append(clauses, "a.repeat_group = ?")
 		args = append(args, group)
+		clauses = append(clauses, fmt.Sprintf("a.repeat_group = $%d", len(args)))
+	}
+	for _, id := range ids {
+		args = append(args, id)
 	}
 	if len(ids) > 0 {
 		placeholders := make([]string, len(ids))
-		for i, id := range ids {
-			placeholders[i] = "?"
-			args = append(args, id)
+		for i := range ids {
+			placeholders[i] = fmt.Sprintf("$%d", len(args)-len(ids)+i+1)
 		}
 		clauses = append(clauses, "a.daily_config_id IN ("+strings.Join(placeholders, ",")+")")
 	}
+	args = append(args, userID)
 	query := fmt.Sprintf(
-		`SELECT COUNT(*) FROM %s t JOIN activities a ON t.activity_id = a.id WHERE t.user_id = ? AND (%s)`,
-		table, strings.Join(clauses, " OR "))
+		`SELECT COUNT(*) FROM %s t JOIN activities a ON t.activity_id = a.id WHERE t.user_id = $%d AND (%s)`,
+		table, len(args), strings.Join(clauses, " OR "))
 	var n int
 	err := s.db.QueryRow(query, args...).Scan(&n)
 	return n > 0, err

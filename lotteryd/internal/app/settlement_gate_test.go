@@ -8,14 +8,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"lotteryd/internal/lottery"
-	"lotteryd/internal/store"
+	"lotteryd/internal/store/storetest"
 	"lotteryd/internal/sub2api"
 )
 
 func TestSettlementGateDrawsWithoutPaying(t *testing.T) {
-	st, err := store.Open(":memory:")
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = st.Close() })
+	st := storetest.Open(t)
 
 	ap := New(st, sub2api.NewClient("http://127.0.0.1:9", "k"), Config{DisableSettlement: true})
 	ctx := context.Background()

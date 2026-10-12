@@ -1,6 +1,6 @@
 // lotteryd is a standalone lottery sidecar for Sub2API, modeled after the
-// appcatalogd deployment pattern: an independent process with SQLite storage
-// that talks to the main service over HTTP APIs.
+// appcatalogd deployment pattern: an independent process with PostgreSQL
+// storage that talks to the main service over HTTP APIs.
 package main
 
 import (
@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"lotteryd/internal/app"
+	"lotteryd/internal/migrator"
 	"lotteryd/internal/push"
 	"lotteryd/internal/server"
 	"lotteryd/internal/store"
@@ -33,18 +34,19 @@ func envOr(key, fallback string) string {
 
 func main() {
 	var (
-		listen     = flag.String("listen", envOr("LOTTERYD_LISTEN", "127.0.0.1:18100"), "HTTP listen address")
-		sqlitePath = flag.String("sqlite-path", envOr("LOTTERYD_SQLITE_PATH", "data/lottery.db"), "SQLite database path")
-		sub2apiURL = flag.String("sub2api-url", envOr("LOTTERYD_SUB2API_URL", "http://127.0.0.1:8080"), "Sub2API base URL")
-		adminKey   = flag.String("admin-api-key", envOr("LOTTERYD_ADMIN_API_KEY", ""), "Sub2API admin API key (x-api-key)")
-		jwtSecret  = flag.String("jwt-secret", envOr("LOTTERYD_JWT_SECRET", ""), "Sub2API jwt.secret for local token validation (not required in introspect mode)")
-		authMode   = flag.String("auth-mode", envOr("LOTTERYD_AUTH_MODE", "local"), "Auth mode: local (shared jwt.secret) or introspect (verify via /auth/me, no secret needed)")
-		corsRaw    = flag.String("cors-origins", envOr("LOTTERYD_CORS_ORIGINS", ""), "Comma-separated allowed CORS origins (empty = same-origin only)")
-		syncEvery  = flag.Duration("sync-interval", envDuration("LOTTERYD_SYNC_INTERVAL", time.Hour), "Usage data sync interval")
-		drawEvery  = flag.Duration("draw-interval", envDuration("LOTTERYD_DRAW_INTERVAL", 30*time.Second), "Draw scheduler interval")
-		backfill   = flag.Int("backfill-days", 35, "Days of usage data to backfill when no watermark exists")
-		settlement = flag.String("settlement", envOr("LOTTERYD_SETTLEMENT", "auto"), "Settlement gate: auto (off for dev builds), on, or off")
-		showVer    = flag.Bool("version", false, "Show version information")
+		listen        = flag.String("listen", envOr("LOTTERYD_LISTEN", "127.0.0.1:18100"), "HTTP listen address")
+		pgDSN         = flag.String("pg-dsn", envOr("LOTTERYD_PG_DSN", "postgres://lottery:lottery@127.0.0.1:5432/lottery?sslmode=disable"), "PostgreSQL DSN")
+		migrateSQLite = flag.String("migrate-from-sqlite", envOr("LOTTERYD_MIGRATE_FROM_SQLITE", ""), "One-shot migration: copy data from the given SQLite file into PostgreSQL, then exit")
+		sub2apiURL    = flag.String("sub2api-url", envOr("LOTTERYD_SUB2API_URL", "http://127.0.0.1:8080"), "Sub2API base URL")
+		adminKey      = flag.String("admin-api-key", envOr("LOTTERYD_ADMIN_API_KEY", ""), "Sub2API admin API key (x-api-key)")
+		jwtSecret     = flag.String("jwt-secret", envOr("LOTTERYD_JWT_SECRET", ""), "Sub2API jwt.secret for local token validation (not required in introspect mode)")
+		authMode      = flag.String("auth-mode", envOr("LOTTERYD_AUTH_MODE", "local"), "Auth mode: local (shared jwt.secret) or introspect (verify via /auth/me, no secret needed)")
+		corsRaw       = flag.String("cors-origins", envOr("LOTTERYD_CORS_ORIGINS", ""), "Comma-separated allowed CORS origins (empty = same-origin only)")
+		syncEvery     = flag.Duration("sync-interval", envDuration("LOTTERYD_SYNC_INTERVAL", time.Hour), "Usage data sync interval")
+		drawEvery     = flag.Duration("draw-interval", envDuration("LOTTERYD_DRAW_INTERVAL", 30*time.Second), "Draw scheduler interval")
+		backfill      = flag.Int("backfill-days", 35, "Days of usage data to backfill when no watermark exists")
+		settlement    = flag.String("settlement", envOr("LOTTERYD_SETTLEMENT", "auto"), "Settlement gate: auto (off for dev builds), on, or off")
+		showVer       = flag.Bool("version", false, "Show version information")
 	)
 	flag.Parse()
 
@@ -55,14 +57,26 @@ func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 
+	// 一次性迁移模式：把旧 SQLite 库的数据整体搬进 PostgreSQL 后退出。
+	if strings.TrimSpace(*migrateSQLite) != "" {
+		if err := migrator.Run(*pgDSN, *migrateSQLite); err != nil {
+			logger.Error("migrate from sqlite", "err", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	if *authMode != "introspect" && *jwtSecret == "" {
 		logger.Error("jwt-secret is required in local auth mode (flag, LOTTERYD_JWT_SECRET, or -auth-mode=introspect)")
 		os.Exit(1)
 	}
 
-	st, err := store.Open(*sqlitePath)
+	if err := store.EnsureDatabase(*pgDSN); err != nil {
+		logger.Warn("ensure database", "err", err)
+	}
+	st, err := store.Open(*pgDSN)
 	if err != nil {
-		logger.Error("open sqlite", "err", err)
+		logger.Error("open postgres", "err", err)
 		os.Exit(1)
 	}
 	defer func() { _ = st.Close() }()
@@ -163,7 +177,7 @@ func main() {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	go func() {
-		logger.Info("lotteryd listening", "addr", *listen, "sqlite", *sqlitePath, "sub2api", *sub2apiURL)
+		logger.Info("lotteryd listening", "addr", *listen, "postgres", *pgDSN, "sub2api", *sub2apiURL)
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.Error("http server", "err", err)
 			stop()
