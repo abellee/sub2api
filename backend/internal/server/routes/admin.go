@@ -61,6 +61,8 @@ func RegisterAdminRoutes(
 
 		registerAppCatalogRoutes(admin, h)
 
+		registerIQDetectRoutes(admin, h)
+
 		// OpenAI OAuth
 		registerOpenAIOAuthRoutes(admin, h)
 
@@ -157,6 +159,26 @@ func registerAppCatalogRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		apps.POST("/fetch", h.Admin.AppCatalog.Fetch)
 		apps.PUT("/:id", h.Admin.AppCatalog.Update)
 		apps.DELETE("/:id", h.Admin.AppCatalog.Delete)
+	}
+}
+
+func registerIQDetectRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	if h.Admin == nil || h.Admin.IQDetect == nil {
+		return
+	}
+	iqd := admin.Group("/iq-detection")
+	{
+		iqd.GET("/agent/health", h.Admin.IQDetect.GetAgentHealth)
+		iqd.GET("/account-credentials", h.Admin.IQDetect.ListAccountCredentials)
+		iqd.PUT("/account-credentials", h.Admin.IQDetect.UpsertAccountCredential)
+		iqd.GET("/selection", h.Admin.IQDetect.GetSelection)
+		iqd.PUT("/selection", h.Admin.IQDetect.SaveSelection)
+		iqd.GET("/detection-models", h.Admin.IQDetect.GetDetectionModels)
+		iqd.PUT("/detection-models", h.Admin.IQDetect.ReplaceDetectionModels)
+		iqd.POST("/test-runs", h.Admin.IQDetect.TriggerTestRun)
+		iqd.GET("/test-results", h.Admin.IQDetect.ListTestResults)
+		iqd.GET("/test-results/:id/pelican", h.Admin.IQDetect.GetTestResultPelican)
+		iqd.PUT("/test-results/:id/review", h.Admin.IQDetect.UpdateTestResultReview)
 	}
 }
 

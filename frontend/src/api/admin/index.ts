@@ -38,6 +38,7 @@ import adminComplianceAPI from './compliance'
 import auditAPI from './audit'
 import pluginsAPI from './plugins'
 import appCatalogAPI from './appCatalog'
+import iqDetectionAPI from './iqDetection'
 
 /**
  * Unified admin API object for convenient access
@@ -77,7 +78,8 @@ export const adminAPI = {
   compliance: adminComplianceAPI,
   audit: auditAPI,
   plugins: pluginsAPI,
-  appCatalog: appCatalogAPI
+  appCatalog: appCatalogAPI,
+  iqDetection: iqDetectionAPI
 }
 
 export {
@@ -115,7 +117,8 @@ export {
   adminComplianceAPI,
   auditAPI,
   pluginsAPI,
-  appCatalogAPI
+  appCatalogAPI,
+  iqDetectionAPI
 }
 
 export default adminAPI
@@ -134,3 +137,12 @@ export type {
   PluginTestResult
 } from './plugins'
 export type { CatalogApp, CatalogAppDraft, AppCatalogAgentHealth } from './appCatalog'
+export type {
+  IQDetectAgentHealth,
+  SelectionAccount,
+  SelectionGroup,
+  DetectionSelection,
+  TestResultItem,
+  TestResultProbe,
+  TestResultVerdict
+} from './iqDetection'

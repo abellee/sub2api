@@ -55,6 +55,7 @@ services:
       - SIMPLE_MODE_KEY_RATE_LIMIT_ENABLED=${SIMPLE_MODE_KEY_RATE_LIMIT_ENABLED:-false}
       - UPDATE_GITHUB_TOKEN=${UPDATE_GITHUB_TOKEN:-}
       - APP_CATALOG_BASE_URL=${APP_CATALOG_BASE_URL:-http://appcatalogd:18099}
+      - IQ_DETECT_BASE_URL=${IQ_DETECT_BASE_URL:-http://iqdetectd:18102}
       - ALIPAY_MOBILE_PRECREATE_DEEP_LINK=${ALIPAY_MOBILE_PRECREATE_DEEP_LINK:-}
 
       # =======================================================================
@@ -232,6 +233,35 @@ services:
   # ===========================================================================
   # App Catalog Daemon
   # ===========================================================================
+  # ===========================================================================
+  # IQ Detect Daemon
+  # ===========================================================================
+  iqdetectd:
+    image: ${IQ_DETECT_IMAGE:-sub2api-iqdetectd:latest}
+    container_name: sub2api-iqdetectd
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    command:
+      - -listen
+      - 0.0.0.0:18102
+      - -sqlite-path
+      - /app/data/iqdetect/iqdetect.db
+      - -api-base-url
+      - ${IQ_DETECT_API_BASE_URL:-http://sub2api:8080}
+    environment:
+      - IQ_DETECT_API_KEY=${IQ_DETECT_API_KEY:-}
+    volumes:
+      - sub2api_data:/app/data
+    networks:
+      - sub2api-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://127.0.0.1:18102/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
   appcatalogd:
     image: ${APP_CATALOG_IMAGE:-weishaw/sub2api-appcatalogd:latest}
     container_name: sub2api-appcatalogd

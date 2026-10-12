@@ -195,6 +195,7 @@ export default {
     accounts: 'Accounts',
     plugins: 'Plugins',
     appCatalog: 'App Catalog',
+    iqDetection: 'IQ Detection',
     proxies: 'Proxies',
     redeemCodes: 'Redeem Codes',
     ops: 'Ops',

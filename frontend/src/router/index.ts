@@ -642,6 +642,18 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/iq-detection',
+    name: 'AdminIQDetection',
+    component: () => import('@/views/admin/IqDetectionView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'IQ Detection',
+      titleKey: 'admin.iqDetection.title',
+      descriptionKey: 'admin.iqDetection.description'
+    }
+  },
+  {
     path: '/admin/announcements',
     name: 'AdminAnnouncements',
     component: () => import('@/views/admin/AnnouncementsView.vue'),

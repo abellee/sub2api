@@ -160,6 +160,128 @@ function proxyAppCatalogDirect(target: string): Plugin {
   }
 }
 
+function mapIQDetectPath(pathname: string, method = 'GET'): string | null {
+  const verb = method.toUpperCase()
+  const prefix = '/api/v1/admin/iq-detection'
+  if (pathname !== prefix && !pathname.startsWith(`${prefix}/`)) {
+    return null
+  }
+  const rest = pathname.slice(prefix.length) || '/'
+  if (rest === '/agent/health') {
+    return verb === 'GET' || verb === 'HEAD' ? '/health' : null
+  }
+  if (rest === '/account-credentials') {
+    return verb === 'GET' || verb === 'HEAD' || verb === 'PUT' ? '/v1/account-credentials' : null
+  }
+  if (rest === '/selection') {
+    return verb === 'GET' || verb === 'HEAD' || verb === 'PUT' ? '/v1/selection' : null
+  }
+  if (rest === '/detection-models') {
+    return verb === 'GET' || verb === 'HEAD' || verb === 'PUT' ? '/v1/detection-models' : null
+  }
+  if (rest === '/test-runs') {
+    return verb === 'POST' ? '/v1/test-runs' : null
+  }
+  if (rest === '/test-results') {
+    return verb === 'GET' || verb === 'HEAD' ? '/v1/test-results' : null
+  }
+  if (/^\/test-results\/\d+\/pelican$/.test(rest)) {
+    return verb === 'GET' || verb === 'HEAD' ? `/v1${rest}` : null
+  }
+  if (/^\/test-results\/\d+\/review$/.test(rest)) {
+    return verb === 'PUT' ? `/v1${rest}` : null
+  }
+  return null
+}
+
+/**
+ * Dev-only: keep login/API traffic on VITE_DEV_PROXY_TARGET, but serve
+ * 智商检测 from a local iqdetectd (SQLite sidecar) with the main API envelope.
+ */
+function proxyIQDetectDirect(target: string): Plugin {
+  const base = target.replace(/\/+$/, '')
+  return {
+    name: 'proxy-iq-detect-direct',
+    apply: 'serve',
+    configureServer(server) {
+      server.middlewares.use(async (req, res, next) => {
+        const url = req.url || ''
+        const pathname = url.split('?')[0]
+        const mapped = mapIQDetectPath(pathname, req.method)
+        if (!mapped || !req.method) {
+          next()
+          return
+        }
+        try {
+          const method = req.method!.toUpperCase()
+          const hasBody = method !== 'GET' && method !== 'HEAD'
+          const body = hasBody ? await readRequestBody(req) : undefined
+          // 透传查询串（group_id / limit / offset 等），否则 dev 下的过滤和分页全失效
+          const query = url.slice(pathname.length)
+          const upstream = await fetch(`${base}${mapped}${query}`, {
+            method,
+            headers: hasBody ? { 'Content-Type': req.headers['content-type'] || 'application/json' } : undefined,
+            body,
+            signal: AbortSignal.timeout(10000),
+          })
+          const raw = await upstream.text()
+          let parsed: unknown = null
+          if (raw) {
+            try {
+              parsed = JSON.parse(raw)
+            } catch {
+              parsed = { error: raw }
+            }
+          }
+          if (mapped === '/health') {
+            const health = (parsed && typeof parsed === 'object' ? parsed : {}) as Record<string, unknown>
+            sendJSON(res, 200, {
+              code: 0,
+              message: 'success',
+              data: {
+                enabled: upstream.ok,
+                reason: upstream.ok ? undefined : 'IQ_DETECT_AGENT_UNAVAILABLE',
+                base_url: base,
+                status: health.status,
+                version: health.version,
+                uptime_seconds: health.uptime_seconds,
+              },
+            })
+            return
+          }
+          if (mapped.startsWith('/v1/test-results/') && mapped.endsWith('/pelican')) {
+            // 鹈鹕接口返回裸 HTML，包成主服务信封的 { html } 形式
+            sendJSON(res, upstream.ok ? 200 : upstream.status,
+              upstream.ok
+                ? { code: 0, message: 'success', data: { html: raw } }
+                : { code: upstream.status, message: raw || `iq detect HTTP ${upstream.status}` })
+            return
+          }
+          if (!upstream.ok) {
+            const err = (parsed && typeof parsed === 'object' ? parsed : {}) as { error?: string }
+            sendJSON(res, upstream.status, {
+              code: upstream.status,
+              message: err.error || raw || `iq detect HTTP ${upstream.status}`,
+            })
+            return
+          }
+          sendJSON(res, 200, { code: 0, message: 'success', data: parsed })
+        } catch (error) {
+          sendJSON(res, 200, {
+            code: 0,
+            message: 'success',
+            data: {
+              enabled: false,
+              reason: 'IQ_DETECT_AGENT_UNAVAILABLE',
+              base_url: base,
+            },
+          })
+        }
+      })
+    },
+  }
+}
+
 function injectPublicSettings(backendUrl: string): Plugin {
   return {
     name: 'inject-public-settings',
@@ -194,11 +316,13 @@ export default defineConfig(({ mode }) => {
   const pushNotifierUrl = env.VITE_PUSH_PROXY_TARGET || 'http://127.0.0.1:8091'
   const devPort = Number(env.VITE_DEV_PORT || 3000)
   const appCatalogDirect = (process.env.VITE_APP_CATALOG_DIRECT || env.VITE_APP_CATALOG_DIRECT || '').trim()
+  const iqDetectDirect = (process.env.VITE_IQ_DETECT_DIRECT || env.VITE_IQ_DETECT_DIRECT || '').trim()
 
   return {
     plugins: [
       vue(),
       ...(appCatalogDirect ? [proxyAppCatalogDirect(appCatalogDirect)] : []),
+      ...(iqDetectDirect ? [proxyIQDetectDirect(iqDetectDirect)] : []),
       injectPublicSettings(backendUrl)
     ],
   resolve: {

@@ -554,6 +554,10 @@ const AppsIcon = {
     )
 }
 
+const IQDetectIcon = {
+  render: () => h(Icon, { name: 'lightbulb' })
+}
+
 const BellIcon = {
   render: () =>
     h(
@@ -895,6 +899,7 @@ const adminNavItems = computed((): NavItem[] => {
     { path: '/admin/accounts', label: t('nav.accounts'), icon: GlobeIcon },
     { path: '/admin/plugins', label: t('nav.plugins'), icon: PluginIcon, featureFlag: flagPluginManagement },
     { path: '/admin/app-catalog', label: t('nav.appCatalog'), icon: AppsIcon },
+    { path: '/admin/iq-detection', label: t('nav.iqDetection'), icon: IQDetectIcon },
     { path: '/admin/announcements', label: t('nav.announcements'), icon: BellIcon },
     { path: '/admin/push-notifications', label: t('nav.pushNotifications'), icon: BellIcon },
     { path: '/admin/proxies', label: t('nav.proxies'), icon: ServerIcon },
