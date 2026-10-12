@@ -10,6 +10,7 @@ import (
 	"math/rand"
 	"net/http"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -25,6 +26,8 @@ const maxStoredHTML = 2 << 20
 var finalAnswerPattern = regexp.MustCompile(`(?is)<final_answer>(.*?)</final_answer>`)
 
 type testJob struct {
+	groupID     int64
+	groupName   string
 	model       string
 	accountID   int64
 	accountName string
@@ -32,19 +35,61 @@ type testJob struct {
 	apiKey      string
 }
 
-// TestRunner executes one detection test per configured model: it picks a
-// random account (from the saved selection) that exposes the model, calls the
-// account's own upstream concurrently with the two configured probe prompts
-// and stores the result pair. Per account only the newest
-// testResultsRetention pairs are kept.
+// candidate is one selectable account for a given model.
+type candidate struct {
+	id     int64
+	name   string
+	apiURL string
+	apiKey string
+}
+
+// TestRunner executes one detection test per configured model per selected
+// group: within a group it rotates through the accounts that expose the model
+// (least-recently-tested first, random within a tie), calls the account's own
+// upstream concurrently with the two configured probe prompts and stores the
+// result pair. Groups run concurrently; each group also carries an optional
+// scheduled interval. Per account only the newest testResultsRetention pairs
+// are kept.
 type TestRunner struct {
 	Store   *Store
 	Timeout time.Duration
 	Client  *http.Client
 	Logger  *slog.Logger
 
-	mu      sync.Mutex
-	running bool
+	mu            sync.Mutex
+	runningGroups map[int64]bool
+}
+
+type candidateKey struct {
+	model     string
+	accountID int64
+}
+
+func candidateIDs(candidates []candidate) []int64 {
+	ids := make([]int64, len(candidates))
+	for i, c := range candidates {
+		ids[i] = c.id
+	}
+	return ids
+}
+
+// pickCandidate returns the candidate with the oldest last-tested timestamp
+// (zero for never-tested accounts), breaking ties randomly.
+func pickCandidate(candidates []candidate, lastTested map[int64]time.Time) candidate {
+	var oldest time.Time
+	for _, c := range candidates {
+		ts := lastTested[c.id] // 零值 = 从未测过，天然最旧
+		if oldest.IsZero() || ts.Before(oldest) {
+			oldest = ts
+		}
+	}
+	var pool []candidate
+	for _, c := range candidates {
+		if lastTested[c.id].Equal(oldest) {
+			pool = append(pool, c)
+		}
+	}
+	return pool[rand.Intn(len(pool))]
 }
 
 func NewTestRunner(store *Store, timeout time.Duration, logger *slog.Logger) *TestRunner {
@@ -52,118 +97,334 @@ func NewTestRunner(store *Store, timeout time.Duration, logger *slog.Logger) *Te
 		timeout = 60 * time.Second
 	}
 	return &TestRunner{
-		Store:   store,
-		Timeout: timeout,
-		Client:  &http.Client{Timeout: timeout},
-		Logger:  logger,
+		Store:         store,
+		Timeout:       timeout,
+		Client:        &http.Client{Timeout: timeout},
+		Logger:        logger,
+		runningGroups: map[int64]bool{},
 	}
 }
 
-func (r *TestRunner) setRunning(v bool) {
+func (r *TestRunner) tryLockGroup(groupID int64) bool {
 	r.mu.Lock()
-	r.running = v
+	defer r.mu.Unlock()
+	if r.runningGroups[groupID] {
+		return false
+	}
+	r.runningGroups[groupID] = true
+	return true
+}
+
+func (r *TestRunner) releaseGroup(groupID int64) {
+	r.mu.Lock()
+	delete(r.runningGroups, groupID)
 	r.mu.Unlock()
 }
 
-// TriggerTestRun plans the run and executes it in the background, returning
-// the per-model plan immediately.
-func (r *TestRunner) TriggerTestRun(ctx context.Context) (*TestRunPlan, error) {
-	r.mu.Lock()
-	if r.running {
-		r.mu.Unlock()
-		return nil, fmt.Errorf("another test run is already in progress")
-	}
-	r.running = true
-	r.mu.Unlock()
+// StartScheduler launches the single scheduler goroutine: every minute it
+// checks the saved selection for groups whose interval is due and starts their
+// detection concurrently. Due-ness is derived from the last result row of each
+// group, so saving a new selection takes effect on the next tick without any
+// reconfiguration.
+func (r *TestRunner) StartScheduler(ctx context.Context) {
+	go func() {
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				r.scheduleTick(ctx)
+			}
+		}
+	}()
+	r.logInfo("iqdetectd: scheduler started, ticking every minute")
+}
 
+// scheduleTick checks every scheduled group and launches one goroutine per due
+// group. Groups run concurrently with each other; within a group the per-model
+// probe pairs also run concurrently. Accounts are resolved from the sidecar
+// database by account id at run time.
+func (r *TestRunner) scheduleTick(ctx context.Context) {
+	selection, err := r.Store.GetSelection(ctx)
+	if err != nil {
+		r.logError("iqdetectd: scheduler load selection", "err", err)
+		return
+	}
+	lastTested, err := r.Store.LastTestedAtByGroup(ctx)
+	if err != nil {
+		r.logError("iqdetectd: scheduler load last-tested", "err", err)
+		return
+	}
+	for _, group := range selection.Groups {
+		if group.IntervalMinutes <= 0 || r.isGroupRunning(group.ID) {
+			continue
+		}
+		if last, ok := lastTested[group.ID]; ok {
+			if time.Since(last) < time.Duration(group.IntervalMinutes)*time.Minute {
+				continue
+			}
+		}
+		if !r.tryLockGroup(group.ID) {
+			continue
+		}
+		go func(group SelectionGroup) {
+			defer r.releaseGroup(group.ID)
+			prompts, jobs, err := r.buildGroupJobs(ctx, group, nil)
+			if err != nil {
+				r.logError("iqdetectd: scheduled run build failed", "group", group.ID, "err", err)
+				return
+			}
+			if len(jobs) == 0 {
+				r.logInfo("iqdetectd: scheduled group skipped, no usable accounts", "group", group.ID)
+				return
+			}
+			r.runGroupJobs(ctx, jobs, prompts)
+			r.logInfo("iqdetectd: scheduled group round finished", "group", group.ID, "models", len(jobs))
+		}(group)
+	}
+}
+
+// buildGroupJobs resolves the per-model jobs of one group. injected holds
+// main-database credentials by account id; accounts missing from it fall back
+// to the sidecar's own stored credentials.
+func (r *TestRunner) buildGroupJobs(ctx context.Context, group SelectionGroup, injected map[int64]TestRunCredential) (*DetectionPrompts, []testJob, error) {
 	prompts, err := r.Store.GetDetectionPrompts(ctx)
 	if err != nil {
-		r.setRunning(false)
-		return nil, err
+		return nil, nil, err
 	}
 	models, err := r.Store.ListDetectionModels(ctx)
 	if err != nil {
-		r.setRunning(false)
-		return nil, err
+		return nil, nil, err
 	}
-	selection, err := r.Store.GetSelection(ctx)
-	if err != nil {
-		r.setRunning(false)
-		return nil, err
-	}
-
-	// model -> 已保存选择中的候选账号
-	type candidate struct {
-		id     int64
-		name   string
-		apiURL string
-		apiKey string
-	}
-	modelAccounts := map[string][]candidate{}
-	for _, group := range selection.Groups {
+	var jobs []testJob
+	seen := map[int64]bool{}
+	for _, dm := range models {
+		var candidates []candidate
 		for _, account := range group.Accounts {
-			apiURL, apiKey, err := r.Store.GetAccountCallCreds(ctx, account.ID)
-			if err != nil || strings.TrimSpace(apiURL) == "" || strings.TrimSpace(apiKey) == "" {
+			if seen[account.ID] {
 				continue
 			}
-			for _, model := range account.Models {
-				modelAccounts[model] = append(modelAccounts[model], candidate{
-					id: account.ID, name: account.Name, apiURL: apiURL, apiKey: apiKey,
-				})
+			if !slices.Contains(account.Models, dm.Name) {
+				continue
 			}
+			apiURL, apiKey := "", ""
+			if cred, ok := injected[account.ID]; ok {
+				apiURL, apiKey = cred.APIURL, cred.APIKey
+			} else {
+				apiURL, apiKey, err = r.Store.GetAccountCallCreds(ctx, account.ID)
+				if err != nil {
+					continue
+				}
+			}
+			if strings.TrimSpace(apiURL) == "" || strings.TrimSpace(apiKey) == "" {
+				continue
+			}
+			seen[account.ID] = true
+			candidates = append(candidates, candidate{
+				id: account.ID, name: account.Name, apiURL: apiURL, apiKey: apiKey,
+			})
 		}
-	}
-
-	plan := &TestRunPlan{Items: []TestRunPlanItem{}}
-	var jobs []testJob
-	for _, dm := range models {
-		item := TestRunPlanItem{Model: dm.Name}
-		candidates := modelAccounts[dm.Name]
 		if len(candidates) == 0 {
-			item.Skipped = true
-			item.Reason = "no selected account exposes this model with stored credentials"
-			plan.Items = append(plan.Items, item)
 			continue
 		}
-		pick := candidates[rand.Intn(len(candidates))]
-		item.AccountID = pick.id
-		item.AccountName = pick.name
-		plan.Items = append(plan.Items, item)
+		// 轮换制：优先选最久没被测过的账号，同批内随机
+		lastTested, err := r.Store.LastTestedAtByAccount(ctx, candidateIDs(candidates))
+		if err != nil {
+			lastTested = nil
+		}
+		pick := pickCandidate(candidates, lastTested)
 		jobs = append(jobs, testJob{
+			groupID: group.ID, groupName: group.Name,
 			model: dm.Name, accountID: pick.id, accountName: pick.name,
 			apiURL: pick.apiURL, apiKey: pick.apiKey,
 		})
 	}
-	plan.Triggered = len(jobs)
+	return prompts, jobs, nil
+}
 
-	if len(jobs) == 0 {
-		r.setRunning(false)
+// TriggerTestRun plans the run and executes it in the background, returning
+// the per-(group,model) plan immediately. Groups run concurrently. A non-zero
+// groupID limits the run to one group. injected holds main-database
+// credentials by account id; accounts missing from it fall back to the
+// sidecar's own stored credentials.
+func (r *TestRunner) TriggerTestRun(ctx context.Context, injected []TestRunCredential, groupID int64) (*TestRunPlan, error) {
+	injectedCreds := make(map[int64]TestRunCredential, len(injected))
+	for _, cred := range injected {
+		if strings.TrimSpace(cred.APIURL) != "" && strings.TrimSpace(cred.APIKey) != "" {
+			injectedCreds[cred.AccountID] = cred
+		}
+	}
+
+	selection, err := r.Store.GetSelection(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	models, err := r.Store.ListDetectionModels(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	plan := &TestRunPlan{Items: []TestRunPlanItem{}}
+	jobsByGroup := map[int64][]testJob{}
+	for _, group := range selection.Groups {
+		if groupID > 0 && group.ID != groupID {
+			continue
+		}
+		for _, dm := range models {
+			item := TestRunPlanItem{Model: dm.Name, GroupID: group.ID, GroupName: group.Name}
+			if r.isGroupRunning(group.ID) {
+				item.Skipped = true
+				item.Reason = "a test for this group is already running"
+				plan.Items = append(plan.Items, item)
+				continue
+			}
+			candidates := r.groupCandidates(ctx, group, dm.Name, injectedCreds)
+			if len(candidates) == 0 {
+				item.Skipped = true
+				item.Reason = "no selected account exposes this model with usable credentials"
+				plan.Items = append(plan.Items, item)
+				continue
+			}
+			// 轮换制：优先选最久没被测过的账号，同批内随机
+			lastTested, err := r.Store.LastTestedAtByAccount(ctx, candidateIDs(candidates))
+			if err != nil {
+				lastTested = nil
+			}
+			pick := pickCandidate(candidates, lastTested)
+			item.AccountID = pick.id
+			item.AccountName = pick.name
+			plan.Items = append(plan.Items, item)
+			jobsByGroup[group.ID] = append(jobsByGroup[group.ID], testJob{
+				groupID: group.ID, groupName: group.Name,
+				model: dm.Name, accountID: pick.id, accountName: pick.name,
+				apiURL: pick.apiURL, apiKey: pick.apiKey,
+			})
+		}
+	}
+	plan.Triggered = 0
+	for _, jobs := range jobsByGroup {
+		plan.Triggered += len(jobs)
+	}
+
+	if len(jobsByGroup) == 0 {
 		return plan, nil
 	}
-	go func() {
-		defer r.setRunning(false)
-		r.execute(context.WithoutCancel(ctx), jobs, prompts)
-	}()
+	go r.executeGroups(context.WithoutCancel(ctx), jobsByGroup)
 	return plan, nil
 }
 
-func (r *TestRunner) execute(ctx context.Context, jobs []testJob, prompts *DetectionPrompts) {
-	logger := r.Logger
-	if logger == nil {
-		logger = slog.Default()
+func (r *TestRunner) isGroupRunning(groupID int64) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.runningGroups[groupID]
+}
+
+// executeGroups runs each group's job list in its own goroutine so selected
+// groups are tested concurrently; within a group the models run sequentially.
+func (r *TestRunner) executeGroups(ctx context.Context, jobsByGroup map[int64][]testJob) {
+	var wg sync.WaitGroup
+	for groupID, jobs := range jobsByGroup {
+		wg.Add(1)
+		go func(groupID int64, jobs []testJob) {
+			defer wg.Done()
+			if !r.tryLockGroup(groupID) {
+				r.logInfo("iqdetectd: group skipped, already running", "group", groupID)
+				return
+			}
+			defer r.releaseGroup(groupID)
+			prompts, err := r.Store.GetDetectionPrompts(ctx)
+			if err != nil {
+				r.logError("iqdetectd: load prompts failed", "group", groupID, "err", err)
+				return
+			}
+			r.runGroupJobs(ctx, jobs, prompts)
+		}(groupID, jobs)
 	}
+	wg.Wait()
+}
+
+// runGroupJobs persists a running row per job and fires all of the group's
+// probe pairs concurrently, waiting for all of them to finish.
+func (r *TestRunner) runGroupJobs(ctx context.Context, jobs []testJob, prompts *DetectionPrompts) {
+	var wg sync.WaitGroup
 	for _, job := range jobs {
-		result := r.runPair(ctx, job, prompts)
-		if _, err := r.Store.InsertTestResult(ctx, *result); err != nil {
-			logger.Error("iqdetectd: persist test result", "account", job.accountID, "model", job.model, "err", err)
+		job := job
+		// 触发即落库（status=running），列表刷新就能看到进行中的测试
+		running := TestResult{GroupID: job.groupID, GroupName: job.groupName,
+			AccountID: job.accountID, AccountName: job.accountName, Model: job.model,
+			PelicanStartedAt: nowRFC3339(), CandyStartedAt: nowRFC3339()}
+		id, err := r.Store.InsertRunningTestResult(ctx, running)
+		if err != nil {
+			r.logError("iqdetectd: insert running test result", "account", job.accountID, "model", job.model, "err", err)
 			continue
 		}
-		if err := r.Store.TrimTestResults(ctx, job.accountID, testResultsRetention); err != nil {
-			logger.Error("iqdetectd: trim test results", "account", job.accountID, "err", err)
-		}
-		logger.Info("iqdetectd: test pair finished", "account", job.accountID, "model", job.model,
-			"pelican_ok", result.PelicanError == "", "candy_ok", result.CandyError == "")
+		wg.Add(1)
+		go func(id int64, job testJob) {
+			defer wg.Done()
+			result := r.runPair(ctx, job, prompts)
+			if err := r.Store.CompleteTestResult(ctx, id, *result); err != nil {
+				r.logError("iqdetectd: persist test result", "account", job.accountID, "model", job.model, "err", err)
+				return
+			}
+			if err := r.Store.TrimTestResults(ctx, job.accountID, testResultsRetention); err != nil {
+				r.logError("iqdetectd: trim test results", "account", job.accountID, "err", err)
+			}
+			r.logInfo("iqdetectd: test pair finished", "group", job.groupID, "account", job.accountID, "model", job.model,
+				"pelican_ok", result.PelicanError == "", "candy_ok", result.CandyError == "")
+		}(id, job)
 	}
+	wg.Wait()
+}
+
+func (r *TestRunner) groupCandidates(ctx context.Context, group SelectionGroup, model string, injected map[int64]TestRunCredential) []candidate {
+	var candidates []candidate
+	seen := map[int64]bool{}
+	for _, account := range group.Accounts {
+		if seen[account.ID] || !slices.Contains(account.Models, model) {
+			continue
+		}
+		apiURL, apiKey := "", ""
+		if cred, ok := injected[account.ID]; ok {
+			apiURL, apiKey = cred.APIURL, cred.APIKey
+		} else {
+			var err error
+			apiURL, apiKey, err = r.Store.GetAccountCallCreds(ctx, account.ID)
+			if err != nil {
+				continue
+			}
+		}
+		if strings.TrimSpace(apiURL) == "" || strings.TrimSpace(apiKey) == "" {
+			continue
+		}
+		seen[account.ID] = true
+		candidates = append(candidates, candidate{
+			id: account.ID, name: account.Name, apiURL: apiURL, apiKey: apiKey,
+		})
+	}
+	return candidates
+}
+
+func (r *TestRunner) logInfo(msg string, args ...any) {
+	if r.Logger != nil {
+		r.Logger.Info(msg, args...)
+	} else {
+		slog.Info(msg, args...)
+	}
+}
+
+func (r *TestRunner) logError(msg string, args ...any) {
+	if r.Logger != nil {
+		r.Logger.Error(msg, args...)
+	} else {
+		slog.Error(msg, args...)
+	}
+}
+
+func nowRFC3339() string {
+	return time.Now().UTC().Format(time.RFC3339Nano)
 }
 
 // runPair fires the two probe calls concurrently (pelican → HTML stored in
@@ -174,27 +435,37 @@ func (r *TestRunner) runPair(ctx context.Context, job testJob, prompts *Detectio
 
 	if strings.TrimSpace(prompts.PelicanPrompt) == "" {
 		result.PelicanError = "pelican prompt is not configured"
+		result.PelicanFinishedAt = nowRFC3339()
 	} else {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			started := nowRFC3339()
 			answer, latency, err := r.callUpstream(ctx, job.apiURL, job.apiKey, job.model, prompts.PelicanPrompt, prompts)
+			result.PelicanStartedAt = started
+			result.PelicanFinishedAt = nowRFC3339()
 			result.PelicanLatencyMS = latency.Milliseconds()
 			if err != nil {
 				result.PelicanError = err.Error()
 				return
 			}
-			result.PelicanHTML = truncate(answer, maxStoredHTML)
+			// 完整回复与 HTML 部分分开存；对外接口只返回 HTML 部分
+			result.PelicanResponse = truncate(answer, maxStoredHTML)
+			result.PelicanHTML = truncate(extractHTMLContent(answer), maxStoredHTML)
 		}()
 	}
 
 	if strings.TrimSpace(prompts.CandyPrompt) == "" {
 		result.CandyError = "candy prompt is not configured"
+		result.CandyFinishedAt = nowRFC3339()
 	} else {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			started := nowRFC3339()
 			answer, latency, err := r.callUpstream(ctx, job.apiURL, job.apiKey, job.model, prompts.CandyPrompt, prompts)
+			result.CandyStartedAt = started
+			result.CandyFinishedAt = nowRFC3339()
 			result.CandyLatencyMS = latency.Milliseconds()
 			if err != nil {
 				result.CandyError = err.Error()
@@ -211,6 +482,30 @@ func (r *TestRunner) runPair(ctx context.Context, job testJob, prompts *Detectio
 
 	wg.Wait()
 	return result
+}
+
+var fencedHTMLPattern = regexp.MustCompile("(?is)```html\\s*(.*?)```")
+
+// extractHTMLContent pulls the HTML portion out of a model reply: a ```html
+// fenced block when present, otherwise the <!DOCTYPE/<html>…</html> span,
+// falling back to the whole content.
+func extractHTMLContent(content string) string {
+	if m := fencedHTMLPattern.FindStringSubmatch(content); len(m) >= 2 && strings.TrimSpace(m[1]) != "" {
+		return strings.TrimSpace(m[1])
+	}
+	lower := strings.ToLower(content)
+	idx := strings.Index(lower, "<!doctype html")
+	if idx < 0 {
+		idx = strings.Index(lower, "<html")
+	}
+	if idx < 0 {
+		return content
+	}
+	end := strings.Index(lower[idx:], "</html>")
+	if end < 0 {
+		return content[idx:]
+	}
+	return content[idx : idx+end+len("</html>")]
 }
 
 // extractFinalAnswer pulls the value between <final_answer> and
@@ -240,12 +535,14 @@ func gradeCandyAnswer(answer, expected string) bool {
 
 // callUpstream sends one chat completion to the account's own upstream using
 // the stored API key, honoring the configured reasoning effort and temperature.
+// It always requests streaming so long generations keep the connection alive —
+// a non-streaming wait past ~100s gets cut off by Cloudflare with a 524.
 func (r *TestRunner) callUpstream(ctx context.Context, apiURL, apiKey, model, prompt string, prompts *DetectionPrompts) (string, time.Duration, error) {
 	start := time.Now()
 	payload := map[string]any{
 		"model":      model,
 		"messages":   []map[string]string{{"role": "user", "content": prompt}},
-		"stream":     false,
+		"stream":     true,
 		"max_tokens": 8192,
 	}
 	if prompts != nil && prompts.Temperature != nil {
@@ -276,6 +573,52 @@ func (r *TestRunner) callUpstream(ctx context.Context, apiURL, apiKey, model, pr
 	if resp.StatusCode >= 400 {
 		return "", time.Since(start), fmt.Errorf("upstream HTTP %d: %s", resp.StatusCode, truncate(string(raw), 300))
 	}
+	content, err := decodeUpstreamContent(raw, resp.Header.Get("Content-Type"))
+	if err != nil {
+		return "", time.Since(start), err
+	}
+	if strings.TrimSpace(content) == "" {
+		return "", time.Since(start), fmt.Errorf("upstream returned no content")
+	}
+	return strings.TrimSpace(content), time.Since(start), nil
+}
+
+// decodeUpstreamContent extracts the assistant message content from either an
+// SSE stream (delta chunks) or a plain JSON completion response; some upstreams
+// ignore the stream flag and answer non-streamed.
+func decodeUpstreamContent(raw []byte, contentType string) (string, error) {
+	if !strings.Contains(contentType, "text/event-stream") {
+		return decodeJSONContent(raw)
+	}
+	var sb strings.Builder
+	for _, line := range strings.Split(string(raw), "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		if data == "" || data == "[DONE]" {
+			continue
+		}
+		var chunk struct {
+			Choices []struct {
+				Delta struct {
+					Content string `json:"content"`
+				} `json:"delta"`
+			} `json:"choices"`
+		}
+		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+			continue // 心跳/注释等非 JSON 行，跳过
+		}
+		if len(chunk.Choices) > 0 {
+			sb.WriteString(chunk.Choices[0].Delta.Content)
+		}
+	}
+	return sb.String(), nil
+}
+
+// decodeJSONContent handles a non-streamed chat completion response.
+func decodeJSONContent(raw []byte) (string, error) {
 	var decoded struct {
 		Choices []struct {
 			Message struct {
@@ -284,10 +627,16 @@ func (r *TestRunner) callUpstream(ctx context.Context, apiURL, apiKey, model, pr
 		} `json:"choices"`
 	}
 	if err := json.Unmarshal(raw, &decoded); err != nil {
-		return "", time.Since(start), fmt.Errorf("invalid upstream response: %w", err)
+		return "", fmt.Errorf("invalid upstream response: %w", err)
 	}
 	if len(decoded.Choices) == 0 {
-		return "", time.Since(start), fmt.Errorf("upstream returned no choices")
+		return "", fmt.Errorf("upstream returned no choices")
 	}
-	return strings.TrimSpace(decoded.Choices[0].Message.Content), time.Since(start), nil
+	return decoded.Choices[0].Message.Content, nil
+}
+
+// ExtractFinalAnswer exports the candy final-answer extraction for consumers
+// of the sidecar package (e.g. the main service's public results endpoint).
+func ExtractFinalAnswer(answer string) string {
+	return extractFinalAnswer(answer)
 }

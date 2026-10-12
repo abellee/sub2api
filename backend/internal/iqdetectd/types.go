@@ -131,11 +131,13 @@ type SelectionAccount struct {
 }
 
 // SelectionGroup is one chosen group with its metadata and chosen accounts.
+// IntervalMinutes drives the per-group scheduled detection (0 = manual only).
 type SelectionGroup struct {
-	ID             int64              `json:"id"`
-	Name           string             `json:"name"`
-	RateMultiplier float64            `json:"rate_multiplier"`
-	Accounts       []SelectionAccount `json:"accounts"`
+	ID              int64              `json:"id"`
+	Name            string             `json:"name"`
+	RateMultiplier  float64            `json:"rate_multiplier"`
+	IntervalMinutes int                `json:"interval_minutes,omitempty"`
+	Accounts        []SelectionAccount `json:"accounts"`
 }
 
 // DetectionSelection is the persisted group/account/model selection. A nil
@@ -184,13 +186,21 @@ type DetectionPrompts struct {
 }
 
 // TestResult is one detection outcome pair (pelican + candy) for an account.
-// CandyCorrect is nil when no correct answer is configured.
+// CandyCorrect is nil when no correct answer is configured. Status is
+// 'running' from the moment the pair is triggered, then 'completed' or
+// 'failed' once both probes finish. PelicanResponse (the full model reply)
+// never leaves the sidecar; clients only get PelicanHTML.
 type TestResult struct {
 	ID               int64     `json:"id"`
+	GroupID          int64     `json:"group_id"`
+	GroupName        string    `json:"group_name"`
 	AccountID        int64     `json:"account_id"`
 	AccountName      string    `json:"account_name"`
 	Model            string    `json:"model"`
+	Status           string    `json:"status"`
 	PelicanHTML      string    `json:"pelican_html,omitempty"`
+	PelicanHTMLLen   int64     `json:"pelican_html_len,omitempty"`
+	PelicanResponse  string    `json:"-"`
 	PelicanError     string    `json:"pelican_error,omitempty"`
 	PelicanLatencyMS int64     `json:"pelican_latency_ms,omitempty"`
 	CandyAnswer      string    `json:"candy_answer,omitempty"`
@@ -198,11 +208,43 @@ type TestResult struct {
 	CandyLatencyMS   int64     `json:"candy_latency_ms,omitempty"`
 	CandyCorrect     *bool     `json:"candy_correct,omitempty"`
 	CreatedAt        time.Time `json:"created_at"`
+
+	PelicanStartedAt  string `json:"pelican_started_at,omitempty"`
+	PelicanFinishedAt string `json:"pelican_finished_at,omitempty"`
+	CandyStartedAt    string `json:"candy_started_at,omitempty"`
+	CandyFinishedAt   string `json:"candy_finished_at,omitempty"`
+	PelicanReview     string `json:"pelican_review"`
+	CandyReview       string `json:"candy_review"`
+}
+
+// TestResultReviewInput is the body of PUT /v1/test-results/{id}/review.
+type TestResultReviewInput struct {
+	Probe   string `json:"probe"`   // pelican | candy
+	Verdict string `json:"verdict"` // approved | rejected
+}
+
+// TestRunCredential is one account's upstream credential injected by the main
+// service at trigger time (scheme B: resolved from the main database so the
+// sidecar copy never goes stale). The sidecar falls back to its own stored
+// credentials when an account is absent from the map.
+type TestRunCredential struct {
+	AccountID int64  `json:"account_id"`
+	APIURL    string `json:"api_url"`
+	APIKey    string `json:"api_key"`
+}
+
+// TriggerTestRunInput is the optional body of POST /v1/test-runs. A zero
+// GroupID triggers every selected group concurrently.
+type TriggerTestRunInput struct {
+	Credentials []TestRunCredential `json:"credentials,omitempty"`
+	GroupID     int64               `json:"group_id,omitempty"`
 }
 
 // TestRunPlanItem reports what a triggered test run will do per model.
 type TestRunPlanItem struct {
 	Model       string `json:"model"`
+	GroupID     int64  `json:"group_id,omitempty"`
+	GroupName   string `json:"group_name,omitempty"`
 	AccountID   int64  `json:"account_id,omitempty"`
 	AccountName string `json:"account_name,omitempty"`
 	Skipped     bool   `json:"skipped"`

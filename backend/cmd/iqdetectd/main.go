@@ -51,6 +51,16 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// 启动单调度器协程：每分钟检查各分组间隔是否到期，到期并发执行测试
+	testRunner.StartScheduler(ctx)
+
+	// 历史无分组的结果按账号归属回填到当前选择的分组
+	if n, err := store.BackfillTestResultGroups(ctx); err != nil {
+		logger.Error("iqdetectd: backfill test result groups", "err", err)
+	} else if n > 0 {
+		logger.Info("iqdetectd: backfilled test result groups", "rows", n)
+	}
+
 	httpServer := &http.Server{
 		Addr:              *listen,
 		Handler:           srv.Handler(),

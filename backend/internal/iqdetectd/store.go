@@ -112,13 +112,21 @@ CREATE TABLE IF NOT EXISTS test_results (
   account_id INTEGER NOT NULL,
   account_name TEXT NOT NULL DEFAULT '',
   model TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'completed',
   pelican_html TEXT NOT NULL DEFAULT '',
+  pelican_response TEXT NOT NULL DEFAULT '',
   pelican_error TEXT NOT NULL DEFAULT '',
   candy_answer TEXT NOT NULL DEFAULT '',
   candy_error TEXT NOT NULL DEFAULT '',
   candy_correct INTEGER,
   pelican_latency_ms INTEGER NOT NULL DEFAULT 0,
   candy_latency_ms INTEGER NOT NULL DEFAULT 0,
+  pelican_started_at TEXT NOT NULL DEFAULT '',
+  pelican_finished_at TEXT NOT NULL DEFAULT '',
+  candy_started_at TEXT NOT NULL DEFAULT '',
+  candy_finished_at TEXT NOT NULL DEFAULT '',
+  pelican_review TEXT NOT NULL DEFAULT 'pending',
+  candy_review TEXT NOT NULL DEFAULT 'pending',
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_test_results_account ON test_results(account_id, id DESC);
@@ -130,10 +138,27 @@ CREATE INDEX IF NOT EXISTS idx_test_results_account ON test_results(account_id, 
 		`ALTER TABLE detection_prompts ADD COLUMN candy_answer TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE test_results ADD COLUMN pelican_html TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE test_results ADD COLUMN candy_correct INTEGER`,
+		`ALTER TABLE test_results ADD COLUMN status TEXT NOT NULL DEFAULT 'completed'`,
+		`ALTER TABLE test_results ADD COLUMN pelican_response TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE test_results ADD COLUMN pelican_started_at TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE test_results ADD COLUMN pelican_finished_at TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE test_results ADD COLUMN candy_started_at TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE test_results ADD COLUMN candy_finished_at TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE test_results ADD COLUMN pelican_review TEXT NOT NULL DEFAULT 'pending'`,
+		`ALTER TABLE test_results ADD COLUMN candy_review TEXT NOT NULL DEFAULT 'pending'`,
+		`ALTER TABLE test_results ADD COLUMN group_id INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE test_results ADD COLUMN group_name TEXT NOT NULL DEFAULT ''`,
 	} {
 		if _, err := s.db.Exec(stmt); err != nil && !strings.Contains(err.Error(), "duplicate column") {
 			return err
 		}
+	}
+	// 上个进程中断遗留的 running 行不可能再完成，标记为失败
+	if _, err := s.db.Exec(`
+UPDATE test_results SET status = 'failed',
+  pelican_error = CASE WHEN pelican_error = '' THEN 'interrupted: service restarted mid-run' ELSE pelican_error END
+WHERE status = 'running'`); err != nil {
+		return err
 	}
 	return err
 }
@@ -708,23 +733,65 @@ func nullFloat(v *float64) any {
 
 // ---- test results ----
 
-// InsertTestResult persists one result pair and returns its row id.
-func (s *Store) InsertTestResult(ctx context.Context, result TestResult) (int64, error) {
-	var candyCorrect any
-	if result.CandyCorrect != nil {
-		candyCorrect = boolToInt(*result.CandyCorrect)
-	}
+// InsertRunningTestResult persists one result pair at trigger time so the
+// list can show it as in-progress; returns its row id.
+func (s *Store) InsertRunningTestResult(ctx context.Context, result TestResult) (int64, error) {
+	now := time.Now().UTC().Format(time.RFC3339Nano)
 	res, err := s.db.ExecContext(ctx, `
-INSERT INTO test_results (account_id, account_name, model, pelican_html, pelican_error,
-                          candy_answer, candy_error, candy_correct, pelican_latency_ms, candy_latency_ms, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		result.AccountID, result.AccountName, result.Model, result.PelicanHTML, result.PelicanError,
-		result.CandyAnswer, result.CandyError, candyCorrect, result.PelicanLatencyMS, result.CandyLatencyMS,
-		time.Now().UTC().Format(time.RFC3339Nano))
+INSERT INTO test_results (group_id, group_name, account_id, account_name, model, status,
+                          pelican_started_at, candy_started_at, pelican_review, candy_review, created_at)
+VALUES (?, ?, ?, ?, ?, 'running', ?, ?, 'pending', 'pending', ?)`,
+		result.GroupID, result.GroupName, result.AccountID, result.AccountName, result.Model,
+		result.PelicanStartedAt, result.CandyStartedAt, now)
 	if err != nil {
 		return 0, err
 	}
 	return res.LastInsertId()
+}
+
+// CompleteTestResult fills in the outcome of both probes and flips the row
+// out of the running state.
+func (s *Store) CompleteTestResult(ctx context.Context, id int64, result TestResult) error {
+	status := "failed"
+	if result.PelicanError == "" || result.CandyError == "" {
+		status = "completed"
+	}
+	var candyCorrect any
+	if result.CandyCorrect != nil {
+		candyCorrect = boolToInt(*result.CandyCorrect)
+	}
+	_, err := s.db.ExecContext(ctx, `
+UPDATE test_results SET
+  status = ?, pelican_html = ?, pelican_response = ?, pelican_error = ?,
+  pelican_latency_ms = ?, pelican_finished_at = ?,
+  candy_answer = ?, candy_error = ?, candy_correct = ?,
+  candy_latency_ms = ?, candy_finished_at = ?
+WHERE id = ?`,
+		status, result.PelicanHTML, result.PelicanResponse, result.PelicanError,
+		result.PelicanLatencyMS, result.PelicanFinishedAt,
+		result.CandyAnswer, result.CandyError, candyCorrect,
+		result.CandyLatencyMS, result.CandyFinishedAt, id)
+	return err
+}
+
+// UpdateTestResultReview records the manual review verdict of one probe.
+func (s *Store) UpdateTestResultReview(ctx context.Context, id int64, probe, verdict string) error {
+	column := probe + "_review"
+	if column != "pelican_review" && column != "candy_review" {
+		return fmt.Errorf("unknown probe %q", probe)
+	}
+	if verdict != "approved" && verdict != "rejected" {
+		return fmt.Errorf("unknown verdict %q", verdict)
+	}
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE test_results SET `+column+` = ? WHERE id = ?`, verdict, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("test result %d not found", id)
+	}
+	return nil
 }
 
 // TrimTestResults keeps only the newest `keep` result pairs of an account.
@@ -751,6 +818,204 @@ SELECT id FROM test_results WHERE account_id = ? ORDER BY id DESC LIMIT -1 OFFSE
 		}
 	}
 	return nil
+}
+
+// ListTestResults returns the newest result pairs without the pelican HTML
+// body (only its length; fetch the body via GetTestResultPelicanHTML).
+// hasGroup with groupID >= 0 filters by that group (0 = ungrouped legacy
+// rows); otherwise all rows are returned.
+func (s *Store) ListTestResults(ctx context.Context, limit, offset int64, hasGroup bool, groupID int64) ([]TestResult, int, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	countQuery := `SELECT count(*) FROM test_results`
+	listQuery := `
+SELECT id, group_id, group_name, account_id, account_name, model, status, pelican_error, pelican_latency_ms,
+       length(pelican_html), candy_answer, candy_error, candy_correct, candy_latency_ms,
+       pelican_started_at, pelican_finished_at, candy_started_at, candy_finished_at,
+       pelican_review, candy_review, created_at
+FROM test_results`
+	args := []any{}
+	if hasGroup {
+		countQuery += ` WHERE group_id = ?`
+		listQuery += ` WHERE group_id = ?`
+		args = append(args, groupID)
+	}
+	var total int
+	if err := s.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	listQuery += ` ORDER BY id DESC LIMIT ? OFFSET ?`
+	args = append(args, limit, offset)
+	rows, err := s.db.QueryContext(ctx, listQuery, args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	items := []TestResult{}
+	for rows.Next() {
+		var result TestResult
+		var candyCorrect sql.NullInt64
+		// created_at 在 SQLite 里存的是 RFC3339 文本，需手动解析成 time.Time
+		var createdAt string
+		if err := rows.Scan(&result.ID, &result.GroupID, &result.GroupName, &result.AccountID,
+			&result.AccountName, &result.Model,
+			&result.Status, &result.PelicanError, &result.PelicanLatencyMS, &result.PelicanHTMLLen,
+			&result.CandyAnswer, &result.CandyError, &candyCorrect, &result.CandyLatencyMS,
+			&result.PelicanStartedAt, &result.PelicanFinishedAt, &result.CandyStartedAt,
+			&result.CandyFinishedAt, &result.PelicanReview, &result.CandyReview,
+			&createdAt); err != nil {
+			return nil, 0, err
+		}
+		if ts, err := time.Parse(time.RFC3339Nano, createdAt); err == nil {
+			result.CreatedAt = ts
+		}
+		if candyCorrect.Valid {
+			v := candyCorrect.Int64 == 1
+			result.CandyCorrect = &v
+		}
+		items = append(items, result)
+	}
+	return items, total, rows.Err()
+}
+
+// GetTestResultByID returns one result pair with its pelican HTML body (the
+// full raw upstream response is never included).
+func (s *Store) GetTestResultByID(ctx context.Context, id int64) (*TestResult, error) {
+	row := s.db.QueryRowContext(ctx, `
+SELECT id, group_id, group_name, account_id, account_name, model, status,
+       pelican_html, pelican_error, pelican_latency_ms,
+       candy_answer, candy_error, candy_correct, candy_latency_ms,
+       pelican_started_at, pelican_finished_at, candy_started_at, candy_finished_at,
+       pelican_review, candy_review, created_at
+FROM test_results WHERE id = ?`, id)
+	var result TestResult
+	var candyCorrect sql.NullInt64
+	var createdAt string
+	err := row.Scan(&result.ID, &result.GroupID, &result.GroupName, &result.AccountID,
+		&result.AccountName, &result.Model, &result.Status,
+		&result.PelicanHTML, &result.PelicanError, &result.PelicanLatencyMS,
+		&result.CandyAnswer, &result.CandyError, &candyCorrect, &result.CandyLatencyMS,
+		&result.PelicanStartedAt, &result.PelicanFinishedAt, &result.CandyStartedAt,
+		&result.CandyFinishedAt, &result.PelicanReview, &result.CandyReview,
+		&createdAt)
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("test result %d not found", id)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if candyCorrect.Valid {
+		v := candyCorrect.Int64 == 1
+		result.CandyCorrect = &v
+	}
+	if ts, err := time.Parse(time.RFC3339Nano, createdAt); err == nil {
+		result.CreatedAt = ts
+	}
+	return &result, nil
+}
+
+// GetTestResultPelicanHTML returns the stored pelican HTML of one result pair.
+func (s *Store) GetTestResultPelicanHTML(ctx context.Context, id int64) (string, error) {
+	var html string
+	err := s.db.QueryRowContext(ctx,
+		`SELECT pelican_html FROM test_results WHERE id = ?`, id).Scan(&html)
+	if err == sql.ErrNoRows {
+		return "", fmt.Errorf("test result %d not found", id)
+	}
+	return html, err
+}
+
+// BackfillTestResultGroups attributes legacy rows (created before results
+// carried group fields, group_id = 0) to the selected group of their account.
+// Rows whose account belongs to zero or several selected groups are left
+// untouched. Idempotent; safe to run at every startup.
+func (s *Store) BackfillTestResultGroups(ctx context.Context) (int64, error) {
+	selection, err := s.GetSelection(ctx)
+	if err != nil {
+		return 0, err
+	}
+	accountGroups := map[int64][]SelectionGroup{}
+	for _, group := range selection.Groups {
+		for _, account := range group.Accounts {
+			accountGroups[account.ID] = append(accountGroups[account.ID], group)
+		}
+	}
+	var updated int64
+	for accountID, groups := range accountGroups {
+		if len(groups) != 1 {
+			continue
+		}
+		res, err := s.db.ExecContext(ctx, `
+UPDATE test_results SET group_id = ?, group_name = ?
+WHERE group_id = 0 AND account_id = ?`,
+			groups[0].ID, groups[0].Name, accountID)
+		if err != nil {
+			return updated, err
+		}
+		n, _ := res.RowsAffected()
+		updated += n
+	}
+	return updated, nil
+}
+
+// LastTestedAtByGroup returns, for each group that has result rows, the
+// created_at of its most recent one. Groups missing from the map have never
+// been tested and are due immediately.
+func (s *Store) LastTestedAtByGroup(ctx context.Context) (map[int64]time.Time, error) {
+	result := map[int64]time.Time{}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT group_id, max(created_at) FROM test_results WHERE group_id > 0 GROUP BY group_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int64
+		var created string
+		if err := rows.Scan(&id, &created); err != nil {
+			return nil, err
+		}
+		if ts, err := time.Parse(time.RFC3339Nano, created); err == nil {
+			result[id] = ts
+		}
+	}
+	return result, rows.Err()
+}
+
+// LastTestedAtByAccount returns, for each given account, the created_at of its
+// most recent test result row; missing entries mean never tested. Used by the
+// round-robin account rotation of the test runner.
+func (s *Store) LastTestedAtByAccount(ctx context.Context, accountIDs []int64) (map[int64]time.Time, error) {
+	result := make(map[int64]time.Time, len(accountIDs))
+	if len(accountIDs) == 0 {
+		return result, nil
+	}
+	placeholders := make([]string, len(accountIDs))
+	args := make([]any, len(accountIDs))
+	for i, id := range accountIDs {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT account_id, max(created_at) FROM test_results
+WHERE account_id IN (`+strings.Join(placeholders, ",")+`)
+GROUP BY account_id`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int64
+		var created string
+		if err := rows.Scan(&id, &created); err != nil {
+			return nil, err
+		}
+		if ts, err := time.Parse(time.RFC3339Nano, created); err == nil {
+			result[id] = ts
+		}
+	}
+	return result, rows.Err()
 }
 
 // GetAccountCallCreds returns the stored upstream URL and API key of an
