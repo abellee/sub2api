@@ -236,11 +236,14 @@ func TestStoreDetectionModels(t *testing.T) {
 	// test_results 保留策略：每账号最多 keep 条；candy 正确性判定
 	for i := 0; i < 65; i++ {
 		correct := i%2 == 0
-		if _, err := store.InsertTestResult(ctx, TestResult{
-			AccountID: 1, AccountName: "acc", Model: "m",
+		id, err := store.InsertRunningTestResult(ctx, TestResult{AccountID: 1, AccountName: "acc", Model: "m"})
+		if err != nil {
+			t.Fatalf("insert running result: %v", err)
+		}
+		if err := store.CompleteTestResult(ctx, id, TestResult{
 			PelicanHTML: "<html>x</html>", CandyAnswer: "ok", CandyCorrect: &correct,
 		}); err != nil {
-			t.Fatalf("insert result: %v", err)
+			t.Fatalf("complete result: %v", err)
 		}
 	}
 	if err := store.TrimTestResults(ctx, 1, 60); err != nil {

@@ -25,15 +25,6 @@
           <button
             type="button"
             class="btn btn-secondary"
-            data-testid="open-account-manager"
-            @click="openAccountManager"
-          >
-            <Icon name="users" size="sm" />
-            {{ t('admin.iqDetection.accountManagement') }}
-          </button>
-          <button
-            type="button"
-            class="btn btn-secondary"
             :title="t('admin.iqDetection.selectScope')"
             data-testid="open-selector"
             @click="openSelector"
@@ -76,228 +67,247 @@
         <span class="text-gray-500 dark:text-gray-400">
           {{ t('admin.iqDetection.baseUrl') }}: {{ health?.base_url }}
         </span>
-      </div>
-
-      <!-- 当前选择概览：分组名 + 各组选中账号数 -->
-      <div
-        class="border border-gray-200 px-4 py-3 text-sm dark:border-dark-700"
-        data-testid="selection-summary"
-      >
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <span class="text-gray-700 dark:text-gray-300">
-            {{
-              t('admin.iqDetection.selectedSummary', {
-                groups: selectionSummary.groups,
-                accounts: selectionSummary.accounts
-              })
-            }}
-          </span>
-          <div class="flex items-center gap-2">
-            <button
-              type="button"
-              class="btn btn-primary btn-sm"
-              :disabled="testRunning"
-              data-testid="run-test"
-              @click="runTest"
-            >
-              {{ t('admin.iqDetection.test') }}
-            </button>
-            <button type="button" class="btn btn-secondary btn-sm" @click="openSelector">
-              {{ t('admin.iqDetection.editSelection') }}
-            </button>
-          </div>
-        </div>
-        <div v-if="selectedGroupEntries.length > 0" class="mt-3 grid gap-3 border-t border-gray-100 pt-3 dark:border-dark-700/60 lg:grid-cols-[240px,1fr]">
-          <!-- 左侧：选中的分组竖向列表 -->
-          <aside
-            class="max-h-80 divide-y divide-gray-100 overflow-y-auto rounded-lg border border-gray-200 dark:divide-dark-700/60 dark:border-dark-700"
-            data-testid="summary-group-list"
-          >
-            <button
-              v-for="entry in selectedGroupEntries"
-              :key="entry.id"
-              type="button"
-              class="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm transition-colors"
-              :class="
-                entry.id === summaryGroupId
-                  ? 'bg-primary-50 font-medium text-primary-700 dark:bg-primary-900/30 dark:text-primary-300'
-                  : 'text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-dark-800'
-              "
-              :data-testid="`summary-group-item-${entry.id}`"
-              @click="focusSummaryGroup(entry.id)"
-            >
-              <span class="min-w-0 flex-1 truncate">{{ entry.name }}</span>
-              <span class="flex-shrink-0 text-xs text-gray-400">{{ entry.count }}</span>
-            </button>
-          </aside>
-
-          <!-- 右侧：该分组选中的账号卡片 -->
-          <section class="min-w-0">
-            <div v-if="summaryLoading" class="flex h-32 items-center justify-center text-sm text-gray-500">
-              {{ t('common.loading') }}
-            </div>
-            <div
-              v-else-if="!summaryGroup"
-              class="flex h-32 items-center justify-center text-sm text-gray-500 dark:text-gray-400"
-            >
-              {{ t('admin.iqDetection.selectGroupHint') }}
-            </div>
-            <div
-              v-else-if="summaryAccounts.length === 0"
-              class="flex h-32 items-center justify-center text-sm text-gray-500 dark:text-gray-400"
-            >
-              {{ t('admin.iqDetection.noAccounts') }}
-            </div>
-            <div v-else class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" data-testid="summary-account-cards">
-              <div
-                v-for="account in summaryAccounts"
-                :key="account.id"
-                class="min-w-0 rounded-lg border border-gray-200 p-3 dark:border-dark-700"
-                :data-testid="`summary-card-${account.id}`"
-              >
-                <div class="flex items-center justify-between gap-2">
-                  <span class="min-w-0 truncate text-sm font-medium text-gray-800 dark:text-gray-200">
-                    {{ account.name }}
-                  </span>
-                  <span class="flex-shrink-0 text-xs text-gray-400">
-                    {{ account.platform }}<template v-if="account.type"> · {{ account.type }}</template>
-                  </span>
-                </div>
-                <div
-                  v-if="accountBaseUrl(account)"
-                  class="mt-1 truncate font-mono text-xs text-gray-400 dark:text-gray-500"
-                  :title="accountBaseUrl(account)"
-                >
-                  {{ accountBaseUrl(account) }}
-                </div>
-                <div v-if="accountModels(account).length > 0" class="mt-2 flex flex-wrap gap-1">
-                  <span
-                    v-for="model in accountModels(account)"
-                    :key="model"
-                    class="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[10px] text-gray-600 dark:bg-dark-800 dark:text-gray-400"
-                  >
-                    {{ model }}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </section>
-        </div>
-        <p v-else class="mt-3 border-t border-gray-100 pt-3 text-xs text-gray-500 dark:border-dark-700/60 dark:text-gray-400">
-          {{ t('admin.iqDetection.noSelection') }}
-        </p>
-      </div>
-
-      <!-- 账号管理模态框：分页加载全部账号，逐个保存 API 地址与 API Key 到 iqdetectd -->
-      <BaseDialog
-        :show="accountManagerOpen"
-        :title="t('admin.iqDetection.accountManagement')"
-        width="wide"
-        data-testid="account-manager-dialog"
-        @close="accountManagerOpen = false"
-      >
-      <section data-testid="account-management">
-        <div
-          class="flex flex-wrap items-center justify-end gap-3 border-b border-gray-200 px-4 py-3 dark:border-dark-700"
+        <button
+          type="button"
+          class="btn btn-primary btn-sm ml-auto"
+          :disabled="testRunning"
+          data-testid="run-test"
+          @click="runTest"
         >
-          <select
-            v-model="mgGroupFilter"
-            class="input h-8 w-56 py-0 text-xs"
-            data-testid="management-group-filter"
-            @change="onManagementGroupChange"
+          <Icon name="refresh" size="sm" :class="testRunning ? 'animate-spin' : ''" />
+          {{ t('admin.iqDetection.test') }}
+        </button>
+      </div>
+
+      <!-- 测试结果：卡片列表；鹈鹕 HTML 按需拉取后渲染进无脚本沙箱 iframe -->
+      <section
+        v-if="health?.enabled"
+        class="border border-gray-200 dark:border-dark-700"
+        data-testid="test-results"
+      >
+        <div
+          class="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 px-4 py-3 dark:border-dark-700"
+        >
+          <h3 class="text-sm font-medium text-gray-900 dark:text-white">
+            {{ t('admin.iqDetection.testResults') }}
+            <span v-if="testResultsTotal > 0" class="ml-2 text-xs font-normal text-gray-400">
+              {{ t('admin.iqDetection.testResultsTotal', { n: testResultsTotal }) }}
+            </span>
+          </h3>
+          <button
+            type="button"
+            class="btn btn-secondary btn-sm"
+            :disabled="testResultsLoading"
+            data-testid="refresh-test-results"
+            @click="reloadTestResults()"
           >
-            <option value="">{{ t('admin.iqDetection.allGroups') }}</option>
-            <option v-for="group in groups" :key="group.id" :value="String(group.id)">
-              {{ group.name }}
-            </option>
-          </select>
+            <Icon name="refresh" size="sm" :class="testResultsLoading ? 'animate-spin' : ''" />
+            {{ t('common.refresh') }}
+          </button>
         </div>
 
-        <div v-if="mgLoading" class="flex justify-center py-10 text-sm text-gray-500">
+        <!-- 按选择的分组分 tab：组名 + 选中账号数 + 检测间隔 -->
+        <div
+          v-if="resultTabs.length > 0"
+          class="flex flex-wrap gap-1 border-b border-gray-200 px-3 pt-1 dark:border-dark-700"
+          data-testid="test-result-tabs"
+        >
+          <button
+            v-for="tab in resultTabs"
+            :key="tab.id"
+            type="button"
+            class="rounded-t-md border-b-2 px-3 py-2 text-sm transition-colors"
+            :class="
+              tab.id === activeResultGroupId
+                ? 'border-primary-500 font-medium text-primary-700 dark:text-primary-300'
+                : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+            "
+            :data-testid="`test-result-tab-${tab.id}`"
+            @click="activeResultGroupId = tab.id"
+          >
+            {{ tab.label }}
+            <span class="text-xs font-normal text-gray-400">
+              {{ tab.accounts }}
+              <template v-if="tab.intervalMinutes > 0">
+                · {{ t('admin.iqDetection.intervalEvery', { n: tab.intervalMinutes }) }}
+              </template>
+            </span>
+          </button>
+        </div>
+
+        <div
+          v-if="testResultsLoading && testResults.length === 0"
+          class="flex justify-center py-10 text-sm text-gray-500"
+        >
           {{ t('common.loading') }}
         </div>
-        <template v-else>
-          <div
-            v-if="mgAccounts.length === 0"
-            class="py-10 text-center text-sm text-gray-500"
-            data-testid="management-empty"
+        <div
+          v-else-if="testResults.length === 0"
+          class="py-10 text-center text-sm text-gray-500"
+          data-testid="test-results-empty"
+        >
+          {{
+            resultTabs.length === 0
+              ? t('admin.iqDetection.noSelection')
+              : t('admin.iqDetection.testResultsEmpty')
+          }}
+        </div>
+        <div v-else class="grid gap-4 p-4 md:grid-cols-2 xl:grid-cols-3" data-testid="test-results-grid">
+          <article
+            v-for="item in testResults"
+            :key="item.id"
+            class="flex flex-col gap-3 border border-gray-200 p-4 dark:border-dark-700"
+            :data-testid="`test-result-card-${item.id}`"
           >
-            {{ t('admin.iqDetection.noAccounts') }}
-          </div>
-          <ul v-else class="divide-y divide-gray-100 dark:divide-dark-700/60">
-            <li
-              v-for="account in mgAccounts"
-              :key="account.id"
-              class="flex flex-wrap items-center gap-3 px-4 py-3"
-              :data-testid="`management-account-${account.id}`"
-            >
-              <div class="min-w-0 flex-1">
-                <div class="flex flex-wrap items-center gap-2">
-                  <span class="truncate text-sm text-gray-800 dark:text-gray-200">
-                    {{ account.name }}
-                  </span>
-                  <span class="text-xs text-gray-400">
-                    {{ account.platform }}<template v-if="account.type"> · {{ account.type }}</template>
-                  </span>
-                  <span
-                    v-if="savedCredentials[account.id]?.has_api_key"
-                    class="rounded-full bg-green-50 px-2 py-0.5 text-xs text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                  >
-                    {{ t('admin.iqDetection.savedBadge') }}
-                  </span>
-                </div>
-                <div
-                  v-if="managementApiUrl(account)"
-                  class="truncate font-mono text-xs text-gray-400 dark:text-gray-500"
-                  :title="managementApiUrl(account)"
-                >
-                  {{ managementApiUrl(account) }}
-                </div>
+            <header class="flex items-start justify-between gap-2">
+              <div class="min-w-0">
+                <p class="truncate text-sm font-medium text-gray-900 dark:text-white">
+                  {{ item.account_name || item.account_id }}
+                </p>
+                <p class="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">
+                  {{ item.model }} · {{ formatTestResultTime(item.created_at) }}
+                </p>
               </div>
-              <div class="flex items-center gap-2">
-                <input
-                  v-model="apiKeyInputs[account.id]"
-                  type="password"
-                  autocomplete="new-password"
-                  class="input h-8 w-56 py-0 text-xs"
-                  :placeholder="t('admin.iqDetection.apiKeyPlaceholder')"
-                  :data-testid="`api-key-input-${account.id}`"
-                />
-                <button
-                  type="button"
-                  class="btn btn-primary btn-sm"
-                  :disabled="mgSaving.has(account.id)"
-                  :data-testid="`save-credential-${account.id}`"
-                  @click="saveAccountCredential(account)"
-                >
-                  {{ t('admin.iqDetection.save') }}
-                </button>
-              </div>
-            </li>
-          </ul>
-          <div
-            class="flex items-center justify-between border-t border-gray-200 px-4 py-2 text-xs text-gray-500 dark:border-dark-700 dark:text-gray-400"
-          >
-            <span>
-              {{ t('admin.iqDetection.pageInfo', { page: mgPage, pages: mgPages, total: mgTotal }) }}
-            </span>
-            <div class="flex gap-2">
-              <button type="button" class="btn btn-secondary btn-sm" :disabled="mgPage <= 1" @click="mgPage--; void loadManagementAccounts()">
-                {{ t('admin.iqDetection.prevPage') }}
-              </button>
-              <button
-                type="button"
-                class="btn btn-secondary btn-sm"
-                :disabled="mgPage >= mgPages"
-                @click="mgPage++; void loadManagementAccounts()"
+              <span
+                class="flex flex-shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
+                :class="statusBadgeClass(item.status)"
+                :data-testid="`test-result-status-${item.id}`"
               >
-                {{ t('admin.iqDetection.nextPage') }}
+                <Icon v-if="item.status === 'running'" name="refresh" size="sm" class="animate-spin" />
+                {{ statusText(item.status) }}
+              </span>
+            </header>
+
+            <p v-if="item.status === 'running'" class="text-xs text-gray-500 dark:text-gray-400">
+              {{ t('admin.iqDetection.testRunningHint') }}
+            </p>
+            <template v-else>
+              <!-- 糖果测试：结果 + 起止时间 + 人工复核 -->
+              <div class="text-xs" :data-testid="`test-result-candy-section-${item.id}`">
+                <div class="flex items-center justify-between gap-2">
+                  <span class="font-medium text-gray-500 dark:text-gray-400">
+                    {{ t('admin.iqDetection.candyTest') }}
+                  </span>
+                  <span class="text-gray-400">
+                    {{ t('admin.iqDetection.startedAt') }} {{ formatTimeOfDay(item.candy_started_at) }}
+                    <template v-if="item.candy_finished_at">
+                      → {{ t('admin.iqDetection.finishedAt') }} {{ formatTimeOfDay(item.candy_finished_at) }}
+                    </template>
+                  </span>
+                </div>
+                <p class="mt-1 text-gray-600 dark:text-gray-300">
+                  <span v-if="item.candy_error" class="text-red-600 dark:text-red-400">
+                    {{ t('admin.iqDetection.testResultFailed') }}（{{ item.candy_error }}）
+                  </span>
+                  <template v-else>
+                    {{ candyFinalAnswer(item.candy_answer) || '-' }}
+                    <span v-if="item.candy_latency_ms" class="text-gray-400">
+                      · {{ formatLatency(item.candy_latency_ms) }}
+                    </span>
+                  </template>
+                </p>
+                <div class="mt-1.5 flex items-center gap-1.5">
+                  <span class="text-gray-400">{{ t('admin.iqDetection.reviewLabel') }}</span>
+                  <button
+                    type="button"
+                    class="rounded px-1.5 py-0.5 transition-colors"
+                    :class="reviewButtonClass(item.candy_review, 'approved')"
+                    :disabled="reviewSaving.has(`${item.id}:candy`)"
+                    :data-testid="`test-result-candy-approve-${item.id}`"
+                    @click="setReview(item, 'candy', 'approved')"
+                  >
+                    {{ t('admin.iqDetection.reviewApprove') }}
+                  </button>
+                  <button
+                    type="button"
+                    class="rounded px-1.5 py-0.5 transition-colors"
+                    :class="reviewButtonClass(item.candy_review, 'rejected')"
+                    :disabled="reviewSaving.has(`${item.id}:candy`)"
+                    :data-testid="`test-result-candy-reject-${item.id}`"
+                    @click="setReview(item, 'candy', 'rejected')"
+                  >
+                    {{ t('admin.iqDetection.reviewReject') }}
+                  </button>
+                </div>
+              </div>
+
+              <!-- 鹈鹕测试：结果 + 起止时间 + 人工复核 + 渲染 -->
+              <div class="text-xs" :data-testid="`test-result-pelican-section-${item.id}`">
+                <div class="flex items-center justify-between gap-2">
+                  <span class="font-medium text-gray-500 dark:text-gray-400">
+                    {{ t('admin.iqDetection.pelicanTest') }}
+                  </span>
+                  <span class="text-gray-400">
+                    {{ t('admin.iqDetection.startedAt') }} {{ formatTimeOfDay(item.pelican_started_at) }}
+                    <template v-if="item.pelican_finished_at">
+                      → {{ t('admin.iqDetection.finishedAt') }} {{ formatTimeOfDay(item.pelican_finished_at) }}
+                    </template>
+                  </span>
+                </div>
+                <p class="mt-1 text-gray-600 dark:text-gray-300">
+                  <span v-if="item.pelican_error" class="text-red-600 dark:text-red-400">
+                    {{ t('admin.iqDetection.testResultFailed') }}（{{ item.pelican_error }}）
+                  </span>
+                  <span v-else-if="item.pelican_html_len">
+                    {{ t('admin.iqDetection.pelicanReady', { size: formatBytes(item.pelican_html_len) }) }}
+                  </span>
+                  <template v-else>-</template>
+                </p>
+                <div class="mt-1.5 flex items-center gap-1.5">
+                  <span class="text-gray-400">{{ t('admin.iqDetection.reviewLabel') }}</span>
+                  <button
+                    type="button"
+                    class="rounded px-1.5 py-0.5 transition-colors"
+                    :class="reviewButtonClass(item.pelican_review, 'approved')"
+                    :disabled="reviewSaving.has(`${item.id}:pelican`)"
+                    :data-testid="`test-result-pelican-approve-${item.id}`"
+                    @click="setReview(item, 'pelican', 'approved')"
+                  >
+                    {{ t('admin.iqDetection.reviewApprove') }}
+                  </button>
+                  <button
+                    type="button"
+                    class="rounded px-1.5 py-0.5 transition-colors"
+                    :class="reviewButtonClass(item.pelican_review, 'rejected')"
+                    :disabled="reviewSaving.has(`${item.id}:pelican`)"
+                    :data-testid="`test-result-pelican-reject-${item.id}`"
+                    @click="setReview(item, 'pelican', 'rejected')"
+                  >
+                    {{ t('admin.iqDetection.reviewReject') }}
+                  </button>
+                </div>
+              </div>
+
+              <button
+                v-if="!item.pelican_error && item.pelican_html_len"
+                type="button"
+                class="btn btn-secondary btn-sm self-start"
+                :disabled="pelicanLoading.has(item.id)"
+                :data-testid="`test-result-toggle-pelican-${item.id}`"
+                @click="openPelicanDialog(item)"
+              >
+                {{ t('admin.iqDetection.showPelican') }}
               </button>
-            </div>
-          </div>
-        </template>
+            </template>
+          </article>
+        </div>
+        <div
+          v-if="testResults.length < testResultsTotal"
+          class="border-t border-gray-100 px-4 py-3 text-center dark:border-dark-700/60"
+        >
+          <button
+            type="button"
+            class="btn btn-secondary btn-sm"
+            :disabled="testResultsLoading"
+            data-testid="test-results-load-more"
+            @click="loadMoreTestResults"
+          >
+            {{ t('admin.iqDetection.loadMoreResults') }}
+          </button>
+        </div>
       </section>
-      </BaseDialog>
+
+
 
       <!-- 检测模型设置弹窗 -->
       <BaseDialog
@@ -526,6 +536,19 @@
               <template v-else>{{ t('admin.iqDetection.accounts') }}</template>
             </div>
             <div v-if="selectedGroupId && focusedAccounts.length > 0" class="flex flex-shrink-0 items-center gap-2">
+              <label class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+                {{ t('admin.iqDetection.testInterval') }}
+                <input
+                  type="number"
+                  min="0"
+                  step="5"
+                  class="input h-8 w-20 py-0 text-xs"
+                  v-model.number="groupIntervals[selectedGroupId]"
+                  :placeholder="t('admin.iqDetection.intervalPlaceholder')"
+                  data-testid="group-interval-input"
+                />
+                {{ t('admin.iqDetection.intervalUnit') }}
+              </label>
               <button type="button" class="btn btn-secondary btn-sm" :disabled="accountsLoading" @click="selectAllAccounts">
                 {{ t('admin.iqDetection.selectAll') }}
               </button>
@@ -601,13 +624,37 @@
         </section>
       </div>
     </BaseDialog>
+
+    <!-- 鹈鹕渲染模态框：大视口沙箱 iframe 预览 -->
+    <BaseDialog
+      :show="pelicanDialogOpen"
+      :title="pelicanDialogTitle"
+      width="full"
+      data-testid="pelican-render-dialog"
+      @close="pelicanDialogOpen = false"
+    >
+      <div
+        v-if="pelicanDialogItem && pelicanLoading.has(pelicanDialogItem.id)"
+        class="flex h-[60vh] items-center justify-center text-sm text-gray-500"
+      >
+        {{ t('common.loading') }}
+      </div>
+      <iframe
+        v-else-if="pelicanDialogItem"
+        class="h-[70vh] w-full bg-white"
+        sandbox=""
+        data-testid="pelican-render-frame"
+        :srcdoc="pelicanHtmlCache.get(pelicanDialogItem.id) || ''"
+        title="pelican"
+      />
+    </BaseDialog>
   </AppLayout>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { adminAPI, type IQDetectAgentHealth, type SavedAccountCredential, type SelectionGroup } from '@/api/admin'
+import { adminAPI, type IQDetectAgentHealth, type SelectionGroup, type TestResultItem, type TestResultProbe, type TestResultVerdict } from '@/api/admin'
 import type { AdminGroup, AccountListItem } from '@/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
@@ -622,7 +669,6 @@ const loading = ref(false)
 const health = ref<IQDetectAgentHealth | null>(null)
 
 const selectorOpen = ref(false)
-const accountManagerOpen = ref(false)
 
 const groups = ref<AdminGroup[]>([])
 const groupsLoading = ref(false)
@@ -644,80 +690,13 @@ const platformFilter = ref('')
 const pelicanPrompt = ref('')
 const candyPrompt = ref('')
 
-// ---- 账号管理 ----
-const mgAccounts = ref<AccountListItem[]>([])
-const mgPage = ref(1)
-const mgPageSize = 20
-const mgTotal = ref(0)
-const mgGroupFilter = ref('')
-const mgLoading = ref(false)
-const mgSaving = reactive(new Set<number>())
-const apiKeyInputs = reactive<Record<number, string>>({})
-const savedCredentials = reactive<Record<number, SavedAccountCredential>>({})
-
-const mgPages = computed(() => Math.max(1, Math.ceil(mgTotal.value / mgPageSize)))
-
-async function loadSavedCredentials() {
-  try {
-    const resp = await adminAPI.iqDetection.listAccountCredentials()
-    for (const item of resp.items) {
-      savedCredentials[item.account_id] = item
-    }
-  } catch {
-    // sidecar 未启动时静默降级，账号列表仍可浏览
-  }
-}
-
-async function loadManagementAccounts() {
-  mgLoading.value = true
-  try {
-    const filters = mgGroupFilter.value ? { group: mgGroupFilter.value } : undefined
-    const resp = await adminAPI.accounts.list(mgPage.value, mgPageSize, filters)
-    mgAccounts.value = resp?.items || []
-    mgTotal.value = resp?.total || 0
-  } catch (error) {
-    mgAccounts.value = []
-    mgTotal.value = 0
-    appStore.showError(extractApiErrorMessage(error, t('common.error')))
-  } finally {
-    mgLoading.value = false
-  }
-}
-
-function onManagementGroupChange() {
-  mgPage.value = 1
-  void loadManagementAccounts()
-}
-
-// 保存优先使用 sidecar 已存的地址，其次取账号当前配置的 base_url。
-function managementApiUrl(account: AccountListItem): string {
-  return savedCredentials[account.id]?.api_url || accountBaseUrl(account)
-}
-
-async function saveAccountCredential(account: AccountListItem) {
-  if (mgSaving.has(account.id)) return
-  mgSaving.add(account.id)
-  try {
-    const saved = await adminAPI.iqDetection.saveAccountCredential({
-      account_id: account.id,
-      api_url: accountBaseUrl(account),
-      api_key: (apiKeyInputs[account.id] || '').trim() || undefined
-    })
-    savedCredentials[account.id] = saved
-    delete apiKeyInputs[account.id]
-    appStore.showSuccess(t('admin.iqDetection.saved'))
-  } catch (error) {
-    appStore.showError(extractApiErrorMessage(error, t('common.error')))
-  } finally {
-    mgSaving.delete(account.id)
-  }
-}
-
 // 分组账号列表与勾选状态按分组缓存；分组与账号默认都不选中。
 const accountsByGroup = reactive(new Map<number, AccountListItem[]>())
 const accountSelection = reactive(new Map<number, Set<number>>())
 // 未加载账号的分组被"全选"时先记意图，加载后物化为具体 id 集合。
 const groupAllIntent = reactive(new Set<number>())
+// 每个分组的智商检测间隔（分钟），0 = 仅手动触发。
+const groupIntervals = reactive<Record<number, number>>({})
 
 const selectedGroup = computed(() => groups.value.find((g) => g.id === selectedGroupId.value) || null)
 const platformOptions = computed(() =>
@@ -732,77 +711,6 @@ const focusedAccounts = computed<AccountListItem[]>(() =>
 const selectedAccountIds = computed<Set<number>>(
   () => accountSelection.get(selectedGroupId.value ?? -1) ?? new Set()
 )
-
-// 主页面概览：每个勾选中的分组 + 该组选中账号数（未加载的分组按 account_count 估算）。
-const selectedGroupEntries = computed(() =>
-  groups.value
-    .map((group) => ({ group, state: groupCheckState(group) }))
-    .filter((entry) => entry.state !== false)
-    .map((entry) => {
-      const set = accountSelection.get(entry.group.id)
-      const count = set
-        ? set.size
-        : groupAllIntent.has(entry.group.id)
-          ? entry.group.account_count ?? 0
-          : 0
-      return { id: entry.group.id, name: entry.group.name, count }
-    })
-)
-
-const selectionSummary = computed(() => ({
-  groups: selectedGroupEntries.value.length,
-  accounts: selectedGroupEntries.value.reduce((sum, entry) => sum + entry.count, 0)
-}))
-
-// ---- 主页面选择概览：左侧分组列表 + 右侧账号卡片 ----
-const summaryGroupId = ref<number | null>(null)
-const summaryLoading = ref(false)
-
-const summaryGroup = computed(
-  () => selectedGroupEntries.value.find((entry) => entry.id === summaryGroupId.value) || null
-)
-const summaryAccounts = computed<AccountListItem[]>(() => {
-  if (summaryGroupId.value == null) return []
-  const all = accountsByGroup.get(summaryGroupId.value) ?? []
-  const selected = accountSelection.get(summaryGroupId.value)
-  if (!selected) return all
-  return all.filter((a) => selected.has(a.id))
-})
-
-// 焦点分组被取消选择时自动落到第一个仍然选中的分组
-watch(
-  () => selectedGroupEntries.value.map((entry) => entry.id),
-  (ids) => {
-    if (!summaryGroupId.value || !ids.includes(summaryGroupId.value)) {
-      summaryGroupId.value = ids[0] ?? null
-    }
-  }
-)
-
-async function focusSummaryGroup(groupId: number) {
-  summaryGroupId.value = groupId
-  if (accountsByGroup.has(groupId)) return
-  summaryLoading.value = true
-  try {
-    await fetchAccounts(groupId)
-  } catch (error) {
-    if (summaryGroupId.value === groupId) {
-      appStore.showError(extractApiErrorMessage(error, t('common.error')))
-    }
-  } finally {
-    if (summaryGroupId.value === groupId) {
-      summaryLoading.value = false
-    }
-  }
-}
-
-function openAccountManager() {
-  accountManagerOpen.value = true
-  if (mgAccounts.value.length === 0 && !mgLoading.value) {
-    void loadSavedCredentials()
-    void loadManagementAccounts()
-  }
-}
 
 // ---- 检测模型设置 ----
 const modelSettingsOpen = ref(false)
@@ -839,7 +747,9 @@ async function saveDetectionModels() {
       .split('\n')
       .map((line) => line.trim())
       .filter((line) => line !== '')
-    const temperature = temperatureInput.value.trim() === '' ? null : Number(temperatureInput.value)
+    // v-model 在 type="number" 输入框上会把值转成数字，先归一化为字符串再判空
+    const temperatureRaw = String(temperatureInput.value ?? '').trim()
+    const temperature = temperatureRaw === '' ? null : Number(temperatureRaw)
     await adminAPI.iqDetection.saveDetectionModels({
       names,
       pelican_prompt: pelicanPrompt.value,
@@ -877,6 +787,185 @@ async function runTest() {
   }
 }
 
+// ---- 测试结果 ----
+const TEST_RESULTS_PAGE_SIZE = 12
+const testResults = ref<TestResultItem[]>([])
+const testResultsTotal = ref(0)
+const testResultsLoading = ref(false)
+const pelicanHtmlCache = reactive(new Map<number, string>())
+const pelicanLoading = reactive(new Set<number>())
+
+// 已保存的选择（用于结果 tab 与轮换展示）；activeResultGroupId=0 表示未选分组时展示全部
+const savedSelectionGroups = ref<SelectionGroup[]>([])
+const activeResultGroupId = ref(0)
+
+const resultTabs = computed(() => {
+  const tabs = savedSelectionGroups.value.map((group) => ({
+    id: group.id,
+    label: group.name,
+    accounts: (group.accounts || []).length,
+    intervalMinutes: group.interval_minutes || 0
+  }))
+  // 兜底：无法归属到任何已选分组的历史结果收进「未分组」
+  if (tabs.length > 0) {
+    tabs.push({
+      id: 0,
+      label: t('admin.iqDetection.ungroupedTab'),
+      accounts: 0,
+      intervalMinutes: 0
+    })
+  }
+  return tabs
+})
+
+watch(activeResultGroupId, () => {
+  void loadTestResults(0)
+})
+
+// 请求序号：分组 tab 切换/初始加载可能并发，晚到的过期响应直接丢弃
+let testResultsRequestId = 0
+
+async function loadTestResults(offset: number) {
+  const requestId = ++testResultsRequestId
+  testResultsLoading.value = true
+  try {
+    const resp = await adminAPI.iqDetection.listTestResults(
+      TEST_RESULTS_PAGE_SIZE,
+      offset,
+      // 有 tab 时始终按 tab 过滤（0 = 未分组）；无 tab 时返回全部
+      resultTabs.value.length > 0 ? activeResultGroupId.value : undefined
+    )
+    if (requestId !== testResultsRequestId) return
+    testResults.value = offset === 0 ? resp.items : [...testResults.value, ...resp.items]
+    testResultsTotal.value = resp.total
+  } catch {
+    // sidecar 未启动时静默降级（页面顶部已有服务未启动横幅）
+    if (offset === 0 && requestId === testResultsRequestId) {
+      testResults.value = []
+      testResultsTotal.value = 0
+    }
+  } finally {
+    if (requestId === testResultsRequestId) {
+      testResultsLoading.value = false
+    }
+  }
+  scheduleTestResultsPoll()
+}
+
+function reloadTestResults() {
+  return loadTestResults(0)
+}
+
+function loadMoreTestResults() {
+  return loadTestResults(testResults.value.length)
+}
+
+// 鹈鹕渲染模态框：HTML 按需拉取后缓存
+const pelicanDialogItem = ref<TestResultItem | null>(null)
+const pelicanDialogOpen = ref(false)
+
+const pelicanDialogTitle = computed(() =>
+  pelicanDialogItem.value
+    ? t('admin.iqDetection.pelicanRenderTitle', {
+        name: pelicanDialogItem.value.account_name || pelicanDialogItem.value.account_id
+      })
+    : t('admin.iqDetection.showPelican')
+)
+
+async function openPelicanDialog(item: TestResultItem) {
+  pelicanDialogItem.value = item
+  pelicanDialogOpen.value = true
+  if (!pelicanHtmlCache.has(item.id)) {
+    pelicanLoading.add(item.id)
+    try {
+      pelicanHtmlCache.set(item.id, await adminAPI.iqDetection.getTestResultPelican(item.id))
+    } catch (error) {
+      appStore.showError(extractApiErrorMessage(error, t('common.error')))
+    } finally {
+      pelicanLoading.delete(item.id)
+    }
+  }
+}
+
+function formatTestResultTime(value: string): string {
+  const ts = Date.parse(value)
+  return Number.isNaN(ts) ? value : new Date(ts).toLocaleString()
+}
+
+function formatLatency(ms: number): string {
+  return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`
+}
+
+function formatBytes(len?: number): string {
+  if (!len) return '0B'
+  if (len >= 1024 * 1024) return `${(len / 1024 / 1024).toFixed(1)}MB`
+  if (len >= 1024) return `${Math.round(len / 1024)}KB`
+  return `${len}B`
+}
+
+// 只展示模型的最终作答（判分依据），不显示整段回复内容
+function candyFinalAnswer(answer?: string): string {
+  if (!answer) return ''
+  const match = answer.match(/<final_answer>([\s\S]*?)<\/final_answer>/)
+  return match ? match[1].trim() : ''
+}
+
+// ---- 测试状态与人工复核 ----
+let testResultsPollTimer: ReturnType<typeof setTimeout> | null = null
+
+function scheduleTestResultsPoll() {
+  if (testResultsPollTimer) clearTimeout(testResultsPollTimer)
+  if (!testResults.value.some((item) => item.status === 'running')) return
+  testResultsPollTimer = setTimeout(() => {
+    testResultsPollTimer = null
+    void loadTestResults(0)
+  }, 5000)
+}
+
+function statusBadgeClass(status: string): string {
+  if (status === 'running') return 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400'
+  if (status === 'failed') return 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400'
+  return 'bg-gray-100 text-gray-500 dark:bg-dark-700 dark:text-gray-400'
+}
+
+function statusText(status: string): string {
+  if (status === 'running') return t('admin.iqDetection.statusRunning')
+  if (status === 'failed') return t('admin.iqDetection.statusFailed')
+  return t('admin.iqDetection.statusCompleted')
+}
+
+const reviewSaving = reactive(new Set<string>())
+
+async function setReview(item: TestResultItem, probe: TestResultProbe, verdict: TestResultVerdict) {
+  const key = `${item.id}:${probe}`
+  if (reviewSaving.has(key)) return
+  reviewSaving.add(key)
+  try {
+    await adminAPI.iqDetection.updateTestResultReview(item.id, probe, verdict)
+    if (probe === 'candy') item.candy_review = verdict
+    else item.pelican_review = verdict
+  } catch (error) {
+    appStore.showError(extractApiErrorMessage(error, t('common.error')))
+  } finally {
+    reviewSaving.delete(key)
+  }
+}
+
+function reviewButtonClass(current: string, verdict: TestResultVerdict): string {
+  if (current === verdict) {
+    return verdict === 'approved'
+      ? 'bg-green-100 font-medium text-green-700 dark:bg-green-900/40 dark:text-green-400'
+      : 'bg-red-100 font-medium text-red-700 dark:bg-red-900/40 dark:text-red-400'
+  }
+  return 'text-gray-400 hover:bg-gray-100 dark:hover:bg-dark-700'
+}
+
+function formatTimeOfDay(value?: string): string {
+  if (!value) return '-'
+  const ts = Date.parse(value)
+  return Number.isNaN(ts) ? '-' : new Date(ts).toLocaleTimeString()
+}
+
 // ---- 选择保存 / 回显 ----
 const selectionSaving = ref(false)
 const selectionSavedAt = ref<string | null>(null)
@@ -894,9 +983,18 @@ async function loadSavedSelection() {
     const saved = await adminAPI.iqDetection.getSelection()
     if (!saved.updated_at) return // 从未保存过，保持默认不选中
     selectionSavedAt.value = saved.updated_at
+    savedSelectionGroups.value = saved.groups
     for (const savedGroup of saved.groups) {
       groupAllIntent.delete(savedGroup.id)
       accountSelection.set(savedGroup.id, new Set((savedGroup.accounts || []).map((a) => a.id)))
+      groupIntervals[savedGroup.id] = savedGroup.interval_minutes || 0
+    }
+    // 结果 tab 默认落在第一个分组
+    if (
+      saved.groups.length > 0 &&
+      !saved.groups.some((group) => group.id === activeResultGroupId.value)
+    ) {
+      activeResultGroupId.value = saved.groups[0].id
     }
   } catch {
     // sidecar 未启动时静默降级，保持默认
@@ -916,10 +1014,12 @@ async function saveSelection() {
       }
       const accounts = accountsByGroup.get(group.id) ?? []
       const selected = accountSelection.get(group.id) ?? new Set<number>()
+      const interval = Number(groupIntervals[group.id]) || 0
       payloadGroups.push({
         id: group.id,
         name: group.name,
         rate_multiplier: group.rate_multiplier,
+        interval_minutes: interval,
         accounts: accounts
           .filter((a) => selected.has(a.id))
           .map((a) => ({ id: a.id, name: a.name, models: accountModels(a) }))
@@ -945,6 +1045,11 @@ async function reload() {
     loading.value = false
   }
   await loadGroups()
+  // 每次进入页面回显已保存的分组与账号选择（结果 tab 依赖它，先于结果加载）
+  await loadSavedSelection()
+  if (health.value?.enabled) {
+    void loadTestResults(0)
+  }
 }
 
 async function loadGroups() {
@@ -1089,4 +1194,7 @@ function clearAccountSelection() {
 }
 
 onMounted(reload)
+onUnmounted(() => {
+  if (testResultsPollTimer) clearTimeout(testResultsPollTimer)
+})
 </script>

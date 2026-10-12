@@ -139,9 +139,10 @@ export type {
 export type { CatalogApp, CatalogAppDraft, AppCatalogAgentHealth } from './appCatalog'
 export type {
   IQDetectAgentHealth,
-  SavedAccountCredential,
-  SaveAccountCredentialPayload,
   SelectionAccount,
   SelectionGroup,
-  DetectionSelection
+  DetectionSelection,
+  TestResultItem,
+  TestResultProbe,
+  TestResultVerdict
 } from './iqDetection'

@@ -2,6 +2,7 @@ package iqdetectd
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -36,6 +37,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/detection-models", s.handleListDetectionModels)
 	mux.HandleFunc("PUT /v1/detection-models", s.handleReplaceDetectionModels)
 	mux.HandleFunc("POST /v1/test-runs", s.handleTriggerTestRun)
+	mux.HandleFunc("GET /v1/test-results", s.handleListTestResults)
+	mux.HandleFunc("GET /v1/test-results/{id}", s.handleGetTestResult)
+	mux.HandleFunc("GET /v1/test-results/{id}/pelican", s.handleGetTestResultPelican)
+	mux.HandleFunc("PUT /v1/test-results/{id}/review", s.handleUpdateTestResultReview)
 	return mux
 }
 
@@ -205,6 +210,9 @@ func (s *Server) handleSaveSelection(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	// 选择变化后重新尝试归属历史无分组的结果（失败不影响保存）；
+	// 调度器每分钟从数据库重读选择，无需在此重排定时器
+	_, _ = s.Store.BackfillTestResultGroups(r.Context())
 	writeJSON(w, http.StatusOK, selection)
 }
 
@@ -267,12 +275,100 @@ func (s *Server) handleTriggerTestRun(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "test runner unavailable")
 		return
 	}
-	plan, err := s.TestRunner.TriggerTestRun(r.Context())
+	var input TriggerTestRunInput
+	if r.Body != nil {
+		_ = json.NewDecoder(io.LimitReader(r.Body, 4<<20)).Decode(&input) // 空 body 合法
+	}
+	plan, err := s.TestRunner.TriggerTestRun(r.Context(), input.Credentials, input.GroupID)
 	if err != nil {
 		writeError(w, http.StatusConflict, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusAccepted, plan)
+}
+
+// handleListTestResults serves the newest result pairs without the pelican
+// HTML body; clients fetch the body per pair via /v1/test-results/{id}/pelican.
+func (s *Server) handleListTestResults(w http.ResponseWriter, r *http.Request) {
+	limit := 20
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			limit = n
+		}
+	}
+	if limit < 1 {
+		limit = 1
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	offset := 0
+	if v := r.URL.Query().Get("offset"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			offset = n
+		}
+	}
+	// group_id 显式传 0 表示只看未分组的历史结果；不传则返回全部
+	groupID := int64(0)
+	hasGroup := r.URL.Query().Has("group_id")
+	if hasGroup {
+		if n, err := strconv.ParseInt(r.URL.Query().Get("group_id"), 10, 64); err == nil && n >= 0 {
+			groupID = n
+		}
+	}
+	items, total, err := s.Store.ListTestResults(r.Context(), int64(limit), int64(offset), hasGroup, groupID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items, "total": total})
+}
+
+func (s *Server) handleGetTestResult(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	result, err := s.Store.GetTestResultByID(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleGetTestResultPelican(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	html, err := s.Store.GetTestResultPelicanHTML(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write([]byte(html))
+}
+
+func (s *Server) handleUpdateTestResultReview(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	var input TestResultReviewInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	if err := s.Store.UpdateTestResultReview(r.Context(), id, input.Probe, input.Verdict); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {

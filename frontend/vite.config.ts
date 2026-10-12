@@ -182,6 +182,15 @@ function mapIQDetectPath(pathname: string, method = 'GET'): string | null {
   if (rest === '/test-runs') {
     return verb === 'POST' ? '/v1/test-runs' : null
   }
+  if (rest === '/test-results') {
+    return verb === 'GET' || verb === 'HEAD' ? '/v1/test-results' : null
+  }
+  if (/^\/test-results\/\d+\/pelican$/.test(rest)) {
+    return verb === 'GET' || verb === 'HEAD' ? `/v1${rest}` : null
+  }
+  if (/^\/test-results\/\d+\/review$/.test(rest)) {
+    return verb === 'PUT' ? `/v1${rest}` : null
+  }
   return null
 }
 
@@ -207,7 +216,9 @@ function proxyIQDetectDirect(target: string): Plugin {
           const method = req.method!.toUpperCase()
           const hasBody = method !== 'GET' && method !== 'HEAD'
           const body = hasBody ? await readRequestBody(req) : undefined
-          const upstream = await fetch(`${base}${mapped}`, {
+          // 透传查询串（group_id / limit / offset 等），否则 dev 下的过滤和分页全失效
+          const query = url.slice(pathname.length)
+          const upstream = await fetch(`${base}${mapped}${query}`, {
             method,
             headers: hasBody ? { 'Content-Type': req.headers['content-type'] || 'application/json' } : undefined,
             body,
@@ -236,6 +247,14 @@ function proxyIQDetectDirect(target: string): Plugin {
                 uptime_seconds: health.uptime_seconds,
               },
             })
+            return
+          }
+          if (mapped.startsWith('/v1/test-results/') && mapped.endsWith('/pelican')) {
+            // 鹈鹕接口返回裸 HTML，包成主服务信封的 { html } 形式
+            sendJSON(res, upstream.ok ? 200 : upstream.status,
+              upstream.ok
+                ? { code: 0, message: 'success', data: { html: raw } }
+                : { code: upstream.status, message: raw || `iq detect HTTP ${upstream.status}` })
             return
           }
           if (!upstream.ok) {
