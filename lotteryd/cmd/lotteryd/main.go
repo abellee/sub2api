@@ -18,6 +18,7 @@ import (
 	"lotteryd/internal/app"
 	"lotteryd/internal/migrator"
 	"lotteryd/internal/push"
+	"lotteryd/internal/rpc"
 	"lotteryd/internal/server"
 	"lotteryd/internal/store"
 	"lotteryd/internal/sub2api"
@@ -35,6 +36,8 @@ func envOr(key, fallback string) string {
 func main() {
 	var (
 		listen        = flag.String("listen", envOr("LOTTERYD_LISTEN", "127.0.0.1:18100"), "HTTP listen address")
+		grpcListen    = flag.String("grpc-listen", envOr("LOTTERYD_GRPC_LISTEN", "127.0.0.1:18101"), "gRPC listen address (rewards service for sub2api callbacks)")
+		grpcToken     = flag.String("grpc-token", envOr("LOTTERYD_GRPC_TOKEN", ""), "gRPC internal token (x-internal-token metadata; empty = no auth)")
 		pgDSN         = flag.String("pg-dsn", envOr("LOTTERYD_PG_DSN", "postgres://lottery:lottery@127.0.0.1:5432/lottery?sslmode=disable"), "PostgreSQL DSN")
 		migrateSQLite = flag.String("migrate-from-sqlite", envOr("LOTTERYD_MIGRATE_FROM_SQLITE", ""), "One-shot migration: copy data from the given SQLite file into PostgreSQL, then exit")
 		sub2apiURL    = flag.String("sub2api-url", envOr("LOTTERYD_SUB2API_URL", "http://127.0.0.1:8080"), "Sub2API base URL")
@@ -141,6 +144,15 @@ func main() {
 
 	// WebSocket 推送循环：资格变化时实时通知在线用户。
 	go srv.RunWSHub(ctx)
+
+	// gRPC 奖励服务：主站充值回调的异步通知入口。
+	grpcServer := rpc.NewGRPCServer(st, strings.TrimSpace(*grpcToken))
+	go func() {
+		if err := rpc.ServeGRPC(ctx, grpcServer, *grpcListen); err != nil {
+			logger.Error("grpc server", "err", err)
+			stop()
+		}
+	}()
 
 	// Draw scheduler loop.
 	go func() {
