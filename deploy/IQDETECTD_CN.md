@@ -28,18 +28,24 @@ docker compose up -d iqdetectd
 ## 1. 行为
 
 - 独立进程，默认监听 `127.0.0.1:18102`
-- SQLite 持久化受管模型、检测批次与每模型得分，不依赖主库
+- SQLite 持久化检测配置、选择、账号凭据与测试结果，不依赖主库
 - 主进程通过 `iq_detect.base_url`（环境变量 `IQ_DETECT_BASE_URL`）把管理端「智商检测」页面转发到 sidecar
-- 进程自身提供 `GET /health`、`GET /v1/probes`、受管模型 CRUD、`POST /v1/runs`（触发检测）、`GET /v1/runs/{id}`、`GET /v1/scores`
+- 接口一览（主服务代理路径见仓库根 `HANDOFF.md`）：
+  - `GET /health`
+  - `GET/PUT /v1/account-credentials`：账号凭据（API Key 只写不读，响应仅 `has_api_key`）
+  - `GET/PUT /v1/selection`：已保存的分组/账号/模型选择（单行 JSON，整体替换）
+  - `GET/PUT /v1/detection-models`：检测模型列表 + 鹈鹕/糖果提示词 + 糖果正确答案 + 推理等级 + 温度（PUT 全量替换）
+  - `POST /v1/test-runs`：触发测试，立即返回计划，后台执行
+  - 早期内置探针：`GET /v1/probes`、受管模型 CRUD、`POST /v1/runs`、`GET /v1/runs/{id}`、`GET /v1/scores`
 
 主服务在 sidecar 不可用时会降级：管理端页面显示「服务未启动」横幅。
 
-## 2. 探针与评分
+## 2. 测试与判分
 
-- 探针集内置于二进制中（`GET /v1/probes` 可查看），每题要求模型只输出最终答案
-- 判分先做归一化（去空白/标点/填充词），再支持选项字母与数值抽取匹配
-- 智商分 = `40 + 100 × 正确题数 / 总题数`，保留一位小数（40–140）
-- 每次运行串行探测所有启用模型；同一时刻只允许一个批次在跑
+- **测试**：按检测模型设置里的模型顺序，每个模型从已保存选择中随机挑一个"模型列表包含它且配置过凭据"的账号；鹈鹕/糖果两个探针以两个 goroutine 并发直连该账号自身上游（api_url + api_key），请求带推理等级/温度（留空不传）
+- **保留**：每账号只保留最近 60 对结果（120 条单侧记录），旧行自动删除
+- **判分**：糖果回复抽取 `<final_answer>...</final_answer>` 的值与"正确答案"比较（字符串或数值相等），记 `candy_correct` true/false；未配置正确答案为空。鹈鹕 HTML 直接存库（单条上限 2MB）
+- 早期的内置探针跑批（`/v1/runs`，内置 10 题、40–140 换算）仍可用，与管理页面当前使用的 test-runs 相互独立
 
 ## 3. 二进制安装（与 sub2api 相同）
 
