@@ -108,6 +108,7 @@ type Config struct {
 	Plugins                 PluginConfig                  `mapstructure:"plugins"`
 	AppCatalog              AppCatalogConfig              `mapstructure:"app_catalog"`
 	IQDetect                IQDetectConfig                `mapstructure:"iq_detect"`
+	Lotteryd                LotterydConfig                `mapstructure:"lotteryd"`
 
 	// Enforce only API-key spending windows in simple mode.
 	SimpleModeKeyRateLimitEnabled bool `mapstructure:"simple_mode_key_rate_limit_enabled" yaml:"simple_mode_key_rate_limit_enabled"`
@@ -119,6 +120,16 @@ type AppCatalogConfig struct {
 
 type IQDetectConfig struct {
 	BaseURL string `mapstructure:"base_url"`
+}
+
+// LotterydConfig 抽奖/任务 sidecar（lotteryd）集成配置。
+// grpc_addr 为空表示不启用充值回调通知（不影响主流程）。
+type LotterydConfig struct {
+	GrpcAddr string `mapstructure:"grpc_addr"`
+	// Token 与 lotteryd 的 LOTTERYD_GRPC_TOKEN 一致；两端都为空时不鉴权。
+	Token string `mapstructure:"token"`
+	// TimeoutSeconds 单次通知超时；0 用默认 5 秒。
+	TimeoutSeconds int `mapstructure:"timeout_seconds"`
 }
 
 // SimpleModeConfig controls startup behavior in simple mode.
@@ -2045,6 +2056,10 @@ func setDefaults() {
 	viper.SetDefault("run_mode", RunModeStandard)
 	viper.SetDefault("app_catalog.base_url", "http://127.0.0.1:18099")
 	viper.SetDefault("iq_detect.base_url", "http://127.0.0.1:18102")
+	// viper 只解码 AllKeys() 中注册过的键：未设置默认值的纯环境变量键会被静默丢弃。
+	viper.SetDefault("lotteryd.grpc_addr", "")
+	viper.SetDefault("lotteryd.token", "")
+	viper.SetDefault("lotteryd.timeout_seconds", 5)
 	viper.SetDefault("simple_mode.auto_create_default_groups", true)
 	viper.SetDefault("simple_mode_key_rate_limit_enabled", false)
 
