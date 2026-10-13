@@ -199,6 +199,7 @@ type PaymentService struct {
 	resumeService            *PaymentResumeService
 	affiliateService         *AffiliateService
 	notificationEmailService *NotificationEmailService
+	lotterydNotifier         *LotterydNotifier
 }
 
 func NewPaymentService(entClient *dbent.Client, registry *payment.Registry, loadBalancer payment.LoadBalancer, redeemService *RedeemService, subscriptionSvc *SubscriptionService, configService *PaymentConfigService, userRepo UserRepository, groupRepo GroupRepository, affiliateService *AffiliateService) *PaymentService {
@@ -209,6 +210,11 @@ func NewPaymentService(entClient *dbent.Client, registry *payment.Registry, load
 
 func (s *PaymentService) SetNotificationEmailService(notificationEmailService *NotificationEmailService) {
 	s.notificationEmailService = notificationEmailService
+}
+
+// SetLotterydNotifier 挂接 lotteryd 充值回调通知器（可为 nil 表示未启用）。
+func (s *PaymentService) SetLotterydNotifier(n *LotterydNotifier) {
+	s.lotterydNotifier = n
 }
 
 // --- Provider Registry ---

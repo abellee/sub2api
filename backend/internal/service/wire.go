@@ -856,6 +856,7 @@ func ProvideAPIKeyService(
 
 // ProviderSet is the Wire provider set for all services
 var ProviderSet = wire.NewSet(
+	ProvideGroupRecommendationStore,
 	// Core services
 	ProvideAuthService,
 	NewPasskeyService,
@@ -919,6 +920,8 @@ var ProviderSet = wire.NewSet(
 	ProvideOpenCodeGoUsageService,
 	ProvideSettingService,
 	NewDataManagementService,
+	NewAppCatalogService,
+	NewIQDetectService,
 	ProvideBackupService,
 	ProvideOpsSystemLogSink,
 	ProvideOpsService,
@@ -977,6 +980,7 @@ var ProviderSet = wire.NewSet(
 	NewContentModerationService,
 	NewAffiliateService,
 	ProvidePaymentConfigService,
+	ProvideLotterydNotifier,
 	ProvidePaymentService,
 	ProvidePaymentOrderExpiryService,
 	ProvideBalanceNotifyService,
@@ -1010,10 +1014,19 @@ func ProvideBalanceNotifyService(emailService *EmailService, settingRepo Setting
 }
 
 // ProvidePaymentService creates PaymentService and attaches notification email delivery.
-func ProvidePaymentService(entClient *dbent.Client, registry *payment.Registry, loadBalancer payment.LoadBalancer, redeemService *RedeemService, subscriptionSvc *SubscriptionService, configService *PaymentConfigService, userRepo UserRepository, groupRepo GroupRepository, affiliateService *AffiliateService, notificationEmailService *NotificationEmailService) *PaymentService {
+func ProvidePaymentService(entClient *dbent.Client, registry *payment.Registry, loadBalancer payment.LoadBalancer, redeemService *RedeemService, subscriptionSvc *SubscriptionService, configService *PaymentConfigService, userRepo UserRepository, groupRepo GroupRepository, affiliateService *AffiliateService, notificationEmailService *NotificationEmailService, lotterydNotifier *LotterydNotifier) *PaymentService {
 	svc := NewPaymentService(entClient, registry, loadBalancer, redeemService, subscriptionSvc, configService, userRepo, groupRepo, affiliateService)
 	svc.SetNotificationEmailService(notificationEmailService)
+	svc.SetLotterydNotifier(lotterydNotifier)
 	return svc
+}
+
+// ProvideLotterydNotifier 按配置构造 lotteryd 充值通知器（未配置时返回 nil）。
+func ProvideLotterydNotifier(cfg *config.Config) *LotterydNotifier {
+	if cfg == nil {
+		return nil
+	}
+	return NewLotterydNotifier(cfg.Lotteryd)
 }
 
 // ProvidePaymentOrderExpiryService creates and starts PaymentOrderExpiryService.

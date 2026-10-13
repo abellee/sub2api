@@ -106,7 +106,15 @@ export default {
     currentConcurrency: '当前并发',
     noGroup: '无分组',
     searchGroup: '搜索分组...',
+    useNativeGroupSelect: '使用旧版下拉选择',
+    useCardGroupSelect: '使用新版卡片选择',
+    groupProviders: '模型厂商导航',
+    uncategorizedGroups: '其他',
     noGroupFound: '未找到匹配的分组',
+    recommendedGroups: '推荐',
+    recommendedGroupsEmpty: '暂无推荐分组',
+    recommendationReason: '推荐理由',
+    recommendationReasonEmpty: '暂无推荐理由',
     created: '创建时间',
     copyToClipboard: '复制到剪贴板',
     copied: '已复制！',
@@ -502,9 +510,9 @@ export default {
   // Shared keys for channel monitor (admin + user views)
   monitorCommon: {
     status: {
-      operational: '正常',
-      degraded: '降级',
-      failed: '失败',
+      operational: '健康',
+      degraded: '波动',
+      failed: '异常',
       error: '错误',
       unknown: '-'
     },
@@ -657,17 +665,39 @@ export default {
   modelPlaza: {
     title: '模型广场',
     description: '按分组浏览可用模型与价格',
+    pricingNotice: {
+      title: '价格说明',
+      body: '模型价格同步自 Sub2API。由于各渠道价格定义不统一且模型数量较多，本页仅展示针对性配置模型的长上下文价格；完整定义请参阅官方价格清单。',
+      data: 'Sub2API 价格同步数据',
+      official: '官方价格清单',
+      providers: {
+        anthropic: 'Anthropic Claude',
+        openai: 'OpenAI',
+        google: 'Google Gemini',
+        xai: 'xAI Grok',
+        deepseek: 'DeepSeek',
+        moonshot: 'Moonshot Kimi',
+        zhipu: '智谱 GLM'
+      }
+    },
     loading: '加载中...',
     empty: '暂无可展示的分组',
     loadFailed: '加载模型广场失败',
     noSearchResult: '没有匹配的模型',
     anonymousHint: '登录后可查看你的专属分组与专属倍率',
     filters: {
-      platformLabel: '平台',
+      platformLabel: '模型厂商',
+      providerLabel: '模型厂商',
+      providerHint: '先选择厂商，再浏览对应分组',
       groupLabel: '分组',
+      allProviders: '全部厂商',
+      allGroups: '全部分组',
+      noGroupsForProvider: '该厂商暂无可展示的分组',
+      lowest: '最低',
       rateLabel: '倍率',
       modelLabel: '模型',
       searchPlaceholder: '搜索模型名称',
+      clearSearch: '清除搜索',
       all: '全部'
     },
     badges: {
@@ -678,7 +708,7 @@ export default {
       noModels: '该分组暂未配置模型',
       noPricing: '未配置定价',
       peakNote: '高峰时段 {window} 计费倍率 ×{multiplier}',
-      longContextDisabledNote: '该分组未启用长上下文阶梯计费，超阈值请求仍按基础档计费，官方阶梯仅供参考'
+      longContextDisabledNote: '该分组未启用长上下文阶梯计费，超阈值请求仍按基础档计费，官方阶梯仅供参考',
     },
     table: {
       model: '模型',
@@ -689,6 +719,9 @@ export default {
       cacheRead: '读取',
       cacheWriteShort: '写',
       cacheReadShort: '读',
+      longContext: '长上下文阶梯',
+      viewLongContext: '查看长上下文阶梯价',
+      closeLongContext: '收起长上下文阶梯价',
       tierHint: '按单次请求的总上下文（输入 + 缓存写入 + 缓存读取）所在档位对整单计价',
       tierHintMarginal: '仅超过阈值的部分按该档计价，输出不加价',
       reasoningMultiplierBadge: '{effort} ×{multiplier}',
@@ -699,15 +732,20 @@ export default {
         '按 {timezone} 时间，仅工作日（周一至周五）在该时段内发起的请求按本行价格计费，周末全天按标准价',
       timePricingRowHintPeak: '；本行价格未含高峰倍率，与高峰时段 {window} 重叠的部分实付再乘 ×{multiplier}',
       timePricingWeekdays: '工作日',
+      standard: '标准时段',
+      current: '当前',
+      to: '至',
       timePricingRateHint: '生效倍率 {rate} × 时段倍率 {multiplier}',
       paidPrice: '实付价格(折后)',
       officialPrice: '官方价格',
       rate: '折扣倍率',
-      unitPerMillion: '$ / 1M token',
+      unitPerMillion: '/ 1M token',
       perUnitRequest: '/ 次',
       perUnitImage: '/ 张',
+      perUnitVideo: '/ 秒',
       perRequest: '按次计费',
-      perImage: '按图片计费'
+      perImage: '按图片计费',
+      perVideo: '视频计费'
     },
     nav: {
       login: '登录',
@@ -722,6 +760,12 @@ export default {
     inviteLink: '邀请链接',
     copyCode: '复制邀请码',
     copyLink: '复制链接',
+    viewPoster: '查看邀请海报',
+    downloadPoster: '下载邀请海报',
+    posterLoading: '正在生成海报...',
+    posterFailed: '海报生成失败，请稍后重试',
+    posterPreview: '邀请海报预览',
+    posterAlt: '邀请返利海报',
     codeCopied: '邀请码已复制',
     linkCopied: '邀请链接已复制',
     loadFailed: '加载邀请返利数据失败',
@@ -1060,5 +1104,11 @@ export default {
     selectDateRange: '选择日期范围'
   },
 
-  // Admin
+  appCenter: {
+    title: '应用中心',
+    description: '浏览已收录的第三方应用',
+    empty: '暂无应用',
+    emptyHint: '管理员添加应用后会显示在这里。',
+    openDownloadPage: '跳转下载页',
+  },
 }

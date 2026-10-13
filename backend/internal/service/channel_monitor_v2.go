@@ -1082,7 +1082,7 @@ func cacheRateBand(cacheRate, warning, critical float64) string {
 // scoreBand maps continuous 0–100 scores to coarse labels for legacy consumers.
 func scoreBand(score float64) string {
 	switch {
-	case score >= 80:
+	case score >= 70:
 		return "healthy"
 	case score >= 50:
 		return "warning"

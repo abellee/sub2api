@@ -47,6 +47,8 @@ dockers:
       - "ghcr.io/{{ .Env.GITHUB_REPO_OWNER_LOWER }}/sub2api:latest"
     dockerfile: Dockerfile.goreleaser
     use: buildx
+    ids:
+      - sub2api
     extra_files:
       - deploy/docker-entrypoint.sh
       - backend/resources

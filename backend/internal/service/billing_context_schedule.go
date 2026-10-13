@@ -11,12 +11,15 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 )
 
-// ContextPricingBasis 阶梯的计价基准。当前只有整单口径；历史上的
-// Gemini 边际口径（"marginal"）已随平台旧规则一并移除。
+// ContextPricingBasis 阶梯的计价基准。
 type ContextPricingBasis string
 
-// ContextPricingBasisWholeRequest 整单按所在档单价计价（目录阶梯、渠道区间）。
-const ContextPricingBasisWholeRequest ContextPricingBasis = "whole_request"
+const (
+	// ContextPricingBasisWholeRequest 整单按所在档单价计价（目录阶梯、渠道区间）。
+	ContextPricingBasisWholeRequest ContextPricingBasis = "whole_request"
+	// ContextPricingBasisMarginal 仅超出阈值的部分按该档单价计价（平台旧规则）。
+	ContextPricingBasisMarginal ContextPricingBasis = "marginal"
+)
 
 // ContextPricingTier (MinTokens, MaxTokens] 区间内的有效 per-token 单价（USD）。
 // nil 表示该项无价/不计费；MaxTokens 为 nil 表示无上限。
@@ -50,9 +53,13 @@ type TimePricingSchedule struct {
 // 单价由真实计费函数探针得出，与扣费同源；单档表示无阶梯。
 // Tiers 为标准时段单价；TimePricing 非 nil 时，落在时段内的请求整单再乘对应倍率。
 type ContextPricingSchedule struct {
-	Basis       ContextPricingBasis
-	Tiers       []ContextPricingTier
-	TimePricing *TimePricingSchedule
+	Basis ContextPricingBasis
+	Tiers []ContextPricingTier
+	// HasConfiguredLongContext indicates that the selected channel explicitly
+	// defines token intervals. Catalog presets alone must not be advertised as
+	// channel long-context pricing in the model plaza.
+	HasConfiguredLongContext bool
+	TimePricing              *TimePricingSchedule
 }
 
 // ContextPricingScheduleInput 阶梯表查询输入。
@@ -131,7 +138,12 @@ func (s *BillingService) ResolveContextPricingSchedule(ctx context.Context, reso
 	tiers = mergeEqualContextTiers(tiers)
 	applyContextTierLabels(tiers, plan)
 
-	return &ContextPricingSchedule{Basis: ContextPricingBasisWholeRequest, Tiers: tiers, TimePricing: resolvedTimePricingSchedule(resolved)}, nil
+	return &ContextPricingSchedule{
+		Basis:                    ContextPricingBasisWholeRequest,
+		Tiers:                    tiers,
+		HasConfiguredLongContext: len(resolved.Intervals) > 0,
+		TimePricing:              resolvedTimePricingSchedule(resolved),
+	}, nil
 }
 
 // resolvedTimePricingSchedule 列出计费会生效的分时倍率时段。
