@@ -987,6 +987,82 @@ func TestTaskEndToEnd(t *testing.T) {
 	_ = resp.Body.Close()
 }
 
+// 回归：00:10 结算的三天任务，最后一天的结算点在次日 00:10；
+// 次 00:00 不能翻转 ended，否则最后一天永远结算不到。
+func TestTaskLastDaySettlesBeforeEndFlip(t *testing.T) {
+	e := newTestEnv(t)
+	ctx := context.Background()
+	adminToken := signJWT(e.secret, 1, "admin")
+	mustJSON(t, e.req(t, http.MethodPut, "/v1/admin/task-settings", adminToken,
+		map[string]any{"visibility": map[string]any{"mode": "all"}}))
+
+	todayBJ := time.Now().In(lottery.Beijing())
+	lastDay := todayBJ.AddDate(0, 0, -1)
+	e.fake.modelUsage[lastDay.Format("2006-01-02")] = map[int64]float64{101: 150e6}
+
+	task := sampleTask("三天任务", todayBJ.AddDate(0, 0, -3).Format("2006-01-02"), 3, "balance")
+	task["settle_time"] = "00:10"
+	data := mustJSON(t, e.req(t, http.MethodPost, "/v1/admin/tasks", adminToken, task))
+	taskID := fmt.Sprintf("%d", int64(data["id"].(float64)))
+
+	// 最后一天结束后的次日 00:05：未到 00:10 结算点，必须保持 active 且不结算
+	tick := time.Date(todayBJ.Year(), todayBJ.Month(), todayBJ.Day(), 0, 5, 0, 0, lottery.Beijing())
+	e.app.SettleDueTasks(ctx, tick)
+	data = mustJSON(t, e.req(t, http.MethodGet, "/v1/admin/tasks/"+taskID, adminToken, nil))
+	require.Equal(t, "active", data["task"].(map[string]any)["status"].(string))
+	data = mustJSON(t, e.req(t, http.MethodGet, "/v1/admin/tasks/"+taskID+"/rewards", adminToken, nil))
+	require.Empty(t, data["rewards"].([]any), "最后一天的结算点还没到")
+
+	// 00:10 结算点一到：先结算最后一天，然后才翻转成 ended
+	tick = time.Date(todayBJ.Year(), todayBJ.Month(), todayBJ.Day(), 0, 10, 0, 0, lottery.Beijing())
+	e.app.SettleDueTasks(ctx, tick)
+	data = mustJSON(t, e.req(t, http.MethodGet, "/v1/admin/tasks/"+taskID, adminToken, nil))
+	require.Equal(t, "ended", data["task"].(map[string]any)["status"].(string))
+	data = mustJSON(t, e.req(t, http.MethodGet, "/v1/admin/tasks/"+taskID+"/rewards", adminToken, nil))
+	rows := data["rewards"].([]any)
+	require.Len(t, rows, 1)
+	require.Equal(t, lastDay.Format("2006-01-02"), rows[0].(map[string]any)["settle_date"].(string))
+	require.Equal(t, 1.0, e.fake.balances[101], "150M / 100M = 1 单位 × 1 元")
+}
+
+// 回归：23:59 结算的三天任务，最后一天要到次日 23:59 才结算并翻转；
+// 整个次日任务保持 active，不能按日历日在 00:00 提前翻转。
+func TestTaskLateSettleTimeStaysActiveUntilLastSettleMoment(t *testing.T) {
+	e := newTestEnv(t)
+	ctx := context.Background()
+	adminToken := signJWT(e.secret, 1, "admin")
+	mustJSON(t, e.req(t, http.MethodPut, "/v1/admin/task-settings", adminToken,
+		map[string]any{"visibility": map[string]any{"mode": "all"}}))
+
+	todayBJ := time.Now().In(lottery.Beijing())
+	lastDay := todayBJ.AddDate(0, 0, -1)
+	e.fake.modelUsage[lastDay.Format("2006-01-02")] = map[int64]float64{101: 150e6}
+
+	task := sampleTask("晚间结算任务", todayBJ.AddDate(0, 0, -3).Format("2006-01-02"), 3, "balance")
+	task["settle_time"] = "23:59"
+	data := mustJSON(t, e.req(t, http.MethodPost, "/v1/admin/tasks", adminToken, task))
+	taskID := fmt.Sprintf("%d", int64(data["id"].(float64)))
+
+	// 次日（最后一天的结算日）中午：还没到 23:59，保持 active 且不结算
+	tick := time.Date(todayBJ.Year(), todayBJ.Month(), todayBJ.Day(), 12, 0, 0, 0, lottery.Beijing())
+	e.app.SettleDueTasks(ctx, tick)
+	data = mustJSON(t, e.req(t, http.MethodGet, "/v1/admin/tasks/"+taskID, adminToken, nil))
+	require.Equal(t, "active", data["task"].(map[string]any)["status"].(string))
+	data = mustJSON(t, e.req(t, http.MethodGet, "/v1/admin/tasks/"+taskID+"/rewards", adminToken, nil))
+	require.Empty(t, data["rewards"].([]any), "最后一天的结算点还没到")
+
+	// 23:59 结算点一到：结算最后一天并翻转 ended
+	tick = time.Date(todayBJ.Year(), todayBJ.Month(), todayBJ.Day(), 23, 59, 0, 0, lottery.Beijing())
+	e.app.SettleDueTasks(ctx, tick)
+	data = mustJSON(t, e.req(t, http.MethodGet, "/v1/admin/tasks/"+taskID, adminToken, nil))
+	require.Equal(t, "ended", data["task"].(map[string]any)["status"].(string))
+	data = mustJSON(t, e.req(t, http.MethodGet, "/v1/admin/tasks/"+taskID+"/rewards", adminToken, nil))
+	rows := data["rewards"].([]any)
+	require.Len(t, rows, 1)
+	require.Equal(t, lastDay.Format("2006-01-02"), rows[0].(map[string]any)["settle_date"].(string))
+	require.Equal(t, 1.0, e.fake.balances[101], "150M / 100M = 1 单位 × 1 元")
+}
+
 func TestTaskVisibility(t *testing.T) {
 	e := newTestEnv(t)
 	adminToken := signJWT(e.secret, 1, "admin")

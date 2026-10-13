@@ -474,7 +474,7 @@ func (ap *App) MyTaskRewards(userID int64) ([]lottery.TaskReward, error) {
 
 // SettleDueTasks 调度 tick：结算所有到期的任务结算日，并把过期任务置为 ended。
 // 每个结算日以 sync_state 键 task_settled:<taskID>:<date> 幂等；失败不写键，
-// 下个 tick 自动重试。
+// 下个 tick 自动重试；所有到期结算日落定后才翻转 ended。
 func (ap *App) SettleDueTasks(ctx context.Context, now time.Time) {
 	if ap.Cfg.DisableSettlement {
 		return
@@ -488,37 +488,49 @@ func (ap *App) SettleDueTasks(ctx context.Context, now time.Time) {
 		if t.Status != lottery.TaskActive {
 			continue
 		}
-		// 先结算到期未结算的结算日（最后一天的结算点在过期后才到达），
-		// 再把已过期的任务置为 ended。
-		ap.settleTaskDueDays(ctx, &t, now)
-		if dateStr(now) > t.EndDate() {
-			if err := ap.Store.SetTaskStatus(t.ID, lottery.TaskEnded); err != nil {
-				slog.Error("task settle: mark ended failed", "task", t.ID, "err", err)
-			}
+		// 先结算到期未结算的结算日（最后一天的结算点在过期后才到达）。
+		if !ap.settleTaskDueDays(ctx, &t, now) {
+			continue // 还有到期未落定的结算日，保持 active 下个 tick 重试
+		}
+		// 到期判定用最后一个结算日的结算点，不能按日历日：否则 00:10 结算的
+		// 任务会在次日 00:00 被翻成 ended，从此错过最后一天的结算。
+		lastSettle, err := t.SettleMomentFor(t.EndDate())
+		if err != nil {
+			slog.Error("task settle: bad settle_time", "task", t.ID, "settle_time", t.SettleTime, "err", err)
+			continue
+		}
+		if now.Before(lastSettle) {
+			continue
+		}
+		if err := ap.Store.SetTaskStatus(t.ID, lottery.TaskEnded); err != nil {
+			slog.Error("task settle: mark ended failed", "task", t.ID, "err", err)
 		}
 	}
 }
 
-func (ap *App) settleTaskDueDays(ctx context.Context, t *lottery.Task, now time.Time) {
+// settleTaskDueDays 结算任务所有到期的结算日，返回是否全部落定
+// （不含还没到结算点的日子）。
+func (ap *App) settleTaskDueDays(ctx context.Context, t *lottery.Task, now time.Time) bool {
 	start, err := lottery.ParseDate(t.StartDate)
 	if err != nil {
 		slog.Error("task settle: bad start_date", "task", t.ID, "start", t.StartDate)
-		return
+		return false
 	}
 	// 最多结算到北京时间的昨天；任务日期是日历日，不跟容器时区走。
 	last := dateStr(lottery.InBeijing(now).AddDate(0, 0, -1))
 	if end := t.EndDate(); end < last {
 		last = end
 	}
+	settledAll := true
 	for d := start; lottery.FormatDate(d) <= last; d = d.AddDate(0, 0, 1) {
 		date := lottery.FormatDate(d)
 		settleAt, err := t.SettleMomentFor(date)
 		if err != nil {
 			slog.Error("task settle: bad settle_time", "task", t.ID, "err", err)
-			return
+			return false
 		}
 		if now.Before(settleAt) {
-			continue
+			continue // 还没到结算点的日子不算欠账
 		}
 		key := fmt.Sprintf("%s%d:%s", stateTaskSettledPrefix, t.ID, date)
 		if raw, err := ap.Store.GetState(key); err == nil && raw != "" {
@@ -526,13 +538,16 @@ func (ap *App) settleTaskDueDays(ctx context.Context, t *lottery.Task, now time.
 		}
 		if err := ap.settleTaskDay(ctx, t, date); err != nil {
 			slog.Error("task settle failed", "task", t.ID, "date", date, "err", err)
-			continue // 不写幂等键，下个 tick 重试
+			settledAll = false // 不写幂等键，下个 tick 重试
+			continue
 		}
 		if err := ap.Store.SetState(key, "done"); err != nil {
 			slog.Error("task settle: write idempotency key failed", "task", t.ID, "date", date, "err", err)
+			settledAll = false
 		}
 		slog.Info("task settled", "task", t.ID, "date", date)
 	}
+	return settledAll
 }
 
 // settleTaskDay 结算某个结算日：拉当日分组+模型消耗，评估资格后发奖。
