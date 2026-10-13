@@ -635,8 +635,8 @@ func decodeJSONContent(raw []byte) (string, error) {
 	return decoded.Choices[0].Message.Content, nil
 }
 
-// ExtractFinalAnswer exports the candy final-answer extraction for consumers
-// of the sidecar package (e.g. the main service's public results endpoint).
+// ExtractFinalAnswer exports the candy final-answer extraction used by the
+// public result endpoint and other consumers of this package.
 func ExtractFinalAnswer(answer string) string {
 	return extractFinalAnswer(answer)
 }

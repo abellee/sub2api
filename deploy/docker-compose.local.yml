@@ -242,6 +242,9 @@ services:
       - ${IQ_DETECT_API_BASE_URL:-http://sub2api:8080}
     environment:
       - IQ_DETECT_API_KEY=${IQ_DETECT_API_KEY:-}
+    ports:
+      # Loopback only: widget.llmfree.work nginx proxies /iq-detection/ here.
+      - "127.0.0.1:18102:18102"
     volumes:
       - sub2api_data:/app/data
     networks:

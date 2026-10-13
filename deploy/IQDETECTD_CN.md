@@ -37,8 +37,11 @@ docker compose up -d iqdetectd
   - `GET/PUT /v1/detection-models`：检测模型列表 + 鹈鹕/糖果提示词 + 糖果正确答案 + 推理等级 + 温度（PUT 全量替换）
   - `POST /v1/test-runs`：触发测试，立即返回计划，后台执行
   - 早期内置探针：`GET /v1/probes`、受管模型 CRUD、`POST /v1/runs`、`GET /v1/runs/{id}`、`GET /v1/scores`
+  - 公开只读（结果页，无登录）：`GET /iq-detection/overview`、`GET /iq-detection/results/{id}`
 
 主服务在 sidecar 不可用时会降级：管理端页面显示「服务未启动」横幅。
+
+结果页不走主站。`widget.llmfree.work` 的 nginx 把 `/iq-detection/` 反代到本机 `127.0.0.1:18102`，片段是 `deploy/widget-iq-detection.conf`。响应仍是 `{code, message, data}`。只发布检测间隔大于 0 的分组；账号、提示词和正确答案配置不出现在响应里，详情里的 `pelican_html` 是库里的正文。改这两个接口只发布 iqdetectd。
 
 ## 2. 测试与判分
 
