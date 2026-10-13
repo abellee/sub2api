@@ -31,11 +31,17 @@ ENV GOTOOLCHAIN=auto
 RUN apk add --no-cache git ca-certificates tzdata
 
 WORKDIR /src
+
+# lotteryd is a sibling module referenced by backend/go.mod. The replace
+# path is ../lotteryd, which is /lotteryd when the module lives in /src.
+COPY lotteryd/go.mod lotteryd/go.sum /lotteryd/
+
 COPY backend/go.mod backend/go.sum ./
 RUN --mount=type=cache,id=sub2api-iqdetectd-gomod,target=/go/pkg/mod \
     go mod download
 
 COPY backend/ ./
+COPY lotteryd/ /lotteryd/
 
 RUN --mount=type=cache,id=sub2api-iqdetectd-gomod,target=/go/pkg/mod \
     --mount=type=cache,id=sub2api-iqdetectd-gobuild,target=/root/.cache/go-build \
