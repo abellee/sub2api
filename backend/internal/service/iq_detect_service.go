@@ -260,7 +260,8 @@ func (s *IQDetectService) ListTestResults(ctx context.Context, limit, offset, gr
 // GetTestResultByID returns one full result pair from the sidecar.
 func (s *IQDetectService) GetTestResultByID(ctx context.Context, id int64) (*iqdetectd.TestResult, error) {
 	var result iqdetectd.TestResult
-	if err := s.getJSON(ctx, fmt.Sprintf("/v1/test-results/%d", id), &result); err != nil {
+	// 鹈鹕 HTML 可能到 2MB，不能用通用 JSON 代理的 1MB 上限把正文截断。
+	if err := s.getJSONLimit(ctx, fmt.Sprintf("/v1/test-results/%d", id), &result, 4<<20); err != nil {
 		return nil, err
 	}
 	return &result, nil
@@ -315,23 +316,26 @@ type IQDetectPublicGroup struct {
 
 // IQDetectPublicResultMeta is the metadata of one test result without the
 // probe output content (candy answer / pelican HTML live in the detail API).
+// CandyReview and PelicanReview are the manual verdicts: pending until a
+// person approves or rejects. CandyCorrect is only the automatic grade.
 type IQDetectPublicResultMeta struct {
 	ID               int64     `json:"id"`
 	Model            string    `json:"model"`
 	Status           string    `json:"status"`
 	CandyCorrect     *bool     `json:"candy_correct"`
+	CandyReview      string    `json:"candy_review"`
 	CandyLatencyMS   int64     `json:"candy_latency_ms,omitempty"`
 	CandyError       string    `json:"candy_error,omitempty"`
 	PelicanOK        bool      `json:"pelican_ok"`
+	PelicanReview    string    `json:"pelican_review"`
 	PelicanLatencyMS int64     `json:"pelican_latency_ms,omitempty"`
 	PelicanError     string    `json:"pelican_error,omitempty"`
 	CreatedAt        time.Time `json:"created_at"`
 }
 
 // IQDetectPublicResult is the full sanitized view of one test result for
-// regular users: no account identifiers or review state. It carries the
-// outcome of both probes — the candy final answer and the pelican HTML body —
-// plus the per-probe latency.
+// regular users: no account identifiers. It carries the candy final answer,
+// the pelican HTML body, per-probe latency, and the manual review verdicts.
 type IQDetectPublicResult struct {
 	ID               int64     `json:"id"`
 	GroupID          int64     `json:"group_id"`
@@ -340,13 +344,26 @@ type IQDetectPublicResult struct {
 	Status           string    `json:"status"`
 	CandyAnswer      string    `json:"candy_answer"`
 	CandyCorrect     *bool     `json:"candy_correct"`
+	CandyReview      string    `json:"candy_review"`
 	CandyLatencyMS   int64     `json:"candy_latency_ms,omitempty"`
 	CandyError       string    `json:"candy_error,omitempty"`
 	PelicanHTML      string    `json:"pelican_html"`
 	PelicanOK        bool      `json:"pelican_ok"`
+	PelicanReview    string    `json:"pelican_review"`
 	PelicanLatencyMS int64     `json:"pelican_latency_ms,omitempty"`
 	PelicanError     string    `json:"pelican_error,omitempty"`
 	CreatedAt        time.Time `json:"created_at"`
+}
+
+// publicReview maps a stored verdict onto the public enum. Anything other
+// than an explicit approve or reject stays pending, including a missing value.
+func publicReview(verdict string) string {
+	switch verdict {
+	case "approved", "rejected":
+		return verdict
+	default:
+		return "pending"
+	}
 }
 
 // IQDetectPublicSettings is the detection call configuration shown on the
@@ -403,9 +420,11 @@ func (s *IQDetectService) GetPublicOverview(ctx context.Context) (*IQDetectPubli
 					Model:            result.Model,
 					Status:           result.Status,
 					CandyCorrect:     result.CandyCorrect,
+					CandyReview:      publicReview(result.CandyReview),
 					CandyLatencyMS:   result.CandyLatencyMS,
 					CandyError:       result.CandyError,
 					PelicanOK:        result.PelicanError == "" && result.PelicanHTMLLen > 0,
+					PelicanReview:    publicReview(result.PelicanReview),
 					PelicanLatencyMS: result.PelicanLatencyMS,
 					PelicanError:     result.PelicanError,
 					CreatedAt:        result.CreatedAt,
@@ -439,8 +458,10 @@ func (s *IQDetectService) GetPublicResultDetail(ctx context.Context, id int64) (
 	if !published {
 		return nil, fmt.Errorf("test result %d not found", id)
 	}
-	pelicanHTML := ""
-	if result.PelicanHTMLLen > 0 && result.PelicanError == "" {
+	// 列表只带 pelican_html_len，按 id 的 JSON 只有正文、没有长度。长度为空不能当成没生成。
+	// 正文没带上时再读单独的 pelican 接口，避免大 HTML 被 JSON 代理截掉后公开接口返回空串。
+	pelicanHTML := result.PelicanHTML
+	if pelicanHTML == "" {
 		if html, err := s.GetTestResultPelican(ctx, result.ID); err == nil {
 			pelicanHTML = html
 		}
@@ -453,10 +474,12 @@ func (s *IQDetectService) GetPublicResultDetail(ctx context.Context, id int64) (
 		Status:           result.Status,
 		CandyAnswer:      iqdetectd.ExtractFinalAnswer(result.CandyAnswer),
 		CandyCorrect:     result.CandyCorrect,
+		CandyReview:      publicReview(result.CandyReview),
 		CandyLatencyMS:   result.CandyLatencyMS,
 		CandyError:       result.CandyError,
 		PelicanHTML:      pelicanHTML,
-		PelicanOK:        result.PelicanError == "" && result.PelicanHTMLLen > 0,
+		PelicanOK:        result.PelicanError == "" && pelicanHTML != "",
+		PelicanReview:    publicReview(result.PelicanReview),
 		PelicanLatencyMS: result.PelicanLatencyMS,
 		PelicanError:     result.PelicanError,
 		CreatedAt:        result.CreatedAt,
@@ -464,6 +487,10 @@ func (s *IQDetectService) GetPublicResultDetail(ctx context.Context, id int64) (
 }
 
 func (s *IQDetectService) getJSON(ctx context.Context, path string, dest any) error {
+	return s.getJSONLimit(ctx, path, dest, 1<<20)
+}
+
+func (s *IQDetectService) getJSONLimit(ctx context.Context, path string, dest any, limit int64) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.BaseURL()+path, nil)
 	if err != nil {
 		return err
@@ -474,7 +501,7 @@ func (s *IQDetectService) getJSON(ctx context.Context, path string, dest any) er
 			WithMetadata(map[string]string{"base_url": s.BaseURL()})
 	}
 	defer func() { _ = resp.Body.Close() }()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, limit))
 	if err != nil {
 		return err
 	}
