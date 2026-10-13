@@ -876,7 +876,7 @@ FROM test_results`
 	if err != nil {
 		return nil, 0, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := []TestResult{}
 	for rows.Next() {
 		var result TestResult
@@ -994,7 +994,7 @@ func (s *Store) LastTestedAtByGroup(ctx context.Context) (map[int64]time.Time, e
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var id int64
 		var created string
@@ -1029,7 +1029,7 @@ GROUP BY account_id`, args...)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var id int64
 		var created string

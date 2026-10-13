@@ -138,7 +138,7 @@ func normalizeAnswer(s string) string {
 		case unicode.Is(unicode.Han, r):
 			// Drop CJK filler words such as 答案/是; real numeric answers are digits.
 		case unicode.IsLetter(r) || unicode.IsDigit(r):
-			b.WriteRune(r)
+			_, _ = b.WriteRune(r)
 		}
 	}
 	return b.String()

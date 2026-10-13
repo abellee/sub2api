@@ -49,7 +49,7 @@ func TestInQuietWindows(t *testing.T) {
 		{23, 59, true},
 		{0, 0, true},
 		{6, 59, true},
-		{7, 0, false},  // end 为开区间
+		{7, 0, false}, // end 为开区间
 		{11, 59, false},
 		{12, 0, true},
 		{12, 59, true},
@@ -81,7 +81,7 @@ func TestInQuietWindows(t *testing.T) {
 
 func TestNormalizeQuietWindows(t *testing.T) {
 	normalized, msg := normalizeQuietWindows([]QuietWindow{
-		{},                        // 双空行丢弃
+		{}, // 双空行丢弃
 		{Start: "23:00", End: "07:00"},
 	})
 	if msg != "" {
