@@ -15,6 +15,7 @@ const (
 	RunStatusRunning   = "running"
 	RunStatusCompleted = "completed"
 	RunStatusFailed    = "failed"
+	RunStatusStopped   = "stopped"
 )
 
 // MonitoredModel is a model enrolled for IQ probing.
@@ -154,6 +155,14 @@ type DetectionModel struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// QuietWindow is one time-of-day range (Beijing time, UTC+8) in which the
+// scheduler does not start scheduled detections. Start > End wraps midnight
+// (e.g. 23:00-07:00). Manual triggers are not affected.
+type QuietWindow struct {
+	Start string `json:"start"`
+	End   string `json:"end"`
+}
+
 // DetectionModelSettings is the payload/response of the detection settings
 // endpoints: the model list plus the custom probe prompts and call settings.
 type DetectionModelSettings struct {
@@ -164,25 +173,28 @@ type DetectionModelSettings struct {
 	CandyAnswer     string           `json:"candy_answer"`
 	ReasoningEffort string           `json:"reasoning_effort"`
 	Temperature     *float64         `json:"temperature,omitempty"`
+	QuietWindows    []QuietWindow    `json:"quiet_windows,omitempty"`
 }
 
 // PutDetectionModelsInput replaces the model list, prompts and call settings.
 type PutDetectionModelsInput struct {
-	Names           []string `json:"names"`
-	PelicanPrompt   string   `json:"pelican_prompt"`
-	CandyPrompt     string   `json:"candy_prompt"`
-	CandyAnswer     string   `json:"candy_answer"`
-	ReasoningEffort string   `json:"reasoning_effort"`
-	Temperature     *float64 `json:"temperature,omitempty"`
+	Names           []string      `json:"names"`
+	PelicanPrompt   string        `json:"pelican_prompt"`
+	CandyPrompt     string        `json:"candy_prompt"`
+	CandyAnswer     string        `json:"candy_answer"`
+	ReasoningEffort string        `json:"reasoning_effort"`
+	Temperature     *float64      `json:"temperature,omitempty"`
+	QuietWindows    []QuietWindow `json:"quiet_windows,omitempty"`
 }
 
 // DetectionPrompts is the stored custom probe prompts and call settings.
 type DetectionPrompts struct {
-	PelicanPrompt   string   `json:"pelican_prompt"`
-	CandyPrompt     string   `json:"candy_prompt"`
-	CandyAnswer     string   `json:"candy_answer"`
-	ReasoningEffort string   `json:"reasoning_effort"`
-	Temperature     *float64 `json:"temperature,omitempty"`
+	PelicanPrompt   string        `json:"pelican_prompt"`
+	CandyPrompt     string        `json:"candy_prompt"`
+	CandyAnswer     string        `json:"candy_answer"`
+	ReasoningEffort string        `json:"reasoning_effort"`
+	Temperature     *float64      `json:"temperature,omitempty"`
+	QuietWindows    []QuietWindow `json:"quiet_windows,omitempty"`
 }
 
 // TestResult is one detection outcome pair (pelican + candy) for an account.

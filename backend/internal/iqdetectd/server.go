@@ -37,6 +37,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/detection-models", s.handleListDetectionModels)
 	mux.HandleFunc("PUT /v1/detection-models", s.handleReplaceDetectionModels)
 	mux.HandleFunc("POST /v1/test-runs", s.handleTriggerTestRun)
+	mux.HandleFunc("POST /v1/test-runs/stop", s.handleStopTestRuns)
 	mux.HandleFunc("GET /v1/test-results", s.handleListTestResults)
 	mux.HandleFunc("GET /v1/test-results/{id}", s.handleGetTestResult)
 	mux.HandleFunc("GET /v1/test-results/{id}/pelican", s.handleGetTestResultPelican)
@@ -235,6 +236,7 @@ func (s *Server) handleListDetectionModels(w http.ResponseWriter, r *http.Reques
 		CandyAnswer:     prompts.CandyAnswer,
 		ReasoningEffort: prompts.ReasoningEffort,
 		Temperature:     prompts.Temperature,
+		QuietWindows:    prompts.QuietWindows,
 	})
 }
 
@@ -242,6 +244,11 @@ func (s *Server) handleReplaceDetectionModels(w http.ResponseWriter, r *http.Req
 	var input PutDetectionModelsInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	quietWindows, quietErr := normalizeQuietWindows(input.QuietWindows)
+	if quietErr != "" {
+		writeError(w, http.StatusBadRequest, quietErr)
 		return
 	}
 	items, err := s.Store.ReplaceDetectionModels(r.Context(), input.Names)
@@ -255,6 +262,7 @@ func (s *Server) handleReplaceDetectionModels(w http.ResponseWriter, r *http.Req
 		CandyAnswer:     input.CandyAnswer,
 		ReasoningEffort: input.ReasoningEffort,
 		Temperature:     input.Temperature,
+		QuietWindows:    quietWindows,
 	}); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -267,6 +275,7 @@ func (s *Server) handleReplaceDetectionModels(w http.ResponseWriter, r *http.Req
 		CandyAnswer:     input.CandyAnswer,
 		ReasoningEffort: input.ReasoningEffort,
 		Temperature:     input.Temperature,
+		QuietWindows:    quietWindows,
 	})
 }
 
@@ -285,6 +294,17 @@ func (s *Server) handleTriggerTestRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusAccepted, plan)
+}
+
+// handleStopTestRuns cancels every in-flight group run (scheduled or manual)
+// and reports how many were stopped.
+func (s *Server) handleStopTestRuns(w http.ResponseWriter, r *http.Request) {
+	if s.TestRunner == nil {
+		writeError(w, http.StatusInternalServerError, "test runner unavailable")
+		return
+	}
+	stopped := s.TestRunner.StopTestRuns()
+	writeJSON(w, http.StatusOK, map[string]any{"stopped": stopped})
 }
 
 // handleListTestResults serves the newest result pairs without the pelican

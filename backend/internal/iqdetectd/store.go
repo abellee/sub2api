@@ -105,6 +105,7 @@ CREATE TABLE IF NOT EXISTS detection_prompts (
   pelican_prompt TEXT NOT NULL DEFAULT '',
   candy_prompt TEXT NOT NULL DEFAULT '',
   candy_answer TEXT NOT NULL DEFAULT '',
+  quiet_windows TEXT NOT NULL DEFAULT '[]',
   updated_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS test_results (
@@ -136,6 +137,7 @@ CREATE INDEX IF NOT EXISTS idx_test_results_account ON test_results(account_id, 
 		`ALTER TABLE detection_prompts ADD COLUMN reasoning_effort TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE detection_prompts ADD COLUMN temperature REAL`,
 		`ALTER TABLE detection_prompts ADD COLUMN candy_answer TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE detection_prompts ADD COLUMN quiet_windows TEXT NOT NULL DEFAULT '[]'`,
 		`ALTER TABLE test_results ADD COLUMN pelican_html TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE test_results ADD COLUMN candy_correct INTEGER`,
 		`ALTER TABLE test_results ADD COLUMN status TEXT NOT NULL DEFAULT 'completed'`,
@@ -692,9 +694,10 @@ func (s *Store) ReplaceDetectionModels(ctx context.Context, names []string) ([]D
 func (s *Store) GetDetectionPrompts(ctx context.Context) (*DetectionPrompts, error) {
 	var prompts DetectionPrompts
 	var temperature sql.NullFloat64
+	var quietWindows string
 	row := s.db.QueryRowContext(ctx,
-		`SELECT pelican_prompt, candy_prompt, candy_answer, reasoning_effort, temperature FROM detection_prompts WHERE id = 1`)
-	err := row.Scan(&prompts.PelicanPrompt, &prompts.CandyPrompt, &prompts.CandyAnswer, &prompts.ReasoningEffort, &temperature)
+		`SELECT pelican_prompt, candy_prompt, candy_answer, reasoning_effort, temperature, quiet_windows FROM detection_prompts WHERE id = 1`)
+	err := row.Scan(&prompts.PelicanPrompt, &prompts.CandyPrompt, &prompts.CandyAnswer, &prompts.ReasoningEffort, &temperature, &quietWindows)
 	if err == sql.ErrNoRows {
 		return &DetectionPrompts{}, nil
 	}
@@ -704,24 +707,44 @@ func (s *Store) GetDetectionPrompts(ctx context.Context) (*DetectionPrompts, err
 	if temperature.Valid {
 		prompts.Temperature = &temperature.Float64
 	}
+	prompts.QuietWindows = decodeQuietWindows(quietWindows)
 	return &prompts, nil
 }
 
 // UpsertDetectionPrompts saves the custom probe prompts and call settings.
 func (s *Store) UpsertDetectionPrompts(ctx context.Context, prompts DetectionPrompts) error {
-	_, err := s.db.ExecContext(ctx, `
-INSERT INTO detection_prompts (id, pelican_prompt, candy_prompt, candy_answer, reasoning_effort, temperature, updated_at)
-VALUES (1, ?, ?, ?, ?, ?, ?)
+	quietWindows, err := json.Marshal(prompts.QuietWindows)
+	if err != nil {
+		return err
+	}
+	if prompts.QuietWindows == nil {
+		quietWindows = []byte(`[]`)
+	}
+	_, err = s.db.ExecContext(ctx, `
+INSERT INTO detection_prompts (id, pelican_prompt, candy_prompt, candy_answer, reasoning_effort, temperature, quiet_windows, updated_at)
+VALUES (1, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
   pelican_prompt = excluded.pelican_prompt,
   candy_prompt = excluded.candy_prompt,
   candy_answer = excluded.candy_answer,
   reasoning_effort = excluded.reasoning_effort,
   temperature = excluded.temperature,
+  quiet_windows = excluded.quiet_windows,
   updated_at = excluded.updated_at`,
 		prompts.PelicanPrompt, prompts.CandyPrompt, prompts.CandyAnswer, prompts.ReasoningEffort, nullFloat(prompts.Temperature),
-		time.Now().UTC().Format(time.RFC3339Nano))
+		string(quietWindows), time.Now().UTC().Format(time.RFC3339Nano))
 	return err
+}
+
+// decodeQuietWindows unmarshals the stored quiet-window JSON, tolerating
+// corrupt/empty payloads by returning an empty list.
+func decodeQuietWindows(raw string) []QuietWindow {
+	windows := []QuietWindow{}
+	if strings.TrimSpace(raw) == "" {
+		return windows
+	}
+	_ = json.Unmarshal([]byte(raw), &windows)
+	return windows
 }
 
 func nullFloat(v *float64) any {
@@ -753,7 +776,9 @@ VALUES (?, ?, ?, ?, ?, 'running', ?, ?, 'pending', 'pending', ?)`,
 // out of the running state.
 func (s *Store) CompleteTestResult(ctx context.Context, id int64, result TestResult) error {
 	status := "failed"
-	if result.PelicanError == "" || result.CandyError == "" {
+	if result.Status == RunStatusStopped {
+		status = RunStatusStopped
+	} else if result.PelicanError == "" || result.CandyError == "" {
 		status = "completed"
 	}
 	var candyCorrect any

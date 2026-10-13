@@ -402,6 +402,52 @@
                 {{ t('admin.iqDetection.candyAnswerHint') }}
               </p>
             </div>
+            <div>
+              <span class="input-label">{{ t('admin.iqDetection.quietWindows') }}</span>
+              <div class="space-y-2">
+                <div
+                  v-for="(window, index) in quietWindows"
+                  :key="index"
+                  class="flex items-center gap-2"
+                  :data-testid="`quiet-window-row-${index}`"
+                >
+                  <input
+                    v-model="window.start"
+                    type="time"
+                    class="input h-8 w-28 py-0 text-xs"
+                    :data-testid="`quiet-window-start-${index}`"
+                  />
+                  <span class="text-xs text-gray-400">→</span>
+                  <input
+                    v-model="window.end"
+                    type="time"
+                    class="input h-8 w-28 py-0 text-xs"
+                    :data-testid="`quiet-window-end-${index}`"
+                  />
+                  <button
+                    type="button"
+                    class="btn btn-secondary btn-sm px-2"
+                    :title="t('admin.iqDetection.quietWindowRemove')"
+                    :data-testid="`quiet-window-remove-${index}`"
+                    @click="removeQuietWindow(index)"
+                  >
+                    <Icon name="trash" size="sm" />
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  class="btn btn-secondary btn-sm"
+                  data-testid="quiet-window-add"
+                  @click="addQuietWindow"
+                >
+                  <Icon name="plus" size="sm" />
+                  {{ t('admin.iqDetection.quietWindowAdd') }}
+                </button>
+              </div>
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {{ t('admin.iqDetection.quietWindowsHint') }}
+              </p>
+            </div>
             <div class="flex items-center justify-end gap-2">
               <button type="button" class="btn btn-secondary btn-sm" @click="modelSettingsOpen = false">
                 {{ t('common.cancel') }}
@@ -654,7 +700,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { adminAPI, type IQDetectAgentHealth, type SelectionGroup, type TestResultItem, type TestResultProbe, type TestResultVerdict } from '@/api/admin'
+import { adminAPI, type IQDetectAgentHealth, type QuietWindow, type SelectionGroup, type TestResultItem, type TestResultProbe, type TestResultVerdict } from '@/api/admin'
 import type { AdminGroup, AccountListItem } from '@/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
@@ -720,6 +766,16 @@ const modelSettingsText = ref('')
 const reasoningEffort = ref('')
 const temperatureInput = ref('')
 const candyAnswer = ref('')
+// 不检测时间段（北京时间），支持跨天（如 23:00-07:00）
+const quietWindows = ref<QuietWindow[]>([])
+
+function addQuietWindow() {
+  quietWindows.value.push({ start: '', end: '' })
+}
+
+function removeQuietWindow(index: number) {
+  quietWindows.value.splice(index, 1)
+}
 
 async function openModelSettings() {
   modelSettingsOpen.value = true
@@ -732,6 +788,7 @@ async function openModelSettings() {
     candyAnswer.value = resp.candy_answer || ''
     reasoningEffort.value = resp.reasoning_effort || ''
     temperatureInput.value = resp.temperature == null ? '' : String(resp.temperature)
+    quietWindows.value = (resp.quiet_windows || []).map((w) => ({ start: w.start, end: w.end }))
   } catch (error) {
     appStore.showError(extractApiErrorMessage(error, t('common.error')))
   } finally {
@@ -741,6 +798,12 @@ async function openModelSettings() {
 
 async function saveDetectionModels() {
   if (modelSettingsSaving.value) return
+  // 只保留填写完整的行；半填的行直接报错提示
+  const windows = quietWindows.value.filter((w) => w.start && w.end)
+  if (quietWindows.value.some((w) => (!w.start && w.end) || (w.start && !w.end))) {
+    appStore.showError(t('admin.iqDetection.quietWindowIncomplete'))
+    return
+  }
   modelSettingsSaving.value = true
   try {
     const names = modelSettingsText.value
@@ -756,7 +819,8 @@ async function saveDetectionModels() {
       candy_prompt: candyPrompt.value,
       candy_answer: candyAnswer.value.trim(),
       reasoning_effort: reasoningEffort.value,
-      temperature: temperature != null && Number.isFinite(temperature) ? temperature : null
+      temperature: temperature != null && Number.isFinite(temperature) ? temperature : null,
+      quiet_windows: windows
     })
     appStore.showSuccess(t('admin.iqDetection.modelsSaved'))
     modelSettingsOpen.value = false
@@ -925,12 +989,14 @@ function scheduleTestResultsPoll() {
 function statusBadgeClass(status: string): string {
   if (status === 'running') return 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400'
   if (status === 'failed') return 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400'
+  if (status === 'stopped') return 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400'
   return 'bg-gray-100 text-gray-500 dark:bg-dark-700 dark:text-gray-400'
 }
 
 function statusText(status: string): string {
   if (status === 'running') return t('admin.iqDetection.statusRunning')
   if (status === 'failed') return t('admin.iqDetection.statusFailed')
+  if (status === 'stopped') return t('admin.iqDetection.statusStopped')
   return t('admin.iqDetection.statusCompleted')
 }
 

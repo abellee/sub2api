@@ -185,6 +185,18 @@ func (s *IQDetectService) TriggerTestRun(ctx context.Context, groupID int64) (*i
 	return &plan, nil
 }
 
+// StopTestRun cancels every in-flight detection group on the sidecar
+// (scheduled or manual) and returns how many groups were stopped.
+func (s *IQDetectService) StopTestRun(ctx context.Context) (int, error) {
+	var payload struct {
+		Stopped int `json:"stopped"`
+	}
+	if err := s.doJSON(ctx, http.MethodPost, "/v1/test-runs/stop", nil, &payload); err != nil {
+		return 0, err
+	}
+	return payload.Stopped, nil
+}
+
 // resolveSelectionCredentials reads the saved selection from the sidecar and
 // resolves each selected account's upstream URL and API key from the main
 // database. Only api_key-type accounts qualify; the sidecar falls back to its

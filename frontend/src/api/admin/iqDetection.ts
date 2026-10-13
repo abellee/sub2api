@@ -53,6 +53,11 @@ export interface DetectionModel {
   created_at: string
 }
 
+export interface QuietWindow {
+  start: string
+  end: string
+}
+
 export interface DetectionModelSettings {
   items: DetectionModel[]
   total: number
@@ -61,6 +66,7 @@ export interface DetectionModelSettings {
   candy_answer?: string
   reasoning_effort?: string
   temperature?: number | null
+  quiet_windows?: QuietWindow[] | null
 }
 
 export interface SaveDetectionSettingsPayload {
@@ -70,6 +76,7 @@ export interface SaveDetectionSettingsPayload {
   candy_answer?: string
   reasoning_effort?: string
   temperature?: number | null
+  quiet_windows?: QuietWindow[]
 }
 
 export async function getDetectionModels(): Promise<DetectionModelSettings> {
@@ -81,7 +88,8 @@ export async function getDetectionModels(): Promise<DetectionModelSettings> {
     candy_prompt: data?.candy_prompt || '',
     candy_answer: data?.candy_answer || '',
     reasoning_effort: data?.reasoning_effort || '',
-    temperature: data?.temperature ?? null
+    temperature: data?.temperature ?? null,
+    quiet_windows: data?.quiet_windows || []
   }
 }
 
@@ -115,6 +123,11 @@ export async function triggerTestRun(groupID?: number): Promise<TestRunPlan> {
   return { items: data?.items || [], triggered: data?.triggered || 0 }
 }
 
+export async function stopTestRun(): Promise<{ stopped: number }> {
+  const { data } = await apiClient.post<{ stopped: number }>('/admin/iq-detection/test-runs/stop')
+  return { stopped: data?.stopped || 0 }
+}
+
 export interface TestResultItem {
   id: number
   group_id: number
@@ -122,7 +135,7 @@ export interface TestResultItem {
   account_id: number
   account_name: string
   model: string
-  status: 'running' | 'completed' | 'failed'
+  status: 'running' | 'completed' | 'failed' | 'stopped'
   // 列表接口不返回 HTML 正文，只带长度；正文通过 getTestResultPelican 按需拉取
   pelican_html_len?: number
   pelican_error?: string
@@ -177,6 +190,7 @@ const iqDetectionAPI = {
   getDetectionModels,
   saveDetectionModels,
   triggerTestRun,
+  stopTestRun,
   listTestResults,
   getTestResultPelican,
   updateTestResultReview

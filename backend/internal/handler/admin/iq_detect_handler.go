@@ -128,6 +128,19 @@ func (h *IQDetectHandler) TriggerTestRun(c *gin.Context) {
 	response.Success(c, plan)
 }
 
+// StopTestRun cancels all in-flight detection groups on the sidecar.
+func (h *IQDetectHandler) StopTestRun(c *gin.Context) {
+	if !h.requireEnabled(c) {
+		return
+	}
+	stopped, err := h.svc.StopTestRun(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"stopped": stopped})
+}
+
 func (h *IQDetectHandler) ListTestResults(c *gin.Context) {
 	if !h.requireEnabled(c) {
 		return

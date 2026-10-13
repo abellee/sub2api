@@ -142,6 +142,7 @@ export type {
   SelectionAccount,
   SelectionGroup,
   DetectionSelection,
+  QuietWindow,
   TestResultItem,
   TestResultProbe,
   TestResultVerdict

@@ -56,8 +56,10 @@ type TestRunner struct {
 	Client  *http.Client
 	Logger  *slog.Logger
 
-	mu            sync.Mutex
-	runningGroups map[int64]bool
+	mu             sync.Mutex
+	runningGroups  map[int64]bool
+	runCancels     map[int64]context.CancelFunc
+	quietScheduled bool // 上一个 tick 是否因静默时段跳过（避免每分钟刷日志）
 }
 
 type candidateKey struct {
@@ -102,23 +104,46 @@ func NewTestRunner(store *Store, timeout time.Duration, logger *slog.Logger) *Te
 		Client:        &http.Client{Timeout: timeout},
 		Logger:        logger,
 		runningGroups: map[int64]bool{},
+		runCancels:    map[int64]context.CancelFunc{},
 	}
 }
 
-func (r *TestRunner) tryLockGroup(groupID int64) bool {
+func (r *TestRunner) tryLockGroup(groupID int64, cancel context.CancelFunc) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.runningGroups[groupID] {
 		return false
 	}
 	r.runningGroups[groupID] = true
+	if cancel != nil {
+		r.runCancels[groupID] = cancel
+	}
 	return true
 }
 
 func (r *TestRunner) releaseGroup(groupID int64) {
 	r.mu.Lock()
 	delete(r.runningGroups, groupID)
+	delete(r.runCancels, groupID)
 	r.mu.Unlock()
+}
+
+// StopTestRuns cancels every in-flight group run (scheduled or manual) and
+// returns how many groups were stopped.
+func (r *TestRunner) StopTestRuns() int {
+	r.mu.Lock()
+	cancels := make([]context.CancelFunc, 0, len(r.runCancels))
+	for _, cancel := range r.runCancels {
+		cancels = append(cancels, cancel)
+	}
+	r.mu.Unlock()
+	for _, cancel := range cancels {
+		cancel()
+	}
+	if len(cancels) > 0 {
+		r.logInfo("iqdetectd: stop requested, cancelling running groups", "groups", len(cancels))
+	}
+	return len(cancels)
 }
 
 // StartScheduler launches the single scheduler goroutine: every minute it
@@ -145,7 +170,8 @@ func (r *TestRunner) StartScheduler(ctx context.Context) {
 // scheduleTick checks every scheduled group and launches one goroutine per due
 // group. Groups run concurrently with each other; within a group the per-model
 // probe pairs also run concurrently. Accounts are resolved from the sidecar
-// database by account id at run time.
+// database by account id at run time. Ticks falling into a configured quiet
+// window (server local time) start nothing; runs already in flight finish.
 func (r *TestRunner) scheduleTick(ctx context.Context) {
 	selection, err := r.Store.GetSelection(ctx)
 	if err != nil {
@@ -157,6 +183,28 @@ func (r *TestRunner) scheduleTick(ctx context.Context) {
 		r.logError("iqdetectd: scheduler load last-tested", "err", err)
 		return
 	}
+	prompts, err := r.Store.GetDetectionPrompts(ctx)
+	if err != nil {
+		r.logError("iqdetectd: scheduler load prompts", "err", err)
+		return
+	}
+	if inQuietWindows(prompts.QuietWindows, time.Now()) {
+		r.mu.Lock()
+		first := !r.quietScheduled
+		r.quietScheduled = true
+		r.mu.Unlock()
+		if first {
+			r.logInfo("iqdetectd: scheduler paused, inside quiet window")
+		}
+		return
+	}
+	r.mu.Lock()
+	wasQuiet := r.quietScheduled
+	r.quietScheduled = false
+	r.mu.Unlock()
+	if wasQuiet {
+		r.logInfo("iqdetectd: scheduler resumed, quiet window ended")
+	}
 	for _, group := range selection.Groups {
 		if group.IntervalMinutes <= 0 || r.isGroupRunning(group.ID) {
 			continue
@@ -166,12 +214,14 @@ func (r *TestRunner) scheduleTick(ctx context.Context) {
 				continue
 			}
 		}
-		if !r.tryLockGroup(group.ID) {
+		runCtx, cancel := context.WithCancel(ctx)
+		if !r.tryLockGroup(group.ID, cancel) {
+			cancel()
 			continue
 		}
 		go func(group SelectionGroup) {
 			defer r.releaseGroup(group.ID)
-			prompts, jobs, err := r.buildGroupJobs(ctx, group, nil)
+			prompts, jobs, err := r.buildGroupJobs(runCtx, group, nil)
 			if err != nil {
 				r.logError("iqdetectd: scheduled run build failed", "group", group.ID, "err", err)
 				return
@@ -180,7 +230,7 @@ func (r *TestRunner) scheduleTick(ctx context.Context) {
 				r.logInfo("iqdetectd: scheduled group skipped, no usable accounts", "group", group.ID)
 				return
 			}
-			r.runGroupJobs(ctx, jobs, prompts)
+			r.runGroupJobs(runCtx, jobs, prompts)
 			r.logInfo("iqdetectd: scheduled group round finished", "group", group.ID, "models", len(jobs))
 		}(group)
 	}
@@ -324,31 +374,37 @@ func (r *TestRunner) isGroupRunning(groupID int64) bool {
 
 // executeGroups runs each group's job list in its own goroutine so selected
 // groups are tested concurrently; within a group the models run sequentially.
+// Each group gets its own cancelable context so StopTestRuns can abort them.
 func (r *TestRunner) executeGroups(ctx context.Context, jobsByGroup map[int64][]testJob) {
 	var wg sync.WaitGroup
 	for groupID, jobs := range jobsByGroup {
 		wg.Add(1)
 		go func(groupID int64, jobs []testJob) {
 			defer wg.Done()
-			if !r.tryLockGroup(groupID) {
+			runCtx, cancel := context.WithCancel(ctx)
+			if !r.tryLockGroup(groupID, cancel) {
+				cancel()
 				r.logInfo("iqdetectd: group skipped, already running", "group", groupID)
 				return
 			}
 			defer r.releaseGroup(groupID)
-			prompts, err := r.Store.GetDetectionPrompts(ctx)
+			prompts, err := r.Store.GetDetectionPrompts(runCtx)
 			if err != nil {
 				r.logError("iqdetectd: load prompts failed", "group", groupID, "err", err)
 				return
 			}
-			r.runGroupJobs(ctx, jobs, prompts)
+			r.runGroupJobs(runCtx, jobs, prompts)
 		}(groupID, jobs)
 	}
 	wg.Wait()
 }
 
 // runGroupJobs persists a running row per job and fires all of the group's
-// probe pairs concurrently, waiting for all of them to finish.
+// probe pairs concurrently, waiting for all of them to finish. When the run is
+// stopped mid-flight the pairs are persisted as status=stopped using a
+// non-cancelable context — the canceled one can no longer write to SQLite.
 func (r *TestRunner) runGroupJobs(ctx context.Context, jobs []testJob, prompts *DetectionPrompts) {
+	persistCtx := context.WithoutCancel(ctx)
 	var wg sync.WaitGroup
 	for _, job := range jobs {
 		job := job
@@ -365,11 +421,22 @@ func (r *TestRunner) runGroupJobs(ctx context.Context, jobs []testJob, prompts *
 		go func(id int64, job testJob) {
 			defer wg.Done()
 			result := r.runPair(ctx, job, prompts)
-			if err := r.Store.CompleteTestResult(ctx, id, *result); err != nil {
+			if ctx.Err() != nil {
+				result.Status = RunStatusStopped
+				if result.PelicanError == "" {
+					result.PelicanError = "detection stopped"
+					result.PelicanFinishedAt = nowRFC3339()
+				}
+				if result.CandyError == "" {
+					result.CandyError = "detection stopped"
+					result.CandyFinishedAt = nowRFC3339()
+				}
+			}
+			if err := r.Store.CompleteTestResult(persistCtx, id, *result); err != nil {
 				r.logError("iqdetectd: persist test result", "account", job.accountID, "model", job.model, "err", err)
 				return
 			}
-			if err := r.Store.TrimTestResults(ctx, job.accountID, testResultsRetention); err != nil {
+			if err := r.Store.TrimTestResults(persistCtx, job.accountID, testResultsRetention); err != nil {
 				r.logError("iqdetectd: trim test results", "account", job.accountID, "err", err)
 			}
 			r.logInfo("iqdetectd: test pair finished", "group", job.groupID, "account", job.accountID, "model", job.model,
