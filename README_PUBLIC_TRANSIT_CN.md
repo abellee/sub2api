@@ -1,6 +1,6 @@
 # Sub2API 公开资料出口增强版
 
-本仓库基于 [Wei-Shaw/sub2api](https://github.com/Wei-Shaw/sub2api) 最新主线整理，额外加入一个面向中转站站长和第三方采集器的“公开资料出口”功能。
+本仓库基于 [Wei-Shaw/sub2api](https://github.com/Wei-Shaw/sub2api) `v0.1.175` 适配，额外加入一个面向中转站站长和第三方采集器的“公开资料出口”功能。
 
 它的目标不是开放后台，也不是暴露账号池，而是把站点本来适合公开的信息标准化输出，方便 PriceAI 或其他采集器自动识别模型价格、分组倍率、缓存命中和可用性状态。
 
@@ -51,7 +51,7 @@ curl https://your-domain.example/.well-known/ai-transit.json
   "system": "sub2api",
   "snapshot_url": "https://your-domain.example/api/public/transit/v1/snapshot",
   "homepage_url": "https://your-domain.example/public/transit",
-  "generated_at": "2026-07-07T00:00:00Z"
+  "generated_at": "2026-08-12T00:00:00Z"
 }
 ```
 
@@ -65,18 +65,18 @@ curl https://your-domain.example/api/public/transit/v1/snapshot
 
 ## 接入方式
 
-如果你的 Sub2API 版本接近上游主线，推荐直接 cherry-pick 本仓库的功能提交：
+如果你的 Sub2API 版本接近 `v0.1.175`，推荐在独立分支合并本仓库的适配提交：
 
 ```bash
-git remote add public-transit https://github.com/dimthink/sub2api-public-transit.git
+git remote add public-transit https://github.com/youchu4220/sub2api-public-transit.git
 git fetch public-transit main
-git cherry-pick <public-transit-feature-commit>
+git cherry-pick <v0.1.175-public-transit-commit>
 ```
 
 如果你的仓库改动较多，也可以下载 patch 后手动应用：
 
 ```bash
-curl -L https://github.com/dimthink/sub2api-public-transit/commit/<public-transit-feature-commit>.patch -o public-transit.patch
+curl -L https://github.com/youchu4220/sub2api-public-transit/commit/<v0.1.175-public-transit-commit>.patch -o public-transit.patch
 git am public-transit.patch
 ```
 
@@ -96,13 +96,13 @@ git am public-transit.patch
 请在当前 Sub2API 仓库中接入“公开资料出口”功能。
 
 参考仓库：
-https://github.com/dimthink/sub2api-public-transit
+https://github.com/youchu4220/sub2api-public-transit
 
 目标：
 1. 不要把我的仓库直接替换成参考仓库。
 2. 先确认当前仓库的上游来源、当前分支、未提交改动和 Sub2API 版本。
-3. 从参考仓库中找出它相对 Wei-Shaw/sub2api 最新主线新增的唯一功能提交。
-4. 优先用 cherry-pick 接入这个提交；如果我的仓库已经深度二改导致冲突较多，就改用 patch 方式手动合并。
+3. 确认参考仓库当前默认分支基于 `Wei-Shaw/sub2api v0.1.175` 或更高版本。
+4. 优先合并对应上游版本的公开资料出口适配提交；如果我的仓库已经深度二改导致冲突较多，就按功能边界手动适配，不要机械解决冲突。
 5. 合并时保留我的现有数据、配置、部署文件和本地改动，不要重置仓库，不要删除数据库或数据卷。
 6. 接入后确认至少存在这些能力：
    - /.well-known/ai-transit.json
@@ -110,7 +110,7 @@ https://github.com/dimthink/sub2api-public-transit
    - /public/transit
    - 后台“系统设置 -> 功能开关 -> 公开资料出口”中的接口开关和页面开关
 7. 接入后运行关键验证：
-   - go test ./internal/service ./internal/handler ./internal/server ./internal/repository ./internal/web -tags embed
+   - 在 `backend/` 下运行 `go test ./internal/service ./internal/handler ./internal/server ./internal/repository ./internal/web -tags embed`
    - pnpm --dir frontend run build
 8. 如果测试失败，先定位是否是合并冲突或本地二改导致，不要盲目升级依赖。
 9. 最后给我输出：

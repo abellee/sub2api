@@ -26,6 +26,7 @@ const (
 type PublicTransitService struct {
 	channelService *ChannelService
 	monitorService *ChannelMonitorService
+	monitorV2      *ChannelMonitorV2Service
 	settingService *SettingService
 	paymentConfig  *PaymentConfigService
 	groupRepo      GroupRepository
@@ -35,6 +36,7 @@ type PublicTransitService struct {
 func NewPublicTransitService(
 	channelService *ChannelService,
 	monitorService *ChannelMonitorService,
+	monitorV2 *ChannelMonitorV2Service,
 	settingService *SettingService,
 	paymentConfig *PaymentConfigService,
 	groupRepo GroupRepository,
@@ -43,6 +45,7 @@ func NewPublicTransitService(
 	return &PublicTransitService{
 		channelService: channelService,
 		monitorService: monitorService,
+		monitorV2:      monitorV2,
 		settingService: settingService,
 		paymentConfig:  paymentConfig,
 		groupRepo:      groupRepo,
@@ -323,8 +326,19 @@ func (s *PublicTransitService) Snapshot(ctx context.Context, baseURL string) (*P
 		return nil, fmt.Errorf("list public groups: %w", err)
 	}
 
-	var monitorItems []PublicTransitMonitor
-	if s.settingService.GetChannelMonitorRuntime(ctx).Enabled {
+	monitorItems := []PublicTransitMonitor{}
+	monitorRuntime := s.settingService.GetChannelMonitorRuntime(ctx)
+	if monitorRuntime.PassiveAggregationAllowed() && s.monitorV2 != nil {
+		filter, err := s.monitorV2.ParseFilter("7d", nil, nil, nil)
+		if err != nil {
+			return nil, fmt.Errorf("build public monitor v2 filter: %w", err)
+		}
+		models, err := s.monitorV2.Models(ctx, filter, false)
+		if err != nil {
+			return nil, fmt.Errorf("list public monitor v2 models: %w", err)
+		}
+		monitorItems = buildPublicTransitMonitorsV2(models)
+	} else if monitorRuntime.ActiveProbesAllowed() && s.monitorService != nil {
 		monitors, err := s.monitorService.ListUserView(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("list public monitors: %w", err)
@@ -398,6 +412,54 @@ func (s *PublicTransitService) Snapshot(ctx context.Context, baseURL string) (*P
 		Completeness: completeness,
 		Endpoints:    endpoints,
 	}, nil
+}
+
+func buildPublicTransitMonitorsV2(list *ChannelMonitorV2List[ChannelMonitorV2ModelRow]) []PublicTransitMonitor {
+	if list == nil {
+		return []PublicTransitMonitor{}
+	}
+	out := make([]PublicTransitMonitor, 0, len(list.Items))
+	for _, row := range list.Items {
+		model := strings.TrimSpace(row.Model)
+		if model == "" || row.Metrics.RequestCount <= 0 {
+			continue
+		}
+		avgLatency := roundedIntPointer(row.Metrics.TTFT.AvgMs)
+		status := strings.TrimSpace(row.Health.Overall)
+		if status == "" {
+			status = "unknown"
+		}
+		out = append(out, PublicTransitMonitor{
+			Name:           strings.TrimSpace(row.Platform + " " + model),
+			Provider:       row.Platform,
+			PrimaryModel:   model,
+			PrimaryStatus:  status,
+			Availability7d: row.Metrics.SuccessRate,
+			AvgLatency7dMs: avgLatency,
+			Models: []PublicTransitMonitorModel{{
+				Model:          model,
+				LatestStatus:   status,
+				Availability7d: row.Metrics.SuccessRate,
+				AvgLatency7dMs: avgLatency,
+			}},
+			Timeline: []PublicTransitMonitorTimeline{},
+		})
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Provider == out[j].Provider {
+			return strings.ToLower(out[i].PrimaryModel) < strings.ToLower(out[j].PrimaryModel)
+		}
+		return out[i].Provider < out[j].Provider
+	})
+	return out
+}
+
+func roundedIntPointer(value *float64) *int {
+	if value == nil {
+		return nil
+	}
+	rounded := int(*value + 0.5)
+	return &rounded
 }
 
 func buildPublicTransitGroups(configuredGroups []Group, channels []AvailableChannel, cacheUsageByGroupID map[int64]PublicTransitCacheUsage, pricingService *PricingService) []PublicTransitGroup {
