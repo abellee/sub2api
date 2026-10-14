@@ -1,8 +1,8 @@
 <template>
   <AppLayout>
-    <div class="space-y-6 pb-12">
+    <div class="tokenfree-monitor space-y-6 pb-12">
       <section
-        class="card sticky top-0 z-20 !rounded-3xl !border-0 p-0 shadow-sm ring-1 ring-gray-900/5 backdrop-blur-sm dark:!bg-dark-800 dark:ring-dark-700 supports-[backdrop-filter]:bg-white/95 dark:supports-[backdrop-filter]:bg-dark-800/95"
+        class="card monitor-summary sticky top-0 z-20 p-0 backdrop-blur-sm"
       >
         <header class="page-header mb-0 flex flex-wrap items-start justify-between gap-4 border-b border-gray-100 px-5 py-4 dark:border-dark-700 sm:px-6">
           <div class="min-w-0">
@@ -16,7 +16,7 @@
               <span class="relative flex h-2 w-2 shrink-0">
                 <span
                   class="relative inline-flex h-2 w-2 rounded-full"
-                  :class="loading || refreshing ? 'bg-gray-400' : 'bg-green-500'"
+                  :class="loading || refreshing ? 'bg-gray-400' : 'bg-cyan-400'"
                 ></span>
               </span>
               <span v-if="refreshing" class="inline-flex items-center gap-1 text-primary-600 dark:text-primary-300">
@@ -316,11 +316,11 @@ watch(range, () => {
   align-items: center;
   justify-content: center;
   border-radius: 9999px;
-  color: var(--studio-brand-color, #14b8a6);
-  background: color-mix(in srgb, var(--studio-brand-color, #14b8a6) 16%, white);
+  color: var(--studio-brand-color, #22d3ee);
+  background: color-mix(in srgb, var(--studio-brand-color, #22d3ee) 16%, white);
 }
 .dark .studio-brand-heading-mark {
-  background: color-mix(in srgb, var(--studio-brand-color, #14b8a6) 24%, rgb(15 23 42));
+  background: color-mix(in srgb, var(--studio-brand-color, #22d3ee) 24%, rgb(15 23 42));
 }
 .studio-active-mark-icon {
   color: inherit;

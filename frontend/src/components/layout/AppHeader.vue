@@ -32,34 +32,34 @@
       <!-- Right: Announcements + Docs + Language + Subscriptions + Balance + User Dropdown -->
       <div class="flex min-w-0 items-center gap-1 sm:gap-3">
         <div class="flex h-14 flex-shrink-0 items-center gap-1.5">
-          <div class="hidden items-center gap-1.5 lg:flex">
+          <div class="hidden items-center gap-2 lg:flex">
             <div
               v-if="headerWidgetConfig?.telegram"
-              class="group relative z-50 flex h-[22px] flex-shrink-0 items-center"
+              class="group relative z-50 flex flex-shrink-0 items-center"
             >
             <a
               :href="headerWidgetConfig.telegram.link"
               target="_blank"
               rel="noopener noreferrer"
-              class="flex h-[22px] items-center justify-center gap-1 rounded-md bg-[#229ED9] px-2 text-[11px] font-semibold text-white shadow-sm transition-opacity hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-[#229ED9]/40"
+              class="community-link community-link-telegram"
               title="加入 Telegram 群组"
               aria-label="加入 Telegram 群组"
             >
               <svg class="block h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                 <path d="M9.78 18.65l.28-4.23 7.68-6.92c.34-.3-.07-.45-.52-.18L7.74 13.3l-4.1-1.28c-.89-.28-.9-.89.19-1.32l16-6.17c.74-.27 1.39.18 1.15 1.32l-2.72 12.81c-.2.91-.74 1.13-1.5.7l-4.14-3.06-2 1.93c-.22.22-.41.41-.84.41z" />
               </svg>
-              <span>加入Telegram群组</span>
+              <span>加入 Telegram</span>
             </a>
 
             <div
               class="pointer-events-none invisible absolute left-1/2 top-full w-72 -translate-x-1/2 translate-y-2 pt-2 opacity-0 transition-all duration-200 group-hover:pointer-events-auto group-hover:visible group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:visible group-focus-within:translate-y-0 group-focus-within:opacity-100"
             >
-              <div class="rounded-2xl border border-white/10 bg-[#242424] p-4 text-white shadow-2xl">
+              <div class="community-popover rounded-2xl border border-white/10 p-4 text-white shadow-2xl">
                 <div class="flex items-center gap-3 text-left">
                   <img
-                    :src="headerWidgetConfig.telegram.logoUrl"
-                    alt="LLM-Free Logo"
-                    class="h-14 w-14 flex-shrink-0 rounded-full object-cover"
+                    src="/tokenfree/logo.svg"
+                    alt="TokenFree Logo"
+                    class="community-brand-logo"
                   >
                   <div class="min-w-0 flex-1">
                     <div class="text-lg font-semibold">{{ headerWidgetConfig.telegram.groupName }}</div>
@@ -99,33 +99,30 @@
 
             <div
               v-if="headerWidgetConfig"
-              class="group relative z-50 flex h-[22px] w-[76px] flex-shrink-0 items-center justify-center sm:w-[90px]"
+              class="group relative z-50 flex flex-shrink-0 items-center"
               data-tour="join-qq-group"
             >
             <a
               target="_blank"
-              :href="headerWidgetConfig.qq.groupLink"
-              class="flex items-center justify-center transition-opacity hover:opacity-80"
-              aria-label="加入 LLM-Free 售后群"
+              href="https://qm.qq.com/q/iX3TeHnckw"
+              rel="noopener noreferrer"
+              class="community-link community-link-qq"
+              title="加入 QQ 群"
+              aria-label="加入 QQ 群"
             >
-              <img
-                border="0"
-                src="//pub.idqqimg.com/wpa/images/group.png"
-                alt="LLM-Free售后"
-                title="LLM-Free售后"
-                class="h-auto w-[74px] sm:w-[90px]"
-              >
+              <QqBrandIcon />
+              <span>加入 QQ 群</span>
             </a>
 
             <div
               class="pointer-events-none invisible absolute left-1/2 top-full w-72 -translate-x-1/2 translate-y-2 pt-2 opacity-0 transition-all duration-200 group-hover:pointer-events-auto group-hover:visible group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:visible group-focus-within:translate-y-0 group-focus-within:opacity-100"
             >
-              <div class="rounded-2xl border border-white/10 bg-[#242424] p-4 text-white shadow-2xl">
+              <div class="community-popover rounded-2xl border border-white/10 p-4 text-white shadow-2xl">
               <div class="flex items-center gap-3 text-left">
                 <img
-                  :src="headerWidgetConfig.qq.logoUrl"
-                  alt="LLM-Free Logo"
-                  class="h-14 w-14 flex-shrink-0 rounded-full object-cover"
+                  src="/tokenfree/logo.svg"
+                  alt="TokenFree Logo"
+                  class="community-brand-logo"
                 >
                 <div class="min-w-0">
                   <div class="truncate text-lg font-semibold">{{ headerWidgetConfig.qq.groupName }}</div>
@@ -205,9 +202,9 @@
                   <div v-if="mobileHeaderWidgetTab === 'qq'" class="mt-4" data-tour="join-qq-group">
                     <div class="flex items-center gap-3 text-left">
                       <img
-                        :src="headerWidgetConfig.qq.logoUrl"
-                        alt="LLM-Free Logo"
-                        class="h-14 w-14 flex-shrink-0 rounded-full object-cover"
+                        src="/tokenfree/logo.svg"
+                        alt="TokenFree Logo"
+                        class="community-brand-logo"
                       >
                       <div class="min-w-0 flex-1">
                         <div class="flex items-center gap-2">
@@ -215,17 +212,14 @@
                             {{ headerWidgetConfig.qq.groupName }}
                           </div>
                           <a
-                            :href="headerWidgetConfig.qq.groupLink"
+                            href="https://qm.qq.com/q/iX3TeHnckw"
                             target="_blank"
                             rel="noopener noreferrer"
-                            class="ml-auto flex flex-shrink-0 items-center justify-end transition-opacity hover:opacity-80"
+                            class="community-link community-link-qq ml-auto"
                             aria-label="移动端加入QQ群"
                           >
-                            <img
-                              src="//pub.idqqimg.com/wpa/images/group.png"
-                              alt="加入QQ群"
-                              class="h-auto w-[74px] sm:w-[90px]"
-                            >
+                            <QqBrandIcon />
+                            <span>加入 QQ 群</span>
                           </a>
                         </div>
                         <div class="mt-1 flex items-center gap-1.5 text-sm text-gray-500 dark:text-dark-300">
@@ -258,9 +252,9 @@
                   <div v-else-if="mobileHeaderWidgetTab === 'telegram'" class="mt-4">
                     <div class="flex items-center gap-3 text-left">
                       <img
-                        :src="headerWidgetConfig.telegram.logoUrl"
-                        alt="LLM-Free Logo"
-                        class="h-14 w-14 flex-shrink-0 rounded-full object-cover"
+                        src="/tokenfree/logo.svg"
+                        alt="TokenFree Logo"
+                        class="community-brand-logo"
                       >
                       <div class="min-w-0 flex-1">
                         <div class="text-lg font-semibold text-gray-900 dark:text-white">
@@ -338,10 +332,24 @@
         <!-- Subscription Progress (for users with active subscriptions; not mounted at all when the feature is off) -->
         <SubscriptionProgressMini v-if="user && subscriptionFeatureEnabled" />
 
+        <!-- Points display placeholder; no points API is connected yet. -->
+        <div
+          v-if="user"
+          class="hidden items-center gap-2 rounded-xl bg-primary-50 px-3 py-1.5 dark:bg-primary-900/20 sm:flex"
+          :title="t('common.points')"
+          :aria-label="`${t('common.points')}: —`"
+        >
+          <img :src="pointsIcon" alt="" aria-hidden="true" class="h-4 w-4 shrink-0" />
+          <span class="text-sm font-semibold text-primary-700 dark:text-primary-300">—</span>
+        </div>
+
         <!-- Balance Display -->
         <div
           v-if="user"
-          class="group relative hidden items-center gap-2 rounded-xl bg-primary-50 px-3 py-1.5 dark:bg-primary-900/20 sm:flex"
+          class="group relative hidden items-center gap-2 rounded-xl bg-primary-50 px-3 py-1.5 outline-none focus-visible:ring-2 focus-visible:ring-primary-400/50 dark:bg-primary-900/20 sm:flex"
+          tabindex="0"
+          :aria-label="`${balanceAvailableText}: ${formatHeaderMoney(availableBalance)}`"
+          aria-describedby="header-balance-details"
         >
           <svg
             class="h-4 w-4 text-primary-600 dark:text-primary-400"
@@ -366,20 +374,22 @@
             {{ balanceFrozenLabel }}
           </span>
           <div
-            class="pointer-events-none absolute right-0 top-full mt-2 hidden w-56 rounded-lg border border-gray-200 bg-white p-3 text-xs shadow-lg group-hover:block dark:border-dark-700 dark:bg-dark-800"
+            id="header-balance-details"
+            role="tooltip"
+            class="balance-popover pointer-events-none invisible absolute right-0 top-full z-50 mt-2 w-64 translate-y-1 rounded-2xl border p-4 text-xs opacity-0 transition-[opacity,transform,visibility] duration-200 group-hover:visible group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:visible group-focus-within:translate-y-0 group-focus-within:opacity-100 motion-reduce:transition-none"
           >
             <div class="flex items-center justify-between">
               <span class="text-gray-500 dark:text-dark-400">{{ balanceAvailableText }}</span>
-              <span class="font-medium text-gray-900 dark:text-white">{{ formatHeaderMoney(availableBalance) }}</span>
+              <span class="font-semibold tabular-nums text-primary-700 dark:text-primary-300">{{ formatHeaderMoney(availableBalance) }}</span>
             </div>
-            <div class="mt-2 flex items-center justify-between">
+            <div class="mt-3 flex items-center justify-between">
               <span class="text-gray-500 dark:text-dark-400">{{ balanceFrozenText }}</span>
-              <span class="font-medium text-amber-700 dark:text-amber-200">{{ formatHeaderMoney(frozenBalance) }}</span>
+              <span class="font-medium tabular-nums text-amber-700 dark:text-amber-200">{{ formatHeaderMoney(frozenBalance) }}</span>
             </div>
-            <div class="mt-2 border-t border-gray-100 pt-2 dark:border-dark-700">
+            <div class="mt-3 border-t border-primary-200/60 pt-3 dark:border-primary-400/15">
               <div class="flex items-center justify-between">
                 <span class="text-gray-500 dark:text-dark-400">{{ balanceTotalText }}</span>
-                <span class="font-semibold text-gray-900 dark:text-white">{{ formatHeaderMoney(totalBalance) }}</span>
+                <span class="font-semibold tabular-nums text-primary-700 dark:text-primary-200">{{ formatHeaderMoney(totalBalance) }}</span>
               </div>
             </div>
           </div>
@@ -433,6 +443,14 @@
                 </div>
                 <div v-if="frozenBalance > 0" class="mt-1 text-xs text-amber-600 dark:text-amber-300">
                   {{ balanceFrozenText }} {{ formatHeaderMoney(frozenBalance) }}
+                </div>
+              </div>
+
+              <div class="border-b border-gray-100 px-4 py-2 dark:border-dark-700 sm:hidden">
+                <div class="text-xs text-gray-500 dark:text-dark-400">{{ t('common.points') }}</div>
+                <div class="flex items-center gap-2 text-sm font-semibold text-primary-600 dark:text-primary-400">
+                  <img :src="pointsIcon" alt="" aria-hidden="true" class="h-4 w-4 shrink-0" />
+                  <span>—</span>
                 </div>
               </div>
 
@@ -549,6 +567,8 @@ import SubscriptionProgressMini from '@/components/common/SubscriptionProgressMi
 import AnnouncementBell from '@/components/common/AnnouncementBell.vue'
 import PushNotificationToggle from '@/components/common/PushNotificationToggle.vue'
 import Icon from '@/components/icons/Icon.vue'
+import QqBrandIcon from '@/components/icons/QqBrandIcon.vue'
+import pointsIcon from '@/assets/icons/points-image-color.svg'
 import { sanitizeUrl } from '@/utils/url'
 import { useClipboard } from '@/composables/useClipboard'
 import { FeatureFlags, isFeatureFlagEnabled } from '@/utils/featureFlags'
@@ -762,6 +782,41 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.balance-popover {
+  background: linear-gradient(135deg, rgb(83 110 255 / 0.08), transparent 70%),
+    var(--tf-console-surface, #fff);
+  border-color: rgb(137 155 255 / 0.24);
+  box-shadow: 0 16px 40px rgb(7 9 18 / 0.2), 0 4px 12px rgb(83 110 255 / 0.06);
+}
+
+.community-link {
+  @apply inline-flex h-8 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border px-3 text-xs font-medium transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400/50 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-dark-900;
+}
+
+.community-link-telegram {
+  @apply border-cyan-200/80 bg-cyan-50/70 text-cyan-700 hover:border-cyan-400 hover:bg-cyan-100 dark:border-cyan-400/20 dark:bg-cyan-400/[0.08] dark:text-cyan-300 dark:hover:border-cyan-400/40 dark:hover:bg-cyan-400/15;
+}
+
+.community-link-qq {
+  @apply border-primary-200/80 bg-primary-50/70 text-primary-700 hover:border-primary-400 hover:bg-primary-100 dark:border-primary-400/20 dark:bg-primary-400/[0.08] dark:text-primary-300 dark:hover:border-primary-400/40 dark:hover:bg-primary-400/15;
+}
+
+.community-brand-logo {
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
+  padding: 8px;
+  object-fit: contain;
+  border: 1px solid rgb(137 155 255 / 0.2);
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgb(83 110 255 / 0.12), rgb(119 85 243 / 0.06));
+}
+
+.community-popover {
+  background: #101421;
+  border-color: rgb(137 155 255 / 0.2);
+}
+
 .dropdown-enter-active,
 .dropdown-leave-active {
   transition: all 0.2s ease;

@@ -27,7 +27,7 @@ export type StudioSparkPaint = {
 }
 
 export const STUDIO_SPARK_PAINT: Record<StudioAccent, StudioSparkPaint> = {
-  teal: { stroke: '#14b8a6', deep: '#0f766e', fill: '#14b8a6' },
+  teal: { stroke: '#22d3ee', deep: '#0891b2', fill: '#22d3ee' },
   coral: { stroke: '#e11d48', deep: '#be123c', fill: '#e11d48' },
   indigo: { stroke: '#6366f1', deep: '#4338ca', fill: '#6366f1' },
   amber: { stroke: '#d97706', deep: '#b45309', fill: '#d97706' },
@@ -281,7 +281,7 @@ export function overallToneFromRow(
 
 export function metricTextClass(tone: StudioTone | undefined, missing = false): string {
   if (missing || !tone || tone === 'unknown') return '!text-gray-500 dark:!text-dark-400/70'
-  if (tone === 'healthy') return '!text-emerald-600 dark:!text-emerald-400'
+  if (tone === 'healthy') return '!text-cyan-700 dark:!text-cyan-300'
   if (tone === 'warning') return '!text-amber-600 dark:!text-amber-400'
   return '!text-red-600 dark:!text-red-400'
 }
@@ -436,7 +436,7 @@ export function studioPlatform(platform: string): GroupPlatform | undefined {
 
 export function scoreStroke(score: number | null | undefined): string {
   const tone = scoreTone(score)
-  if (tone === 'healthy') return '#14b8a6'
+  if (tone === 'healthy') return '#22d3ee'
   if (tone === 'warning') return '#f59e0b'
   if (tone === 'critical') return '#f43f5e'
   return '#9ca3af'
@@ -451,7 +451,7 @@ export type StudioFacePalette = {
 }
 
 const FACE_TONE_FALLBACK: Record<StudioTone, StudioFacePalette> = {
-  healthy: { skin: '#6EE7B7', blush: '#34D399', ink: '#065F46' },
+  healthy: { skin: '#67E8F9', blush: '#22D3EE', ink: '#155E75' },
   warning: { skin: '#FDBA74', blush: '#FB923C', ink: '#9A3412' },
   critical: { skin: '#FCA5A5', blush: '#F87171', ink: '#7F1D1D' },
   unknown: { skin: '#E5E7EB', blush: '#D1D5DB', ink: '#4B5563' },
@@ -459,8 +459,8 @@ const FACE_TONE_FALLBACK: Record<StudioTone, StudioFacePalette> = {
 
 const FACE_TONE_RANGE: Record<StudioTone, { light: StudioFacePalette; dark: StudioFacePalette }> = {
   healthy: {
-    light: { skin: '#D1FAE5', blush: '#6EE7B7', ink: '#047857' },
-    dark: { skin: '#10B981', blush: '#34D399', ink: '#065F46' },
+    light: { skin: '#CFFAFE', blush: '#67E8F9', ink: '#0E7490' },
+    dark: { skin: '#22D3EE', blush: '#22D3EE', ink: '#155E75' },
   },
   warning: {
     light: { skin: '#FFEDD5', blush: '#FDBA74', ink: '#C2410C' },

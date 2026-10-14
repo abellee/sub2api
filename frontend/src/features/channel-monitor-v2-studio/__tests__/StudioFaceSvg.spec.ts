@@ -5,7 +5,7 @@ import StudioFaceSvg from '../StudioFaceSvg.vue'
 describe('StudioFaceSvg', () => {
   it('paints face color from status tone, not mood', () => {
     const healthy = mount(StudioFaceSvg, { props: { mood: 'sad', tone: 'healthy' } })
-    expect(healthy.find('circle').attributes('fill')).toBe('#6EE7B7')
+    expect(healthy.find('circle').attributes('fill')).toBe('#67E8F9')
 
     const warning = mount(StudioFaceSvg, { props: { mood: 'joy', tone: 'warning' } })
     expect(warning.find('circle').attributes('fill')).toBe('#FDBA74')

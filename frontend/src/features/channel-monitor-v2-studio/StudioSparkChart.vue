@@ -480,21 +480,21 @@ onBeforeUnmount(() => {
   min-width: 11.5rem;
   max-width: min(18rem, calc(100vw - 1.5rem));
   border-radius: 0.9rem;
-  border: 1px solid rgb(229 231 235);
-  background: rgb(255 255 255);
+  border: 1px solid var(--tf-console-line, rgb(229 231 235));
+  background: var(--tf-console-surface, rgb(255 255 255));
   padding: 0.5rem 0.625rem;
   box-shadow: 0 18px 40px -12px rgb(0 0 0 / 0.28);
   overflow-wrap: anywhere;
   white-space: normal;
 }
 .dark .studio-spark-tooltip {
-  border-color: rgb(55 65 81);
-  background: rgb(17 24 39);
+  border-color: var(--tf-console-line, rgb(55 65 81));
+  background: var(--tf-console-surface, rgb(17 24 39));
   color: rgb(229 231 235);
 }
 .studio-spark-tooltip-line {
   display: block;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.45;
   color: rgb(75 85 99);
 }

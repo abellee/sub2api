@@ -61,7 +61,7 @@ describe('StudioKpiCard', () => {
     expect(wrapper.find('.studio-kpi-status').classes().join(' ')).toMatch(/ml-auto/)
     expect(wrapper.find('.studio-kpi-status').classes().join(' ')).toMatch(/text-right/)
     expect(wrapper.find('.studio-kpi-metrics').classes().join(' ')).toMatch(/grid/)
-    expect(wrapper.find('.stat-value').classes().join(' ')).toMatch(/emerald/)
+    expect(wrapper.find('.stat-value').classes().join(' ')).toMatch(/cyan/)
     expect(wrapper.findAll('.studio-kpi-metric-label')).toHaveLength(3)
   })
 

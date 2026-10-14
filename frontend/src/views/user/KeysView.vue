@@ -2692,7 +2692,7 @@ onUnmounted(() => {
 }
 
 .recommended-groups-strip {
-  @apply flex min-w-0 items-start gap-3 rounded-lg border border-amber-200/80 bg-amber-50/40 p-3 dark:border-amber-900/40 dark:bg-amber-900/10;
+  @apply flex min-w-0 items-start gap-3 rounded-lg border border-primary-200/80 bg-primary-50/60 p-3 dark:border-primary-400/20 dark:bg-primary-900/20;
 }
 
 .recommended-groups-heading {
@@ -2764,7 +2764,7 @@ onUnmounted(() => {
 }
 
 .recommendation-note {
-  @apply mt-2.5 w-full rounded-lg bg-amber-50/80 px-2.5 py-2 text-left dark:bg-amber-950/30;
+  @apply mt-2.5 w-full rounded-lg bg-primary-50/80 px-2.5 py-2 text-left dark:bg-primary-900/20;
 }
 
 .recommendation-note-label {

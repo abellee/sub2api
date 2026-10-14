@@ -176,7 +176,7 @@ describe('studioFormat', () => {
     expect(hexLuminance(high.skin)).toBeLessThan(hexLuminance(low.skin))
     expect(hexLuminance(warnLow.skin)).toBeLessThan(hexLuminance(warnHigh.skin))
     expect(hexLuminance(critLow.skin)).toBeLessThan(hexLuminance(critHigh.skin))
-    expect(studioFacePalette('healthy').skin).toBe('#6EE7B7')
+    expect(studioFacePalette('healthy').skin).toBe('#67E8F9')
     expect(studioFaceDepth('healthy', 70)).toBeLessThan(studioFaceDepth('healthy', 100))
     expect(studioFaceDepth('warning', 50)).toBeGreaterThan(studioFaceDepth('warning', 69))
     expect(studioFaceDepth('critical', 0)).toBeGreaterThan(studioFaceDepth('critical', 49))
@@ -297,7 +297,7 @@ describe('studioFormat', () => {
   })
 
   it('paints each K-line from its own status accent', () => {
-    expect(studioSparkPaint('teal').fill).toBe('#14b8a6')
+    expect(studioSparkPaint('teal').fill).toBe('#22d3ee')
     expect(studioSparkPaint('amber').fill).toBe('#d97706')
     expect(studioSparkPaint('coral').fill).toBe('#e11d48')
     expect(studioSparkPaint('slate').fill).toBe('#64748b')

@@ -7,26 +7,43 @@
     ]"
   >
     <!-- Logo/Brand -->
-    <div class="sidebar-header" :class="{ 'sidebar-header-collapsed': sidebarCollapsed }">
-      <!-- Custom Logo or Default Logo -->
-      <router-link
-        :to="homePath"
-        class="sidebar-logo flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl shadow-glow transition-opacity hover:opacity-80"
-        @click="handleMenuItemClick(homePath)"
-      >
-        <img v-if="settingsLoaded" :src="siteLogo || '/logo.svg'" alt="Logo" class="h-full w-full object-contain" />
-      </router-link>
-      <div class="sidebar-brand" :class="{ 'sidebar-brand-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">
+    <div class="sidebar-header" :class="{ 'sidebar-header-collapsed': sidebarCollapsed, 'sidebar-header-home-brand': useHomepageBrand }">
+      <div v-if="useHomepageBrand" class="sidebar-home-brand">
         <router-link
           :to="homePath"
-          class="sidebar-brand-title text-lg font-bold text-gray-900 transition-colors hover:text-primary-600 dark:text-white dark:hover:text-primary-400"
+          class="sidebar-home-lockup"
+          aria-label="TokenFree"
           @click="handleMenuItemClick(homePath)"
         >
-          {{ siteName }}
+          <img src="/tokenfree/logo.svg" alt="" />
+          <span v-show="!sidebarCollapsed" class="sidebar-home-word">oken<span class="sidebar-home-free">Free</span></span>
         </router-link>
-        <!-- Version Badge -->
-        <VersionBadge :version="siteVersion" />
       </div>
+      <template v-else>
+        <!-- Custom Logo or Default Logo -->
+        <router-link
+          :to="homePath"
+          class="sidebar-logo flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl shadow-glow transition-opacity hover:opacity-80"
+          @click="handleMenuItemClick(homePath)"
+        >
+          <img v-if="settingsLoaded" :src="siteLogo || '/logo.svg'" alt="Logo" class="h-full w-full object-contain" />
+        </router-link>
+        <div class="sidebar-brand" :class="{ 'sidebar-brand-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">
+          <router-link
+            :to="homePath"
+            class="sidebar-brand-title text-lg font-bold text-gray-900 transition-colors hover:text-primary-600 dark:text-white dark:hover:text-primary-400"
+            @click="handleMenuItemClick(homePath)"
+          >
+            {{ siteName }}
+          </router-link>
+        </div>
+      </template>
+      <VersionBadge
+        v-show="!sidebarCollapsed"
+        class="sidebar-version"
+        :version="siteVersion"
+        icon-only
+      />
     </div>
 
     <!-- Navigation -->
@@ -172,7 +189,7 @@
     </nav>
 
     <!-- Bottom Section -->
-    <div class="mt-auto border-t border-gray-100 p-3 dark:border-dark-800">
+    <div class="mt-auto shrink-0 border-t border-gray-100 p-3 dark:border-dark-800">
       <div
         v-show="sideWidgetVisible && (!sidebarCollapsed || sideWidgetHasIcon)"
         class="mb-2"
@@ -231,6 +248,7 @@ import { sanitizeUrl } from '@/utils/url'
 import { FeatureFlags, isChannelMonitorVisibleToUser, makeSidebarFlag } from '@/utils/featureFlags'
 import { resolveSiteBillingMode } from '@/utils/siteBillingMode'
 import { useMenuStatus } from '@/composables/useMenuStatus'
+import { useTheme } from '@/composables/useTheme'
 
 interface NavItem {
   path: string
@@ -284,7 +302,7 @@ const mobileOpen = computed(() => appStore.mobileOpen)
 const isAdmin = computed(() => authStore.isAdmin)
 const sidebarNavRef = ref<HTMLElement | null>(null)
 const { sideVisible: sideWidgetVisible, sideHasIcon: sideWidgetHasIcon } = storeToRefs(remoteWidgetsStore)
-const isDark = ref(document.documentElement.classList.contains('dark'))
+const { isDark, setTheme } = useTheme()
 
 const homePath = computed(() => (isAdmin.value ? '/admin/dashboard' : '/dashboard'))
 
@@ -299,6 +317,7 @@ const siteName = computed(() => appStore.siteName)
 const siteLogo = computed(() => sanitizeUrl(appStore.siteLogo || '', { allowRelative: true, allowDataUrl: true }))
 const siteVersion = computed(() => appStore.siteVersion)
 const settingsLoaded = computed(() => appStore.publicSettingsLoaded)
+const useHomepageBrand = computed(() => settingsLoaded.value && siteName.value.trim() !== 'LLM Free')
 
 // SVG Icon Components
 const DashboardIcon = {
@@ -973,9 +992,7 @@ function toggleSidebar() {
 }
 
 function toggleTheme() {
-  isDark.value = !isDark.value
-  document.documentElement.classList.toggle('dark', isDark.value)
-  localStorage.setItem('theme', isDark.value ? 'dark' : 'light')
+  setTheme(isDark.value ? 'light' : 'dark')
 }
 
 function closeMobile() {
@@ -1041,16 +1058,6 @@ function handleGroupClick(item: NavItem) {
   groupExpandOverrides.value.set(item.path, true)
 }
 
-// Initialize theme
-const savedTheme = localStorage.getItem('theme')
-if (
-  savedTheme === 'dark' ||
-  (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)
-) {
-  isDark.value = true
-  document.documentElement.classList.add('dark')
-}
-
 // Fetch admin settings (for feature-gated nav items like Ops).
 watch(
   isAdmin,
@@ -1113,6 +1120,63 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.sidebar-header {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.sidebar-version {
+  position: static;
+  flex: none;
+  margin-left: auto;
+}
+
+.sidebar-home-brand {
+  min-width: 0;
+}
+
+.sidebar-home-lockup {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 0;
+  color: #16213b;
+  font-family: "TokenFree Console Mono", "Segoe UI", "Microsoft YaHei", sans-serif;
+  font-weight: 750;
+  letter-spacing: -1.1px;
+  line-height: 1;
+  white-space: nowrap;
+  transition: opacity 160ms ease;
+}
+
+.sidebar-home-lockup:hover {
+  opacity: 0.8;
+}
+
+.dark .sidebar-home-lockup {
+  color: #f4f6ff;
+}
+
+.sidebar-home-lockup img {
+  width: 36px;
+  height: 36px;
+  flex: none;
+  margin-right: -6px;
+}
+
+.sidebar-home-word {
+  font-size: 24px;
+  line-height: 1;
+  transform: translateY(-1px);
+}
+
+.sidebar-home-free {
+  color: #e8590c;
+}
+
+.sidebar-header-home-brand.sidebar-header-collapsed .sidebar-home-lockup img {
+  margin-right: 0;
+}
+
 .sidebar-logo {
   flex: 0 0 2.25rem;
   min-width: 2.25rem;

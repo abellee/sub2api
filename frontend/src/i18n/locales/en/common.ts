@@ -57,6 +57,7 @@ export default {
     disabled: 'Disabled',
 	    total: 'Total',
 	    balance: 'Balance',
+	    points: 'Points',
 	    availableBalance: 'Available balance',
 	    frozenBalance: 'Frozen balance',
 	    totalBalance: 'Total balance',

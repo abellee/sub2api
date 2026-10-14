@@ -34,7 +34,7 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/home',
     name: 'Home',
-    component: () => import('@/components/LlmFreeHomePage.vue'),
+    component: () => import('@/views/TokenFreeHomeView.vue'),
     meta: {
       requiresAuth: false,
       title: 'Claude、GPT、Gemini API 中转站'
@@ -43,8 +43,7 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/models',
     name: 'PublicModelPlaza',
-    component: () => import('@/components/LlmFreeHomePage.vue'),
-    props: { page: 'models' },
+    component: () => import('@/views/CustomModelPlazaView.vue'),
     meta: {
       requiresAuth: false,
       title: '模型广场 | OpenAI 与 Claude 官方 API 价格'

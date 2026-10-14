@@ -149,11 +149,11 @@ const statusClass = computed(() => {
 <style scoped>
 .studio-kpi {
   --studio-faces-bg: rgb(241 245 249);
-  --studio-wash-from: color-mix(in oklab, #14b8a6 11%, #ffffff);
+  --studio-wash-from: color-mix(in oklab, #22d3ee 11%, #ffffff);
   --studio-wash-to: #ffffff;
-  --studio-spark: #14b8a6;
-  --studio-spark-deep: #0f766e;
-  --studio-spark-fill: #14b8a6;
+  --studio-spark: #22d3ee;
+  --studio-spark-deep: #0891b2;
+  --studio-spark-fill: #22d3ee;
   position: relative;
   z-index: 2;
   contain: layout style;
@@ -170,10 +170,10 @@ const statusClass = computed(() => {
   background: linear-gradient(180deg, var(--studio-wash-from) 0%, var(--studio-wash-to) 100%);
 }
 .studio-kpi--teal {
-  --studio-wash-from: color-mix(in oklab, #14b8a6 11%, #ffffff);
-  --studio-spark: #14b8a6;
-  --studio-spark-deep: #0f766e;
-  --studio-spark-fill: #14b8a6;
+  --studio-wash-from: color-mix(in oklab, #22d3ee 11%, #ffffff);
+  --studio-spark: #22d3ee;
+  --studio-spark-deep: #0891b2;
+  --studio-spark-fill: #22d3ee;
 }
 .studio-kpi--coral {
   /* 异常卡片不铺红色背景渐变，底色与卡片收尾色一致。 */
@@ -208,7 +208,7 @@ const statusClass = computed(() => {
 }
 .dark .studio-kpi {
   --studio-faces-bg: rgb(30 41 59);
-  --studio-wash-from: color-mix(in oklab, #2dd4bf 12%, rgb(15 23 42));
+  --studio-wash-from: color-mix(in oklab, #22d3ee 12%, rgb(15 23 42));
   --studio-wash-to: rgb(15 23 42);
 }
 .dark .studio-kpi--joined {
@@ -309,8 +309,8 @@ const statusClass = computed(() => {
   letter-spacing: 0.01em;
 }
 .studio-kpi-status--healthy {
-  background: color-mix(in oklab, #34d399 22%, #ffffff);
-  color: rgb(4 120 87);
+  background: color-mix(in oklab, #22d3ee 22%, #ffffff);
+  color: rgb(14 116 144);
 }
 .studio-kpi-status--warning {
   background: color-mix(in oklab, #e8b84a 20%, #ffffff);
@@ -325,8 +325,8 @@ const statusClass = computed(() => {
   color: rgb(107 114 128);
 }
 .dark .studio-kpi-status--healthy {
-  background: color-mix(in oklab, #34d399 22%, rgb(15 23 42));
-  color: rgb(110 231 183);
+  background: color-mix(in oklab, #22d3ee 22%, rgb(15 23 42));
+  color: rgb(103 232 249);
 }
 .dark .studio-kpi-status--warning {
   background: color-mix(in oklab, #e8b84a 18%, rgb(15 23 42));
