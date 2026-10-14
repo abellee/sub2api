@@ -909,7 +909,7 @@ FROM test_results`
 func (s *Store) GetTestResultByID(ctx context.Context, id int64) (*TestResult, error) {
 	row := s.db.QueryRowContext(ctx, `
 SELECT id, group_id, group_name, account_id, account_name, model, status,
-       pelican_html, pelican_error, pelican_latency_ms,
+       pelican_html, length(pelican_html), pelican_error, pelican_latency_ms,
        candy_answer, candy_error, candy_correct, candy_latency_ms,
        pelican_started_at, pelican_finished_at, candy_started_at, candy_finished_at,
        pelican_review, candy_review, created_at
@@ -919,7 +919,7 @@ FROM test_results WHERE id = ?`, id)
 	var createdAt string
 	err := row.Scan(&result.ID, &result.GroupID, &result.GroupName, &result.AccountID,
 		&result.AccountName, &result.Model, &result.Status,
-		&result.PelicanHTML, &result.PelicanError, &result.PelicanLatencyMS,
+		&result.PelicanHTML, &result.PelicanHTMLLen, &result.PelicanError, &result.PelicanLatencyMS,
 		&result.CandyAnswer, &result.CandyError, &candyCorrect, &result.CandyLatencyMS,
 		&result.PelicanStartedAt, &result.PelicanFinishedAt, &result.CandyStartedAt,
 		&result.CandyFinishedAt, &result.PelicanReview, &result.CandyReview,

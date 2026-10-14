@@ -10,7 +10,54 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
+
+func TestResultDetailPreservesStoredHTMLAndListLength(t *testing.T) {
+	for _, html := range []string{"", "<html>鹈鹕 🐦</html>"} {
+		t.Run(html, func(t *testing.T) {
+			srv, store := newTestServer(t)
+			ctx := context.Background()
+			id, err := store.InsertRunningTestResult(ctx, TestResult{AccountID: 1, Model: "test-model"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := store.CompleteTestResult(ctx, id, TestResult{PelicanHTML: html}); err != nil {
+				t.Fatal(err)
+			}
+			handler := srv.Handler()
+			detailResponse := httptest.NewRecorder()
+			handler.ServeHTTP(detailResponse, httptest.NewRequest(http.MethodGet, "/v1/test-results/"+strconv.FormatInt(id, 10), nil))
+			if detailResponse.Code != http.StatusOK {
+				t.Fatalf("detail status = %d: %s", detailResponse.Code, detailResponse.Body.String())
+			}
+			var detail TestResult
+			if err := json.Unmarshal(detailResponse.Body.Bytes(), &detail); err != nil {
+				t.Fatal(err)
+			}
+			listResponse := httptest.NewRecorder()
+			handler.ServeHTTP(listResponse, httptest.NewRequest(http.MethodGet, "/v1/test-results", nil))
+			if listResponse.Code != http.StatusOK {
+				t.Fatalf("list status = %d: %s", listResponse.Code, listResponse.Body.String())
+			}
+			var list struct {
+				Items []TestResult `json:"items"`
+			}
+			if err := json.Unmarshal(listResponse.Body.Bytes(), &list); err != nil {
+				t.Fatal(err)
+			}
+			if len(list.Items) != 1 {
+				t.Fatalf("list count = %d, want 1", len(list.Items))
+			}
+			if detail.PelicanHTML != html || detail.PelicanHTMLLen != int64(utf8.RuneCountInString(html)) {
+				t.Fatalf("detail HTML = %q, length = %d", detail.PelicanHTML, detail.PelicanHTMLLen)
+			}
+			if detail.PelicanHTMLLen != list.Items[0].PelicanHTMLLen {
+				t.Fatalf("detail length %d differs from list length %d", detail.PelicanHTMLLen, list.Items[0].PelicanHTMLLen)
+			}
+		})
+	}
+}
 
 func newTestServer(t *testing.T) (*Server, *Store) {
 	t.Helper()
