@@ -62,11 +62,6 @@ type TestRunner struct {
 	quietScheduled bool // 上一个 tick 是否因静默时段跳过（避免每分钟刷日志）
 }
 
-type candidateKey struct {
-	model     string
-	accountID int64
-}
-
 func candidateIDs(candidates []candidate) []int64 {
 	ids := make([]int64, len(candidates))
 	for i, c := range candidates {
@@ -678,7 +673,7 @@ func decodeUpstreamContent(raw []byte, contentType string) (string, error) {
 			continue // 心跳/注释等非 JSON 行，跳过
 		}
 		if len(chunk.Choices) > 0 {
-			sb.WriteString(chunk.Choices[0].Delta.Content)
+			_, _ = sb.WriteString(chunk.Choices[0].Delta.Content)
 		}
 	}
 	return sb.String(), nil

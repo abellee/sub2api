@@ -171,7 +171,7 @@ func (s *IQDetectService) TriggerTestRun(ctx context.Context, groupID int64) (*i
 	// 回写 sidecar 存储的凭据副本，让分组定时任务（不经主服务）也用上最新 Key
 	for _, cred := range credentials {
 		_ = s.doJSON(ctx, http.MethodPut, "/v1/account-credentials",
-			iqdetectd.UpsertAccountCredentialInput{AccountID: cred.AccountID, APIURL: cred.APIURL, APIKey: cred.APIKey},
+			iqdetectd.UpsertAccountCredentialInput(cred),
 			nil)
 	}
 	var plan iqdetectd.TestRunPlan
