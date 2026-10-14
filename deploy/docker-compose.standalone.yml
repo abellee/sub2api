@@ -181,8 +181,6 @@ services:
       - IQ_DETECT_API_KEY=${IQ_DETECT_API_KEY:-}
     volumes:
       - sub2api_data:/app/data
-    networks:
-      - sub2api-network
     healthcheck:
       test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://127.0.0.1:18102/health"]
       interval: 30s

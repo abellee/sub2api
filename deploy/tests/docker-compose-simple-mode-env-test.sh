@@ -37,8 +37,10 @@ for filename in (
         result = subprocess.run(
             ["docker", "compose", "--env-file", "/dev/null", "-f", str(path),
              "config", "--format", "json"],
-            env=env, check=True, capture_output=True, text=True,
+            env=env, check=False, capture_output=True, text=True,
         )
+        assert result.returncode == 0, \
+            f"{path}: compose config failed for override {value!r}:\n{result.stderr}"
         actual = json.loads(result.stdout)["services"]["sub2api"]["environment"][key]
         assert actual == (value or ""), f"{path}: override {value!r} rendered as {actual!r}"
 
