@@ -3,17 +3,24 @@ import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { RouterLink } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { useAuthStore } from "@/stores/auth";
+import { useAppStore } from "@/stores/app";
 import { setLocale } from "@/i18n";
 import { useTheme, type ThemeChoice } from "@/composables/useTheme";
 import { tokenFreeEnglish } from "./tokenfreeCopy";
 
 const authStore = useAuthStore();
+const appStore = useAppStore();
 const { locale } = useI18n();
 const isEnglish = computed(() => locale.value === "en");
 const copy = (zh: string) =>
   isEnglish.value ? (tokenFreeEnglish[zh] ?? zh) : zh;
 const dashboardPath = computed(() =>
   authStore.isAdmin ? "/admin/dashboard" : "/dashboard",
+);
+const showPublicTransitEntry = computed(
+  () =>
+    !appStore.publicSettingsLoaded ||
+    appStore.cachedPublicSettings?.public_transit_page_enabled !== false,
 );
 const primaryPath = computed(() =>
   authStore.isAuthenticated ? dashboardPath.value : "/register",
@@ -231,6 +238,11 @@ onBeforeUnmount(() => {
           </div>
           <div class="tf-nav-auth">
             <RouterLink
+              class="tf-nav-login"
+              v-if="!authStore.isAuthenticated && showPublicTransitEntry"
+              to="/public/transit"
+              >{{ copy("公开资料") }}</RouterLink
+            ><RouterLink
               class="tf-nav-register"
               v-if="!authStore.isAuthenticated"
               to="/register"

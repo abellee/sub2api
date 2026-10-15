@@ -5,8 +5,13 @@ import TokenFreeHomeView from "../TokenFreeHomeView.vue";
 import { setLocale } from "@/i18n";
 
 const auth = reactive({ isAuthenticated: false, isAdmin: false });
+const app = reactive({
+  publicSettingsLoaded: false,
+  cachedPublicSettings: null as null | { public_transit_page_enabled?: boolean },
+});
 const locale = ref("zh");
 vi.mock("@/stores/auth", () => ({ useAuthStore: () => auth }));
+vi.mock("@/stores/app", () => ({ useAppStore: () => app }));
 vi.mock("vue-i18n", () => ({ useI18n: () => ({ locale }) }));
 vi.mock("@/i18n", () => ({
   setLocale: vi.fn(async (language: string) => {
@@ -38,6 +43,8 @@ function destination(wrapper: ReturnType<typeof render>) {
 beforeEach(() => {
   auth.isAuthenticated = false;
   auth.isAdmin = false;
+  app.publicSettingsLoaded = false;
+  app.cachedPublicSettings = null;
   locale.value = "zh";
   localStorage.clear();
   media.matches = false;
@@ -67,7 +74,8 @@ describe("TokenFree homepage integration", () => {
     const wrapper = render();
     expect(destination(wrapper)).toBe("/register");
     expect(wrapper.findAllComponents(RouterLinkStub).find(link => link.text() === "模型广场")?.props("to")).toBe("/models");
-    expect(wrapper.get(".tf-nav-auth").text()).toBe("注册登录");
+    expect(wrapper.get(".tf-nav-auth").text()).toBe("公开资料注册登录");
+    expect(wrapper.findAllComponents(RouterLinkStub).find(link => link.text() === "公开资料")?.props("to")).toBe("/public/transit");
     expect(wrapper.find("iframe").exists()).toBe(false);
     expect(wrapper.text()).not.toMatch(/领取试用|查看开发文档/);
     auth.isAuthenticated = true;
@@ -86,7 +94,8 @@ describe("TokenFree homepage integration", () => {
     auth.isAuthenticated = false;
     await nextTick();
     expect(destination(wrapper)).toBe("/register");
-    expect(wrapper.get(".tf-nav-auth").text()).toBe("注册登录");
+    expect(wrapper.get(".tf-nav-auth").text()).toBe("公开资料注册登录");
+    expect(wrapper.findAllComponents(RouterLinkStub).find(link => link.text() === "公开资料")?.props("to")).toBe("/public/transit");
   });
 
   it("switches all content through the shared locale and keeps authenticated CTA labels in sync", async () => {

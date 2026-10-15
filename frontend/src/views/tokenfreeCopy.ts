@@ -10,6 +10,7 @@ export const tokenFreeEnglish: Record<string, string> = {
   深色: "Dark",
   浅色: "Light",
   跟随系统: "System",
+  公开资料: "Public data",
   注册: "Sign up",
   登录: "Log in",
   进入控制台: "Open dashboard",
