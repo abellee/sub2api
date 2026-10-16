@@ -465,7 +465,11 @@ func ProvideDeferredService(accountRepo AccountRepository, timingWheel *TimingWh
 // ProvideConcurrencyService creates ConcurrencyService and starts slot cleanup worker.
 func ProvideConcurrencyService(cache ConcurrencyCache, accountRepo AccountRepository, cfg *config.Config) *ConcurrencyService {
 	svc := NewConcurrencyService(cache)
-	if err := svc.CleanupStaleProcessSlots(context.Background()); err != nil {
+	// During a rolling deployment, another process still owns live slots.
+	// Keep those slots until released or expired instead of treating them as stale.
+	if os.Getenv("CONCURRENCY_SKIP_STARTUP_CLEANUP") == "true" {
+		logger.LegacyPrintf("service.concurrency", "Startup process-slot cleanup disabled for rolling deployment; TTL cleanup remains enabled")
+	} else if err := svc.CleanupStaleProcessSlots(context.Background()); err != nil {
 		logger.LegacyPrintf("service.concurrency", "Warning: startup cleanup stale process slots failed: %v", err)
 	}
 	if cfg != nil {
