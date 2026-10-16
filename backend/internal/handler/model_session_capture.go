@@ -94,6 +94,10 @@ func (w *modelSessionWriter) Unwrap() http.ResponseWriter { return w.ResponseWri
 func ModelSessionCaptureCompletion() gin.HandlerFunc {
 	_ = auditclient.Default()
 	return func(c *gin.Context) {
+		// Keep the request's outer writer while it is still owned by this
+		// middleware. The capture writer may wrap an ops writer whose lease is
+		// released before c.Next returns; querying that wrapper yields status 0.
+		response := c.Writer
 		defer func() {
 			panicValue := recover()
 			if c.Request != nil {
@@ -103,8 +107,8 @@ func ModelSessionCaptureCompletion() gin.HandlerFunc {
 					if w, ok := c.Writer.(*modelSessionWriter); ok {
 						failed = failed || w.failed
 					}
-					s.Metadata("client-response", 0, c.Writer.Header(), c.Writer.Status())
-					s.Finish(c.Writer.Status(), failed)
+					s.Metadata("client-response", 0, response.Header(), response.Status())
+					s.Finish(response.Status(), failed)
 				}
 			}
 			if panicValue != nil {
