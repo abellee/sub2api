@@ -332,9 +332,12 @@ func TestCommandCodeGatewayPassesThroughCatalogProtocols(t *testing.T) {
 		url  string
 		body []byte
 	}
+	call := 0
 	forward := func(t *testing.T, ingress routingMatrixIngress, model string, catalog map[string][]string) observation {
 		t.Helper()
-		base := fmt.Sprintf("http://cc-%s-%d.example", strings.ReplaceAll(t.Name(), "/", "-"), time.Now().UnixNano())
+		// Use a sequence: Windows clock resolution can reuse a timestamp and cache key.
+		call++
+		base := fmt.Sprintf("http://cc-%s-%d.example", strings.ReplaceAll(t.Name(), "/", "-"), call)
 		account := commandCodeTestAccount(12)
 		account.Credentials["api_base_urls"] = map[string]any{
 			APIProtocolChatCompletions: base + "/provider/v1",
@@ -343,6 +346,11 @@ func TestCommandCodeGatewayPassesThroughCatalogProtocols(t *testing.T) {
 		}
 		url := buildOpenAIModelsURL(base + "/provider/v1")
 		key := modelProtocolCatalogKey(account, url)
+		t.Cleanup(func() {
+			upstreamModelProtocols.mu.Lock()
+			defer upstreamModelProtocols.mu.Unlock()
+			delete(upstreamModelProtocols.entries, key)
+		})
 		if catalog != nil {
 			upstreamModelProtocols.store(key, catalog, nil, time.Now())
 		} else {

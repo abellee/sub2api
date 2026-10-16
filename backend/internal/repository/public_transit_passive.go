@@ -97,7 +97,7 @@ ORDER BY platform, model, group_name, bucket_start`
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	out := make([]service.PublicTransitPassiveAggregate, 0)
 	for rows.Next() {

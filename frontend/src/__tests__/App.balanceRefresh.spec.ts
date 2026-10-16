@@ -102,6 +102,7 @@ describe('App navigation user refresh', () => {
           PersistentRemoteWidgets: true,
           Toast: true,
           AnnouncementPopup: true,
+          LotteryPromptHost: true,
           AdminComplianceDialog: true,
         },
       },

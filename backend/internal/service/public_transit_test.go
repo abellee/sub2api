@@ -10,44 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestBuildPublicTransitMonitorsV2_ExportsOnlySampledPublicAggregates(t *testing.T) {
-	avgTTFT := 123.6
-	rows := &ChannelMonitorV2List[ChannelMonitorV2ModelRow]{Items: []ChannelMonitorV2ModelRow{
-		{
-			Platform: "openai",
-			Model:    "gpt-5",
-			Metrics: ChannelMonitorV2Metric{
-				RequestCount: 80,
-				SuccessRate:  97.5,
-				TTFT:         ChannelMonitorV2Latency{SampleCount: 75, AvgMs: &avgTTFT},
-			},
-			Health: ChannelMonitorV2Health{Overall: "healthy"},
-		},
-		{
-			Platform: "anthropic",
-			Model:    "claude-sonnet",
-			Metrics:  ChannelMonitorV2Metric{},
-			Health:   ChannelMonitorV2Health{Overall: "unknown"},
-		},
-	}}
-
-	monitors := buildPublicTransitMonitorsV2(rows)
-
-	require.Len(t, monitors, 1)
-	require.Equal(t, "openai", monitors[0].Provider)
-	require.Equal(t, "gpt-5", monitors[0].PrimaryModel)
-	require.Equal(t, "healthy", monitors[0].PrimaryStatus)
-	require.InDelta(t, 97.5, monitors[0].Availability7d, 1e-12)
-	require.NotNil(t, monitors[0].AvgLatency7dMs)
-	require.Equal(t, 124, *monitors[0].AvgLatency7dMs)
-	require.Empty(t, monitors[0].Timeline)
-	require.Len(t, monitors[0].Models, 1)
-}
-
-func TestBuildPublicTransitMonitorsV2_NilListIsEmpty(t *testing.T) {
-	require.Empty(t, buildPublicTransitMonitorsV2(nil))
-}
-
 func TestBuildPublicTransitGroups_FiltersExclusiveGroupsAndExportsPricing(t *testing.T) {
 	configuredGroups := []Group{
 		{

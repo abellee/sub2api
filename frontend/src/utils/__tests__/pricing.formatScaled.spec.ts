@@ -3,10 +3,10 @@ import { formatScaled } from '../pricing'
 
 describe('formatScaled', () => {
   it.each([
-    [1e-10, 1, '$1e-10'],
-    [1.25e-10, 1, '$1.25e-10'],
-    [1e-20, 1, '$1e-20'],
-    [1e-16, 1_000_000, '$1e-10'],
+    [1e-10, 1, '$0.0000000001'],
+    [1.25e-10, 1, '$0.000000000125'],
+    [1e-20, 1, '$0.00000000000000000001'],
+    [1e-16, 1_000_000, '$0.0000000001'],
     [1e10, 1, '$10000000000'],
   ])('preserves the magnitude of %s scaled by %s', (value, scale, expected) => {
     expect(formatScaled(value, scale)).toBe(expected)

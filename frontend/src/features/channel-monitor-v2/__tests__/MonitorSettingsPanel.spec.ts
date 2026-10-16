@@ -70,7 +70,7 @@ async function add(wrapper: Awaited<ReturnType<typeof panel>>, platform: string)
 
 beforeEach(() => {
   vi.clearAllMocks()
-  mocks.groups.mockResolvedValue([])
+  mocks.groups.mockResolvedValue([{ id: 42, name: 'Existing group', platform: 'openai', status: 'active' }])
   mocks.updateConfig.mockImplementation(async (value) => JSON.parse(JSON.stringify(value)))
 })
 

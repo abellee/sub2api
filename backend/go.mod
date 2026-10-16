@@ -2,6 +2,10 @@ module github.com/Wei-Shaw/sub2api
 
 go 1.27.2
 
+require github.com/Wei-Shaw/sub2api/audit-sdk v0.0.0
+
+replace github.com/Wei-Shaw/sub2api/audit-sdk => ./audit-sdk
+
 require (
 	entgo.io/ent v0.14.5
 	github.com/DATA-DOG/go-sqlmock v1.5.2

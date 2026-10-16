@@ -444,54 +444,6 @@ func (s *PublicTransitService) Snapshot(ctx context.Context, baseURL string) (*P
 	}, nil
 }
 
-func buildPublicTransitMonitorsV2(list *ChannelMonitorV2List[ChannelMonitorV2ModelRow]) []PublicTransitMonitor {
-	if list == nil {
-		return []PublicTransitMonitor{}
-	}
-	out := make([]PublicTransitMonitor, 0, len(list.Items))
-	for _, row := range list.Items {
-		model := strings.TrimSpace(row.Model)
-		if model == "" || row.Metrics.RequestCount <= 0 {
-			continue
-		}
-		avgLatency := roundedIntPointer(row.Metrics.TTFT.AvgMs)
-		status := strings.TrimSpace(row.Health.Overall)
-		if status == "" {
-			status = "unknown"
-		}
-		out = append(out, PublicTransitMonitor{
-			Name:           strings.TrimSpace(row.Platform + " " + model),
-			Provider:       row.Platform,
-			PrimaryModel:   model,
-			PrimaryStatus:  status,
-			Availability7d: row.Metrics.SuccessRate,
-			AvgLatency7dMs: avgLatency,
-			Models: []PublicTransitMonitorModel{{
-				Model:          model,
-				LatestStatus:   status,
-				Availability7d: row.Metrics.SuccessRate,
-				AvgLatency7dMs: avgLatency,
-			}},
-			Timeline: []PublicTransitMonitorTimeline{},
-		})
-	}
-	sort.SliceStable(out, func(i, j int) bool {
-		if out[i].Provider == out[j].Provider {
-			return strings.ToLower(out[i].PrimaryModel) < strings.ToLower(out[j].PrimaryModel)
-		}
-		return out[i].Provider < out[j].Provider
-	})
-	return out
-}
-
-func roundedIntPointer(value *float64) *int {
-	if value == nil {
-		return nil
-	}
-	rounded := int(*value + 0.5)
-	return &rounded
-}
-
 func buildPublicTransitGroups(configuredGroups []Group, channels []AvailableChannel, cacheUsageByGroupID map[int64]PublicTransitCacheUsage, pricingService *PricingService) []PublicTransitGroup {
 	type groupKey struct {
 		id       int64
