@@ -119,6 +119,15 @@ jobs:
         with:
           ref: ${{ needs.prepare.outputs.sha }}
           fetch-depth: 0
+      - name: Resolve pinned private SDK
+        if: ${{ hashFiles('.github/release-tools/audit_sdk.py') != '' }}
+        id: audit-sdk
+        run: python3 .github/release-tools/audit_sdk.py ref
+      - name: Restore private SDK for this checkout
+        if: ${{ steps.audit-sdk.outputs.commit != '' }}
+        env:
+          AUDIT_SDK_BUNDLE: ${{ secrets[format('AUDIT_SDK_{0}', steps.audit-sdk.outputs.commit)] }}
+        run: python3 .github/release-tools/audit_sdk.py restore
       - uses: actions/download-artifact@v8
         with:
           name: release-tooling

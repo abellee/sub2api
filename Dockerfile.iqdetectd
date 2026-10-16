@@ -37,6 +37,7 @@ WORKDIR /src
 COPY lotteryd/go.mod lotteryd/go.sum /lotteryd/
 
 COPY backend/go.mod backend/go.sum ./
+COPY backend/audit-sdk/ ./audit-sdk/
 RUN --mount=type=cache,id=sub2api-iqdetectd-gomod,target=/go/pkg/mod \
     go mod download
 

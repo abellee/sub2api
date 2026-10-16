@@ -29,6 +29,7 @@ RUN apk add --no-cache git ca-certificates tzdata
 
 WORKDIR /src
 COPY backend/go.mod backend/go.sum ./
+COPY backend/audit-sdk/ ./audit-sdk/
 RUN --mount=type=cache,id=sub2api-appcatalogd-gomod,target=/go/pkg/mod \
     go mod download
 
