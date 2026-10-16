@@ -24,7 +24,8 @@ func beginModelSessionCapture(c *gin.Context, key *service.APIKey, model string,
 		return
 	}
 	path := c.Request.URL.Path
-	if c.Request.Method != http.MethodPost || !(strings.HasSuffix(path, "/messages") || strings.HasSuffix(path, "/responses") || strings.HasSuffix(path, "/chat/completions") || strings.Contains(path, ":generateContent") || strings.Contains(path, ":streamGenerateContent")) {
+	supportedEndpoint := strings.HasSuffix(path, "/messages") || strings.HasSuffix(path, "/responses") || strings.HasSuffix(path, "/chat/completions") || strings.Contains(path, ":generateContent") || strings.Contains(path, ":streamGenerateContent")
+	if c.Request.Method != http.MethodPost || !supportedEndpoint {
 		return
 	}
 	client := auditclient.Default()
