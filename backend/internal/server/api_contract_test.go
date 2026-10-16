@@ -719,6 +719,8 @@ func TestAPIContracts(t *testing.T) {
 					"registration_email_suffix_whitelist": [],
 					"registration_email_domain_quota_enabled": false,
 					"promo_code_enabled": true,
+					"public_transit_enabled": true,
+					"public_transit_page_enabled": false,
 					"password_reset_enabled": false,
 						"frontend_url": "",
 						"totp_enabled": false,
@@ -1000,6 +1002,8 @@ func TestAPIContracts(t *testing.T) {
 					"channel_monitor_show_quota": false,
 					"channel_monitor_hide_user_ranking": false,
 					"channel_monitor_default_interval_seconds": 60,
+					"channel_monitor_visibility": "selected",
+					"channel_monitor_visible_user_ids": [],
 					"available_channels_enabled": false,
 					"subscription_enabled": true,
 					"model_plaza_enabled": false,
@@ -1077,6 +1081,8 @@ func TestAPIContracts(t *testing.T) {
 					"registration_email_suffix_whitelist": [],
 					"registration_email_domain_quota_enabled": false,
 					"promo_code_enabled": true,
+					"public_transit_enabled": true,
+					"public_transit_page_enabled": false,
 					"password_reset_enabled": false,
 					"frontend_url": "",
 						"invitation_code_enabled": false,
@@ -1322,6 +1328,8 @@ func TestAPIContracts(t *testing.T) {
 					"channel_monitor_show_quota": false,
 					"channel_monitor_hide_user_ranking": false,
 					"channel_monitor_default_interval_seconds": 60,
+					"channel_monitor_visibility": "selected",
+					"channel_monitor_visible_user_ids": [],
 					"available_channels_enabled": false,
 					"subscription_enabled": true,
 					"model_plaza_enabled": false,
@@ -2862,7 +2870,15 @@ func (r *stubUsageLogRepo) GetStatsWithFilters(ctx context.Context, filters usag
 		Endpoints:                []usagestats.EndpointStat{},
 	}, nil
 }
-func (r *stubUsageLogRepo) GetAllGroupUsageSummary(ctx context.Context, todayStart time.Time) ([]usagestats.GroupUsageSummary, error) {
+func (r *stubUsageLogRepo) GetAllGroupUsageSummary(ctx context.Context, todayStart, since24h, since7d time.Time) ([]usagestats.GroupUsageSummary, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (r *stubUsageLogRepo) GetGroupCacheUsageSummary(ctx context.Context, since24h, since7d time.Time) ([]usagestats.GroupCacheUsageSummary, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (r *stubUsageLogRepo) GetGroupCacheUsageSummary(ctx context.Context, since24h, since7d time.Time) ([]usagestats.GroupCacheUsageSummary, error) {
 	return nil, errors.New("not implemented")
 }
 

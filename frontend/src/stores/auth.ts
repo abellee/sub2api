@@ -6,6 +6,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed, readonly } from 'vue'
 import { authAPI, isTotp2FARequired, passkeyAPI, type LoginResponse } from '@/api'
+import { useAppStore } from '@/stores/app'
 import type {
   User,
   LoginRequest,
@@ -326,6 +327,10 @@ export const useAuthStore = defineStore('auth', () => {
     if (response.refresh_token && response.expires_in) {
       scheduleTokenRefresh(response.expires_in)
     }
+
+    // Public channel-status visibility is personalized per caller. Re-fetch
+    // after login so a previous anonymous/admin cache cannot leak the nav.
+    void useAppStore().fetchPublicSettings(true)
   }
 
   /**
@@ -387,6 +392,7 @@ export const useAuthStore = defineStore('auth', () => {
       }
 
       clearPendingAuthSession()
+      void useAppStore().fetchPublicSettings(true)
       return userData
     } catch (error) {
       clearAuth({ preservePendingAuthSession: pendingAuthSession.value !== null })
@@ -423,6 +429,7 @@ export const useAuthStore = defineStore('auth', () => {
     } finally {
       // Always clear local state (tokens, user data, refresh timers)
       clearAuth()
+      void useAppStore().fetchPublicSettings(true)
     }
   }
 

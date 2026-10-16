@@ -4,7 +4,7 @@
       class="flex justify-between text-[10px] font-semibold uppercase tracking-widest text-gray-400 mb-2"
     >
       <span>{{ t('monitorCommon.history60pts', { n: length }) }}</span>
-      <span class="tabular-nums">{{ t('monitorCommon.nextUpdateIn', { n: countdownSeconds }) }}</span>
+      <span v-if="countdownSeconds != null" class="tabular-nums">{{ t('monitorCommon.nextUpdateIn', { n: countdownSeconds }) }}</span>
     </div>
 
     <div
@@ -41,11 +41,12 @@ import { useChannelMonitorFormat } from '@/composables/useChannelMonitorFormat'
 
 const props = withDefaults(defineProps<{
   buckets?: MonitorTimelinePoint[]
-  countdownSeconds: number
+  countdownSeconds?: number | null
   length?: number
   maintenance?: boolean
 }>(), {
   buckets: () => [],
+  countdownSeconds: null,
   length: 60,
   maintenance: false,
 })
@@ -60,7 +61,7 @@ interface Bar {
 }
 
 // 4 级高度 + 颜色双重编码：高=好+绿，短=坏+红，灰=未测试。
-// 长绿(正常) > 中黄(降级) > 短红(失败/系统错误) > 很短灰(未测试)。
+// 长绿(健康) > 中黄(波动) > 短红(异常/系统错误) > 很短灰(未测试)。
 const STATUS_HEIGHT: Record<string, number> = {
   operational: 100,
   degraded: 65,

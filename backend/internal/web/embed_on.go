@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
+	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 )
 
@@ -32,6 +33,11 @@ var frontendFS embed.FS
 // PublicSettingsProvider is an interface to fetch public settings
 type PublicSettingsProvider interface {
 	GetPublicSettingsForInjection(ctx context.Context) (any, error)
+}
+
+type PublicTransitPageSettingsProvider interface {
+	PublicSettingsProvider
+	GetPublicTransitRuntime(ctx context.Context) service.PublicTransitRuntime
 }
 
 // FrontendServer serves the embedded frontend with settings injection
@@ -89,8 +95,14 @@ func (s *FrontendServer) Middleware() gin.HandlerFunc {
 		path := c.Request.URL.Path
 
 		// Skip API routes
-		if shouldBypassEmbeddedFrontend(path) {
+		if shouldBypassEmbeddedFrontend(path, c.GetHeader("Accept")) {
 			c.Next()
+			return
+		}
+
+		if strings.TrimRight(path, "/") == service.PublicTransitPagePath && !s.publicTransitPageEnabled(c.Request.Context()) {
+			c.String(http.StatusNotFound, "Public transit page is disabled")
+			c.Abort()
 			return
 		}
 
@@ -115,6 +127,17 @@ func (s *FrontendServer) Middleware() gin.HandlerFunc {
 		s.fileServer.ServeHTTP(c.Writer, c.Request)
 		c.Abort()
 	}
+}
+
+func (s *FrontendServer) publicTransitPageEnabled(ctx context.Context) bool {
+	if s == nil || s.settings == nil {
+		return false
+	}
+	provider, ok := s.settings.(PublicTransitPageSettingsProvider)
+	if !ok {
+		return false
+	}
+	return provider.GetPublicTransitRuntime(ctx).PageEnabled
 }
 
 func (s *FrontendServer) fileExists(path string) bool {
@@ -284,6 +307,10 @@ func injectSiteTitle(html, settingsJSON []byte) []byte {
 	if titleStart == -1 || titleEnd == -1 || titleEnd <= titleStart {
 		return html
 	}
+	currentTitle := strings.TrimSpace(string(html[titleStart+len("<title>") : titleEnd]))
+	if currentTitle != "Sub2API" && currentTitle != "Sub2API - AI API Gateway" {
+		return html
+	}
 
 	newTitle := []byte("<title>" + htmlpkg.EscapeString(cfg.SiteName) + " - AI API Gateway</title>")
 	var buf bytes.Buffer
@@ -311,7 +338,7 @@ func ServeEmbeddedFrontend() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		path := c.Request.URL.Path
 
-		if shouldBypassEmbeddedFrontend(path) {
+		if shouldBypassEmbeddedFrontend(path, c.GetHeader("Accept")) {
 			c.Next()
 			return
 		}
@@ -352,9 +379,13 @@ func tryServeOverrideFile(c *gin.Context, overrideDir, cleanPath string) bool {
 	return true
 }
 
-func shouldBypassEmbeddedFrontend(path string) bool {
+func shouldBypassEmbeddedFrontend(path string, acceptHeaders ...string) bool {
 	trimmed := strings.TrimSpace(path)
+	if trimmed == "/models" {
+		return len(acceptHeaders) == 0 || !strings.Contains(strings.ToLower(acceptHeaders[0]), "text/html")
+	}
 	return strings.HasPrefix(trimmed, "/api/") ||
+		strings.HasPrefix(trimmed, "/.well-known/") ||
 		strings.HasPrefix(trimmed, "/v1/") ||
 		strings.HasPrefix(trimmed, "/v1beta/") ||
 		strings.HasPrefix(trimmed, "/backend-api/") ||

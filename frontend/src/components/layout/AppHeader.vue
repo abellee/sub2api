@@ -1,5 +1,13 @@
 <template>
   <header class="glass sticky top-0 z-30 border-b border-gray-200/50 dark:border-dark-700/50">
+    <span
+      v-if="user && lotterySocketStatus !== 'idle'"
+      class="absolute right-1.5 top-1.5 z-40 inline-block h-2 w-2 rounded-full"
+      :class="socketDotClass"
+      role="status"
+      :title="socketDotTitle"
+      :aria-label="socketDotTitle"
+    ></span>
     <div class="flex h-16 items-center justify-between gap-2 px-2 sm:px-4 md:px-6">
       <!-- Left: Mobile Menu Toggle + Page Title -->
       <div class="flex shrink-0 items-center gap-2 sm:gap-4">
@@ -23,6 +31,285 @@
 
       <!-- Right: Announcements + Docs + Language + Subscriptions + Balance + User Dropdown -->
       <div class="flex min-w-0 items-center gap-1 sm:gap-3">
+        <div class="flex h-14 flex-shrink-0 items-center gap-1.5">
+          <div class="hidden items-center gap-2 lg:flex">
+            <div
+              v-if="headerWidgetConfig?.telegram"
+              class="group relative z-50 flex flex-shrink-0 items-center"
+            >
+            <a
+              :href="headerWidgetConfig.telegram.link"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="community-link community-link-telegram"
+              title="加入 Telegram 群组"
+              aria-label="加入 Telegram 群组"
+            >
+              <svg class="block h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M9.78 18.65l.28-4.23 7.68-6.92c.34-.3-.07-.45-.52-.18L7.74 13.3l-4.1-1.28c-.89-.28-.9-.89.19-1.32l16-6.17c.74-.27 1.39.18 1.15 1.32l-2.72 12.81c-.2.91-.74 1.13-1.5.7l-4.14-3.06-2 1.93c-.22.22-.41.41-.84.41z" />
+              </svg>
+              <span>加入 Telegram</span>
+            </a>
+
+            <div
+              class="pointer-events-none invisible absolute left-1/2 top-full w-72 -translate-x-1/2 translate-y-2 pt-2 opacity-0 transition-all duration-200 group-hover:pointer-events-auto group-hover:visible group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:visible group-focus-within:translate-y-0 group-focus-within:opacity-100"
+            >
+              <div class="community-popover rounded-2xl border border-white/10 p-4 text-white shadow-2xl">
+                <div class="flex items-center gap-3 text-left">
+                  <img
+                    src="/tokenfree/logo.svg"
+                    alt="TokenFree Logo"
+                    class="community-brand-logo"
+                  >
+                  <div class="min-w-0 flex-1">
+                    <div class="text-lg font-semibold">{{ headerWidgetConfig.telegram.groupName }}</div>
+                    <div class="mt-1 flex items-center gap-1.5 text-xs text-gray-400">
+                      <a
+                        :href="headerWidgetConfig.telegram.link"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="min-w-0 truncate transition-colors hover:text-white"
+                      >
+                        {{ headerWidgetConfig.telegram.link }}
+                      </a>
+                      <button
+                        type="button"
+                        class="flex-shrink-0 rounded p-1 text-gray-400 transition-colors hover:bg-white/10 hover:text-white"
+                        title="复制 Telegram 群组链接"
+                        aria-label="复制Telegram群组链接"
+                        @click="copyTelegramGroupLink"
+                      >
+                        <Icon name="copy" size="sm" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="my-4 border-t border-dashed border-white/10"></div>
+
+                <img
+                  :src="headerWidgetConfig.telegram.qrUrl"
+                  :alt="`${headerWidgetConfig.telegram.groupName} 二维码`"
+                  class="mx-auto block w-full rounded-xl bg-white"
+                >
+                <div class="mt-3 text-center text-sm text-gray-300">扫一扫二维码，加入 Telegram 群组</div>
+              </div>
+            </div>
+            </div>
+
+            <div
+              v-if="headerWidgetConfig"
+              class="group relative z-50 flex flex-shrink-0 items-center"
+              data-tour="join-qq-group"
+            >
+            <a
+              target="_blank"
+              href="https://qm.qq.com/q/iX3TeHnckw"
+              rel="noopener noreferrer"
+              class="community-link community-link-qq"
+              title="加入 QQ 群"
+              aria-label="加入 QQ 群"
+            >
+              <QqBrandIcon />
+              <span>加入 QQ 群</span>
+            </a>
+
+            <div
+              class="pointer-events-none invisible absolute left-1/2 top-full w-72 -translate-x-1/2 translate-y-2 pt-2 opacity-0 transition-all duration-200 group-hover:pointer-events-auto group-hover:visible group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:visible group-focus-within:translate-y-0 group-focus-within:opacity-100"
+            >
+              <div class="community-popover rounded-2xl border border-white/10 p-4 text-white shadow-2xl">
+              <div class="flex items-center gap-3 text-left">
+                <img
+                  src="/tokenfree/logo.svg"
+                  alt="TokenFree Logo"
+                  class="community-brand-logo"
+                >
+                <div class="min-w-0">
+                  <div class="truncate text-lg font-semibold">{{ headerWidgetConfig.qq.groupName }}</div>
+                  <div class="mt-1 flex items-center gap-1.5 text-sm text-gray-400">
+                    <span>群号：{{ headerWidgetConfig.qq.groupNumber }}</span>
+                    <button
+                      type="button"
+                      class="rounded p-1 text-gray-400 transition-colors hover:bg-white/10 hover:text-white"
+                      title="复制群号"
+                      aria-label="复制QQ群号"
+                      @click="copyQqGroupNumber"
+                    >
+                      <Icon name="copy" size="sm" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="my-4 border-t border-dashed border-white/10"></div>
+
+              <img
+                :src="headerWidgetConfig.qq.qrUrl"
+                :alt="`QQ群 ${headerWidgetConfig.qq.groupNumber} 二维码`"
+                class="mx-auto block w-full rounded-xl"
+              >
+              <div class="mt-3 text-center text-sm text-gray-300">扫一扫二维码，加入群聊</div>
+              </div>
+            </div>
+            </div>
+          </div>
+
+          <div
+            v-if="headerWidgetConfig"
+            ref="mobileHeaderWidgetRef"
+            class="relative lg:hidden"
+          >
+            <button
+              type="button"
+              class="btn-ghost btn-icon"
+              title="社群"
+              aria-label="社群"
+              :aria-expanded="mobileHeaderWidgetOpen"
+              @click="mobileHeaderWidgetOpen = !mobileHeaderWidgetOpen"
+            >
+              <Icon name="grid" size="md" />
+            </button>
+
+            <transition name="dropdown">
+              <div
+                v-if="mobileHeaderWidgetOpen"
+                class="fixed inset-x-2 top-16 z-[70] mt-2 max-h-[calc(100vh-5rem)] w-auto overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-2xl dark:border-dark-600 dark:bg-dark-800"
+              >
+                <div class="p-3">
+                  <div class="grid grid-cols-2 rounded-lg bg-gray-100 p-1 dark:bg-dark-700">
+                    <button
+                      type="button"
+                      class="h-8 rounded-md text-sm font-medium transition-colors"
+                      :class="mobileHeaderWidgetTab === 'qq'
+                        ? 'bg-white text-gray-900 shadow-sm dark:bg-dark-900 dark:text-white'
+                        : 'text-gray-500 hover:text-gray-900 dark:text-dark-300 dark:hover:text-white'"
+                      @click="mobileHeaderWidgetTab = 'qq'"
+                    >
+                      QQ群
+                    </button>
+                    <button
+                      type="button"
+                      class="h-8 rounded-md text-sm font-medium transition-colors"
+                      :class="mobileHeaderWidgetTab === 'telegram'
+                        ? 'bg-white text-gray-900 shadow-sm dark:bg-dark-900 dark:text-white'
+                        : 'text-gray-500 hover:text-gray-900 dark:text-dark-300 dark:hover:text-white'"
+                      @click="mobileHeaderWidgetTab = 'telegram'"
+                    >
+                      Telegram
+                    </button>
+                  </div>
+
+                  <div v-if="mobileHeaderWidgetTab === 'qq'" class="mt-4" data-tour="join-qq-group">
+                    <div class="flex items-center gap-3 text-left">
+                      <img
+                        src="/tokenfree/logo.svg"
+                        alt="TokenFree Logo"
+                        class="community-brand-logo"
+                      >
+                      <div class="min-w-0 flex-1">
+                        <div class="flex items-center gap-2">
+                          <div class="min-w-0 flex-1 text-base font-semibold text-gray-900 dark:text-white sm:text-lg">
+                            {{ headerWidgetConfig.qq.groupName }}
+                          </div>
+                          <a
+                            href="https://qm.qq.com/q/iX3TeHnckw"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="community-link community-link-qq ml-auto"
+                            aria-label="移动端加入QQ群"
+                          >
+                            <QqBrandIcon />
+                            <span>加入 QQ 群</span>
+                          </a>
+                        </div>
+                        <div class="mt-1 flex items-center gap-1.5 text-sm text-gray-500 dark:text-dark-300">
+                          <span>群号：{{ headerWidgetConfig.qq.groupNumber }}</span>
+                          <button
+                            type="button"
+                            class="rounded p-1 transition-colors hover:bg-gray-100 dark:hover:bg-white/10"
+                            title="复制群号"
+                            aria-label="移动端复制QQ群号"
+                            @click="copyQqGroupNumber"
+                          >
+                            <Icon name="copy" size="sm" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="my-4 border-t border-dashed border-gray-200 dark:border-dark-600"></div>
+
+                    <img
+                      :src="headerWidgetConfig.qq.qrUrl"
+                      :alt="`QQ群 ${headerWidgetConfig.qq.groupNumber} 二维码`"
+                      class="mx-auto block w-full max-w-64 rounded-xl"
+                    >
+                    <div class="mt-3 text-center text-sm text-gray-500 dark:text-dark-300">
+                      扫一扫二维码，加入群聊
+                    </div>
+                  </div>
+
+                  <div v-else-if="mobileHeaderWidgetTab === 'telegram'" class="mt-4">
+                    <div class="flex items-center gap-3 text-left">
+                      <img
+                        src="/tokenfree/logo.svg"
+                        alt="TokenFree Logo"
+                        class="community-brand-logo"
+                      >
+                      <div class="min-w-0 flex-1">
+                        <div class="text-lg font-semibold text-gray-900 dark:text-white">
+                          {{ headerWidgetConfig.telegram.groupName }}
+                        </div>
+                        <div class="mt-1 flex items-center gap-1.5 text-xs text-gray-500 dark:text-dark-300 sm:text-sm">
+                          <a
+                            :href="headerWidgetConfig.telegram.link"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="min-w-0 truncate transition-colors hover:text-gray-900 dark:hover:text-white"
+                          >
+                            {{ headerWidgetConfig.telegram.link }}
+                          </a>
+                          <button
+                            type="button"
+                            class="flex-shrink-0 rounded p-1 transition-colors hover:bg-gray-100 dark:hover:bg-white/10"
+                            title="复制 Telegram 群组链接"
+                            aria-label="移动端复制Telegram群组链接"
+                            @click="copyTelegramGroupLink"
+                          >
+                            <Icon name="copy" size="sm" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="my-4 border-t border-dashed border-gray-200 dark:border-dark-600"></div>
+
+                    <img
+                      :src="headerWidgetConfig.telegram.qrUrl"
+                      :alt="`${headerWidgetConfig.telegram.groupName} 二维码`"
+                      class="mx-auto block w-full max-w-64 rounded-xl bg-white"
+                    >
+                    <div class="mt-3 text-center text-sm text-gray-500 dark:text-dark-300">
+                      扫一扫二维码，加入 Telegram 群组
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </transition>
+          </div>
+        </div>
+
+        <!-- Public data shortcut: keep this discoverable without adding another
+             primary navigation item to the admin sidebar. -->
+        <router-link
+          v-if="authStore.isAdmin"
+          to="/admin/public-transit"
+          class="hidden items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white sm:flex"
+        >
+          <Icon name="globe" size="sm" />
+          <span class="hidden sm:inline">{{ t('publicTransit.nav') }}</span>
+        </router-link>
+
         <!-- Announcement Bell -->
         <AnnouncementBell v-if="user" />
 
@@ -56,10 +343,24 @@
         <!-- Subscription Progress (for users with active subscriptions; not mounted at all when the feature is off) -->
         <SubscriptionProgressMini v-if="user && subscriptionFeatureEnabled" />
 
+        <!-- Points display placeholder; no points API is connected yet. -->
+        <div
+          v-if="user"
+          class="hidden items-center gap-2 rounded-xl bg-primary-50 px-3 py-1.5 dark:bg-primary-900/20 sm:flex"
+          :title="t('common.points')"
+          :aria-label="`${t('common.points')}: —`"
+        >
+          <img :src="pointsIcon" alt="" aria-hidden="true" class="h-4 w-4 shrink-0" />
+          <span class="text-sm font-semibold text-primary-700 dark:text-primary-300">—</span>
+        </div>
+
         <!-- Balance Display -->
         <div
           v-if="user"
-          class="group relative hidden items-center gap-2 rounded-xl bg-primary-50 px-3 py-1.5 dark:bg-primary-900/20 sm:flex"
+          class="group relative hidden items-center gap-2 rounded-xl bg-primary-50 px-3 py-1.5 outline-none focus-visible:ring-2 focus-visible:ring-primary-400/50 dark:bg-primary-900/20 sm:flex"
+          tabindex="0"
+          :aria-label="`${balanceAvailableText}: ${formatHeaderMoney(availableBalance)}`"
+          aria-describedby="header-balance-details"
         >
           <svg
             class="h-4 w-4 text-primary-600 dark:text-primary-400"
@@ -84,20 +385,22 @@
             {{ balanceFrozenLabel }}
           </span>
           <div
-            class="pointer-events-none absolute right-0 top-full mt-2 hidden w-56 rounded-lg border border-gray-200 bg-white p-3 text-xs shadow-lg group-hover:block dark:border-dark-700 dark:bg-dark-800"
+            id="header-balance-details"
+            role="tooltip"
+            class="balance-popover pointer-events-none invisible absolute right-0 top-full z-50 mt-2 w-64 translate-y-1 rounded-2xl border p-4 text-xs opacity-0 transition-[opacity,transform,visibility] duration-200 group-hover:visible group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:visible group-focus-within:translate-y-0 group-focus-within:opacity-100 motion-reduce:transition-none"
           >
             <div class="flex items-center justify-between">
               <span class="text-gray-500 dark:text-dark-400">{{ balanceAvailableText }}</span>
-              <span class="font-medium text-gray-900 dark:text-white">{{ formatHeaderMoney(availableBalance) }}</span>
+              <span class="font-semibold tabular-nums text-primary-700 dark:text-primary-300">{{ formatHeaderMoney(availableBalance) }}</span>
             </div>
-            <div class="mt-2 flex items-center justify-between">
+            <div class="mt-3 flex items-center justify-between">
               <span class="text-gray-500 dark:text-dark-400">{{ balanceFrozenText }}</span>
-              <span class="font-medium text-amber-700 dark:text-amber-200">{{ formatHeaderMoney(frozenBalance) }}</span>
+              <span class="font-medium tabular-nums text-amber-700 dark:text-amber-200">{{ formatHeaderMoney(frozenBalance) }}</span>
             </div>
-            <div class="mt-2 border-t border-gray-100 pt-2 dark:border-dark-700">
+            <div class="mt-3 border-t border-primary-200/60 pt-3 dark:border-primary-400/15">
               <div class="flex items-center justify-between">
                 <span class="text-gray-500 dark:text-dark-400">{{ balanceTotalText }}</span>
-                <span class="font-semibold text-gray-900 dark:text-white">{{ formatHeaderMoney(totalBalance) }}</span>
+                <span class="font-semibold tabular-nums text-primary-700 dark:text-primary-200">{{ formatHeaderMoney(totalBalance) }}</span>
               </div>
             </div>
           </div>
@@ -154,6 +457,14 @@
                 </div>
               </div>
 
+              <div class="border-b border-gray-100 px-4 py-2 dark:border-dark-700 sm:hidden">
+                <div class="text-xs text-gray-500 dark:text-dark-400">{{ t('common.points') }}</div>
+                <div class="flex items-center gap-2 text-sm font-semibold text-primary-600 dark:text-primary-400">
+                  <img :src="pointsIcon" alt="" aria-hidden="true" class="h-4 w-4 shrink-0" />
+                  <span>—</span>
+                </div>
+              </div>
+
               <div class="py-1">
                 <router-link to="/profile" @click="closeDropdown" class="dropdown-item">
                   <Icon name="user" size="sm" />
@@ -164,6 +475,8 @@
                   <Icon name="key" size="sm" />
                   {{ t('nav.apiKeys') }}
                 </router-link>
+
+                <PushNotificationToggle />
 
                 <a
                   v-if="authStore.isAdmin"
@@ -253,15 +566,22 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { CLOSE_QQ_GROUP_EVENT, OPEN_QQ_GROUP_EVENT, OPEN_USER_MENU_EVENT, PUSH_TOUR_UNLOCK_EVENT } from '@/composables/usePushNotificationTour'
+import { useLotterySocketStatus } from '@/composables/useLotterySocketStatus'
+import { storeToRefs } from 'pinia'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { useAppStore, useAuthStore, useOnboardingStore } from '@/stores'
+import { useAppStore, useAuthStore, useOnboardingStore, useRemoteWidgetsStore } from '@/stores'
 import { useAdminSettingsStore } from '@/stores/adminSettings'
 import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import SubscriptionProgressMini from '@/components/common/SubscriptionProgressMini.vue'
 import AnnouncementBell from '@/components/common/AnnouncementBell.vue'
+import PushNotificationToggle from '@/components/common/PushNotificationToggle.vue'
 import Icon from '@/components/icons/Icon.vue'
+import QqBrandIcon from '@/components/icons/QqBrandIcon.vue'
+import pointsIcon from '@/assets/icons/points-image-color.svg'
 import { sanitizeUrl } from '@/utils/url'
+import { useClipboard } from '@/composables/useClipboard'
 import { FeatureFlags, isFeatureFlagEnabled } from '@/utils/featureFlags'
 import { resolveRouteMetaKeys } from '@/router/title'
 import { resolveSiteBillingMode } from '@/utils/siteBillingMode'
@@ -273,10 +593,40 @@ const appStore = useAppStore()
 const authStore = useAuthStore()
 const adminSettingsStore = useAdminSettingsStore()
 const onboardingStore = useOnboardingStore()
+const remoteWidgetsStore = useRemoteWidgetsStore()
+const { copyToClipboard } = useClipboard()
+const { headerConfig: headerWidgetConfig } = storeToRefs(remoteWidgetsStore)
+const { status: lotterySocketStatus } = useLotterySocketStatus()
+const socketDotTitle = computed(() => {
+  switch (lotterySocketStatus.value) {
+    case 'open':
+      return '实时连接已建立'
+    case 'connecting':
+      return '正在连接'
+    case 'closed':
+      return '实时连接已断开'
+    default:
+      return ''
+  }
+})
+const socketDotClass = computed(() => {
+  switch (lotterySocketStatus.value) {
+    case 'open':
+      return 'bg-emerald-500'
+    case 'connecting':
+      return 'animate-pulse bg-amber-400'
+    default:
+      return 'bg-red-500'
+  }
+})
 
 const user = computed(() => authStore.user)
 const dropdownOpen = ref(false)
+const dropdownLocked = ref(false)
 const dropdownRef = ref<HTMLElement | null>(null)
+const mobileHeaderWidgetOpen = ref(false)
+const mobileHeaderWidgetTab = ref<'qq' | 'telegram'>('qq')
+const mobileHeaderWidgetRef = ref<HTMLElement | null>(null)
 const contactInfo = computed(() => appStore.contactInfo)
 const docUrl = computed(() => sanitizeUrl(appStore.docUrl))
 const modelPlazaEnabled = computed(() => isFeatureFlagEnabled(FeatureFlags.modelPlaza))
@@ -350,11 +700,45 @@ function toggleMobileSidebar() {
 }
 
 function toggleDropdown() {
+  if (dropdownLocked.value && dropdownOpen.value) return
   dropdownOpen.value = !dropdownOpen.value
 }
 
 function closeDropdown() {
+  if (dropdownLocked.value) return
   dropdownOpen.value = false
+}
+
+function openUserMenuForTour() {
+  dropdownOpen.value = true
+  dropdownLocked.value = true
+}
+
+function unlockUserMenu() {
+  dropdownLocked.value = false
+}
+
+function openQqGroupForTour() {
+  dropdownLocked.value = false
+  dropdownOpen.value = false
+  if (window.matchMedia('(max-width: 1023px)').matches) {
+    mobileHeaderWidgetTab.value = 'qq'
+    mobileHeaderWidgetOpen.value = true
+  }
+}
+
+function closeQqGroupForTour() {
+  mobileHeaderWidgetOpen.value = false
+}
+
+async function copyQqGroupNumber() {
+  if (!headerWidgetConfig.value) return
+  await copyToClipboard(headerWidgetConfig.value.qq.groupNumber, '群号已复制')
+}
+
+async function copyTelegramGroupLink() {
+  if (!headerWidgetConfig.value) return
+  await copyToClipboard(headerWidgetConfig.value.telegram.link, 'Telegram 群组链接已复制')
 }
 
 async function handleLogout() {
@@ -379,21 +763,71 @@ function formatHeaderMoney(value: number) {
 }
 
 function handleClickOutside(event: MouseEvent) {
+  if (dropdownLocked.value) return
   if (dropdownRef.value && !dropdownRef.value.contains(event.target as Node)) {
     closeDropdown()
+  }
+  if (
+    mobileHeaderWidgetRef.value &&
+    !mobileHeaderWidgetRef.value.contains(event.target as Node)
+  ) {
+    mobileHeaderWidgetOpen.value = false
   }
 }
 
 onMounted(() => {
   document.addEventListener('click', handleClickOutside)
+  window.addEventListener(OPEN_USER_MENU_EVENT, openUserMenuForTour)
+  window.addEventListener(PUSH_TOUR_UNLOCK_EVENT, unlockUserMenu)
+  window.addEventListener(OPEN_QQ_GROUP_EVENT, openQqGroupForTour)
+  window.addEventListener(CLOSE_QQ_GROUP_EVENT, closeQqGroupForTour)
 })
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', handleClickOutside)
+  window.removeEventListener(OPEN_USER_MENU_EVENT, openUserMenuForTour)
+  window.removeEventListener(PUSH_TOUR_UNLOCK_EVENT, unlockUserMenu)
+  window.removeEventListener(OPEN_QQ_GROUP_EVENT, openQqGroupForTour)
+  window.removeEventListener(CLOSE_QQ_GROUP_EVENT, closeQqGroupForTour)
 })
 </script>
 
 <style scoped>
+.balance-popover {
+  background: linear-gradient(135deg, rgb(83 110 255 / 0.08), transparent 70%),
+    var(--tf-console-surface, #fff);
+  border-color: rgb(137 155 255 / 0.24);
+  box-shadow: 0 16px 40px rgb(7 9 18 / 0.2), 0 4px 12px rgb(83 110 255 / 0.06);
+}
+
+.community-link {
+  @apply inline-flex h-8 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border px-3 text-xs font-medium transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400/50 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-dark-900;
+}
+
+.community-link-telegram {
+  @apply border-cyan-200/80 bg-cyan-50/70 text-cyan-700 hover:border-cyan-400 hover:bg-cyan-100 dark:border-cyan-400/20 dark:bg-cyan-400/[0.08] dark:text-cyan-300 dark:hover:border-cyan-400/40 dark:hover:bg-cyan-400/15;
+}
+
+.community-link-qq {
+  @apply border-primary-200/80 bg-primary-50/70 text-primary-700 hover:border-primary-400 hover:bg-primary-100 dark:border-primary-400/20 dark:bg-primary-400/[0.08] dark:text-primary-300 dark:hover:border-primary-400/40 dark:hover:bg-primary-400/15;
+}
+
+.community-brand-logo {
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
+  padding: 8px;
+  object-fit: contain;
+  border: 1px solid rgb(137 155 255 / 0.2);
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgb(83 110 255 / 0.12), rgb(119 85 243 / 0.06));
+}
+
+.community-popover {
+  background: #101421;
+  border-color: rgb(137 155 255 / 0.2);
+}
+
 .dropdown-enter-active,
 .dropdown-leave-active {
   transition: all 0.2s ease;

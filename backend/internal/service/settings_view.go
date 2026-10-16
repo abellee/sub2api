@@ -198,12 +198,14 @@ type SystemSettings struct {
 	OpsMetricsIntervalSeconds    int
 
 	// Channel Monitor feature
-	ChannelMonitorEnabled                bool   `json:"channel_monitor_enabled"`
-	ChannelMonitorMode                   string `json:"channel_monitor_mode"`
-	ChannelMonitorDefaultIntervalSeconds int    `json:"channel_monitor_default_interval_seconds"`
-	ChannelMonitorHideThroughput         bool   `json:"channel_monitor_hide_throughput"`
-	ChannelMonitorShowQuota              bool   `json:"channel_monitor_show_quota"`
-	ChannelMonitorHideUserRanking        bool   `json:"channel_monitor_hide_user_ranking"`
+	ChannelMonitorEnabled                bool    `json:"channel_monitor_enabled"`
+	ChannelMonitorMode                   string  `json:"channel_monitor_mode"`
+	ChannelMonitorDefaultIntervalSeconds int     `json:"channel_monitor_default_interval_seconds"`
+	ChannelMonitorHideThroughput         bool    `json:"channel_monitor_hide_throughput"`
+	ChannelMonitorShowQuota              bool    `json:"channel_monitor_show_quota"`
+	ChannelMonitorHideUserRanking        bool    `json:"channel_monitor_hide_user_ranking"`
+	ChannelMonitorVisibility             string  `json:"channel_monitor_visibility"`
+	ChannelMonitorVisibleUserIDs         []int64 `json:"channel_monitor_visible_user_ids"`
 
 	// Grok model mapping policy (admin settings; empty mapping falls back to these).
 	GrokDefaultTextModel           string `json:"grok_default_text_model"`
@@ -212,6 +214,8 @@ type SystemSettings struct {
 
 	// Available Channels feature (user-facing aggregate view)
 	AvailableChannelsEnabled bool `json:"available_channels_enabled"`
+	PublicTransitEnabled     bool `json:"public_transit_enabled"`
+	PublicTransitPageEnabled bool `json:"public_transit_page_enabled"`
 
 	// Subscription feature switch: gates the whole user-facing subscription surface
 	// (sidebar entries, purchase-page subscription tab, header progress badge,
@@ -395,6 +399,11 @@ type PublicSettings struct {
 	ChannelMonitorHideThroughput         bool   `json:"channel_monitor_hide_throughput"`
 	ChannelMonitorShowQuota              bool   `json:"channel_monitor_show_quota"`
 	ChannelMonitorHideUserRanking        bool   `json:"channel_monitor_hide_user_ranking"`
+	// ChannelMonitorVisibility is the public mode ("all" | "selected") without allow-list IDs.
+	ChannelMonitorVisibility string `json:"channel_monitor_visibility"`
+	// ChannelMonitorVisible is computed per caller (enabled + allow-list).
+	// It is not a stored setting and does not leak the allow-list IDs.
+	ChannelMonitorVisible bool `json:"channel_monitor_visible"`
 
 	// Grok model mapping policy (admin settings).
 	GrokDefaultTextModel           string `json:"grok_default_text_model"`
@@ -403,6 +412,8 @@ type PublicSettings struct {
 
 	// Available Channels feature (user-facing aggregate view)
 	AvailableChannelsEnabled bool `json:"available_channels_enabled"`
+	PublicTransitEnabled     bool `json:"public_transit_enabled"`
+	PublicTransitPageEnabled bool `json:"public_transit_page_enabled"`
 
 	// Subscription feature switch (see SystemSettings.SubscriptionEnabled)
 	SubscriptionEnabled bool `json:"subscription_enabled"`

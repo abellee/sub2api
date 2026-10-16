@@ -508,6 +508,19 @@ export default {
       failedToLoadUsages: 'Failed to load usage records'
     },
 
+    ranking: {
+      title: 'Leaderboard',
+      description: 'Rank every user with usage in the selected time range',
+      metricLabel: 'Ranking metric',
+      metrics: {
+        tokens: 'Token Usage',
+        cost: 'Amount Spent'
+      },
+      tokenSubtitle: 'Token usage per user for the selected time range',
+      costSubtitle: 'Amount spent per user for the selected time range',
+      rangeHint: 'Select a user to view their usage details'
+    },
+
     // Usage Records
     usage: {
       title: 'Usage Records',
@@ -556,6 +569,8 @@ export default {
 	  upstreamModelMismatchOnly: 'Mismatched only',
 	  upstreamModelMatchedOnly: 'Matched only',
       ipAddress: 'IP',
+      upstreamMultiplier: 'Upstream rate',
+      apiAddress: 'API URL',
       clickToViewBalance: 'Click to view balance history',
       failedToLoadUser: 'Failed to load user info',
       userDeletedBadge: 'Deleted',
@@ -563,6 +578,8 @@ export default {
         subtitle: 'Per-user token usage for the current filters and time range',
         rowHint: "Click to view this user's usage details",
         userCount: '{count} users',
+        totalTokens: 'Total tokens: {value}',
+        totalCost: 'Total amount consumed: {value}',
         columns: {
           user: 'User',
           requests: 'Requests',

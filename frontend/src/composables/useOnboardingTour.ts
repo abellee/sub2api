@@ -5,17 +5,23 @@ import { useAuthStore as useUserStore } from '@/stores/auth'
 import { useOnboardingStore } from '@/stores/onboarding'
 import { useI18n } from 'vue-i18n'
 import { getAdminSteps, getUserSteps } from '@/components/Guide/steps'
+import { whenAnnouncementEntrySettled } from '@/stores/announcements'
 
 export interface OnboardingOptions {
   storageKey?: string
   autoStart?: boolean
 }
 
+export const ONBOARDING_TOUR_VERSION = 'v5_interactive'
+
+export function onboardingTourStorageKey(baseKey: string, userId: number | string, role: string) {
+  return `${baseKey}_${userId}_${role}_${ONBOARDING_TOUR_VERSION}`
+}
+
 export function useOnboardingTour(options: OnboardingOptions) {
   const { t } = useI18n()
   const userStore = useUserStore()
   const onboardingStore = useOnboardingStore()
-  const storageVersion = 'v4_interactive' // Bump version for new tour type
 
   // Timing constants for better maintainability
   const TIMING = {
@@ -55,13 +61,14 @@ export function useOnboardingTour(options: OnboardingOptions) {
     eventTypes?: string[] // Track which event types were added
   } | null = null
   let autoStartTimer: ReturnType<typeof setTimeout> | null = null
+  let cancelAnnouncementWait = () => {}
   let globalKeyboardHandler: ((e: KeyboardEvent) => void) | null = null
 
   const getStorageKey = () => {
     const baseKey = options.storageKey ?? 'onboarding_tour'
     const userId = userStore.user?.id ?? 'guest'
     const role = userStore.user?.role ?? 'user'
-    return `${baseKey}_${userId}_${role}_${storageVersion}`
+    return onboardingTourStorageKey(baseKey, userId, role)
   }
 
   const hasSeen = () => {
@@ -543,12 +550,21 @@ export function useOnboardingTour(options: OnboardingOptions) {
     }
 
     if (!options.autoStart || hasSeen()) return
-    autoStartTimer = setTimeout(() => {
-      void startTour()
-    }, TIMING.AUTO_START_DELAY_MS)
+    let cancelled = false
+    cancelAnnouncementWait = whenAnnouncementEntrySettled(() => {
+      if (cancelled || hasSeen()) return
+      autoStartTimer = setTimeout(() => {
+        void startTour()
+      }, TIMING.AUTO_START_DELAY_MS)
+    })
+    cancelAnnouncementWait = ((cancel) => () => {
+      cancelled = true
+      cancel()
+    })(cancelAnnouncementWait)
   })
 
   onUnmounted(() => {
+    cancelAnnouncementWait()
     if (autoStartTimer) {
       clearTimeout(autoStartTimer)
       autoStartTimer = null

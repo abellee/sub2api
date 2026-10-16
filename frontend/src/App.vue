@@ -6,11 +6,15 @@ import NavigationProgress from '@/components/common/NavigationProgress.vue'
 import AdminComplianceDialog from '@/components/admin/AdminComplianceDialog.vue'
 import { resolveRouteDocumentTitle } from '@/router/title'
 import AnnouncementPopup from '@/components/common/AnnouncementPopup.vue'
+import PageNotificationStack from '@/components/common/PageNotificationStack.vue'
+import PersistentRemoteWidgets from '@/components/common/PersistentRemoteWidgets.vue'
+import LotteryPromptHost from '@/components/lottery/LotteryPromptHost.vue'
 import { useAppStore, useAuthStore, useSubscriptionStore, useAnnouncementStore, useAdminComplianceStore, useAdminSettingsStore } from '@/stores'
 import { getSetupStatus } from '@/api/setup'
 import { updateFavicon } from '@/utils/branding'
 import { FeatureFlags, isFeatureFlagEnabled } from '@/utils/featureFlags'
 import { resolveSiteBillingMode } from '@/utils/siteBillingMode'
+import { startMenuStatusPolling, stopMenuStatusPolling } from '@/composables/useMenuStatus'
 
 const router = useRouter()
 const route = useRoute()
@@ -20,6 +24,9 @@ const subscriptionStore = useSubscriptionStore()
 const announcementStore = useAnnouncementStore()
 const adminComplianceStore = useAdminComplianceStore()
 const adminSettingsStore = useAdminSettingsStore()
+const USER_REFRESH_MIN_INTERVAL_MS = 5000
+let lastUserRefreshAt = 0
+let userRefreshInFlight: Promise<unknown> | null = null
 
 function updateDocumentTitle() {
   const customMenuItems = [
@@ -63,6 +70,22 @@ function onVisibilityChange() {
   if (document.visibilityState === 'visible' && authStore.isAuthenticated) {
     announcementStore.fetchAnnouncements()
   }
+}
+
+function refreshCurrentUserAfterNavigation() {
+  if (!authStore.isAuthenticated || userRefreshInFlight) return
+
+  const now = Date.now()
+  if (now - lastUserRefreshAt < USER_REFRESH_MIN_INTERVAL_MS) return
+  lastUserRefreshAt = now
+
+  userRefreshInFlight = authStore.refreshUser()
+    .catch((error) => {
+      console.error('Failed to refresh current user after navigation:', error)
+    })
+    .finally(() => {
+      userRefreshInFlight = null
+    })
 }
 
 function onAdminComplianceRequired(event: Event) {
@@ -116,25 +139,29 @@ watch(
 
       // Register visibility change listener
       document.addEventListener('visibilitychange', onVisibilityChange)
+      startMenuStatusPolling()
     } else {
       // User logged out: clear data and stop polling
       subscriptionStore.clear()
       announcementStore.reset()
       adminComplianceStore.reset()
+      stopMenuStatusPolling()
       document.removeEventListener('visibilitychange', onVisibilityChange)
     }
   },
   { immediate: true }
 )
 
-// Route change trigger (throttled by store)
-router.afterEach(() => {
+// Route changes refresh balance-bearing user data at most once every five seconds.
+const removeRouteAfterEach = router.afterEach(() => {
   if (authStore.isAuthenticated) {
     announcementStore.fetchAnnouncements()
+    refreshCurrentUserAfterNavigation()
   }
 })
 
 onBeforeUnmount(() => {
+  removeRouteAfterEach()
   document.removeEventListener('visibilitychange', onVisibilityChange)
   window.removeEventListener('admin-compliance-required', onAdminComplianceRequired)
 })
@@ -164,6 +191,10 @@ onMounted(async () => {
 <template>
   <NavigationProgress />
   <RouterView />
+  <PersistentRemoteWidgets v-if="authStore.isAuthenticated" />
+  <!-- 抽奖 / 任务推送连接挂在根上。菜单切换只换 RouterView，这条连接保持不动。 -->
+  <LotteryPromptHost v-if="authStore.isAuthenticated" />
+  <PageNotificationStack />
   <Toast />
   <AnnouncementPopup />
   <AdminComplianceDialog />

@@ -4,21 +4,26 @@
     <template v-if="isAdmin">
       <button
         @click="toggleDropdown"
+        type="button"
         class="flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs transition-colors"
         :class="[
+          { 'version-info-trigger': iconOnly },
           hasUpdate
             ? 'bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:hover:bg-amber-900/50'
             : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-800 dark:text-dark-400 dark:hover:bg-dark-700'
         ]"
         :title="hasUpdate ? t('version.updateAvailable') : t('version.upToDate')"
+        :aria-label="iconOnly ? t('version.currentVersion') : undefined"
+        :aria-expanded="dropdownOpen"
       >
-        <span v-if="currentVersion" class="font-medium">v{{ currentVersion }}</span>
+        <Icon v-if="iconOnly" name="infoCircle" class="h-5 w-5" :stroke-width="1.6" />
+        <span v-else-if="currentVersion" class="font-medium">v{{ currentVersion }}</span>
         <span
           v-else
           class="h-3 w-12 animate-pulse rounded bg-gray-200 font-medium dark:bg-dark-600"
         ></span>
         <!-- Update indicator -->
-        <span v-if="hasUpdate" class="relative flex h-2 w-2">
+        <span v-if="hasUpdate" class="relative flex h-2 w-2" :class="{ 'version-info-update': iconOnly }">
           <span
             class="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75"
           ></span>
@@ -31,8 +36,14 @@
         <div
           v-if="dropdownOpen"
           ref="dropdownRef"
-          class="absolute left-0 z-50 mt-2 overflow-hidden whitespace-normal rounded-xl border border-gray-200 bg-white shadow-lg transition-all duration-200 dark:border-dark-700 dark:bg-dark-800"
-          :class="rollbackPanelOpen && isReleaseBuild ? 'w-80' : 'w-64'"
+          class="absolute left-0 z-50 whitespace-normal rounded-xl border border-gray-200 bg-white shadow-lg transition-all duration-200 dark:border-dark-700 dark:bg-dark-800"
+          :class="[
+            { 'version-dropdown-icon': iconOnly },
+            rollbackPanelOpen && isReleaseBuild ? 'w-80' : 'w-64',
+            placement === 'top'
+              ? 'version-dropdown-top bottom-full mb-2 max-h-[calc(100dvh-11rem)] max-w-[calc(100vw-3rem)] origin-bottom-left overflow-y-auto overscroll-contain'
+              : 'mt-2 origin-top-left overflow-hidden'
+          ]"
         >
           <!-- Header with refresh button -->
           <div
@@ -630,6 +641,25 @@
       </transition>
     </template>
 
+    <template v-else-if="iconOnly && version">
+      <button
+        type="button"
+        class="version-info-trigger text-gray-500 transition-colors hover:text-primary-600 dark:text-dark-400 dark:hover:text-primary-400"
+        :aria-label="t('version.currentVersion')"
+        :aria-expanded="dropdownOpen"
+        :title="t('version.currentVersion')"
+        @click="toggleDropdown"
+      >
+        <Icon name="infoCircle" class="h-5 w-5" :stroke-width="1.6" />
+      </button>
+      <transition name="dropdown">
+        <div v-if="dropdownOpen" ref="dropdownRef" class="version-dropdown-icon absolute z-50 mt-2 w-64 rounded-xl border border-gray-200 bg-white p-4 text-sm shadow-lg dark:border-dark-700 dark:bg-dark-800">
+          <div class="text-gray-500 dark:text-dark-400">{{ t('version.currentVersion') }}</div>
+          <div class="mt-2 break-words font-medium text-gray-900 dark:text-white">v{{ version }}</div>
+        </div>
+      </transition>
+    </template>
+
     <!-- Non-admin: Simple static version text -->
     <span v-else-if="version" class="text-xs text-gray-500 dark:text-dark-400">
       v{{ version }}
@@ -657,9 +687,11 @@ const DOCKER_IMAGE = 'weishaw/sub2api'
 
 const { t } = useI18n()
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   version?: string
-}>()
+  placement?: 'top' | 'bottom'
+  iconOnly?: boolean
+}>(), { placement: 'bottom', iconOnly: false })
 
 const authStore = useAuthStore()
 const appStore = useAppStore()
@@ -923,6 +955,38 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.version-info-trigger {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 50%;
+  background: transparent;
+}
+
+.version-info-trigger:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+.version-info-update {
+  position: absolute;
+  top: 0;
+  right: 0;
+}
+
+.version-dropdown-icon {
+  top: 100%;
+  left: 12px;
+  max-height: calc(100dvh - 5rem);
+  max-width: calc(100vw - 1.5rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 .dropdown-enter-active,
 .dropdown-leave-active {
   transition: all 0.2s ease;
@@ -932,6 +996,11 @@ onBeforeUnmount(() => {
 .dropdown-leave-to {
   opacity: 0;
   transform: scale(0.95) translateY(-4px);
+}
+
+.version-dropdown-top.dropdown-enter-from,
+.version-dropdown-top.dropdown-leave-to {
+  transform: scale(0.95) translateY(4px);
 }
 
 .rollback-enter-active,

@@ -856,6 +856,7 @@ func ProvideAPIKeyService(
 
 // ProviderSet is the Wire provider set for all services
 var ProviderSet = wire.NewSet(
+	ProvideGroupRecommendationStore,
 	// Core services
 	ProvideAuthService,
 	NewPasskeyService,
@@ -919,6 +920,8 @@ var ProviderSet = wire.NewSet(
 	ProvideOpenCodeGoUsageService,
 	ProvideSettingService,
 	NewDataManagementService,
+	NewAppCatalogService,
+	NewIQDetectService,
 	ProvideBackupService,
 	ProvideOpsSystemLogSink,
 	ProvideOpsService,
@@ -972,11 +975,13 @@ var ProviderSet = wire.NewSet(
 	NewGroupCapacityService,
 	NewChannelService,
 	wire.Bind(new(ChannelCacheInvalidator), new(*ChannelService)),
+	ProvidePublicTransitService,
 	NewModelPricingResolver,
 	NewModelPlazaService,
 	NewContentModerationService,
 	NewAffiliateService,
 	ProvidePaymentConfigService,
+	ProvideLotterydNotifier,
 	ProvidePaymentService,
 	ProvidePaymentOrderExpiryService,
 	ProvideBalanceNotifyService,
@@ -988,6 +993,25 @@ var ProviderSet = wire.NewSet(
 	NewChannelMonitorRequestTemplateService,
 	ProvideUserPlatformQuotaUsageFlusher,
 )
+
+// ProvidePublicTransitService wires the optional passive-monitor repository
+// without changing NewPublicTransitService's constructor contract.
+func ProvidePublicTransitService(
+	channelService *ChannelService,
+	monitorService *ChannelMonitorService,
+	settingService *SettingService,
+	paymentConfig *PaymentConfigService,
+	groupRepo GroupRepository,
+	usageRepo UsageLogRepository,
+	opsRepo OpsRepository,
+	monitorV2 *ChannelMonitorV2Service,
+) *PublicTransitService {
+	svc := NewPublicTransitService(channelService, monitorService, monitorV2, settingService, paymentConfig, groupRepo, usageRepo)
+	if passiveRepo, ok := any(opsRepo).(PublicTransitPassiveMonitorRepository); ok {
+		svc.SetPassiveMonitorRepository(passiveRepo)
+	}
+	return svc
+}
 
 // ProvideUserPlatformQuotaUsageFlusher 创建并启动 UserPlatformQuotaUsageFlusher。
 func ProvideUserPlatformQuotaUsageFlusher(cfg *config.Config, cache BillingCache, quotaRepo UserPlatformQuotaRepository, tw *TimingWheelService) *UserPlatformQuotaUsageFlusher {
@@ -1010,10 +1034,19 @@ func ProvideBalanceNotifyService(emailService *EmailService, settingRepo Setting
 }
 
 // ProvidePaymentService creates PaymentService and attaches notification email delivery.
-func ProvidePaymentService(entClient *dbent.Client, registry *payment.Registry, loadBalancer payment.LoadBalancer, redeemService *RedeemService, subscriptionSvc *SubscriptionService, configService *PaymentConfigService, userRepo UserRepository, groupRepo GroupRepository, affiliateService *AffiliateService, notificationEmailService *NotificationEmailService) *PaymentService {
+func ProvidePaymentService(entClient *dbent.Client, registry *payment.Registry, loadBalancer payment.LoadBalancer, redeemService *RedeemService, subscriptionSvc *SubscriptionService, configService *PaymentConfigService, userRepo UserRepository, groupRepo GroupRepository, affiliateService *AffiliateService, notificationEmailService *NotificationEmailService, lotterydNotifier *LotterydNotifier) *PaymentService {
 	svc := NewPaymentService(entClient, registry, loadBalancer, redeemService, subscriptionSvc, configService, userRepo, groupRepo, affiliateService)
 	svc.SetNotificationEmailService(notificationEmailService)
+	svc.SetLotterydNotifier(lotterydNotifier)
 	return svc
+}
+
+// ProvideLotterydNotifier 按配置构造 lotteryd 充值通知器（未配置时返回 nil）。
+func ProvideLotterydNotifier(cfg *config.Config) *LotterydNotifier {
+	if cfg == nil {
+		return nil
+	}
+	return NewLotterydNotifier(cfg.Lotteryd)
 }
 
 // ProvidePaymentOrderExpiryService creates and starts PaymentOrderExpiryService.

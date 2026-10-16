@@ -335,12 +335,14 @@ type UpdateSettingsRequest struct {
 	PaymentAlipayMobilePrecreateDeepLink *bool `json:"payment_alipay_mobile_precreate_deep_link"`
 
 	// Channel Monitor feature switch
-	ChannelMonitorEnabled                *bool   `json:"channel_monitor_enabled"`
-	ChannelMonitorMode                   *string `json:"channel_monitor_mode"`
-	ChannelMonitorDefaultIntervalSeconds *int    `json:"channel_monitor_default_interval_seconds"`
-	ChannelMonitorHideThroughput         *bool   `json:"channel_monitor_hide_throughput"`
-	ChannelMonitorShowQuota              *bool   `json:"channel_monitor_show_quota"`
-	ChannelMonitorHideUserRanking        *bool   `json:"channel_monitor_hide_user_ranking"`
+	ChannelMonitorEnabled                *bool    `json:"channel_monitor_enabled"`
+	ChannelMonitorMode                   *string  `json:"channel_monitor_mode"`
+	ChannelMonitorDefaultIntervalSeconds *int     `json:"channel_monitor_default_interval_seconds"`
+	ChannelMonitorHideThroughput         *bool    `json:"channel_monitor_hide_throughput"`
+	ChannelMonitorShowQuota              *bool    `json:"channel_monitor_show_quota"`
+	ChannelMonitorHideUserRanking        *bool    `json:"channel_monitor_hide_user_ranking"`
+	ChannelMonitorVisibility             *string  `json:"channel_monitor_visibility"`
+	ChannelMonitorVisibleUserIDs         *[]int64 `json:"channel_monitor_visible_user_ids"`
 
 	// Grok model mapping policy
 	GrokDefaultTextModel           *string `json:"grok_default_text_model"`
@@ -349,6 +351,8 @@ type UpdateSettingsRequest struct {
 
 	// Available Channels feature switch (user-facing)
 	AvailableChannelsEnabled *bool `json:"available_channels_enabled"`
+	PublicTransitEnabled     *bool `json:"public_transit_enabled"`
+	PublicTransitPageEnabled *bool `json:"public_transit_page_enabled"`
 
 	// Subscription feature switch (user-facing subscription surface; see SettingKeySubscriptionEnabled)
 	SubscriptionEnabled *bool `json:"subscription_enabled"`
@@ -1954,6 +1958,18 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.ChannelMonitorHideUserRanking
 		}(),
+		ChannelMonitorVisibility: func() string {
+			if req.ChannelMonitorVisibility != nil {
+				return *req.ChannelMonitorVisibility
+			}
+			return previousSettings.ChannelMonitorVisibility
+		}(),
+		ChannelMonitorVisibleUserIDs: func() []int64 {
+			if req.ChannelMonitorVisibleUserIDs != nil {
+				return *req.ChannelMonitorVisibleUserIDs
+			}
+			return previousSettings.ChannelMonitorVisibleUserIDs
+		}(),
 		GrokDefaultTextModel: func() string {
 			if req.GrokDefaultTextModel != nil {
 				return *req.GrokDefaultTextModel
@@ -1983,6 +1999,18 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 				return *req.SubscriptionEnabled
 			}
 			return previousSettings.SubscriptionEnabled
+		}(),
+		PublicTransitEnabled: func() bool {
+			if req.PublicTransitEnabled != nil {
+				return *req.PublicTransitEnabled
+			}
+			return previousSettings.PublicTransitEnabled
+		}(),
+		PublicTransitPageEnabled: func() bool {
+			if req.PublicTransitPageEnabled != nil {
+				return *req.PublicTransitPageEnabled
+			}
+			return previousSettings.PublicTransitPageEnabled
 		}(),
 		ModelPlazaEnabled: func() bool {
 			if req.ModelPlazaEnabled != nil {
@@ -2436,6 +2464,8 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		ChannelMonitorHideThroughput:         updatedSettings.ChannelMonitorHideThroughput,
 		ChannelMonitorShowQuota:              updatedSettings.ChannelMonitorShowQuota,
 		ChannelMonitorHideUserRanking:        updatedSettings.ChannelMonitorHideUserRanking,
+		ChannelMonitorVisibility:             updatedSettings.ChannelMonitorVisibility,
+		ChannelMonitorVisibleUserIDs:         updatedSettings.ChannelMonitorVisibleUserIDs,
 
 		GrokDefaultTextModel:           updatedSettings.GrokDefaultTextModel,
 		GrokCrossClientModelMapEnabled: updatedSettings.GrokCrossClientModelMapEnabled,
@@ -2443,6 +2473,8 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 
 		AvailableChannelsEnabled: updatedSettings.AvailableChannelsEnabled,
 		SubscriptionEnabled:      updatedSettings.SubscriptionEnabled,
+		PublicTransitEnabled:     updatedSettings.PublicTransitEnabled,
+		PublicTransitPageEnabled: updatedSettings.PublicTransitPageEnabled,
 
 		ModelPlazaEnabled:       updatedSettings.ModelPlazaEnabled,
 		ModelPlazaRequireAuth:   updatedSettings.ModelPlazaRequireAuth,

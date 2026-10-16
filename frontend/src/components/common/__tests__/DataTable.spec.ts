@@ -47,6 +47,34 @@ describe('DataTable', () => {
     localStorage.clear()
   })
 
+  it('renders the configured number of desktop loading rows', () => {
+    const wrapper = mount(DataTable, {
+      props: {
+        columns: [{ key: 'name', label: 'Name' }],
+        data: [],
+        loading: true,
+        skeletonRows: 12
+      }
+    })
+
+    expect(wrapper.findAll('tbody tr')).toHaveLength(12)
+  })
+
+  it('renders the configured number of mobile loading cards', () => {
+    stubMobileMatchMedia()
+    const wrapper = mount(DataTable, {
+      props: {
+        columns: [{ key: 'name', label: 'Name' }],
+        data: [],
+        loading: true,
+        skeletonRows: 12
+      }
+    })
+
+    expect(wrapper.findAll('.animate-pulse')).toHaveLength(24)
+    expect(wrapper.findAll('.rounded-lg.border')).toHaveLength(12)
+  })
+
   it('renders paired sort arrows and highlights the active direction', async () => {
     const wrapper = mount(DataTable, {
       props: {
