@@ -40,6 +40,18 @@ docker compose up -d iqdetectd
 
 主服务在 sidecar 不可用时会降级：管理端页面显示「服务未启动」横幅。
 
+### 用户侧结果页与 widget 反向代理
+
+用户侧公开结果使用主服务的 `GET /api/v1/public/iq-detection/overview` 和
+`GET /api/v1/public/iq-detection/results/{id}`。这些接口过滤未公开分组并移除账号凭据。
+
+独立 widget 页使用旧地址 `/iq-detection/overview`、`/iq-detection/results/{id}` 时，
+在 widget 站点的 server 块中使用 [widget-iq-detection.conf](widget-iq-detection.conf)。
+它将路径转发至主服务 `127.0.0.1:8080/api/v1/public/iq-detection/`，保留浏览器原有地址。
+不要转发至 sidecar 的 `18102` 端口；新版 sidecar 不提供这些公开路径，且公开展示开关由主服务执行。
+
+部署后统一核对 widget 的概览、结果详情以及隐藏分组详情返回 404，不能只检查 sidecar 的 `/health`。
+
 ## 2. 测试与判分
 
 - **测试**：按检测模型设置里的模型顺序，每个模型从已保存选择中随机挑一个"模型列表包含它且配置过凭据"的账号；鹈鹕/糖果两个探针以两个 goroutine 并发直连该账号自身上游（api_url + api_key），请求带推理等级/温度（留空不传）
