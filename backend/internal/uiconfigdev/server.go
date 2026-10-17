@@ -42,7 +42,7 @@ func NewHandler(store *service.GroupCategoryStore, authBackend string) http.Hand
 				c.Abort()
 				return
 			}
-			defer upstream.Body.Close()
+			defer func() { _ = upstream.Body.Close() }()
 			var result struct {
 				Code int `json:"code"`
 				Data struct {

@@ -53,7 +53,8 @@ func NewGroupCategoryStore(filePath string) *GroupCategoryStore {
 	}
 	filePath, _ = filepath.Abs(filePath)
 	lock, _ := groupCategoryLocks.LoadOrStore(filePath, &sync.Mutex{})
-	return &GroupCategoryStore{filePath: filePath, mu: lock.(*sync.Mutex)}
+	mutex, _ := lock.(*sync.Mutex)
+	return &GroupCategoryStore{filePath: filePath, mu: mutex}
 }
 
 func DefaultGroupCategoryStore() *GroupCategoryStore {

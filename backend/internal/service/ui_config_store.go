@@ -71,7 +71,7 @@ func (s *GroupCategoryStore) readConfig(ctx context.Context, key string, value a
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	var raw string
 	err = db.QueryRowContext(ctx, "SELECT value FROM ui_configuration WHERE key = ?", key).Scan(&raw)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -92,7 +92,7 @@ func (s *GroupCategoryStore) writeConfig(ctx context.Context, key string, value 
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	_, err = db.ExecContext(ctx, `INSERT INTO ui_configuration(key, value) VALUES (?, ?)
 		ON CONFLICT(key) DO UPDATE SET value = excluded.value`, key, string(encoded))
 	return err
