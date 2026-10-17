@@ -65,6 +65,8 @@ const systemTime = time => {
 const modelsHidden = () => w.getComputedStyle(w.document.getElementById('modelTabs')).display === 'none';
 const restingTheme = () => w.document.body.classList.contains('is-resting');
 const noticeHidden = () => w.getComputedStyle(w.document.querySelector('.notice')).display === 'none';
+const rightToolsHidden = () => w.getComputedStyle(w.document.querySelector('.top-right')).display === 'none';
+const pendingArtVisible = () => !w.document.getElementById('pendingArt').hidden;
 
 (async () => {
   await drain();
@@ -89,6 +91,8 @@ const noticeHidden = () => w.getComputedStyle(w.document.querySelector('.notice'
   assert.equal(modelsHidden(), false);
   assert.equal(restingTheme(), false);
   assert.equal(noticeHidden(), false);
+  assert.equal(rightToolsHidden(), false);
+  assert.equal(pendingArtVisible(), false);
   // The registered clock enters quiet time without a changed overview response.
   tick('2026-10-18T13:00:00Z');
   assert.equal(restCount(), 1);
@@ -97,6 +101,8 @@ const noticeHidden = () => w.getComputedStyle(w.document.querySelector('.notice'
   assert.equal(modelsHidden(), true);
   assert.equal(restingTheme(), true);
   assert.equal(noticeHidden(), true);
+  assert.equal(rightToolsHidden(), true);
+  assert.equal(pendingArtVisible(), false);
   assert.equal(w.getComputedStyle(w.document.body).backgroundColor, 'rgb(21, 48, 59)');
   assert.equal(w.getComputedStyle(w.document.getElementById('stage')).backgroundColor, 'rgb(21, 48, 59)');
   assert.equal(w.document.querySelector('.tl-item.active .tl-status').textContent, '休息中');
@@ -166,6 +172,7 @@ const noticeHidden = () => w.getComputedStyle(w.document.querySelector('.notice'
   assert.equal(modelsHidden(), false);
   assert.equal(restingTheme(), false);
   assert.equal(noticeHidden(), false);
+  assert.equal(rightToolsHidden(), false);
   assert.equal(w.getComputedStyle(w.document.body).backgroundColor, 'rgb(247, 245, 237)');
   assert.equal(w.getComputedStyle(w.document.getElementById('stage')).bottom, '112px');
   tick('2026-10-18T13:01:01Z');
@@ -214,7 +221,68 @@ const noticeHidden = () => w.getComputedStyle(w.document.querySelector('.notice'
   assert.equal(restCount(), 0); // Live settings changes remove the point.
   app.overview({ settings: data.settings, groups: [] }, true);
   assert.equal(restCount(), 0); // No visible groups must not get fake results.
+  assert.equal(pendingArtVisible(), false);
+  const reviewData = {
+    settings: { models: ['a'], quiet_windows: [] },
+    groups: [{ id: 1, name: 'Reviews', results: [
+      { ...result(21, 'a'), pelican_review: 'pending', candy_review: 'approved' },
+      { ...result(22, 'a'), pelican_review: 'approved', candy_review: 'pending' },
+      { ...result(23, 'a'), pelican_review: 'rejected' },
+      { ...result(24, 'a'), status: 'failed' },
+      { ...result(25, 'a'), status: 'running' }
+    ] }, { id: 2, name: 'Empty', results: [] }]
+  };
+  const angryFrame = w.document.getElementById('pendingArt');
+  const srcdocProperty = Object.getOwnPropertyDescriptor(w.HTMLIFrameElement.prototype, 'srcdoc');
+  let animationLoads = 0;
+  Object.defineProperty(angryFrame, 'srcdoc', {
+    get() { return srcdocProperty.get.call(this); },
+    set(value) { animationLoads++; srcdocProperty.set.call(this, value); }
+  });
+  app.overview(reviewData, false);
+  app.group(0); // Earlier group-memory checks intentionally saved the empty group.
+  assert.equal(pendingArtVisible(), false); // Running is not pending review.
+  app.select(0, false);
+  assert.equal(selected().status, 'pending');
+  assert.equal(pendingArtVisible(), true);
+  assert.equal(rightToolsHidden(), false);
+  assert.equal(w.document.getElementById('candy').getAttribute('aria-label'), '检测结果：通过');
+  assert.equal(angryFrame.getAttribute('sandbox'), '');
+  assert.equal(w.getComputedStyle(angryFrame).pointerEvents, 'none');
+  assert.ok(Number(w.getComputedStyle(angryFrame).zIndex) < Number(w.getComputedStyle(w.document.querySelector('.bar')).zIndex));
+  const angryDoc = new JSDOM(angryFrame.srcdoc);
+  assert.equal(angryDoc.window.document.querySelector('svg').outerHTML, w.document.getElementById('angryArt').content.querySelector('svg').outerHTML);
+  assert.equal(angryDoc.window.document.querySelectorAll('script').length, 0);
+  assert.equal(angryDoc.window.getComputedStyle(angryDoc.window.document.body).backgroundColor, 'rgba(0, 0, 0, 0)');
+  angryDoc.window.close();
+  const loadsBeforePoll = animationLoads;
+  app.overview(reviewData, true);
+  assert.equal(pendingArtVisible(), true);
+  assert.equal(animationLoads, loadsBeforePoll); // Polling must not restart the walk-in sequence.
+  for (const index of [1, 2, 3, 4]) {
+    app.select(index, false);
+    assert.equal(pendingArtVisible(), false); // Approved, rejected, failed, and running.
+    assert.equal(rightToolsHidden(), false);
+  }
+  app.select(0, false);
+  assert.equal(pendingArtVisible(), true);
+  const reviewed = JSON.parse(JSON.stringify(reviewData));
+  reviewed.groups[0].results[0].pelican_review = 'approved';
+  app.overview(reviewed, true);
+  assert.equal(selected().status, 'pass');
+  assert.equal(pendingArtVisible(), false); // Review changes take effect on the next overview.
+  app.overview(reviewData, true);
+  assert.equal(pendingArtVisible(), true);
+  app.group(1);
+  assert.equal(pendingArtVisible(), false);
+  app.group(0);
+  const restReviews = JSON.parse(JSON.stringify(reviewData));
+  restReviews.settings.quiet_windows = [{ start: '00:00', end: '00:00' }];
+  app.overview(restReviews, true);
+  assert.equal(selected().status, 'resting');
+  assert.equal(pendingArtVisible(), false);
+  assert.equal(rightToolsHidden(), true);
   assert.ok(requested.every(url => !url.includes('quiet-now')));
-  console.log('PASS: syntax, Beijing boundaries, live clock, blinking separators, contextual controls/theme, original SVG artwork and animated background reuse, viewport/edge coverage, clock transitions, history, group memory, no synthetic detail requests');
+  console.log('PASS: syntax, Beijing boundaries, live clock, rest controls/theme, original SVG/background, responsive coverage, pending animation visibility/layering/isolation/poll continuity, review updates, history, group memory');
   dom.window.close();
 })().catch(error => { console.error(error); dom.window.close(); process.exitCode = 1; });
