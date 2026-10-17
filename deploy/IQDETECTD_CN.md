@@ -42,15 +42,19 @@ docker compose up -d iqdetectd
 
 ### 用户侧结果页与 widget 反向代理
 
-用户侧公开结果使用主服务的 `GET /api/v1/public/iq-detection/overview` 和
-`GET /api/v1/public/iq-detection/results/{id}`。这些接口过滤未公开分组并移除账号凭据。
+用户侧公开结果由 iqdetectd 独立提供 `GET /iq-detection/overview` 和
+`GET /iq-detection/results/{id}`，不经过主站。使用 0.2.7 或更新镜像，包含公开接口、
+分组展示开关过滤和人工复核字段。0.2.6 镜像漏带公开接口代码，不能用于这个页面。
 
-独立 widget 页使用旧地址 `/iq-detection/overview`、`/iq-detection/results/{id}` 时，
-在 widget 站点的 server 块中使用 [widget-iq-detection.conf](widget-iq-detection.conf)。
-它将路径转发至主服务 `127.0.0.1:8080/api/v1/public/iq-detection/`，保留浏览器原有地址。
-不要转发至 sidecar 的 `18102` 端口；新版 sidecar 不提供这些公开路径，且公开展示开关由主服务执行。
+在 widget 站点的 server 块中使用 [widget-iq-detection.conf](widget-iq-detection.conf)，
+直接转发至 `127.0.0.1:18102`，保留浏览器原有地址。只对外代理 `/iq-detection/`，
+不暴露 `/v1` 管理接口。公开响应不含账号标识、凭据、提示词及正确答案配置。
 
-部署后统一核对 widget 的概览、结果详情以及隐藏分组详情返回 404，不能只检查 sidecar 的 `/health`。
+概览与详情均返回 `candy_review`、`pelican_review`，保留 approved/rejected/pending，
+自动判分 `candy_correct` 与人工复核独立。不要改接缺少复核字段的主站旧接口。
+
+部署后统一将 widget 概览和全部结果详情与 SQLite 实际数据比较，包括复核、答案、HTML、耗时与时间，
+确认隐藏分组不出现在概览、详情返回 404，再核对页面显示。不能仅以接口 200 判断修复完成。
 
 ## 2. 测试与判分
 

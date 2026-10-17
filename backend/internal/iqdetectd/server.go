@@ -11,11 +11,12 @@ import (
 
 // Server is the HTTP layer of iqdetectd.
 type Server struct {
-	Store      *Store
-	Runner     *Runner
-	TestRunner *TestRunner
-	StartedAt  time.Time
-	Version    string
+	Store       *Store
+	Runner      *Runner
+	TestRunner  *TestRunner
+	StartedAt   time.Time
+	Version     string
+	publicLimit publicLimiter
 }
 
 func (s *Server) Handler() http.Handler {
@@ -42,6 +43,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/test-results/{id}", s.handleGetTestResult)
 	mux.HandleFunc("GET /v1/test-results/{id}/pelican", s.handleGetTestResultPelican)
 	mux.HandleFunc("PUT /v1/test-results/{id}/review", s.handleUpdateTestResultReview)
+	mux.HandleFunc("/iq-detection/overview", s.handlePublicOverview)
+	mux.HandleFunc("/iq-detection/results/{id}", s.handlePublicResult)
 	return mux
 }
 
