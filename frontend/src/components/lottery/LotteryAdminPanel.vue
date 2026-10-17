@@ -5,7 +5,7 @@
  * 兑换码奖品支持管理员预存码池（开奖时按序发放）。
  * 样式使用 Sub2API 主站的 Tailwind 组件类，并入后零适配。
  */
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   adminArchiveActivity,
   adminDeleteActivity,
@@ -14,6 +14,7 @@ import {
   adminGetActivity,
   adminListActivities,
   adminListParticipants,
+  adminRemoveParticipant,
   adminUpdateActivity,
   emptyNotifyStages,
   formatValue,
@@ -27,6 +28,7 @@ import {
   type WinnerRecord
 } from '../../api/lottery'
 import type { LotteryClient } from '../../api/lotteryClient'
+import LotteryServiceVersion from './LotteryServiceVersion.vue'
 import PrizeIcon from './PrizeIcon.vue'
 import { beijingInputToISO, formatBeijingDateTime, isoToBeijingInput } from '../../utils/beijingTime'
 import {
@@ -77,6 +79,12 @@ const deletingId = ref<number | null>(null)
 // 当前活动（进行中）的参与名单
 const currentParticipants = ref<ParticipantRecord[]>([])
 const showCurrentParticipants = ref(true)
+const participantsActivity = ref<ActivityView | null>(null)
+const participants = ref<ParticipantRecord[]>([])
+const participantsLoading = ref(false)
+const participantsError = ref('')
+const removingUserId = ref<number | null>(null)
+const detailPending = ref(false)
 
 // 排序：进行中 > 未开始 > 已开奖 > 已关闭 > 已归档，同状态内按开始时间倒序。
 // 已关闭/已归档优先于时间阶段，避免它们的 phase 仍是 joining 时排到前面。
@@ -140,6 +148,11 @@ const settingsUserSearching = ref(false)
 const userSearchQuery = ref('')
 const userSearchResults = ref<SearchedUser[]>([])
 const userSearching = ref(false)
+const blacklistSearchQuery = ref('')
+const blacklistSearchResults = ref<SearchedUser[]>([])
+const blacklistSearching = ref(false)
+const blacklistSearchError = ref('')
+const blacklistSearchDone = ref(false)
 const confirmDialog = ref<{ title: string; message: string; confirmText: string; action: () => void } | null>(null)
 
 // 弹窗打开时锁定背景滚动，避免「遮罩没盖满」的错觉
@@ -186,6 +199,7 @@ function emptyForm(): {
   notifyStages: ReturnType<typeof emptyNotifyStages>
   visibilityMode: 'all' | 'partial' | 'eligible'
   visibilityEmails: string[]
+  blacklistEmails: string[]
 } {
   return {
     name: '',
@@ -207,7 +221,8 @@ function emptyForm(): {
     repeatGroup: '',
     notifyStages: emptyNotifyStages(),
     visibilityMode: 'all',
-    visibilityEmails: []
+    visibilityEmails: [],
+    blacklistEmails: []
   }
 }
 
@@ -237,11 +252,51 @@ async function loadCurrentParticipants() {
   }
 }
 
+async function openParticipants(activity: ActivityView) {
+  participantsActivity.value = activity
+  participants.value = []
+  participantsError.value = ''
+  participantsLoading.value = true
+  try {
+    const list = await adminListParticipants(props.client, activity.id)
+    if (participantsActivity.value?.id === activity.id) participants.value = list
+  } catch (e) {
+    participantsError.value = (e as Error).message
+  } finally {
+    participantsLoading.value = false
+  }
+}
+
+function confirmRemoveParticipant(activity: ActivityView, participant: ParticipantRecord) {
+  askConfirm('踢出参与者', `确定将 ${participant.email} 踢出「${activity.name}」？该用户将不参与开奖，且无法重新报名本场活动。`, '踢出', () => { void removeParticipant(activity, participant) })
+}
+
+async function removeParticipant(activity: ActivityView, participant: ParticipantRecord) {
+  if (removingUserId.value !== null) return
+  removingUserId.value = participant.user_id
+  error.value = ''
+  try {
+    await adminRemoveParticipant(props.client, activity.id, participant.user_id)
+    participants.value = participants.value.filter((p) => p.user_id !== participant.user_id)
+    if (current.value?.id === activity.id) currentParticipants.value = currentParticipants.value.filter((p) => p.user_id !== participant.user_id)
+    notice.value = `已踢出 ${participant.email}`
+    await refresh()
+  } catch (e) {
+    error.value = (e as Error).message
+    if (participantsActivity.value?.id === activity.id) participantsError.value = error.value
+  } finally {
+    removingUserId.value = null
+  }
+}
+
 /** 编辑指定日常配置：打开表单并填充（提交时走更新）。 */
 function editDaily(c: DailyConfig) {
+  resetBlacklistSearch()
+  detailPending.value = false
   editingId.value = null
   editingConfigId.value = 0
   form.value = emptyForm()
+  form.value.blacklistEmails = [...(c.blacklist ?? [])]
   form.value.name = c.name
   form.value.description = c.description
   form.value.maxParticipants = c.max_participants
@@ -277,6 +332,9 @@ function conditionsSummary(conditions: ConditionDef[]): string {
       }
       if (c.dimension === 'activity_days') {
         return `${c.window_days}天活跃≥${c.min_active_days ?? 1}天`
+      }
+      if (c.dimension === 'historical_recharge') {
+        return `历史累计充值≥$${Number(c.threshold || 0).toFixed(2)}`
       }
       const min = c.min_registered_days ?? 0
       const max = c.max_registered_days ?? 0
@@ -327,6 +385,7 @@ const formTitle = computed(() => {
   return '创建抽奖活动'
 })
 const canSubmit = computed(() =>
+  !detailPending.value && !dialogError.value.startsWith('加载活动详情失败') &&
   form.value.prizes.length > 0 && form.value.name && (
     form.value.isDaily
       ? Boolean(form.value.dailyStartTime && form.value.dailyDurationHours > 0)
@@ -391,6 +450,7 @@ function toLocalInput(iso: string): string {
 }
 
 function fillForm(a: ActivityView) {
+  resetBlacklistSearch()
   const activityId = a.id
   const loadedShow = a.show_participant_count === true
   editingId.value = a.id
@@ -409,6 +469,7 @@ function fillForm(a: ActivityView) {
     repeatGroup: (a.repeat_group || '').trim(),
     visibilityMode: 'all',
     visibilityEmails: [],
+    blacklistEmails: [],
     isDaily: false, // 编辑已有活动：始终普通模式
     dailyStartTime: '08:00',
     dailyDurationHours: 12,
@@ -424,6 +485,7 @@ function fillForm(a: ActivityView) {
     }))
   }
   // 条件定义与兑换码码池需要从详情接口取（列表接口不含）。
+  detailPending.value = true
   adminGetActivity(props.client, a.id).then((detail) => {
     if (!dialogOpen.value || editingId.value !== activityId) return
     if (form.value.showParticipantCount === loadedShow) {
@@ -433,6 +495,7 @@ function fillForm(a: ActivityView) {
       form.value.repeatPolicy = (detail.activity.repeat_policy || 'unlimited') as 'unlimited' | 'join_once' | 'win_once'
       form.value.repeatGroup = (detail.activity.repeat_group || '').trim()
     }
+    form.value.blacklistEmails = [...(detail.activity.blacklist ?? [])]
     form.value.conditions = detail.activity.conditions.map((c) => ({ ...c }))
     form.value.autoBonusPercent = detail.activity.auto_bonus_percent
     form.value.notifyStages = notifyStagesFrom(detail.notify_stages, detail.notify === true)
@@ -447,7 +510,11 @@ function fillForm(a: ActivityView) {
       stock: p.stock,
       codesText: (p.codes ?? []).join('\n')
     }))
-  }).catch(() => undefined)
+  }).catch((e) => {
+    if (editingId.value === activityId) dialogError.value = `加载活动详情失败：${(e as Error).message}`
+  }).finally(() => {
+    if (editingId.value === activityId) detailPending.value = false
+  })
 }
 
 async function refresh() {
@@ -486,6 +553,60 @@ async function openSettings() {
 }
 
 let userSearchTimer: ReturnType<typeof setTimeout> | null = null
+
+let blacklistSearchTimer: ReturnType<typeof setTimeout> | null = null
+let blacklistSearchRequest = 0
+
+function resetBlacklistSearch() {
+  if (blacklistSearchTimer) clearTimeout(blacklistSearchTimer)
+  blacklistSearchRequest++
+  blacklistSearchQuery.value = ''
+  blacklistSearchResults.value = []
+  blacklistSearching.value = false
+  blacklistSearchError.value = ''
+  blacklistSearchDone.value = false
+}
+
+function onBlacklistSearchInput() {
+  if (blacklistSearchTimer) clearTimeout(blacklistSearchTimer)
+  const request = ++blacklistSearchRequest
+  const query = blacklistSearchQuery.value.trim()
+  blacklistSearchResults.value = []
+  blacklistSearchError.value = ''
+  blacklistSearchDone.value = false
+  blacklistSearching.value = Boolean(query)
+  if (!query) return
+  blacklistSearchTimer = setTimeout(async () => {
+    try {
+      const users = await adminSearchUsers(props.client, query, 20)
+      if (request !== blacklistSearchRequest) return
+      blacklistSearchResults.value = users.filter((user) => user.email.trim())
+      blacklistSearchDone.value = true
+    } catch (e) {
+      if (request === blacklistSearchRequest) blacklistSearchError.value = (e as Error).message
+    } finally {
+      if (request === blacklistSearchRequest) blacklistSearching.value = false
+    }
+  }, 300)
+}
+
+function isBlacklisted(email: string) {
+  return form.value.blacklistEmails.some((item) => item.trim().toLowerCase() === email.trim().toLowerCase())
+}
+
+function addUserToBlacklist(user: SearchedUser) {
+  const email = user.email.trim().toLowerCase()
+  if (!email || isBlacklisted(email)) return
+  form.value.blacklistEmails.push(email)
+  resetBlacklistSearch()
+}
+
+function removeUserFromBlacklist(email: string) {
+  form.value.blacklistEmails = form.value.blacklistEmails.filter((item) => item !== email)
+}
+
+watch(dialogOpen, (open) => { if (!open) resetBlacklistSearch() })
+onBeforeUnmount(resetBlacklistSearch)
 
 function onUserSearchInput() {
   if (userSearchTimer) clearTimeout(userSearchTimer)
@@ -587,6 +708,8 @@ async function saveSettings() {
 }
 
 function openCreate() {
+  resetBlacklistSearch()
+  detailPending.value = false
   editingId.value = null
   editingDailyId.value = null
   editingConfigId.value = 0
@@ -605,6 +728,7 @@ function closeDialog() {
 /** 条件与奖池（活动与每日定时配置共用）。 */
 function buildSharedParts() {
   return {
+    blacklist: [...new Set(form.value.blacklistEmails.map((email) => email.trim().toLowerCase()).filter(Boolean))],
     conditions: form.value.conditions,
     prizes: form.value.prizes.map((p) => ({
       name: p.name,
@@ -638,6 +762,11 @@ function buildInput(): ActivityInput {
 }
 
 function validateForm(): string {
+  for (const condition of form.value.conditions) {
+    if (condition.dimension === 'historical_recharge' && (!Number.isFinite(condition.threshold) || Number(condition.threshold) <= 0)) {
+      return '历史充值条件需填写大于 0 的累计充值金额（美元）'
+    }
+  }
   for (const p of form.value.prizes) {
     if (p.prize_type === 'redeem_code' && codesCount(p) < p.stock) {
       return `奖品「${p.name}」为兑换码类型，需预填至少 ${p.stock} 个兑换码（当前 ${codesCount(p)} 个），每行一个`
@@ -647,6 +776,7 @@ function validateForm(): string {
 }
 
 async function submit(regenerate = false) {
+  if (detailPending.value || saving.value || dialogError.value.startsWith('加载活动详情失败')) return
   const invalid = validateForm()
   if (invalid) {
     dialogError.value = invalid
@@ -869,6 +999,7 @@ onMounted(refresh)
       <div class="min-w-0 flex-1">
         <h1 class="text-lg font-bold text-gray-900 dark:text-white">抽奖活动管理</h1>
         <p class="text-xs text-gray-500 dark:text-dark-400">同一时间仅一场抽奖；开奖后可创建下一场</p>
+        <LotteryServiceVersion :client="props.client" />
       </div>
       <button class="btn btn-secondary" @click="openSettings">⚙️ 设置</button>
       <button class="btn btn-primary" @click="openCreate()">新增抽奖</button>
@@ -974,6 +1105,7 @@ onMounted(refresh)
             >
               {{ p.email }}
               <b class="font-semibold text-primary-600 dark:text-primary-400">×{{ p.weight }}</b>
+              <button type="button" class="ml-1 text-red-500 hover:text-red-600 disabled:opacity-50" :disabled="removingUserId !== null" :aria-label="`踢出 ${p.email}`" @click="confirmRemoveParticipant(current, p)">踢出</button>
             </span>
             <span v-if="!currentParticipants.length" class="text-sm text-gray-400">还没有人参与</span>
           </div>
@@ -1096,6 +1228,7 @@ onMounted(refresh)
                 <template v-else>不发送阶段通知</template>
               </p>
             </div>
+            <button v-if="!a.drawn_at" class="btn btn-secondary btn-sm" @click="openParticipants(a)">参与名单</button>
             <button class="btn btn-secondary btn-sm" @click="toggleWinners(a)">
               {{ expandedId === a.id ? '收起名单' : '中奖名单' }}
             </button>
@@ -1351,6 +1484,29 @@ onMounted(refresh)
             </label>
           </div>
 
+          <div class="rounded-xl border border-gray-100 p-4 dark:border-dark-700">
+            <label for="lottery-blacklist-search" class="input-label">活动黑名单</label>
+            <div class="relative">
+              <input id="lottery-blacklist-search" v-model="blacklistSearchQuery" type="search" aria-label="搜索黑名单用户" class="input !py-2" placeholder="输入邮箱或用户名搜索，点击添加到黑名单…" :disabled="detailPending" @input="onBlacklistSearchInput" />
+              <span v-if="blacklistSearching" role="status" class="absolute right-3 top-2 text-xs text-gray-400">搜索中…</span>
+            </div>
+            <div v-if="blacklistSearchResults.length" class="mt-1 max-h-44 overflow-y-auto rounded-xl border border-gray-200 bg-white py-1 dark:border-dark-700 dark:bg-dark-800">
+              <button v-for="user in blacklistSearchResults" :key="user.id" type="button" class="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-gray-50 disabled:opacity-50 dark:hover:bg-dark-700" :disabled="isBlacklisted(user.email)" :aria-label="`${isBlacklisted(user.email) ? '已添加' : '添加到黑名单'} ${user.email}`" @click="addUserToBlacklist(user)">
+                <span class="min-w-0"><span class="block truncate">{{ user.email }}</span><span v-if="user.username" class="block truncate text-xs text-gray-400">{{ user.username }}</span></span>
+                <span class="shrink-0 text-xs text-red-500">{{ isBlacklisted(user.email) ? '已添加' : '添加' }}</span>
+              </button>
+            </div>
+            <p v-if="blacklistSearchError" role="alert" class="mt-1 text-xs text-red-500">搜索失败：{{ blacklistSearchError }}</p>
+            <p v-else-if="blacklistSearchDone && !blacklistSearchResults.length" class="mt-1 text-xs text-gray-400">未找到匹配的用户</p>
+            <div v-if="form.blacklistEmails.length" class="mt-2 flex flex-wrap gap-1.5" aria-label="已添加的黑名单用户">
+              <span v-for="email in form.blacklistEmails" :key="email" class="inline-flex items-center gap-1 rounded-full bg-red-50 px-2.5 py-1 text-xs text-red-600 dark:bg-red-900/20 dark:text-red-300">
+                {{ email }}
+                <button type="button" :aria-label="`移出黑名单 ${email}`" class="ml-1 hover:text-red-800 disabled:opacity-50" :disabled="detailPending" @click="removeUserFromBlacklist(email)">✕</button>
+              </span>
+            </div>
+            <p class="mt-2 text-xs text-gray-400">名单中的用户满足参与条件时可正常报名，开奖时不会中奖，对已参与用户也生效。日常配置保存后同步到尚未开奖的场次。</p>
+          </div>
+
           <!-- 可参与条件 -->
           <div class="rounded-xl border border-gray-100 bg-gray-50/60 p-4 dark:border-dark-700 dark:bg-dark-900/40">
             <div class="mb-3 flex items-center justify-between">
@@ -1361,7 +1517,7 @@ onMounted(refresh)
                 </span>
               </h3>
             </div>
-          <LotteryConditionsEditor v-model="form.conditions" :auto-bonus-percent="form.autoBonusPercent" />
+          <LotteryConditionsEditor v-model="form.conditions" :auto-bonus-percent="form.autoBonusPercent" allow-historical-recharge />
           </div>
 
           <!-- 奖池 -->
@@ -1531,4 +1687,23 @@ onMounted(refresh)
     </Teleport>
 
 
+  <Teleport to="body">
+    <div v-if="participantsActivity" class="fixed inset-0 z-[1900] flex items-center justify-center bg-black/50 p-4" @click.self="participantsActivity = null">
+      <section role="dialog" aria-modal="true" aria-label="参与名单" class="max-h-[80vh] w-full max-w-xl overflow-y-auto rounded-2xl bg-white p-6 shadow-xl dark:bg-dark-800">
+        <div class="mb-4 flex items-center justify-between gap-4">
+          <h3 class="text-lg font-semibold">{{ participantsActivity.name }} · 参与名单</h3>
+          <button type="button" class="btn btn-secondary btn-sm" @click="participantsActivity = null">关闭</button>
+        </div>
+        <p v-if="participantsError" role="alert" class="mb-3 text-sm text-red-500">{{ participantsError }}</p>
+        <p v-if="participantsLoading" class="text-sm text-gray-400">加载中…</p>
+        <ul v-else class="space-y-2">
+          <li v-for="p in participants" :key="p.id" class="flex items-center justify-between gap-3 rounded-lg bg-gray-50 p-3 text-sm dark:bg-dark-900">
+            <span class="break-all">{{ p.email }}</span>
+            <button type="button" class="btn btn-danger btn-sm shrink-0" :disabled="removingUserId !== null" @click="confirmRemoveParticipant(participantsActivity, p)">{{ removingUserId === p.user_id ? '踢出中…' : '踢出' }}</button>
+          </li>
+          <li v-if="!participants.length" class="text-sm text-gray-400">还没有人参与</li>
+        </ul>
+      </section>
+    </div>
+  </Teleport>
 </template>

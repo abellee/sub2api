@@ -25,7 +25,7 @@ type Eligibility struct {
 	Reason   string       `json:"reason,omitempty"` // 不合格时的原因
 }
 
-// dateRange 返回窗口内 [today-N+1 .. today] 的日期串（升序，北京时间）。
+// windowDates 返回窗口内 [today-N .. yesterday] 的日期串（升序，北京时间）。
 // 条件评估只用完整天：窗口以「昨天」为终点，避免当天进行中的数据造成误判。
 func windowDates(now time.Time, windowDays int) []string {
 	if windowDays <= 0 {
@@ -45,6 +45,9 @@ func fmtTokens(v float64) string {
 }
 
 func dailyMap(usage *UserUsage) map[string]float64 {
+	if usage == nil {
+		return map[string]float64{}
+	}
 	m := make(map[string]float64, len(usage.Daily))
 	for _, d := range usage.Daily {
 		m[d.Date] = d.TotalTokens
@@ -57,6 +60,12 @@ func EvaluateCondition(c ConditionDef, usage *UserUsage, now time.Time) (bool, s
 	dates := windowDates(now, c.WindowDays)
 	daily := dailyMap(usage)
 	switch c.Dimension {
+	case DimensionHistoricalRecharge:
+		if usage == nil || usage.TotalRecharged == nil || math.IsNaN(*usage.TotalRecharged) || math.IsInf(*usage.TotalRecharged, 0) || *usage.TotalRecharged < 0 {
+			return false, "历史充值金额暂不可用"
+		}
+		total := *usage.TotalRecharged
+		return total >= c.Threshold, fmt.Sprintf("历史累计充值 $%.2f（要求 ≥ $%.2f）", total, c.Threshold)
 	case DimensionTokenUsage:
 		switch c.Mode {
 		case "per_day":
@@ -74,13 +83,13 @@ func EvaluateCondition(c ConditionDef, usage *UserUsage, now time.Time) (bool, s
 			if math.IsInf(minDay, 0) {
 				minDay = 0
 			}
-			return ok, fmt.Sprintf("近 %d 天每日最低 %s tokens（要求每日 ≥ %s）", c.WindowDays, fmtTokens(minDay), fmtTokens(c.Threshold))
+			return ok, fmt.Sprintf("近 %d 天每天消耗 Token 量 ≥ %s（当前每日最低 %s）", c.WindowDays, fmtTokens(c.Threshold), fmtTokens(minDay))
 		default: // total
 			var sum float64
 			for _, d := range dates {
 				sum += daily[d]
 			}
-			return sum >= c.Threshold, fmt.Sprintf("近 %d 天累计 %s tokens（要求 ≥ %s）", c.WindowDays, fmtTokens(sum), fmtTokens(c.Threshold))
+			return sum >= c.Threshold, fmt.Sprintf("近 %d 天累计消耗 Token 量 ≥ %s（当前累计 %s）", c.WindowDays, fmtTokens(c.Threshold), fmtTokens(sum))
 		}
 	case DimensionActiveDays:
 		minDaily := c.DailyMinTokens
@@ -93,7 +102,10 @@ func EvaluateCondition(c ConditionDef, usage *UserUsage, now time.Time) (bool, s
 				active++
 			}
 		}
-		return active >= c.MinActiveDays, fmt.Sprintf("近 %d 天活跃 %d 天（要求 ≥ %d 天）", c.WindowDays, active, c.MinActiveDays)
+		if c.DailyMinTokens <= 0 {
+			return active >= c.MinActiveDays, fmt.Sprintf("近 %d 天至少 %d 天有 Token 消耗（当前达标 %d 天）", c.WindowDays, c.MinActiveDays, active)
+		}
+		return active >= c.MinActiveDays, fmt.Sprintf("近 %d 天至少 %d 天消耗 Token 量 ≥ %s（当前达标 %d 天）", c.WindowDays, c.MinActiveDays, fmtTokens(minDaily), active)
 	case DimensionRegisteredDays:
 		if usage == nil || usage.RegisteredAt == nil || usage.RegisteredAt.IsZero() {
 			return false, "注册时间未知"

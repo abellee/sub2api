@@ -47,7 +47,7 @@ func RegisterAdminRoutes(
 		// 分组管理
 		registerGroupRoutes(admin, h)
 
-		// 分组分类（JSON 落盘，二开）
+		// 分组分类（与菜单配置共用 SQLite）
 		registerGroupCategoryRoutes(admin)
 
 		// 账号管理
@@ -89,6 +89,10 @@ func RegisterAdminRoutes(
 
 		// 系统设置
 		registerSettingsRoutes(admin, h)
+
+		userMenu := handler.NewUserMenuHandler(newUIConfigStore())
+		admin.GET("/user-menu", userMenu.Get)
+		admin.PUT("/user-menu", userMenu.Update)
 
 		// 数据管理
 		registerDataManagementRoutes(admin, h, stepUpAuth)
@@ -417,8 +421,12 @@ func registerGroupRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 
 func newGroupCategoryHandler() *adminhandler.GroupCategoryHandler {
 	return adminhandler.NewGroupCategoryHandler(
-		service.NewGroupCategoryStore(filepath.Join(setup.GetDataDir(), "group_categories.json")),
+		newUIConfigStore(),
 	)
+}
+
+func newUIConfigStore() *service.GroupCategoryStore {
+	return service.NewGroupCategoryStore(filepath.Join(setup.GetDataDir(), "group_categories.db"))
 }
 
 func registerGroupCategoryRoutes(admin *gin.RouterGroup) {
@@ -428,6 +436,7 @@ func registerGroupCategoryRoutes(admin *gin.RouterGroup) {
 		cats.GET("", h.List)
 		cats.POST("", h.Create)
 		cats.PUT("/assignments/:group_id", h.Assign)
+		cats.PUT("/group-caps/:group_id", h.SetGroupCap)
 		cats.PUT("/sort-order", h.Reorder)
 		cats.PUT("/:id", h.Update)
 		cats.DELETE("/:id", h.Delete)

@@ -106,6 +106,11 @@ export default {
     currentConcurrency: '当前并发',
     noGroup: '无分组',
     searchGroup: '搜索分组...',
+    moreSettings: '更多设置',
+    modelPricing: '模型价格',
+    modelPricingEmpty: '未找到该分组的模型价格',
+    capRateTag: '上限 {rate}x',
+    capRateHint: '该分组的上限倍率：实际倍率最大可能上涨到该值，一般不会超过。',
     useNativeGroupSelect: '使用旧版下拉选择',
     useCardGroupSelect: '使用新版卡片选择',
     groupProviders: '模型厂商导航',
@@ -153,6 +158,7 @@ export default {
     failedToDelete: '删除 API 密钥失败',
     failedToUpdateStatus: '更新 API 密钥状态失败',
     clickToChangeGroup: '点击更换分组',
+    changeGroupTitle: '更换分组',
     groupChangedSuccess: '分组更换成功',
     failedToChangeGroup: '更换分组失败',
     groupRequired: '请选择分组',
@@ -704,6 +710,9 @@ export default {
       exclusive: '专属分组',
       subscription: '订阅'
     },
+    group: {
+      billingByToken: '按量计费'
+    },
     detail: {
       noModels: '该分组暂未配置模型',
       noPricing: '未配置定价',
@@ -745,7 +754,8 @@ export default {
       perUnitVideo: '/ 秒',
       perRequest: '按次计费',
       perImage: '按图片计费',
-      perVideo: '视频计费'
+      perVideo: '视频计费',
+      allResolutions: '所有分辨率'
     },
     nav: {
       login: '登录',

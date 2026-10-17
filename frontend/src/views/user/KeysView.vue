@@ -31,10 +31,31 @@
               :custom-endpoints="publicSettings?.custom_endpoints || []"
             />
           </div>
+          <div v-if="selectedIds.length" class="flex flex-wrap items-center gap-3 text-sm">
+            <span class="text-gray-600 dark:text-gray-300">
+              {{ t('keys.bulkEdit.selectedCount', { count: selectedIds.length }) }}
+            </span>
+            <button
+              class="btn btn-primary btn-sm"
+              :disabled="loading"
+              data-test="bulk-edit-keys"
+              @click="showBulkEditModal = true"
+            >
+              {{ t('keys.bulkEdit.title') }}
+            </button>
+            <button class="btn btn-secondary btn-sm" @click="selectedIds = []">
+              {{ t('keys.bulkEdit.clearSelection') }}
+            </button>
+          </div>
+        </div>
+      </template>
+
+      <template #actions>
+        <div class="flex items-center justify-between gap-3">
           <section v-if="recommendedGroupOptions.length" class="recommended-groups-strip">
             <div class="recommended-groups-heading">
-              <Icon name="badge" size="sm" class="text-amber-500" />
-              <span class="text-sm font-semibold text-gray-800 dark:text-gray-100">{{ t('keys.recommendedGroups') }}</span>
+              <Icon name="badge" size="lg" class="text-amber-500" />
+              <span class="text-center text-xs font-semibold leading-4 text-gray-800 dark:text-gray-100">{{ t('keys.recommendedGroups') }}</span>
             </div>
             <div class="recommended-group-mini-list">
               <button
@@ -56,27 +77,7 @@
               </button>
             </div>
           </section>
-          <div v-if="selectedIds.length" class="flex flex-wrap items-center gap-3 text-sm">
-            <span class="text-gray-600 dark:text-gray-300">
-              {{ t('keys.bulkEdit.selectedCount', { count: selectedIds.length }) }}
-            </span>
-            <button
-              class="btn btn-primary btn-sm"
-              :disabled="loading"
-              data-test="bulk-edit-keys"
-              @click="showBulkEditModal = true"
-            >
-              {{ t('keys.bulkEdit.title') }}
-            </button>
-            <button class="btn btn-secondary btn-sm" @click="selectedIds = []">
-              {{ t('keys.bulkEdit.clearSelection') }}
-            </button>
-          </div>
-        </div>
-      </template>
-
-      <template #actions>
-        <div class="flex justify-end gap-3">
+          <div class="flex items-center gap-3">
           <button
             @click="loadApiKeys"
             :disabled="loading"
@@ -121,6 +122,7 @@
             <Icon name="plus" size="md" class="mr-2" />
             {{ t('keys.createKey') }}
           </button>
+          </div>
         </div>
       </template>
 
@@ -185,7 +187,6 @@
           <template #cell-group="{ row }">
             <div class="group/dropdown relative">
               <button
-                :ref="(el) => setGroupButtonRef(row.id, el)"
                 @click="openGroupSelector(row)"
                 class="-mx-2 -my-1 flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1 transition-all duration-200 hover:bg-gray-100 dark:hover:bg-dark-700"
                 :title="t('keys.clickToChangeGroup')"
@@ -202,6 +203,13 @@
                   :peak-end="row.group.peak_end"
                   :peak-rate-multiplier="row.group.peak_rate_multiplier"
                 />
+                <span
+                  v-if="row.group && capFor(row.group.id) != null"
+                  class="keys-group-cap-tag"
+                  :title="t('keys.capRateHint')"
+                >
+                  {{ t('keys.capRateTag', { rate: formatCapRate(capFor(row.group.id)!) }) }}
+                </span>
                 <span v-else class="text-sm text-gray-400 dark:text-dark-500">{{
                   t('keys.noGroup')
                 }}</span>
@@ -493,9 +501,28 @@
       </template>
     </TablePageLayout>
 
-    <!-- Create/Edit Modal -->
-    <BaseDialog
+    <!-- Create/Edit Modal（新版，见 components/keys/KeyFormModal.vue） -->
+    <KeyFormModal
       :show="showCreateModal || showEditModal"
+      :is-edit="showEditModal"
+      :title="showEditModal ? t('keys.editKey') : t('keys.createKey')"
+      v-model:form-data="formData"
+      :selected-key="selectedKey"
+      :group-options="formGroupOptions"
+      :group-categories="groupCategories"
+      :group-category-assignments="groupCategoryAssignments"
+      :group-recommendations="groupRecommendations"
+      :group-caps="effectiveGroupCaps"
+      :submitting="submitting"
+      @close="closeModals"
+      @submit="handleSubmit"
+      @reset-quota="confirmResetQuota"
+      @reset-rate-limit="confirmResetRateLimit"
+    />
+
+    <!-- 旧版创建/编辑密钥弹窗：保留备查，已由 KeyFormModal 替代（show 恒为 false） -->
+    <BaseDialog
+      :show="false"
       :title="showEditModal ? t('keys.editKey') : t('keys.createKey')"
       width="normal"
       @close="closeModals"
@@ -1293,79 +1320,11 @@
       </template>
     </BaseDialog>
 
-    <!-- Group Selector Dropdown (Teleported to body to avoid overflow clipping) -->
-    <Teleport to="body">
-      <div
-        v-if="groupSelectorKeyId !== null && dropdownPosition"
-        ref="dropdownRef"
-        class="animate-in fade-in slide-in-from-top-2 fixed z-[100000020] w-max max-w-[calc(100vw-16px)] overflow-hidden rounded-xl bg-white shadow-lg ring-1 ring-black/5 duration-200 sm:min-w-[380px] dark:bg-dark-800 dark:ring-white/10"
-        style="pointer-events: auto !important;"
-        :style="{
-          top: dropdownPosition.top !== undefined ? dropdownPosition.top + 'px' : undefined,
-          bottom: dropdownPosition.bottom !== undefined ? dropdownPosition.bottom + 'px' : undefined,
-          left: dropdownPosition.left + 'px'
-        }"
-      >
-        <!-- Search box -->
-        <div class="border-b border-gray-100 p-2 dark:border-dark-700">
-          <div class="relative">
-            <svg class="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-            <input
-              v-model="groupSearchQuery"
-              type="text"
-              class="w-full rounded-lg border border-gray-200 bg-gray-50 py-1.5 pl-8 pr-3 text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-primary-300 focus:ring-1 focus:ring-primary-300 dark:border-dark-600 dark:bg-dark-700 dark:text-white dark:placeholder-gray-500 dark:focus:border-primary-600 dark:focus:ring-primary-600"
-              :placeholder="t('keys.searchGroup')"
-              @click.stop
-            />
-          </div>
-        </div>
-        <!-- Group list -->
-        <div class="max-h-80 overflow-y-auto p-1.5">
-          <button
-            v-for="option in filteredGroupOptions"
-            :key="option.value ?? 'null'"
-            @click="changeGroup(selectedKeyForGroup!, option.value)"
-            :class="[
-              'flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm transition-colors',
-              'border-b border-gray-100 last:border-0 dark:border-dark-700',
-              selectedKeyForGroup?.group_id === option.value ||
-              (!selectedKeyForGroup?.group_id && option.value === null)
-                ? 'bg-primary-50 dark:bg-primary-900/20'
-                : 'hover:bg-gray-100 dark:hover:bg-dark-700'
-            ]"
-            :title="option.description || undefined"
-          >
-            <GroupOptionItem
-              :name="option.label"
-              :platform="option.platform"
-              :subscription-type="option.subscriptionType"
-              :rate-multiplier="option.rate"
-              :user-rate-multiplier="option.userRate"
-              :peak-rate-enabled="option.peakRateEnabled"
-              :peak-start="option.peakStart"
-              :peak-end="option.peakEnd"
-              :peak-rate-multiplier="option.peakRateMultiplier"
-              :description="option.description"
-              :selected="
-                selectedKeyForGroup?.group_id === option.value ||
-                (!selectedKeyForGroup?.group_id && option.value === null)
-              "
-            />
-          </button>
-          <!-- Empty state when search has no results -->
-          <div v-if="filteredGroupOptions.length === 0" class="py-4 text-center text-sm text-gray-400 dark:text-gray-500">
-            {{ t('keys.noGroupFound') }}
-          </div>
-        </div>
-      </div>
-    </Teleport>
   </AppLayout>
 </template>
 
 <script setup lang="ts">
-	import { ref, reactive, computed, watch, onMounted, onUnmounted, nextTick, type ComponentPublicInstance } from 'vue'
+	import { ref, reactive, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 	import { useI18n } from 'vue-i18n'
 	import { useAppStore } from '@/stores/app'
 	import { useOnboardingStore } from '@/stores/onboarding'
@@ -1387,6 +1346,7 @@ import BulkEditKeysModal from '@/components/keys/BulkEditKeysModal.vue'
 	import SearchInput from '@/components/common/SearchInput.vue'
 	import Icon from '@/components/icons/Icon.vue'
 	import UseKeyModal from '@/components/keys/UseKeyModal.vue'
+	import KeyFormModal from '@/components/keys/KeyFormModal.vue'
 	import EndpointPopover from '@/components/keys/EndpointPopover.vue'
 	import GroupBadge from '@/components/common/GroupBadge.vue'
 	import GroupOptionItem from '@/components/common/GroupOptionItem.vue'
@@ -1562,6 +1522,16 @@ const userGroupRates = ref<Record<number, number>>({})
 const groupRecommendations = ref<GroupRecommendation[]>([])
 const groupCategories = ref<GroupCategory[]>([])
 const groupCategoryAssignments = ref<Record<string, string>>({})
+const groupCaps = ref<Record<string, number>>({})
+// 展示用的上限倍率：真实数据优先；开发模式下无真实数据时给第一个分组挂 0.8x 测试数据
+const effectiveGroupCaps = computed<Record<string, number>>(() => {
+  if (Object.keys(groupCaps.value).length > 0) return groupCaps.value
+  if (import.meta.env.DEV) {
+    const first = groups.value[0]
+    if (first) return { [String(first.id)]: 0.8 }
+  }
+  return {}
+})
 const activeCategoryTab = ref('')
 const UNCATEGORIZED_TAB = '__uncategorized__'
 const RECOMMENDED_TAB = '__recommended__'
@@ -1595,30 +1565,24 @@ const showGroupPickerModal = ref(false)
 const groupPickerMode = ref<'cards' | 'native'>(getInitialGroupPickerMode())
 const groupCardSearch = ref('')
 const groupPickerContentRef = ref<HTMLElement | null>(null)
+const capFor = (groupId: number): number | null => {
+  const cap = groupCaps.value[String(groupId)]
+  if (typeof cap === 'number' && Number.isFinite(cap)) return cap
+  // 测试数据（仅开发模式）：无真实上限倍率时，给第一个分组临时显示 0.8x
+  if (import.meta.env.DEV) {
+    const firstId = groups.value[0]?.id
+    if (firstId != null && groupId === firstId) return 0.8
+  }
+  return null
+}
+
+const formatCapRate = (value: number): string => String(Math.round(value * 1000) / 1000)
 const pendingCcsRow = ref<ApiKey | null>(null)
 const selectedKey = ref<ApiKey | null>(null)
 const copiedKeyId = ref<number | null>(null)
-const groupSelectorKeyId = ref<number | null>(null)
 const publicSettings = ref<PublicSettings | null>(null)
-const dropdownRef = ref<HTMLElement | null>(null)
 const columnDropdownRef = ref<HTMLElement | null>(null)
-const dropdownPosition = ref<{ top?: number; bottom?: number; left: number } | null>(null)
-const groupButtonRefs = ref<Map<number, HTMLElement>>(new Map())
 let abortController: AbortController | null = null
-
-// Get the currently selected key for group change
-const selectedKeyForGroup = computed(() => {
-  if (groupSelectorKeyId.value === null) return null
-  return apiKeys.value.find((k) => k.id === groupSelectorKeyId.value) || null
-})
-
-const setGroupButtonRef = (keyId: number, el: Element | ComponentPublicInstance | null) => {
-  if (el instanceof HTMLElement) {
-    groupButtonRefs.value.set(keyId, el)
-  } else {
-    groupButtonRefs.value.delete(keyId)
-  }
-}
 
 const formData = ref({
   name: '',
@@ -1925,17 +1889,6 @@ watch(
     })
   }
 )
-// Group dropdown search
-const groupSearchQuery = ref('')
-const filteredGroupOptions = computed(() => {
-  const query = groupSearchQuery.value.trim().toLowerCase()
-  if (!query) return groupOptions.value
-  return groupOptions.value.filter((opt) => {
-    return opt.label.toLowerCase().includes(query) ||
-      (opt.description && opt.description.toLowerCase().includes(query))
-  })
-})
-
 const copyToClipboard = async (text: string, keyId: number) => {
   const success = await clipboardCopy(text, t('keys.copied'))
   if (success) {
@@ -2159,10 +2112,12 @@ const loadGroupCategories = async () => {
     const snap = await userGroupsAPI.getCategories()
     groupCategories.value = snap.categories
     groupCategoryAssignments.value = snap.assignments
+    groupCaps.value = snap.group_caps ?? {}
   } catch (error) {
     console.error('Failed to load group categories:', error)
     groupCategories.value = []
     groupCategoryAssignments.value = {}
+    groupCaps.value = {}
   }
 }
 
@@ -2322,60 +2277,12 @@ const toggleKeyStatus = async (key: ApiKey) => {
 }
 
 const openGroupSelector = (key: ApiKey) => {
-  if (groupSelectorKeyId.value === key.id) {
-    groupSelectorKeyId.value = null
-    dropdownPosition.value = null
-  } else {
-    const buttonEl = groupButtonRefs.value.get(key.id)
-    if (buttonEl) {
-      const rect = buttonEl.getBoundingClientRect()
-      const dropdownEstHeight = 400 // estimated max dropdown height
-      const dropdownEstWidth = Math.min(380, window.innerWidth - 16)
-      const spaceBelow = window.innerHeight - rect.bottom
-      const spaceAbove = rect.top
-      // 夹取 left，避免窄屏下浮层超出视口右缘
-      const left = Math.max(8, Math.min(rect.left, window.innerWidth - dropdownEstWidth - 8))
-
-      if (spaceBelow < dropdownEstHeight && spaceAbove > spaceBelow) {
-        // Not enough space below, pop upward
-        dropdownPosition.value = {
-          bottom: window.innerHeight - rect.top + 4,
-          left
-        }
-      } else {
-        // Default: pop downward
-        dropdownPosition.value = {
-          top: rect.bottom + 4,
-          left
-        }
-      }
-    }
-    groupSelectorKeyId.value = key.id
-    groupSearchQuery.value = ''
-  }
-}
-
-const changeGroup = async (key: ApiKey, newGroupId: number | null) => {
-  groupSelectorKeyId.value = null
-  dropdownPosition.value = null
-  if (key.group_id === newGroupId) return
-
-  try {
-    await keysAPI.update(key.id, { group_id: newGroupId })
-    appStore.showSuccess(t('keys.groupChangedSuccess'))
-    loadApiKeys()
-  } catch (error) {
-    appStore.showError(t('keys.failedToChangeGroup'))
-  }
+  // 与点击编辑一致：打开该密钥的编辑界面（分组已选中，保存即更新分组）
+  editKey(key)
 }
 
 const closeGroupSelector = (event: MouseEvent) => {
   const target = event.target as HTMLElement
-  // Check if click is inside the dropdown or the trigger button
-  if (!target.closest('.group\\/dropdown') && !dropdownRef.value?.contains(target)) {
-    groupSelectorKeyId.value = null
-    dropdownPosition.value = null
-  }
   if (columnDropdownRef.value && !columnDropdownRef.value.contains(target)) {
     showColumnDropdown.value = false
   }
@@ -2696,7 +2603,15 @@ onUnmounted(() => {
 }
 
 .recommended-groups-heading {
-  @apply flex shrink-0 items-center gap-2 pt-1;
+  @apply flex shrink-0 flex-col items-center justify-center gap-1 self-stretch px-1;
+}
+
+.keys-group-cap-tag {
+  @apply inline-flex flex-none items-center whitespace-nowrap rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-300;
+}
+
+.keys-pricing-link {
+  @apply inline-flex flex-none items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-gray-400 transition-colors hover:text-primary-600 dark:text-dark-400 dark:hover:text-primary-400;
 }
 
 .recommended-group-mini-list {

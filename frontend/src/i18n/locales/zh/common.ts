@@ -197,6 +197,7 @@ export default {
     plugins: '插件管理',
     appCatalog: '应用管理',
     iqDetection: '智商检测',
+    menuManagement: '菜单管理',
     proxies: 'IP管理',
     redeemCodes: '兑换码',
     ops: '运维监控',

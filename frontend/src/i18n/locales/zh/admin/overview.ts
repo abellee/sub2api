@@ -857,6 +857,18 @@ export default {
         remove: '取消推荐',
         saveFailed: '保存推荐分组失败'
       },
+      capRate: {
+        action: '上限',
+        title: '设置上限倍率',
+        rateLabel: '上限倍率',
+        ratePlaceholder: '如 0.8',
+        rateHint: '该分组实际倍率最大可能上涨到的倍率，一般不会超过该值；留空或 0 表示不设上限。与分组分类存储在同一数据库。',
+        remove: '移除上限',
+        tag: '上限 {rate}x',
+        tagHint: '该分组的上限倍率（实际倍率一般不会超过该值）',
+        saved: '上限倍率已保存',
+        saveFailed: '保存上限倍率失败'
+      },
       searchGroups: '搜索分组...',
       createGroup: '创建分组',
       setCategory: '设置分类',

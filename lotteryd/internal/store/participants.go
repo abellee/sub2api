@@ -12,15 +12,16 @@ import (
 
 // Sentinel errors surfaced to the HTTP layer.
 var (
-	ErrNotFound      = errors.New("not found")
-	ErrActivityDrawn = errors.New("activity already drawn")
-	ErrAlreadyJoined = errors.New("already joined")
-	ErrActivityFull  = errors.New("activity is full")
-	ErrNotJoinable   = errors.New("activity is not open for participation")
-	ErrNotEligible   = errors.New("conditions not met")
-	ErrNotVisible    = errors.New("lottery is not available to this user")
-	ErrRepeatJoin    = errors.New("you have already joined this lottery series")
-	ErrRepeatWin     = errors.New("you have already won in this lottery series")
+	ErrParticipantRemoved = errors.New("您已被移出本场抽奖，不能再次参与")
+	ErrNotFound           = errors.New("not found")
+	ErrActivityDrawn      = errors.New("activity already drawn")
+	ErrAlreadyJoined      = errors.New("already joined")
+	ErrActivityFull       = errors.New("activity is full")
+	ErrNotJoinable        = errors.New("activity is not open for participation")
+	ErrNotEligible        = errors.New("conditions not met")
+	ErrNotVisible         = errors.New("lottery is not available to this user")
+	ErrRepeatJoin         = errors.New("you have already joined this lottery series")
+	ErrRepeatWin          = errors.New("you have already won in this lottery series")
 )
 
 // ---- Participants ----
@@ -28,7 +29,7 @@ var (
 // CountParticipants returns the number of participants of an activity.
 func (s *Store) CountParticipants(activityID int64) (int64, error) {
 	var n int64
-	err := s.db.QueryRow(`SELECT COUNT(*) FROM participants WHERE activity_id = $1`, activityID).Scan(&n)
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM participants WHERE activity_id = $1 AND removed_at = ''`, activityID).Scan(&n)
 	return n, err
 }
 
@@ -36,7 +37,7 @@ func (s *Store) CountParticipants(activityID int64) (int64, error) {
 func (s *Store) HasParticipant(activityID, userID int64) (bool, error) {
 	var n int
 	err := s.db.QueryRow(
-		`SELECT COUNT(*) FROM participants WHERE activity_id = $1 AND user_id = $2`, activityID, userID).Scan(&n)
+		`SELECT COUNT(*) FROM participants WHERE activity_id = $1 AND user_id = $2 AND removed_at = ''`, activityID, userID).Scan(&n)
 	return n > 0, err
 }
 
@@ -49,10 +50,31 @@ func (s *Store) AddParticipant(activityID, userID int64, email string, weight fl
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	if err := lockUndrawnActivity(tx, activityID); err != nil {
+		return err
+	}
+	var status string
+	if err := tx.QueryRow(`SELECT max_participants, status FROM activities WHERE id=$1`, activityID).Scan(&maxParticipants, &status); err != nil {
+		return err
+	}
+	if status != "active" {
+		return ErrNotJoinable
+	}
+	var removedAt string
+	err = tx.QueryRow(`SELECT removed_at FROM participants WHERE activity_id=$1 AND user_id=$2`, activityID, userID).Scan(&removedAt)
+	if err == nil {
+		if removedAt != "" {
+			return ErrParticipantRemoved
+		}
+		return ErrAlreadyJoined
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
 	if maxParticipants > 0 {
 		var n int64
 		if err := tx.QueryRow(
-			`SELECT COUNT(*) FROM participants WHERE activity_id = $1`, activityID).Scan(&n); err != nil {
+			`SELECT COUNT(*) FROM participants WHERE activity_id = $1 AND removed_at = ''`, activityID).Scan(&n); err != nil {
 			return err
 		}
 		if n >= maxParticipants {
@@ -71,8 +93,12 @@ func (s *Store) AddParticipant(activityID, userID int64, email string, weight fl
 
 // ListParticipants returns all participants of an activity.
 func (s *Store) ListParticipants(activityID int64) ([]lottery.Participant, error) {
-	rows, err := s.db.Query(
-		`SELECT id, activity_id, user_id, email, weight, joined_at FROM participants WHERE activity_id = $1 ORDER BY id`,
+	return listParticipants(s.db, activityID)
+}
+
+func listParticipants(db activityQuerier, activityID int64) ([]lottery.Participant, error) {
+	rows, err := db.Query(
+		`SELECT id, activity_id, user_id, email, weight, joined_at FROM participants WHERE activity_id = $1 AND removed_at = '' ORDER BY id`,
 		activityID,
 	)
 	if err != nil {
@@ -211,13 +237,17 @@ func (s *Store) CountWinners(activityID int64) (int64, error) {
 
 // ---- User daily tokens ----
 
-// UpsertDailyTokens bulk-inserts/updates one day of per-user token totals.
-func (s *Store) UpsertDailyTokens(date string, tokens []lottery.DailyToken) error {
+// ReplaceDailyTokens atomically replaces a complete daily snapshot, including users now absent.
+func (s *Store) ReplaceDailyTokens(date string, tokens []lottery.DailyToken) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.Exec(`DELETE FROM user_daily_tokens WHERE date = $1`, date); err != nil {
+		return err
+	}
+
 	for _, t := range tokens {
 		if _, err := tx.Exec(
 			`INSERT INTO user_daily_tokens (date, user_id, email, total_tokens) VALUES ($1, $2, $3, $4)
@@ -315,7 +345,7 @@ func (s *Store) HasUserParticipatedInConfig(configID, userID int64) (bool, error
 	var n int
 	err := s.db.QueryRow(
 		`SELECT COUNT(*) FROM participants p JOIN activities a ON p.activity_id = a.id
-		 WHERE a.daily_config_id = $1 AND p.user_id = $2`, configID, userID).Scan(&n)
+		 WHERE a.daily_config_id = $1 AND p.user_id = $2 AND p.removed_at = ''`, configID, userID).Scan(&n)
 	return n > 0, err
 }
 
@@ -366,6 +396,9 @@ func (s *Store) HasUserRecordInRepeatSet(kind, group string, configIDs []int64, 
 	query := fmt.Sprintf(
 		`SELECT COUNT(*) FROM %s t JOIN activities a ON t.activity_id = a.id WHERE t.user_id = $%d AND (%s)`,
 		table, len(args), strings.Join(clauses, " OR "))
+	if kind != "win" {
+		query += " AND t.removed_at = ''"
+	}
 	var n int
 	err := s.db.QueryRow(query, args...).Scan(&n)
 	return n > 0, err

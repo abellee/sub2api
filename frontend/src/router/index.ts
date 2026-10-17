@@ -460,6 +460,18 @@ const routes: RouteRecordRaw[] = [
 
   // ==================== Admin Routes ====================
   {
+    path: '/admin/menu-management',
+    name: 'AdminMenuManagement',
+    component: () => import('@/views/admin/MenuManagementView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Menu Management',
+      titleKey: 'admin.menuManagement.title',
+      descriptionKey: 'admin.menuManagement.description'
+    }
+  },
+  {
     path: '/admin',
     redirect: '/admin/dashboard'
   },

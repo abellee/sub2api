@@ -323,6 +323,8 @@ describe('user KeysView column settings', () => {
     updateKey.mockResolvedValue({ ...key, status, quota_used: 0 })
     const wrapper = await mountView()
     await getButtonByText(wrapper, 'common.edit').trigger('click')
+    // 编辑模式与创建一致：额度/限速等区块在「更多设置」折叠区内，先展开
+    await getButtonByText(wrapper, 'keys.moreSettings').trigger('click')
     await wrapper.get('[data-tour="key-form-name"]').setValue('Unsaved name')
     const statusSelect = wrapper.findAllComponents({ name: 'Select' })
       .find((select) => select.props('options').length === 2 &&
@@ -595,8 +597,12 @@ describe('user KeysView column settings', () => {
       rate_multiplier: 1,
       subscription_type: 'standard',
     }))
-    const groupSelect = (wrapper: VueWrapper) => wrapper.findComponent('[data-tour="key-form-group"]')
-    const optionIds = (wrapper: VueWrapper) => groupSelect(wrapper).props('options').map((option: { value: number }) => option.value)
+    const groupRows = (wrapper: VueWrapper) => wrapper.findAll('[data-group-id]')
+    const optionIds = (wrapper: VueWrapper) => groupRows(wrapper).map((row) => Number(row.attributes('data-group-id')))
+    const selectedGroupIds = (wrapper: VueWrapper) =>
+      groupRows(wrapper)
+        .filter((row) => row.classes().includes('group-row-selected'))
+        .map((row) => Number(row.attributes('data-group-id')))
     const openCreate = async () => {
       const wrapper = await mountView()
       await wrapper.get('[data-tour="keys-create-btn"]').trigger('click')
@@ -612,7 +618,7 @@ describe('user KeysView column settings', () => {
       const wrapper = await openCreate()
       expect(wrapper.find('[data-tour="key-form-provider"]').exists()).toBe(false)
       expect(wrapper.findAll('input[name="key-provider"]')).toHaveLength(0)
-      expect(optionIds(wrapper)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
+      expect([...optionIds(wrapper)].sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
       expect(wrapper.findAllComponents({ name: 'Select' })[0].props('options')).toHaveLength(14)
     })
 
@@ -623,7 +629,7 @@ describe('user KeysView column settings', () => {
       expect(keysAPI.create).not.toHaveBeenCalled()
       expect(showError).toHaveBeenCalledWith('keys.groupRequired')
 
-      await groupSelect(wrapper).vm.$emit('update:modelValue', 2)
+      await wrapper.get('[data-group-id="2"]').trigger('click')
       vi.mocked(keysAPI.create).mockResolvedValue({ ...createApiKey(), group_id: 2 })
       await wrapper.get('#key-form').trigger('submit')
       await flushPromises()
@@ -654,15 +660,17 @@ describe('user KeysView column settings', () => {
 
     it('resets the group when reopening create and preserves edit options', async () => {
       const wrapper = await openCreate()
-      await groupSelect(wrapper).vm.$emit('update:modelValue', 5)
+      await wrapper.get('[data-group-id="5"]').trigger('click')
+      expect(selectedGroupIds(wrapper)).toEqual([5])
       await wrapper.get('[data-test="close-dialog"]').trigger('click')
       await wrapper.get('[data-tour="keys-create-btn"]').trigger('click')
-      expect(optionIds(wrapper)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
-      expect(groupSelect(wrapper).props('modelValue')).toBeNull()
+      expect([...optionIds(wrapper)].sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
+      expect(selectedGroupIds(wrapper)).toEqual([])
       await wrapper.get('[data-test="close-dialog"]').trigger('click')
       await getButtonByText(wrapper, 'common.edit').trigger('click')
       expect(wrapper.find('[data-tour="key-form-provider"]').exists()).toBe(false)
-      expect(optionIds(wrapper)).toHaveLength(12)
+      // 编辑模式也使用左右布局分组选择：12 行分组列表
+      expect(groupRows(wrapper)).toHaveLength(12)
     })
   })
 })

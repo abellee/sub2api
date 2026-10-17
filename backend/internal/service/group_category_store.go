@@ -1,9 +1,8 @@
 package service
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -14,7 +13,7 @@ import (
 )
 
 const (
-	groupCategoryFileName       = "group_categories.json"
+	groupCategoryFileName       = "group_categories.db"
 	groupCategoryMaxDescription = 200
 )
 
@@ -28,20 +27,33 @@ type GroupCategory struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
-// GroupCategorySnapshot is the on-disk JSON document.
+// GroupCategorySnapshot is the category configuration stored in SQLite.
 type GroupCategorySnapshot struct {
 	Categories  []GroupCategory   `json:"categories"`
 	Assignments map[string]string `json:"assignments"`
+	// GroupCaps 按分组 ID(十进制字符串)记录上限倍率;与分类同文件持久化。
+	GroupCaps map[string]float64 `json:"group_caps,omitempty"`
 }
 
-// GroupCategoryStore persists categories and group assignments to a JSON file.
+// GroupCategoryStore shares a SQLite database with user menu configuration.
 type GroupCategoryStore struct {
-	mu       sync.Mutex
+	mu       *sync.Mutex
 	filePath string
 }
 
+var groupCategoryLocks sync.Map
+
 func NewGroupCategoryStore(filePath string) *GroupCategoryStore {
-	return &GroupCategoryStore{filePath: filePath}
+	if strings.TrimSpace(filePath) == "" {
+		filePath = groupCategoryFileName
+	}
+	// Accept existing callers passing the former JSON path, without replacing it.
+	if strings.EqualFold(filepath.Ext(filePath), ".json") {
+		filePath = strings.TrimSuffix(filePath, filepath.Ext(filePath)) + ".db"
+	}
+	filePath, _ = filepath.Abs(filePath)
+	lock, _ := groupCategoryLocks.LoadOrStore(filePath, &sync.Mutex{})
+	return &GroupCategoryStore{filePath: filePath, mu: lock.(*sync.Mutex)}
 }
 
 func DefaultGroupCategoryStore() *GroupCategoryStore {
@@ -192,6 +204,30 @@ func (s *GroupCategoryStore) Assign(groupID int64, categoryID string) error {
 	return s.saveLocked(snap)
 }
 
+// SetGroupCap 设置/清除分组的上限倍率;capRate 为 nil 或 <=0 时清除。
+func (s *GroupCategoryStore) SetGroupCap(groupID int64, capRate *float64) error {
+	if groupID <= 0 {
+		return fmt.Errorf("invalid group id")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	snap, err := s.loadLocked()
+	if err != nil {
+		return err
+	}
+	key := fmt.Sprintf("%d", groupID)
+	if capRate == nil || *capRate <= 0 {
+		delete(snap.GroupCaps, key)
+		return s.saveLocked(snap)
+	}
+	if snap.GroupCaps == nil {
+		snap.GroupCaps = map[string]float64{}
+	}
+	snap.GroupCaps[key] = *capRate
+	return s.saveLocked(snap)
+}
+
 func (s *GroupCategoryStore) Reorder(ids []string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -229,19 +265,8 @@ func (s *GroupCategoryStore) Reorder(ids []string) error {
 }
 
 func (s *GroupCategoryStore) loadLocked() (*GroupCategorySnapshot, error) {
-	path := s.resolvedPath()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return &GroupCategorySnapshot{
-				Categories:  []GroupCategory{},
-				Assignments: map[string]string{},
-			}, nil
-		}
-		return nil, err
-	}
 	var snap GroupCategorySnapshot
-	if err := json.Unmarshal(data, &snap); err != nil {
+	if err := s.readConfig(context.Background(), "group_categories", &snap); err != nil {
 		return nil, err
 	}
 	if snap.Categories == nil {
@@ -250,25 +275,14 @@ func (s *GroupCategoryStore) loadLocked() (*GroupCategorySnapshot, error) {
 	if snap.Assignments == nil {
 		snap.Assignments = map[string]string{}
 	}
+	if snap.GroupCaps == nil {
+		snap.GroupCaps = map[string]float64{}
+	}
 	return &snap, nil
 }
 
 func (s *GroupCategoryStore) saveLocked(snap *GroupCategorySnapshot) error {
-	path := s.resolvedPath()
-	if dir := filepath.Dir(path); dir != "" && dir != "." {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return err
-		}
-	}
-	data, err := json.MarshalIndent(snap, "", "  ")
-	if err != nil {
-		return err
-	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, append(data, '\n'), 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return s.writeConfig(context.Background(), "group_categories", snap)
 }
 
 func nextCategorySortOrder(cats []GroupCategory) int {

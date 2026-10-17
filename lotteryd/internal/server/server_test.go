@@ -26,6 +26,9 @@ import (
 
 // fakeSub2API 模拟主服务：用量查询、兑换码生成、余额入账、身份内省。
 type fakeSub2API struct {
+	usageStatus int
+	usageCalls  int
+	recharged   map[int64]float64
 	srv         *httptest.Server
 	dailyTokens map[string]map[int64]float64 // date -> user -> tokens
 	// modelUsage date -> user -> tokens（固定口径 grok4.6@Grok-Heavy，任务集成接口用）
@@ -37,12 +40,17 @@ type fakeSub2API struct {
 
 func newFakeSub2API(t *testing.T) *fakeSub2API {
 	f := &fakeSub2API{
+		recharged:   map[int64]float64{},
 		dailyTokens: map[string]map[int64]float64{},
 		modelUsage:  map[string]map[int64]float64{},
 		balances:    map[int64]float64{},
 		codes:       []string{"LOTTO-CODE-0001", "LOTTO-CODE-0002", "LOTTO-CODE-0003"},
 	}
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/v1/admin/users/{id}/balance-history", func(w http.ResponseWriter, r *http.Request) {
+		id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		writeEnv(w, map[string]any{"total_recharged": f.recharged[id], "items": []any{}})
+	})
 	mux.HandleFunc("GET /api/v1/admin/dashboard/user-breakdown", func(w http.ResponseWriter, r *http.Request) {
 		date := r.URL.Query().Get("start_date")
 		// 任务口径：带 model/group_id 过滤时返回 modelUsage（模拟按模型过滤后的用量）
@@ -58,6 +66,36 @@ func newFakeSub2API(t *testing.T) *fakeSub2API {
 		}
 		writeEnv(w, map[string]any{"users": users})
 	})
+	mux.HandleFunc("GET /api/v1/usage/dashboard/trend", func(w http.ResponseWriter, r *http.Request) {
+		f.usageCalls++
+		if f.usageStatus != 0 {
+			w.WriteHeader(f.usageStatus)
+			return
+		}
+		require.Equal(t, "Asia/Shanghai", r.URL.Query().Get("timezone"))
+		require.Equal(t, "day", r.URL.Query().Get("granularity"))
+		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		parts := strings.Split(token, ".")
+		if len(parts) != 3 {
+			w.WriteHeader(401)
+			return
+		}
+		raw, _ := base64.RawURLEncoding.DecodeString(parts[1])
+		var claims struct {
+			UserID int64 `json:"user_id"`
+		}
+		_ = json.Unmarshal(raw, &claims)
+		trend := []map[string]any{}
+		for date, users := range f.dailyTokens {
+			if date >= r.URL.Query().Get("start_date") && date <= r.URL.Query().Get("end_date") {
+				if tokens, ok := users[claims.UserID]; ok {
+					trend = append(trend, map[string]any{"date": date, "total_tokens": tokens})
+				}
+			}
+		}
+		writeEnv(w, map[string]any{"trend": trend})
+	})
+
 	mux.HandleFunc("GET /api/v1/admin/groups/all", func(w http.ResponseWriter, r *http.Request) {
 		writeEnv(w, []map[string]any{{"id": 7, "name": "Grok-Heavy", "platform": "grok", "status": "active"}})
 	})

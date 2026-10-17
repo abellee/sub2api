@@ -29,6 +29,8 @@ export interface SelectionGroup {
   rate_multiplier: number
   // 该分组智商检测的时间间隔（分钟），0 = 仅手动触发
   interval_minutes?: number
+  // 仅控制公开展示；旧配置未设置时默认展示，不影响检测任务。
+  visible?: boolean
   accounts: SelectionAccount[]
 }
 

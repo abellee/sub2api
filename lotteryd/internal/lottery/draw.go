@@ -51,8 +51,12 @@ type WinnerDraft struct {
 // 按用户权重加权随机抽一人；每人限中一个奖品；库存发完或人选抽尽即止。
 func DrawPlan(a *Activity, participants []Participant, rng *rand.Rand) []WinnerDraft {
 	now := time.Now().UTC()
-	remaining := make([]Participant, len(participants))
-	copy(remaining, participants)
+	remaining := make([]Participant, 0, len(participants))
+	for _, p := range participants {
+		if !a.IsBlacklisted(p.Email) {
+			remaining = append(remaining, p)
+		}
+	}
 	// 参与时间早者优先的确定性排序基础（再由加权随机决定中奖者）。
 	sort.SliceStable(remaining, func(i, j int) bool {
 		return remaining[i].JoinedAt.Before(remaining[j].JoinedAt)

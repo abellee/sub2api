@@ -16,8 +16,8 @@ const conditions = defineModel<ConditionDef[]>({ required: true })
 // 「自动叠加」模式下使用的全局默认加成比例（由父级传入当前表单值）。
 // showBonus=false 时隐藏全部加成 UI（任务等无权重概念的场景）。
 const props = withDefaults(
-  defineProps<{ autoBonusPercent?: number; showBonus?: boolean }>(),
-  { autoBonusPercent: 0, showBonus: true }
+  defineProps<{ autoBonusPercent?: number; showBonus?: boolean; allowHistoricalRecharge?: boolean }>(),
+  { autoBonusPercent: 0, showBonus: true, allowHistoricalRecharge: false }
 )
 
 /** 该条件当前的实际加成百分比：none=0，manual=手填值，auto=表单默认值。 */
@@ -30,11 +30,12 @@ const totalMultiplierText = computed(() => {
   return `×${Math.round(m * 100) / 100}`
 })
 
-const dimensionOptions = [
+const dimensionOptions = computed(() => [
   { value: 'token_usage', label: 'Token 消耗量' },
   { value: 'activity_days', label: '活跃度' },
-  { value: 'registered_days', label: '注册时长' }
-]
+  { value: 'registered_days', label: '注册时长' },
+  ...(props.allowHistoricalRecharge ? [{ value: 'historical_recharge', label: '历史充值' }] : [])
+])
 const tokenModeOptions = [
   { value: 'per_day', label: '每日≥阈值' },
   { value: 'total', label: '累计≥阈值' }
@@ -58,17 +59,26 @@ function removeCondition(i: number) {
 
 /** 切换维度时补齐该维度的默认参数，避免遗留字段造成校验失败。 */
 function onDimensionChange(c: ConditionDef, dimension: string) {
+  const previousDimension = c.dimension
   c.dimension = dimension as ConditionDef['dimension']
   if (dimension === 'token_usage') {
     c.window_days = c.window_days || 7
     c.mode = c.mode === 'total' ? 'total' : 'per_day'
-    c.threshold = c.threshold && c.threshold > 0 ? c.threshold : 100_000_000
+    c.threshold = previousDimension !== 'historical_recharge' && c.threshold && c.threshold > 0 ? c.threshold : 100_000_000
   } else if (dimension === 'activity_days') {
     c.window_days = c.window_days || 7
     c.min_active_days = c.min_active_days && c.min_active_days > 0 ? c.min_active_days : 1
   } else if (dimension === 'registered_days') {
     // 默认：新用户（注册 ≤ 7 天）
     if (!c.min_registered_days && !c.max_registered_days) c.max_registered_days = 7
+  } else if (dimension === 'historical_recharge') {
+    c.window_days = 0
+    c.threshold = 10
+    delete c.mode
+    delete c.min_active_days
+    delete c.daily_min_tokens
+    delete c.min_registered_days
+    delete c.max_registered_days
   }
 }
 </script>
@@ -101,7 +111,7 @@ function onDimensionChange(c: ConditionDef, dimension: string) {
       <!-- 第二行：参数 -->
       <div class="mt-2.5 flex flex-wrap items-center gap-2 pl-9">
         <label
-          v-if="c.dimension !== 'registered_days'"
+          v-if="c.dimension === 'token_usage' || c.dimension === 'activity_days'"
           class="flex items-center gap-1 text-xs text-gray-500 dark:text-dark-400"
           title="统计用量的回看天数（窗口以昨天为终点）"
         >
@@ -145,6 +155,14 @@ function onDimensionChange(c: ConditionDef, dimension: string) {
             />
             M
           </label>
+        </template>
+        <template v-else-if="c.dimension === 'historical_recharge'">
+          <label class="flex items-center gap-1 text-xs text-gray-500 dark:text-dark-400">
+            累计充值 ≥
+            <input v-model.number="c.threshold" aria-label="累计充值金额（美元）" type="number" min="0.01" step="0.01" class="input !w-28 !px-2" />
+            美元
+          </label>
+          <span class="text-xs text-gray-400">按余额历史的累计充值金额判断，不受消费影响</span>
         </template>
         <template v-else-if="c.dimension === 'registered_days'">
           <label class="flex items-center gap-1 text-xs text-gray-500 dark:text-dark-400" title="注册天数下限（自然日），0 = 不设下限。注册当天 = 第 1 天，当天注册即满足「注册满 1 天」">

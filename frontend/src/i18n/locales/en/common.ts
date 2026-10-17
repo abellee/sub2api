@@ -197,6 +197,7 @@ export default {
     plugins: 'Plugins',
     appCatalog: 'App Catalog',
     iqDetection: 'IQ Detection',
+    menuManagement: 'Menu Management',
     proxies: 'Proxies',
     redeemCodes: 'Redeem Codes',
     ops: 'Ops',

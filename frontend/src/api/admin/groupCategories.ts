@@ -12,13 +12,16 @@ export interface GroupCategory {
 export interface GroupCategorySnapshot {
   categories: GroupCategory[]
   assignments: Record<string, string>
+  /** 分组上限倍率:分组 ID(十进制字符串)→ 倍率;与分类同库存储。 */
+  group_caps?: Record<string, number>
 }
 
 export async function list(): Promise<GroupCategorySnapshot> {
   const { data } = await apiClient.get<GroupCategorySnapshot>('/admin/group-categories')
   return {
     categories: data?.categories ?? [],
-    assignments: data?.assignments ?? {}
+    assignments: data?.assignments ?? {},
+    group_caps: data?.group_caps ?? {}
   }
 }
 
@@ -48,6 +51,12 @@ export async function assign(groupId: number, categoryId: string | null): Promis
   })
 }
 
+export async function setGroupCap(groupId: number, capRate: number | null): Promise<void> {
+  await apiClient.put(`/admin/group-categories/group-caps/${groupId}`, {
+    cap_rate: capRate
+  })
+}
+
 export async function reorder(ids: string[]): Promise<void> {
   await apiClient.put('/admin/group-categories/sort-order', { ids })
 }
@@ -58,6 +67,7 @@ const groupCategoriesAPI = {
   update,
   remove,
   assign,
+  setGroupCap,
   reorder
 }
 

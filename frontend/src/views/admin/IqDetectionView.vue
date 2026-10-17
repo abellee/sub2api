@@ -67,16 +67,29 @@
         <span class="text-gray-500 dark:text-gray-400">
           {{ t('admin.iqDetection.baseUrl') }}: {{ health?.base_url }}
         </span>
-        <button
-          type="button"
-          class="btn btn-primary btn-sm ml-auto"
-          :disabled="testRunning"
-          data-testid="run-test"
-          @click="runTest"
-        >
-          <Icon name="refresh" size="sm" :class="testRunning ? 'animate-spin' : ''" />
-          {{ t('admin.iqDetection.test') }}
-        </button>
+        <div class="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            class="btn btn-primary btn-sm"
+            :disabled="testRunning"
+            data-testid="run-all-tests"
+            @click="runTest()"
+          >
+            <Icon name="refresh" size="sm" :class="testRunning ? 'animate-spin' : ''" />
+            {{ t('admin.iqDetection.testAll') }}
+          </button>
+          <button
+            type="button"
+            class="btn btn-primary btn-sm"
+            :disabled="testRunning || !canTestCurrentGroup"
+            :title="t('admin.iqDetection.testCurrentGroupHint')"
+            data-testid="run-test"
+            @click="runCurrentGroupTest"
+          >
+            <Icon name="refresh" size="sm" :class="testRunning ? 'animate-spin' : ''" />
+            {{ t('admin.iqDetection.test') }}
+          </button>
+        </div>
       </div>
 
       <!-- 测试结果：卡片列表；鹈鹕 HTML 按需拉取后渲染进无脚本沙箱 iframe -->
@@ -581,7 +594,20 @@
               </template>
               <template v-else>{{ t('admin.iqDetection.accounts') }}</template>
             </div>
-            <div v-if="selectedGroupId && focusedAccounts.length > 0" class="flex flex-shrink-0 items-center gap-2">
+            <div v-if="selectedGroupId" class="flex flex-wrap items-center gap-2">
+              <label
+                class="flex cursor-pointer items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400"
+                :title="t('admin.iqDetection.visibleHint')"
+              >
+                <input
+                  type="checkbox"
+                  class="h-4 w-4 cursor-pointer rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                  :checked="groupVisibility[selectedGroupId] !== false"
+                  data-testid="group-visible-checkbox"
+                  @change="groupVisibility[selectedGroupId] = ($event.target as HTMLInputElement).checked"
+                />
+                {{ t('admin.iqDetection.visible') }}
+              </label>
               <label class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
                 {{ t('admin.iqDetection.testInterval') }}
                 <input
@@ -743,6 +769,7 @@ const accountSelection = reactive(new Map<number, Set<number>>())
 const groupAllIntent = reactive(new Set<number>())
 // 每个分组的智商检测间隔（分钟），0 = 仅手动触发。
 const groupIntervals = reactive<Record<number, number>>({})
+const groupVisibility = reactive<Record<number, boolean>>({})
 
 const selectedGroup = computed(() => groups.value.find((g) => g.id === selectedGroupId.value) || null)
 const platformOptions = computed(() =>
@@ -834,11 +861,13 @@ async function saveDetectionModels() {
 // ---- 发起测试 ----
 const testRunning = ref(false)
 
-async function runTest() {
+async function runTest(groupId?: number) {
   if (testRunning.value) return
   testRunning.value = true
   try {
-    const plan = await adminAPI.iqDetection.triggerTestRun()
+    const plan = groupId === undefined
+      ? await adminAPI.iqDetection.triggerTestRun()
+      : await adminAPI.iqDetection.triggerTestRun(groupId)
     if (plan.triggered > 0) {
       appStore.showSuccess(t('admin.iqDetection.testTriggered', { n: plan.triggered }))
     } else {
@@ -862,6 +891,14 @@ const pelicanLoading = reactive(new Set<number>())
 // 已保存的选择（用于结果 tab 与轮换展示）；activeResultGroupId=0 表示未选分组时展示全部
 const savedSelectionGroups = ref<SelectionGroup[]>([])
 const activeResultGroupId = ref(0)
+const canTestCurrentGroup = computed(() =>
+  activeResultGroupId.value > 0 && savedSelectionGroups.value.some(group => group.id === activeResultGroupId.value)
+)
+
+function runCurrentGroupTest() {
+  if (!canTestCurrentGroup.value) return
+  return runTest(activeResultGroupId.value)
+}
 
 const resultTabs = computed(() => {
   const tabs = savedSelectionGroups.value.map((group) => ({
@@ -1054,6 +1091,7 @@ async function loadSavedSelection() {
       groupAllIntent.delete(savedGroup.id)
       accountSelection.set(savedGroup.id, new Set((savedGroup.accounts || []).map((a) => a.id)))
       groupIntervals[savedGroup.id] = savedGroup.interval_minutes || 0
+      groupVisibility[savedGroup.id] = savedGroup.visible !== false
     }
     // 结果 tab 默认落在第一个分组
     if (
@@ -1086,12 +1124,14 @@ async function saveSelection() {
         name: group.name,
         rate_multiplier: group.rate_multiplier,
         interval_minutes: interval,
+        visible: groupVisibility[group.id] !== false,
         accounts: accounts
           .filter((a) => selected.has(a.id))
           .map((a) => ({ id: a.id, name: a.name, models: accountModels(a) }))
       })
     }
     const saved = await adminAPI.iqDetection.saveSelection(payloadGroups)
+    savedSelectionGroups.value = saved.groups
     selectionSavedAt.value = saved.updated_at ?? null
     appStore.showSuccess(t('admin.iqDetection.selectionSaved'))
   } catch (error) {

@@ -124,10 +124,19 @@
           default-sort-order="asc"
           @sort="handleSort"
         >
-          <template #cell-name="{ value }">
-            <span class="font-medium text-gray-900 dark:text-white">{{
-              value
-            }}</span>
+          <template #cell-name="{ row, value }">
+            <span class="inline-flex flex-wrap items-center gap-1.5">
+              <span class="font-medium text-gray-900 dark:text-white">{{
+                value
+              }}</span>
+              <span
+                v-if="groupCaps.get(row.id) != null"
+                class="inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-300"
+                :title="t('admin.groups.capRate.tagHint')"
+              >
+                {{ t('admin.groups.capRate.tag', { rate: formatCapRate(groupCaps.get(row.id)!) }) }}
+              </span>
+            </span>
           </template>
 
           <template #cell-id="{ value }">
@@ -457,6 +466,15 @@
               >
                 <Icon name="badge" size="sm" :class="recommendationMap.has(row.id) ? 'text-amber-500' : ''" />
                 <span class="text-xs">{{ t('admin.groups.recommendation.action') }}</span>
+              </button>
+              <button
+                data-testid="group-cap-rate"
+                :title="t('admin.groups.capRate.action')"
+                @click="openCapModal(row)"
+                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-purple-50 hover:text-purple-600 dark:hover:bg-purple-900/20 dark:hover:text-purple-400"
+              >
+                <Icon name="shield" size="sm" :class="groupCaps.get(row.id) != null ? 'text-purple-500' : ''" />
+                <span class="text-xs">{{ t('admin.groups.capRate.action') }}</span>
               </button>
               <button
                 @click="handleDelete(row)"
@@ -4306,6 +4324,43 @@
       </template>
     </BaseDialog>
 
+    <!-- Group Cap Rate Modal -->
+    <BaseDialog
+      :show="showCapModal"
+      :title="t('admin.groups.capRate.title')"
+      width="narrow"
+      @close="closeCapModal"
+    >
+      <div v-if="capGroup" class="space-y-4">
+        <div class="rounded-lg bg-gray-50 p-3 dark:bg-dark-800">
+          <div class="font-medium text-gray-900 dark:text-white">{{ capGroup.name }}</div>
+          <div class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ capGroup.rate_multiplier }}x</div>
+        </div>
+        <div>
+          <label class="input-label">{{ t('admin.groups.capRate.rateLabel') }}</label>
+          <input
+            v-model="capForm.cap_rate"
+            type="number"
+            step="0.01"
+            min="0"
+            class="input"
+            :placeholder="t('admin.groups.capRate.ratePlaceholder')"
+          />
+          <p class="input-hint">{{ t('admin.groups.capRate.rateHint') }}</p>
+        </div>
+      </div>
+      <template #footer>
+        <div class="flex justify-between gap-3">
+          <button v-if="capExists" type="button" class="btn btn-secondary text-red-600" @click="removeCap">{{ t('admin.groups.capRate.remove') }}</button>
+          <span v-else />
+          <div class="flex gap-3">
+            <button type="button" class="btn btn-secondary" @click="closeCapModal">{{ t('common.cancel') }}</button>
+            <button type="button" class="btn btn-primary" :disabled="capSaving" @click="saveCap">{{ t('common.save') }}</button>
+          </div>
+        </div>
+      </template>
+    </BaseDialog>
+
     <GroupSetCategoryModal
       :show="showSetCategoryModal"
       :group="setCategoryGroup"
@@ -5824,6 +5879,73 @@ const loadRecommendations = async () => {
   }
 };
 
+// 分组上限倍率:与分组分类同库存储(group_categories.json 的 group_caps)。
+const groupCaps = ref<Map<number, number>>(new Map());
+const capGroup = ref<AdminGroup | null>(null);
+const showCapModal = ref(false);
+const capSaving = ref(false);
+const capForm = reactive({ cap_rate: '' });
+const capExists = computed(() => (capGroup.value ? groupCaps.value.has(capGroup.value.id) : false));
+
+const formatCapRate = (value: number): string => String(Math.round(value * 1000) / 1000);
+
+const loadGroupCaps = async () => {
+  try {
+    const snapshot = await adminAPI.groupCategories.list();
+    groupCaps.value = new Map(
+      Object.entries(snapshot.group_caps ?? {}).map(([id, rate]) => [Number(id), rate]),
+    );
+  } catch (error) {
+    console.error('Error loading group caps:', error);
+  }
+};
+
+const openCapModal = (group: AdminGroup) => {
+  capGroup.value = group;
+  const existing = groupCaps.value.get(group.id);
+  capForm.cap_rate = existing != null ? formatCapRate(existing) : '';
+  showCapModal.value = true;
+};
+
+const closeCapModal = () => {
+  showCapModal.value = false;
+  capGroup.value = null;
+};
+
+const saveCap = async () => {
+  if (!capGroup.value) return;
+  const parsed = Number(capForm.cap_rate);
+  capSaving.value = true;
+  try {
+    await adminAPI.groupCategories.setGroupCap(
+      capGroup.value.id,
+      Number.isFinite(parsed) && parsed > 0 ? parsed : null,
+    );
+    appStore.showSuccess(t('admin.groups.capRate.saved'));
+    closeCapModal();
+    await loadGroupCaps();
+  } catch (error: any) {
+    appStore.showError(error.response?.data?.detail || t('admin.groups.capRate.saveFailed'));
+  } finally {
+    capSaving.value = false;
+  }
+};
+
+const removeCap = async () => {
+  if (!capGroup.value) return;
+  capSaving.value = true;
+  try {
+    await adminAPI.groupCategories.setGroupCap(capGroup.value.id, null);
+    appStore.showSuccess(t('admin.groups.capRate.saved'));
+    closeCapModal();
+    await loadGroupCaps();
+  } catch (error: any) {
+    appStore.showError(error.response?.data?.detail || t('admin.groups.capRate.saveFailed'));
+  } finally {
+    capSaving.value = false;
+  }
+};
+
 const openRecommendationModal = async (group: AdminGroup) => {
   // Re-read on every click so deleted groups are removed from the standalone file.
   await loadRecommendations();
@@ -7110,6 +7232,7 @@ const saveSortOrder = async () => {
 onMounted(() => {
   loadGroups();
   loadRecommendations();
+  loadGroupCaps();
   if (!authStore.isSimpleMode) {
     void loadLiveCapability();
     loadModelAllowlistCandidates("create", 0, createForm.platform);

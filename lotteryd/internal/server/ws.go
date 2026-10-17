@@ -39,6 +39,7 @@ type wsOutMessage struct {
 type wsClient struct {
 	conn        *websocket.Conn
 	userID      int64
+	bearer      string
 	email       string
 	role        string
 	regAt       *time.Time
@@ -171,7 +172,7 @@ func (h *wsHub) trySend(c *wsClient, msg wsOutMessage) bool {
 }
 
 func (h *wsHub) pushLottery(ctx context.Context, c *wsClient) bool {
-	views, err := h.sv.App.EligibilityList(ctx, c.userID, c.email, c.regAt)
+	views, err := h.sv.App.EligibilityList(app.WithUserUsageBearer(ctx, c.userID, c.bearer), c.userID, c.email, c.regAt)
 	if err != nil {
 		return true
 	}
@@ -232,6 +233,7 @@ func (s *Server) ServeWS(w http.ResponseWriter, r *http.Request) {
 	c := &wsClient{
 		conn:        conn,
 		userID:      claims.UserID,
+		bearer:      token,
 		email:       claims.Email,
 		role:        claims.Role,
 		regAt:       claims.RegisteredAt,

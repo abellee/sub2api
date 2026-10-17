@@ -121,7 +121,8 @@ func (s *Server) requireUser(next authedHandler) http.Handler {
 			fail(w, http.StatusUnauthorized, 401, err.Error())
 			return
 		}
-		next(w, r, claims)
+		ctx := app.WithUserUsageBearer(r.Context(), claims.UserID, strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
+		next(w, r.WithContext(ctx), claims)
 	})
 }
 
@@ -193,6 +194,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("DELETE /v1/admin/activities/{id}", s.requireAdmin(s.handleAdminArchiveActivity))
 	mux.Handle("POST /v1/admin/activities/{id}/delete", s.requireAdmin(s.handleAdminDeleteActivity))
 	mux.Handle("GET /v1/admin/activities/{id}/participants", s.requireAdmin(s.handleAdminParticipants))
+	mux.Handle("DELETE /v1/admin/activities/{id}/participants/{userID}", s.requireAdmin(s.handleAdminRemoveParticipant))
 	mux.Handle("GET /v1/admin/activities/{id}/winners", s.requireAdmin(s.handleAdminWinners))
 	mux.Handle("POST /v1/admin/activities/{id}/draw", s.requireAdmin(s.handleAdminDraw))
 	mux.Handle("POST /v1/admin/activities/{id}/close", s.requireAdmin(s.handleAdminCloseActivity))
@@ -339,7 +341,7 @@ func (s *Server) handleParticipate(w http.ResponseWriter, r *http.Request, claim
 		fail(w, http.StatusUnauthorized, 401, "identity verification failed")
 		return
 	}
-	view, err := s.App.Participate(r.Context(), id, identity.UserID, identity, time.Now())
+	view, err := s.App.Participate(app.WithUserUsageBearer(r.Context(), identity.UserID, strings.TrimPrefix(h, "Bearer ")), id, identity.UserID, identity, time.Now())
 	if err != nil {
 		mapStoreError(w, err)
 		return
@@ -357,6 +359,8 @@ func mapStoreError(w http.ResponseWriter, err error) {
 		fail(w, http.StatusConflict, 409, "activity is full")
 	case errors.Is(err, store.ErrNotJoinable):
 		fail(w, http.StatusConflict, 409, "activity is not open for participation")
+	case errors.Is(err, store.ErrParticipantRemoved):
+		fail(w, http.StatusForbidden, 403, err.Error())
 	case errors.Is(err, store.ErrNotEligible):
 		fail(w, http.StatusForbidden, 403, "conditions not met")
 	case errors.Is(err, store.ErrNotVisible):
@@ -378,12 +382,17 @@ func mapStoreError(w http.ResponseWriter, err error) {
 
 func internalError(w http.ResponseWriter, err error) {
 	slog.Error("lotteryd request failed", "err", err)
+	if errors.Is(err, app.ErrUsageUnavailable) {
+		fail(w, http.StatusServiceUnavailable, 503, "用量数据暂不可用，请稍后重试")
+		return
+	}
 	fail(w, http.StatusInternalServerError, 500, "internal error")
 }
 
 // ---- Admin handlers ----
 
 type activityInput struct {
+	Blacklist            *[]string              `json:"blacklist"`
 	Name                 string                 `json:"name"`
 	Description          string                 `json:"description"`
 	StartsAt             time.Time              `json:"starts_at"`
@@ -425,6 +434,9 @@ func (in *activityInput) toActivity() *lottery.Activity {
 		RepeatPolicy:         derefString(in.RepeatPolicy),
 		RepeatGroup:          derefString(in.RepeatGroup),
 		Conditions:           in.Conditions,
+	}
+	if in.Blacklist != nil {
+		a.Blacklist = *in.Blacklist
 	}
 	if in.Visibility != nil {
 		a.Visibility = *in.Visibility
@@ -491,6 +503,13 @@ func (s *Server) handleAdminUpdateActivity(w http.ResponseWriter, r *http.Reques
 	}
 	a := in.toActivity()
 	a.ID = id
+	if !existing.DrawnAt.IsZero() {
+		mapStoreError(w, store.ErrActivityDrawn)
+		return
+	}
+	if in.Blacklist == nil {
+		a.Blacklist = existing.Blacklist
+	}
 	if existing.DailyConfigID > 0 {
 		a.DailyConfigID = existing.DailyConfigID
 		policy, group := existing.RepeatPolicy, existing.RepeatGroup
@@ -629,6 +648,25 @@ func (s *Server) handleAdminGetActivity(w http.ResponseWriter, r *http.Request, 
 	ok(w, map[string]any{"activity": a, "winners": winners, "notify": len(stages) > 0, "notify_stages": stages})
 }
 
+func (s *Server) handleAdminRemoveParticipant(w http.ResponseWriter, r *http.Request, _ *Claims) {
+	id, err := pathID(r)
+	if err != nil || id <= 0 {
+		fail(w, http.StatusBadRequest, 400, "invalid activity id")
+		return
+	}
+	userID, err := strconv.ParseInt(r.PathValue("userID"), 10, 64)
+	if err != nil || userID <= 0 {
+		fail(w, http.StatusBadRequest, 400, "invalid user id")
+		return
+	}
+	if err := s.App.Store.RemoveParticipant(id, userID); err != nil {
+		mapStoreError(w, err)
+		return
+	}
+	s.wsHub.Wake()
+	ok(w, map[string]any{"removed": true})
+}
+
 func (s *Server) handleAdminParticipants(w http.ResponseWriter, r *http.Request, _ *Claims) {
 	id, err := pathID(r)
 	if err != nil {
@@ -705,7 +743,7 @@ func (s *Server) handleAdminUserSearch(w http.ResponseWriter, r *http.Request, _
 			limit = n
 		}
 	}
-	users, err := s.App.Sub2API.SearchUsers(r.Context(), q, limit)
+	users, err := s.App.Sub2API.SearchUsers(r.Context(), q, limit, strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
 	if err != nil {
 		// 管理端专用接口：透传上游错误（如 401 INVALID_ADMIN_KEY），便于排查 Key/上游配置问题。
 		slog.Error("lotteryd user search failed", "err", err)

@@ -11,6 +11,7 @@ import wechatGroupQR from './wechatGroupQR'
 import appCatalog from './appCatalog'
 import iqDetection from './iqDetection'
 import pushNotifications from './pushNotifications'
+import menuManagement from './menuManagement'
 
 export default {
   ...overview,
@@ -26,4 +27,5 @@ export default {
   ...appCatalog,
   ...iqDetection,
   ...pushNotifications,
+  ...menuManagement,
 }

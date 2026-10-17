@@ -380,7 +380,7 @@ type IQDetectPublicOverview struct {
 const publicOverviewResults = 48
 
 // GetPublicOverview serves the regular-user results page: only groups with
-// scheduled detection enabled (interval > 0) are published, and account
+// scheduled detection enabled (interval > 0) and public visibility are published, and account
 // identifiers are stripped from the results.
 func (s *IQDetectService) GetPublicOverview(ctx context.Context) (*IQDetectPublicOverview, error) {
 	selection, err := s.GetDetectionSelection(ctx)
@@ -397,7 +397,7 @@ func (s *IQDetectService) GetPublicOverview(ctx context.Context) (*IQDetectPubli
 		out.Settings.ReasoningEffort = settings.ReasoningEffort
 	}
 	for _, group := range selection.Groups {
-		if group.IntervalMinutes <= 0 {
+		if group.IntervalMinutes <= 0 || !group.IsPublicVisible() {
 			continue
 		}
 		entry := IQDetectPublicGroup{
@@ -443,13 +443,13 @@ func (s *IQDetectService) GetPublicResultDetail(ctx context.Context, id int64) (
 	}
 	published := false
 	for _, group := range selection.Groups {
-		if group.ID == result.GroupID && group.IntervalMinutes > 0 {
+		if group.ID == result.GroupID && group.IntervalMinutes > 0 && group.IsPublicVisible() {
 			published = true
 			break
 		}
 	}
 	if !published {
-		return nil, fmt.Errorf("test result %d not found", id)
+		return nil, infraerrors.NotFound("IQ_DETECT_RESULT_NOT_FOUND", fmt.Sprintf("test result %d not found", id))
 	}
 	pelicanHTML := ""
 	if result.PelicanHTMLLen > 0 && result.PelicanError == "" {

@@ -860,6 +860,18 @@ export default {
         remove: 'Remove recommendation',
         saveFailed: 'Failed to save group recommendation'
       },
+      capRate: {
+        action: 'Cap',
+        title: 'Set cap rate',
+        rateLabel: 'Cap rate multiplier',
+        ratePlaceholder: 'e.g. 0.8',
+        rateHint: 'The maximum the effective rate of this group may rise to, and generally will not exceed. Leave empty or 0 for no cap. Stored together with group categories.',
+        remove: 'Remove cap',
+        tag: 'Cap {rate}x',
+        tagHint: 'Cap rate multiplier of this group (the effective rate generally will not exceed it)',
+        saved: 'Cap rate saved',
+        saveFailed: 'Failed to save cap rate'
+      },
       searchGroups: 'Search groups...',
       createGroup: 'Create Group',
       setCategory: 'Set category',

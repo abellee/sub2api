@@ -192,6 +192,42 @@ func TestStoreDetectionSelection(t *testing.T) {
 	}
 }
 
+func TestHiddenGroupKeepsDetectionJobs(t *testing.T) {
+	store := openTestStore(t)
+	ctx := context.Background()
+	hidden := false
+	_, err := store.SaveSelection(ctx, []SelectionGroup{{
+		ID: 2, Name: "hidden", IntervalMinutes: 30, Visible: &hidden,
+		Accounts: []SelectionAccount{{ID: 42, Name: "account", Models: []string{"test-model"}}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ReplaceDetectionModels(ctx, []string{"test-model"}); err != nil {
+		t.Fatal(err)
+	}
+	selection, err := store.GetSelection(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	group := selection.Groups[0]
+	if group.IsPublicVisible() || group.IntervalMinutes != 30 {
+		t.Fatalf("unexpected hidden group: %+v", group)
+	}
+	runner := NewTestRunner(store, 0, nil)
+	creds := map[int64]TestRunCredential{
+		42: {AccountID: 42, APIURL: "http://127.0.0.1:1", APIKey: "test-key"},
+	}
+	_, jobs, err := runner.buildGroupJobs(ctx, group, creds)
+	if err != nil || len(jobs) != 1 || jobs[0].accountID != 42 {
+		t.Fatalf("scheduled jobs = %+v, %v; hidden groups must still be tested", jobs, err)
+	}
+	candidates := runner.groupCandidates(ctx, group, "test-model", creds)
+	if len(candidates) != 1 || candidates[0].id != 42 {
+		t.Fatalf("manual candidates = %+v; hiding must preserve manual detection", candidates)
+	}
+}
+
 func TestStoreDetectionModels(t *testing.T) {
 	store := openTestStore(t)
 	ctx := context.Background()

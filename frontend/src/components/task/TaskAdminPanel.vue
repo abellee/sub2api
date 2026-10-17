@@ -2,6 +2,7 @@
 /** 任务管理面板：任务 CRUD、码池维护、发放记录与重试。 */
 import { computed, onMounted, ref, watch } from 'vue'
 import type { LotteryClient } from '@/api/lotteryClient'
+import LotteryServiceVersion from '@/components/lottery/LotteryServiceVersion.vue'
 import { addCalendarDays, beijingToday } from '@/utils/beijingTime'
 import { adminSearchUsers, formatValue, type SearchedUser, type VisibilitySettings } from '@/api/lottery'
 import type { ConditionDef } from '@/api/lottery'
@@ -602,6 +603,7 @@ onMounted(refresh)
       <div class="min-w-0 flex-1">
         <h1 class="text-lg font-bold text-gray-900 dark:text-white">任务管理</h1>
         <p class="text-xs text-gray-500 dark:text-dark-400">持续型消耗任务：按结算日自动达成并发放奖励</p>
+        <LotteryServiceVersion :client="props.client" />
       </div>
       <div class="flex gap-2">
         <button class="btn btn-secondary" @click="openSettings">⚙️ 设置</button>

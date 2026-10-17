@@ -106,6 +106,11 @@ export default {
     currentConcurrency: 'Current Concurrency',
     noGroup: 'No group',
     searchGroup: 'Search groups...',
+    moreSettings: 'More settings',
+    modelPricing: 'Model pricing',
+    modelPricingEmpty: 'No model pricing found for this group',
+    capRateTag: 'Cap {rate}x',
+    capRateHint: 'Cap rate multiplier of this group: the effective rate may rise up to this value and generally will not exceed it.',
     useNativeGroupSelect: 'Use legacy dropdown',
     useCardGroupSelect: 'Use new card selector',
     groupProviders: 'Model provider navigation',
@@ -153,6 +158,7 @@ export default {
     failedToDelete: 'Failed to delete API key',
     failedToUpdateStatus: 'Failed to update API key status',
     clickToChangeGroup: 'Click to change group',
+    changeGroupTitle: 'Change group',
     groupChangedSuccess: 'Group changed successfully',
     failedToChangeGroup: 'Failed to change group',
     groupRequired: 'Please select a group',
@@ -699,6 +705,9 @@ export default {
       exclusive: 'Exclusive',
       subscription: 'Subscription'
     },
+    group: {
+      billingByToken: 'Per usage'
+    },
     detail: {
       noModels: 'No models configured for this group',
       noPricing: 'Pricing not configured',
@@ -741,7 +750,8 @@ export default {
       perUnitVideo: '/ second',
       perRequest: 'Per request',
       perImage: 'Per image',
-      perVideo: 'Video billing'
+      perVideo: 'Video billing',
+      allResolutions: 'All resolutions'
     },
     nav: {
       login: 'Sign In',

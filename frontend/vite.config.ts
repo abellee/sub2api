@@ -320,6 +320,7 @@ export default defineConfig(({ mode }) => {
   const devPort = Number(env.VITE_DEV_PORT || 3000)
   const appCatalogDirect = (process.env.VITE_APP_CATALOG_DIRECT || env.VITE_APP_CATALOG_DIRECT || '').trim()
   const iqDetectDirect = (process.env.VITE_IQ_DETECT_DIRECT || env.VITE_IQ_DETECT_DIRECT || '').trim()
+  const uiConfigDirect = (process.env.VITE_UI_CONFIG_DIRECT || env.VITE_UI_CONFIG_DIRECT || '').trim()
 
   return {
     plugins: [
@@ -405,6 +406,12 @@ export default defineConfig(({ mode }) => {
       host: '0.0.0.0',
       port: devPort,
       proxy: {
+        // Local SQLite companion verifies requests against the production API.
+        // Keep this opt-in so normal development uses the main backend routes.
+        ...(uiConfigDirect ? Object.fromEntries(
+          ['^/api/v1/admin/user-menu/?(?:\\?.*)?$', '^/api/v1/user/menu/?(?:\\?.*)?$']
+            .map((path) => [path, { target: uiConfigDirect, changeOrigin: true }])
+        ) : {}),
         '/push-api': {
           target: pushNotifierUrl,
           changeOrigin: true

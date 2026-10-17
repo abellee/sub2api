@@ -2,7 +2,7 @@
 import type { LotteryClient } from './lotteryClient'
 import { unwrap } from './lotteryClient'
 
-export type ConditionDimension = 'token_usage' | 'activity_days' | 'registered_days'
+export type ConditionDimension = 'token_usage' | 'activity_days' | 'registered_days' | 'historical_recharge'
 export type ConditionMatch = 'all' | 'any'
 export type BonusMode = 'none' | 'manual' | 'auto'
 export type PrizeType = 'redeem_code' | 'balance'
@@ -13,6 +13,7 @@ export interface ConditionDef {
   window_days: number
   /** token_usage 维度：per_day = 每天达标，total = 窗口累计达标 */
   mode?: 'per_day' | 'total'
+  /** historical_recharge 使用 threshold 设置历史累计充值门槛（美元），不使用窗口。 */
   threshold?: number
   min_active_days?: number
   daily_min_tokens?: number
@@ -155,6 +156,7 @@ export interface AdminActivityDetail {
     repeat_policy?: RepeatPolicy | string
     repeat_group?: string
     visibility?: VisibilitySettings
+    blacklist?: string[]
   }
   winners: WinnerRecord[]
   notify?: boolean
@@ -162,6 +164,7 @@ export interface AdminActivityDetail {
 }
 
 export interface ActivityInput {
+  blacklist?: string[]
   name: string
   description: string
   starts_at: string
@@ -280,6 +283,11 @@ export async function adminListParticipants(
   return data.participants ?? []
 }
 
+/** 管理端：踢出参与者，并禁止其重新报名本场活动。 */
+export async function adminRemoveParticipant(client: LotteryClient, activityID: number, userID: number): Promise<void> {
+  await unwrap(client.http.delete(`/v1/admin/activities/${activityID}/participants/${userID}`))
+}
+
 /** 管理端：中奖名单（脱敏）。 */
 export async function adminListWinners(client: LotteryClient, id: number): Promise<WinnerRecord[]> {
   const data = await unwrap<{ winners: WinnerRecord[] }>(
@@ -369,6 +377,7 @@ export async function adminSearchUsers(
 export type RepeatPolicy = 'unlimited' | 'join_once' | 'win_once'
 
 export interface DailyConfig {
+  blacklist?: string[]
   /** 配置 ID（新建时传 0，服务端分配） */
   id: number
   enabled: boolean

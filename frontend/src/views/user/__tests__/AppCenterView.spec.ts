@@ -45,15 +45,16 @@ describe('用户侧应用中心', () => {
     listCatalogApps.mockResolvedValue({ items: [], total: 0 })
   })
 
-  it('侧栏菜单项在模型广场下方', () => {
+  it('侧栏不展示应用中心菜单项，兑换在模型广场下方', () => {
     const sidebar = readFileSync(
       resolve(__dirname, '../../../components/layout/AppSidebar.vue'),
       'utf8',
     )
     const plaza = sidebar.indexOf("{ path: '/model-plaza'")
-    const center = sidebar.indexOf("{ path: '/app-center'")
+    const redeem = sidebar.indexOf("{ path: '/redeem', label: t('nav.redeem')")
     expect(plaza).toBeGreaterThan(-1)
-    expect(center).toBeGreaterThan(plaza)
+    expect(redeem).toBeGreaterThan(plaza)
+    expect(sidebar.indexOf("{ path: '/app-center'")).toBe(-1)
   })
 
   it('无应用时显示空状态', async () => {

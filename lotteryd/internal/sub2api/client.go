@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -117,6 +118,27 @@ func truncate(s string, n int) string {
 
 // ---- Usage data ----
 
+// FetchTotalRecharged uses the same aggregate as the admin balance-history UI.
+// The summary covers all history regardless of pagination; current balance is
+// deliberately not used, since spending must not reduce historical recharge.
+func (c *Client) FetchTotalRecharged(ctx context.Context, userID int64) (float64, error) {
+	if c == nil || userID <= 0 {
+		return 0, fmt.Errorf("cannot load recharge total for user %d", userID)
+	}
+	var data struct {
+		TotalRecharged *float64 `json:"total_recharged"`
+	}
+	q := url.Values{"page": {"1"}, "page_size": {"1"}, "type": {"balance"}}
+	path := "/api/v1/admin/users/" + strconv.FormatInt(userID, 10) + "/balance-history"
+	if err := c.do(ctx, http.MethodGet, path, q, nil, &data, ""); err != nil {
+		return 0, err
+	}
+	if data.TotalRecharged == nil || *data.TotalRecharged < 0 || math.IsNaN(*data.TotalRecharged) || math.IsInf(*data.TotalRecharged, 0) {
+		return 0, fmt.Errorf("sub2api balance-history: invalid or missing total_recharged")
+	}
+	return *data.TotalRecharged, nil
+}
+
 type breakdownUser struct {
 	UserID      int64   `json:"user_id"`
 	Email       string  `json:"email"`
@@ -128,17 +150,22 @@ type breakdownData struct {
 }
 
 // FetchDailyTokens pulls per-user total token usage for one day (YYYY-MM-DD,
-// interpreted in the Sub2API server timezone) via the dashboard user-breakdown
+// interpreted in Asia/Shanghai) via the dashboard user-breakdown
 // endpoint with limit=0 (all users).
 func (c *Client) FetchDailyTokens(ctx context.Context, date string) ([]lottery.DailyToken, error) {
 	q := url.Values{}
 	q.Set("start_date", date)
 	q.Set("end_date", date)
+	q.Set("timezone", "Asia/Shanghai")
 	q.Set("limit", "0")
 	var data breakdownData
 	if err := c.do(ctx, http.MethodGet, "/api/v1/admin/dashboard/user-breakdown", q, nil, &data, ""); err != nil {
 		return nil, err
 	}
+	if data.Users == nil {
+		return nil, fmt.Errorf("sub2api user-breakdown: missing users")
+	}
+
 	out := make([]lottery.DailyToken, 0, len(data.Users))
 	for _, u := range data.Users {
 		out = append(out, lottery.DailyToken{Date: date, UserID: u.UserID, Email: u.Email, TotalTokens: u.TotalTokens})
@@ -148,13 +175,14 @@ func (c *Client) FetchDailyTokens(ctx context.Context, date string) ([]lottery.D
 
 // ---- 分组/模型与按口径用量（复用 Sub2API 原生管理接口，无专用集成端点） ----
 
-// FetchDailyModelUsage 拉取某日（YYYY-MM-DD，Sub2API 服务器时区）按分组+模型
+// FetchDailyModelUsage 拉取某日（YYYY-MM-DD，北京时间）按分组+模型
 // 过滤的每用户 token 消耗。groupID<=0 表示全部分组，model 为空表示不限模型。
 // 复用原生 dashboard user-breakdown 接口（其本身支持 model/group_id 过滤）。
 func (c *Client) FetchDailyModelUsage(ctx context.Context, date string, groupID int64, model string) ([]lottery.DailyToken, error) {
 	q := url.Values{}
 	q.Set("start_date", date)
 	q.Set("end_date", date)
+	q.Set("timezone", "Asia/Shanghai")
 	q.Set("limit", "0")
 	if groupID > 0 {
 		q.Set("group_id", strconv.FormatInt(groupID, 10))
@@ -182,6 +210,7 @@ func (c *Client) FetchUserDailyModelUsage(ctx context.Context, date string, grou
 	q := url.Values{}
 	q.Set("start_date", date)
 	q.Set("end_date", date)
+	q.Set("timezone", "Asia/Shanghai")
 	q.Set("limit", "0")
 	if groupID > 0 {
 		q.Set("group_id", strconv.FormatInt(groupID, 10))
@@ -324,8 +353,9 @@ type SearchUser struct {
 	Username string `json:"username"`
 }
 
-// SearchUsers 按关键字搜索用户（邮箱/用户名模糊匹配），供白名单选择。
-func (c *Client) SearchUsers(ctx context.Context, query string, limit int) ([]SearchUser, error) {
+// SearchUsers searches users for admin selection. Without a configured API key,
+// the admin handler can supply its authenticated caller's bearer token.
+func (c *Client) SearchUsers(ctx context.Context, query string, limit int, adminBearer ...string) ([]SearchUser, error) {
 	query = strings.TrimSpace(query)
 	if query == "" {
 		return []SearchUser{}, nil
@@ -340,7 +370,11 @@ func (c *Client) SearchUsers(ctx context.Context, query string, limit int) ([]Se
 	var data struct {
 		Items []SearchUser `json:"items"`
 	}
-	if err := c.do(ctx, http.MethodGet, "/api/v1/admin/users", q, nil, &data, ""); err != nil {
+	bearer := ""
+	if c.AdminAPIKey() == "" && len(adminBearer) > 0 {
+		bearer = adminBearer[0]
+	}
+	if err := c.do(ctx, http.MethodGet, "/api/v1/admin/users", q, nil, &data, bearer); err != nil {
 		return nil, err
 	}
 	return data.Items, nil

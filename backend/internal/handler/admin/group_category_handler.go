@@ -42,6 +42,11 @@ type reorderGroupCategoriesRequest struct {
 	IDs []string `json:"ids"`
 }
 
+type setGroupCapRequest struct {
+	// CapRate 为空或 <=0 表示清除上限倍率。
+	CapRate *float64 `json:"cap_rate"`
+}
+
 // List GET /admin/group-categories
 func (h *GroupCategoryHandler) List(c *gin.Context) {
 	snap, err := h.store.List()
@@ -144,6 +149,25 @@ func (h *GroupCategoryHandler) Reorder(c *gin.Context) {
 			response.NotFound(c, err.Error())
 			return
 		}
+		response.BadRequest(c, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"ok": true})
+}
+
+// SetGroupCap PUT /admin/group-categories/group-caps/:group_id
+func (h *GroupCategoryHandler) SetGroupCap(c *gin.Context) {
+	groupID, err := strconv.ParseInt(c.Param("group_id"), 10, 64)
+	if err != nil || groupID <= 0 {
+		response.BadRequest(c, "Invalid group id")
+		return
+	}
+	var req setGroupCapRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request")
+		return
+	}
+	if err := h.store.SetGroupCap(groupID, req.CapRate); err != nil {
 		response.BadRequest(c, err.Error())
 		return
 	}

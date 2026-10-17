@@ -59,6 +59,79 @@ function mountTable(
 }
 
 describe('PlazaModelPricingTable', () => {
+  it.each([
+    ['deepseek', 'deepseek-chat'],
+    ['zhipu', 'glm-5'],
+    ['kimi', 'kimi-k2.5'],
+    ['minimax', 'MiniMax-M2.5'],
+    ['openai', 'doubao-seed-2'],
+    ['openai', 'qwen3-max'],
+    ['openai', 'hunyuan-turbo'],
+    ['openai', 'ernie-4.5'],
+  ])('%s / %s 的官方参考列读取渠道人民币价且不乘用户倍率', (platform, name) => {
+    const model = tokenModel({ platform, name })
+    model.pricing = {
+      ...model.pricing!, input_price: 2e-6, output_price: 8e-6,
+      cache_write_price: 0, cache_write_1h_price: 4e-6, cache_read_price: 0.2e-6,
+    }
+    const wrapper = mountTable([model], 0.5, 0.25)
+    const cells = wrapper.findAll('tbody td')
+    expect(cells[1].text()).toBe('¥2.00')
+    expect(cells[2].text()).toBe('¥8.00')
+    expect(cells[3].text()).toContain('¥0.00')
+    expect(cells[3].text()).toContain('1h')
+    expect(cells[3].text()).toContain('¥4.00')
+    expect(cells[4].text()).toBe('¥0.20')
+    expect(cells[5].text()).toBe('¥0.50')
+    expect(cells[6].text()).toBe('¥2.00')
+  })
+
+  it('国模渠道缺项时逐字段回退目录并保留目录美元币种', () => {
+    const model = tokenModel({ name: 'glm-5', platform: 'zhipu' })
+    model.pricing = { ...model.pricing!, input_price: 0, output_price: null, cache_read_price: null }
+    const cells = mountTable([model], 0.5).findAll('tbody td')
+    expect(cells[1].text()).toBe('¥0.00')
+    expect(cells[2].text()).toBe('$15.00')
+    expect(cells[4].text()).toBe('$0.30')
+  })
+
+  it('国外模型官方参考列仍优先取目录价，缺项回填渠道价', () => {
+    const model = tokenModel()
+    model.pricing = { ...model.pricing!, input_price: 1e-6, cache_read_price: 0.5e-6 }
+    model.official_pricing = { ...model.official_pricing!, cache_read_price: null }
+    const cells = mountTable([model], 0.5).findAll('tbody td')
+    expect(cells[1].text()).toBe('$3.00')
+    expect(cells[4].text()).toBe('$0.50')
+    expect(cells[5].text()).toBe('$0.50')
+  })
+
+  it('国模缓存阶梯读取渠道档位和倍率，不混用同名目录档位', async () => {
+    const model = tokenModel({ name: 'deepseek-chat', platform: 'deepseek' })
+    model.pricing = {
+      ...model.pricing!, cache_write_price: 2e-6, cache_write_1h_price: 4e-6, cache_read_price: 0.2e-6,
+      intervals: [{
+        min_tokens: 128000, max_tokens: null, tier_label: '>128K',
+        input_price: null, output_price: null, cache_write_price: null,
+        cache_read_price: null, per_request_price: null,
+        cache_write_multiplier: 2, cache_read_multiplier: 3,
+      }],
+    }
+    model.official_pricing = {
+      ...model.official_pricing!, intervals: [{
+        ...model.pricing.intervals[0], cache_write_price: 10e-6, cache_read_price: 5e-6,
+      }],
+    }
+    const wrapper = mountTable([model], 0.5)
+    await wrapper.find('button[aria-pressed]').trigger('click')
+    const cells = wrapper.findAll('tbody td')
+    expect(cells[3].text()).toContain('¥4.00')
+    expect(cells[3].text()).toContain('¥8.00')
+    expect(cells[4].text()).toContain('¥0.60')
+    expect(cells[3].text()).not.toContain('$10.00')
+    expect(cells[7].text()).toContain('¥2.00')
+    expect(cells[8].text()).toContain('¥0.30')
+  })
+
   it('按字段优先使用渠道价并回退官方价,国内模型显示人民币符号', () => {
     const model = tokenModel({
       name: 'glm-5',
@@ -308,26 +381,27 @@ describe('PlazaModelPricingTable', () => {
     expect(names[2]).toContain('gpt-image-2')
   })
 
-  it('两级表头:实付区与官方区各拆输入/输出/缓存列', () => {
+  it('两级表头:实付区与官方区各拆输入/输出/缓存(写入|读取)列', () => {
     const wrapper = mountTable([tokenModel()], 1)
     const text = wrapper.text()
     expect(text).toContain('modelPlaza.table.paidPrice')
     expect(text).toContain('modelPlaza.table.officialPrice')
-    // token 行:模型 + 实付 3 列 + 官方 3 列 + 倍率
-    expect(wrapper.findAll('tbody td')).toHaveLength(8)
+    // token 行:模型 + 实付 4 列(输入/输出/缓存写入/缓存读取) + 官方 4 列 + 倍率
+    expect(wrapper.findAll('tbody td')).toHaveLength(10)
   })
 
-  it('官方价包含 1h 缓存写入价;official_pricing 为 null 时官方三列显示 -', () => {
+  it('官方价包含 1h 缓存写入价;official_pricing 为 null 时官方列回填渠道定价', () => {
     const withOfficial = mountTable([tokenModel()], 1)
     expect(withOfficial.text()).toContain('$6.00')
-    expect(withOfficial.text()).toContain('(1h')
+    expect(withOfficial.text()).toContain('1h')
 
     const withoutOfficial = mountTable([tokenModel({ official_pricing: null })], 1)
     const cells = withoutOfficial.findAll('tbody td')
-    // 官方 输入/输出/缓存 三列均为 -
-    expect(cells[4].text().trim()).toBe('-')
-    expect(cells[5].text().trim()).toBe('-')
-    expect(cells[6].text().trim()).toBe('-')
+    // 官方目录缺失时回填渠道定价:输入 $3.00 / 输出 $15.00 / 缓存写入 $3.75 / 缓存读取 $0.30
+    expect(cells[1].text().trim()).toBe('$3.00')
+    expect(cells[2].text().trim()).toBe('$15.00')
+    expect(cells[3].text().trim()).toBe('$3.75')
+    expect(cells[4].text().trim()).toBe('$0.30')
   })
 
   it('实付价分别展示自定义 5m 与 1h 缓存写入价', () => {
@@ -337,7 +411,7 @@ describe('PlazaModelPricingTable', () => {
     const wrapper = mountTable([model], 1)
     expect(wrapper.text()).toContain('$3.75')
     expect(wrapper.text()).toContain('$7.00')
-    expect(wrapper.text()).toContain('(1h')
+    expect(wrapper.text()).toContain('1h')
   })
 
   it('per_request 模型按单次价 × 倍率展示,官方价列显示 -', () => {
@@ -360,7 +434,6 @@ describe('PlazaModelPricingTable', () => {
     const text = wrapper.text()
     // 0.04 × 0.5 = 0.02,scale=1
     expect(text).toContain('$0.02')
-    expect(text).toContain('modelPlaza.table.perRequest')
     // 单位后缀跟在价格后(按次 → / 次)
     expect(text).toContain('modelPlaza.table.perUnitRequest')
   })
@@ -458,10 +531,11 @@ describe('PlazaModelPricingTable', () => {
     const expanded = mountTable([model], 1)
     await expanded.find('button[aria-pressed]').trigger('click')
     const cells = expanded.findAll('tbody td')
+    // cells[3] = 缓存写入列(基础 + 各档),cells[4] = 缓存读取列
     expect(cells[3].text()).toContain('$12.50')
-    expect(cells[3].text()).toContain('$2.00')
     expect(cells[3].text()).toContain('$25.00')
-    expect(cells[3].text()).toContain('$4.00')
+    expect(cells[4].text()).toContain('$2.00')
+    expect(cells[4].text()).toContain('$4.00')
   })
 
   it('生图独立倍率开启时,按图价格 × 独立倍率,不乘分组倍率;倍率列展示独立倍率', () => {
@@ -567,8 +641,7 @@ describe('PlazaModelPricingTable', () => {
     })
     const wrapper = mountTable([model], 0.1)
     const text = wrapper.text()
-    expect(text).toContain('modelPlaza.table.perImage')
-    // 芯片:1K $0.001 / 2K $0.002,单位后缀内嵌(按图 → / 张)
+    // 分辨率列:1K $0.001 / 2K $0.002,单位后缀内嵌(按图 → / 张)
     expect(text).toContain('1K')
     expect(text).toContain('$0.001')
     expect(text).toContain('2K')
@@ -618,8 +691,6 @@ describe('PlazaModelPricingTable', () => {
     })
     const wrapper = mountTable([model], 0.5)
     const text = wrapper.text()
-    expect(text).toContain('modelPlaza.table.perVideo')
-    expect(text).not.toContain('modelPlaza.table.perRequest')
     expect(text).toContain('480p')
     expect(text).toContain('$0.045')
     expect(text).toContain('720p')
@@ -722,13 +793,15 @@ describe('PlazaModelPricingTable 分时计价', () => {
 
     const baseCells = trs[0].findAll('td')
     expect(baseCells[0].text()).toContain('deepseek-chat')
-    expect(baseCells[1].text()).toContain('¥2.40')
-    expect(baseCells[7].text()).toContain('0.8x')
+    // 列顺序:官方价在前,实付价在后
+    expect(baseCells[1].text()).toContain('¥3.00')
+    expect(baseCells[5].text()).toContain('¥2.40')
+    expect(baseCells[9].text()).toContain('0.8x')
 
     await tabs[1].trigger('click')
-    expect(wrapper.findAll('tbody tr')[0].findAll('td')[1].text()).toContain('¥1.20')
-    expect(wrapper.findAll('tbody tr')[0].findAll('td')[7].text()).toContain('0.4x')
-    expect(wrapper.findAll('tbody tr')[0].findAll('td')[4].text()).toContain('¥3.00')
+    expect(wrapper.findAll('tbody tr')[0].findAll('td')[5].text()).toContain('¥1.20')
+    expect(wrapper.findAll('tbody tr')[0].findAll('td')[9].text()).toContain('0.4x')
+    expect(wrapper.findAll('tbody tr')[0].findAll('td')[1].text()).toContain('¥3.00')
   })
 
   it('仅工作日生效时时段行带工作日前缀,tooltip 换用周末回落文案', () => {

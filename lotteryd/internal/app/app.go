@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"math/rand"
 	"sort"
 	"strconv"
 	"strings"
@@ -39,7 +38,7 @@ var ErrSettlementDisabled = errors.New("本地测试已关闭奖励发放，不�
 
 // Config holds runtime-tunable behaviour.
 type Config struct {
-	// BackfillDays 在无水位时首次回溯多少天的用量（含今天）。
+	// BackfillDays 首次同步及修复旧快照时回溯的天数（含今天）。
 	BackfillDays int
 	// DisableSettlement 为真时，仍会开奖并记下中奖者，但不发放奖品，也不做任务结算。
 	DisableSettlement bool
@@ -51,7 +50,6 @@ type App struct {
 	Sub2API *sub2api.Client
 	Cfg     Config
 	Push    *push.Client
-	rng     *rand.Rand
 }
 
 // New creates the application core.
@@ -59,7 +57,7 @@ func New(st *store.Store, client *sub2api.Client, cfg Config) *App {
 	if cfg.BackfillDays <= 0 {
 		cfg.BackfillDays = 35
 	}
-	return &App{Store: st, Sub2API: client, Cfg: cfg, rng: rand.New(rand.NewSource(time.Now().UnixNano()))}
+	return &App{Store: st, Sub2API: client, Cfg: cfg}
 }
 
 // ---- Views ----
@@ -207,7 +205,7 @@ func (ap *App) userActivityViews(ctx context.Context, userID int64, email, role 
 	}
 	var usages map[int64]*lottery.UserUsage
 	if len(candidates) > 0 {
-		usages, err = ap.usageWindow(ctx, maxWindowDays(acts))
+		usages, err = ap.userUsageWindow(ctx, userID, email, acts)
 		if err != nil {
 			return nil, err
 		}
@@ -300,15 +298,25 @@ func (ap *App) buildActivityView(ctx context.Context, a *lottery.Activity, userI
 			}
 		}
 	}
+	removed, err := ap.Store.HasRemovedParticipant(a.ID, userID)
+	if err != nil {
+		return nil, err
+	}
+	if removed {
+		v.EligibleReason = store.ErrParticipantRemoved.Error()
+	}
 	// 未参与的场次都评估资格，供参与按钮使用。列表本身不再按资格隐藏。
-	if !joined && !won && phaseNeedsEligibility(v.Phase) {
+	if !removed && !joined && !won && phaseNeedsEligibility(v.Phase) {
 		if usages == nil {
 			var loadErr error
-			usages, loadErr = ap.usageWindow(ctx, maxWindowDays([]lottery.Activity{*a}))
+			usages, loadErr = ap.userUsageWindow(ctx, userID, email, []lottery.Activity{*a})
 			if loadErr != nil {
 				return nil, loadErr
 			}
 			applyRegistered(usages, userID, email, ap.registeredAt(ctx, userID, email, registeredAt))
+		}
+		if err := ap.fillHistoricalRecharge(ctx, usages, userID, email, a.Conditions); err != nil {
+			return nil, err
 		}
 		el := a.Evaluate(usages[userID], now)
 		v.Eligible = el.Eligible
@@ -351,7 +359,7 @@ func (ap *App) EligibilityList(ctx context.Context, userID int64, email string, 
 		return nil, err
 	}
 	now := time.Now()
-	usages, err := ap.usageWindow(ctx, maxWindowDays(acts))
+	usages, err := ap.userUsageWindow(ctx, userID, email, acts)
 	if err != nil {
 		return nil, err
 	}
@@ -360,6 +368,13 @@ func (ap *App) EligibilityList(ctx context.Context, userID int64, email string, 
 	for i := range acts {
 		a := &acts[i]
 		if a.Status != "active" || !a.DrawnAt.IsZero() || !now.After(a.StartsAt) {
+			continue
+		}
+		removed, err := ap.Store.HasRemovedParticipant(a.ID, userID)
+		if err != nil {
+			return nil, err
+		}
+		if removed {
 			continue
 		}
 		// 部分用户：名单外不弹。全部用户和仅符合条件的用户仍按参与条件判断。
@@ -381,6 +396,9 @@ func (ap *App) EligibilityList(ctx context.Context, userID int64, email string, 
 			if count >= a.MaxParticipants {
 				continue
 			}
+		}
+		if err := ap.fillHistoricalRecharge(ctx, usages, userID, email, a.Conditions); err != nil {
+			return nil, err
 		}
 		el := a.Evaluate(usages[userID], now)
 		if !el.Eligible {
@@ -427,6 +445,13 @@ func (ap *App) Participate(ctx context.Context, activityID, userID int64, identi
 	if !now.Before(a.DrawsAt) {
 		return nil, store.ErrNotJoinable
 	}
+	removed, err := ap.Store.HasRemovedParticipant(a.ID, userID)
+	if err != nil {
+		return nil, err
+	}
+	if removed {
+		return nil, store.ErrParticipantRemoved
+	}
 	// 这一场设为部分用户时，名单外的用户不可参与。管理员不受限。
 	if identity.Role != "admin" && !a.Visibility.ShowsTo(identity.Email, true) {
 		return nil, store.ErrNotVisible
@@ -454,11 +479,14 @@ func (ap *App) Participate(ctx context.Context, activityID, userID int64, identi
 			return nil, store.ErrActivityFull
 		}
 	}
-	usages, err := ap.usageWindow(ctx, maxWindowDays([]lottery.Activity{*a}))
+	usages, err := ap.userUsageWindow(ctx, userID, identity.Email, []lottery.Activity{*a})
 	if err != nil {
 		return nil, err
 	}
 	applyRegistered(usages, userID, identity.Email, ap.registeredAt(ctx, userID, identity.Email, identity.RegisteredAt))
+	if err := ap.fillHistoricalRecharge(ctx, usages, userID, identity.Email, a.Conditions); err != nil {
+		return nil, err
+	}
 	el := a.Evaluate(usages[userID], now)
 	if !el.Eligible {
 		return nil, store.ErrNotEligible
@@ -839,6 +867,9 @@ func (ap *App) SaveDailyConfig(c lottery.DailyConfig) (lottery.DailyConfig, erro
 			if list[i].ID != c.ID {
 				continue
 			}
+			if c.Blacklist == nil {
+				c.Blacklist = list[i].Blacklist
+			}
 			if strings.TrimSpace(c.Visibility.Mode) == "" {
 				c.Visibility = list[i].Visibility
 			}
@@ -849,6 +880,7 @@ func (ap *App) SaveDailyConfig(c lottery.DailyConfig) (lottery.DailyConfig, erro
 			return c, store.ErrNotFound
 		}
 	}
+	c.Blacklist = lottery.NormalizeBlacklist(c.Blacklist)
 	c.Visibility = lottery.NormalizeItemVisibility(c.Visibility)
 	if err := c.Validate(); err != nil {
 		return c, err
@@ -878,6 +910,9 @@ func (ap *App) SaveDailyConfig(c lottery.DailyConfig) (lottery.DailyConfig, erro
 		return c, err
 	}
 	if err := ap.Store.SetUndrawnActivityVisibility(c.ID, c.Visibility); err != nil {
+		return c, err
+	}
+	if err := ap.Store.SetUndrawnActivityBlacklist(c.ID, c.Blacklist); err != nil {
 		return c, err
 	}
 	return c, nil
@@ -1205,6 +1240,7 @@ func dailyActivityFromConfig(cfg lottery.DailyConfig, start time.Time) *lottery.
 		RepeatGroup:          lottery.NormalizeRepeatGroup(cfg.RepeatGroup),
 		RepeatPolicy:         cfg.RepeatPolicy,
 		Visibility:           lottery.NormalizeItemVisibility(cfg.Visibility),
+		Blacklist:            lottery.NormalizeBlacklist(cfg.Blacklist),
 	}
 	if a.ConditionMatch == "" {
 		a.ConditionMatch = lottery.MatchAll
@@ -1285,43 +1321,52 @@ func (ap *App) RegenerateDailyRound(cfgID int64, now time.Time) error {
 
 // ---- Daily sync ----
 
-// SyncTokens 把水位之后（含今天）的每用户每日 token 总量拉回本地快照。
-// 幂等：按天 upsert，宕机后从水位续拉。
+// SyncTokens refreshes today's partial snapshot and finalizes yesterday. The
+// first run after this fix also repairs historical snapshots frozen by the old watermark.
 func (ap *App) SyncTokens(ctx context.Context, now time.Time) error {
 	now = now.In(lottery.Beijing())
 	last, err := ap.Store.GetState(stateTokensLastDate)
 	if err != nil {
 		return err
 	}
-	today := dateStr(now)
-	var start time.Time
-	if last == "" {
-		start = now.AddDate(0, 0, -(ap.Cfg.BackfillDays - 1))
-	} else if last >= today {
-		return nil // 已同步到今天
-	} else {
-		t, err := time.ParseInLocation("2006-01-02", last, lottery.Beijing())
-		if err != nil {
-			start = now.AddDate(0, 0, -(ap.Cfg.BackfillDays - 1))
-		} else {
-			start = t.AddDate(0, 0, 1)
+	repaired, err := ap.Store.GetState("tokens_snapshot_repair_v1")
+	if err != nil {
+		return err
+	}
+	days := ap.Cfg.BackfillDays
+	acts, err := ap.Store.ListActivities()
+	if err != nil {
+		return err
+	}
+	if n := maxWindowDays(acts) + 1; n > days {
+		days = n
+	}
+	start := now.AddDate(0, 0, -(days - 1))
+	if last != "" && repaired == "done" {
+		if t, parseErr := time.ParseInLocation("2006-01-02", last, lottery.Beijing()); parseErr == nil {
+			start = t
+			yesterday := now.AddDate(0, 0, -1)
+			if dateStr(start) > dateStr(yesterday) {
+				start = yesterday
+			}
 		}
 	}
+	today := dateStr(now)
 	for d := start; dateStr(d) <= today; d = d.AddDate(0, 0, 1) {
 		date := dateStr(d)
 		tokens, err := ap.Sub2API.FetchDailyTokens(ctx, date)
 		if err != nil {
 			return fmt.Errorf("fetch %s: %w", date, err)
 		}
-		if err := ap.Store.UpsertDailyTokens(date, tokens); err != nil {
-			return fmt.Errorf("upsert %s: %w", date, err)
+		if err := ap.Store.ReplaceDailyTokens(date, tokens); err != nil {
+			return fmt.Errorf("replace %s: %w", date, err)
 		}
 		if err := ap.Store.SetState(stateTokensLastDate, date); err != nil {
 			return err
 		}
 		slog.Info("lotteryd sync day done", "date", date, "users", len(tokens))
 	}
-	return nil
+	return ap.Store.SetState("tokens_snapshot_repair_v1", "done")
 }
 
 // ---- Draw & fulfillment ----
@@ -1343,41 +1388,11 @@ func (ap *App) DrawDueActivities(ctx context.Context, now time.Time) error {
 // DrawActivity 对单个活动开奖并登记中奖者（发放随后执行）。
 // 兑换码奖若配置了预存码池，则在开奖时按序分配。
 func (ap *App) DrawActivity(ctx context.Context, a *lottery.Activity) error {
-	participants, err := ap.Store.ListParticipants(a.ID)
+	fresh, err := ap.Store.DrawActivity(a.ID)
 	if err != nil {
 		return err
 	}
-	drafts := lottery.DrawPlan(a, participants, ap.rng)
-	// 预存兑换码分配游标：prizeID → 下一个可用的 codes 下标（从已发放数起算）。
-	codeCursor := map[int64]int{}
-	codesOf := map[int64][]string{}
-	for _, p := range a.Prizes {
-		codeCursor[p.ID] = int(p.GrantedCount)
-		codesOf[p.ID] = p.Codes
-	}
-	for i := range drafts {
-		d := &drafts[i]
-		w := &lottery.Winner{
-			ActivityID: a.ID, UserID: d.UserID, Email: d.Email,
-			PrizeID: d.Prize.ID, PrizeName: d.Prize.Name, PrizeType: d.Prize.PrizeType,
-			Value: d.Prize.Value, Fulfillment: lottery.FulfillmentPending, CreatedAt: d.CreatedAt,
-		}
-		// 从预存码池按序取码；池空时 FulfillPending 回退为主服务实时生成。
-		if d.Prize.PrizeType == lottery.PrizeRedeemCode {
-			idx := codeCursor[d.Prize.ID]
-			codeCursor[d.Prize.ID] = idx + 1
-			if codes := codesOf[d.Prize.ID]; idx < len(codes) {
-				w.RedeemCode = codes[idx]
-			}
-		}
-		if err := ap.Store.InsertWinner(w); err != nil {
-			return err
-		}
-	}
-	if err := ap.Store.MarkDrawn(a.ID, time.Now().UTC()); err != nil {
-		return err
-	}
-	slog.Info("lotteryd drawn", "activity", a.ID, "participants", len(participants), "winners", len(drafts))
+	*a = *fresh
 	return ap.FulfillPending(ctx, a)
 }
 

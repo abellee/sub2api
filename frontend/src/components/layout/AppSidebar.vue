@@ -127,16 +127,13 @@
         </div>
 
         <!-- Personal Section for Admin (hidden in simple mode) -->
-        <div v-if="!authStore.isSimpleMode" class="sidebar-section">
-          <div class="sidebar-section-title" :class="{ 'sidebar-section-title-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">
-            <span class="sidebar-section-title-text" :class="{ 'sidebar-section-title-text-collapsed': sidebarCollapsed }">
-              {{ t('nav.myAccount') }}
-            </span>
-          </div>
-
+        <UserNavSections
+          v-if="!authStore.isSimpleMode"
+          :sections="personalNavSections"
+          :collapsed="sidebarCollapsed"
+          v-slot="{ item }"
+        >
           <router-link
-            v-for="item in personalNavItems"
-            :key="item.path"
             :to="item.path"
             class="sidebar-link mb-1"
             :class="{ 'sidebar-link-active': isActive(item.path), 'sidebar-link-collapsed': sidebarCollapsed }"
@@ -156,15 +153,13 @@
               {{ item.badge.text }}
             </span>
           </router-link>
-        </div>
+        </UserNavSections>
       </template>
 
       <!-- Regular User View -->
       <template v-else-if="!appStore.backendModeEnabled">
-        <div class="sidebar-section">
+        <UserNavSections :sections="userNavSections" :collapsed="sidebarCollapsed" v-slot="{ item }">
           <router-link
-            v-for="item in userNavItems"
-            :key="item.path"
             :to="item.path"
             class="sidebar-link mb-1"
             :class="{ 'sidebar-link-active': isActive(item.path), 'sidebar-link-collapsed': sidebarCollapsed }"
@@ -184,7 +179,7 @@
               {{ item.badge.text }}
             </span>
           </router-link>
-        </div>
+        </UserNavSections>
       </template>
     </nav>
 
@@ -249,6 +244,9 @@ import { FeatureFlags, isChannelMonitorVisibleToUser, makeSidebarFlag } from '@/
 import { resolveSiteBillingMode } from '@/utils/siteBillingMode'
 import { useMenuStatus } from '@/composables/useMenuStatus'
 import { useTheme } from '@/composables/useTheme'
+import UserNavSections from './UserNavSections.vue'
+import { useUserMenuStore } from '@/stores/userMenu'
+import { groupUserMenu } from '@/utils/userMenu'
 
 interface NavItem {
   path: string
@@ -297,6 +295,7 @@ const authStore = useAuthStore()
 const onboardingStore = useOnboardingStore()
 const adminSettingsStore = useAdminSettingsStore()
 const remoteWidgetsStore = useRemoteWidgetsStore()
+const userMenuStore = useUserMenuStore()
 const sidebarCollapsed = computed(() => appStore.sidebarCollapsed)
 const mobileOpen = computed(() => appStore.mobileOpen)
 const isAdmin = computed(() => authStore.isAdmin)
@@ -825,7 +824,6 @@ function buildSelfNavItems(withDashboard: boolean): NavItem[] {
     { path: '/subscriptions', label: t('nav.mySubscriptions'), icon: CreditCardIcon, hideInSimpleMode: true, featureFlag: flagSubscription },
     { path: '/purchase', label: purchaseNavLabel.value, icon: RechargeSubscriptionIcon, hideInSimpleMode: true, featureFlag: flagPayment },
     { path: '/orders', label: t('nav.myOrders'), icon: OrderListIcon, hideInSimpleMode: true, featureFlag: flagPayment },
-    { path: '/redeem', label: t('nav.redeem'), icon: GiftIcon, hideInSimpleMode: true },
     {
       path: '/lottery',
       label: t('nav.lottery'),
@@ -845,7 +843,7 @@ function buildSelfNavItems(withDashboard: boolean): NavItem[] {
     { path: '/affiliate', label: t('nav.affiliate'), icon: UsersIcon, hideInSimpleMode: true, featureFlag: flagAffiliate },
     { path: '/profile', label: t('nav.profile'), icon: UserIcon },
     { path: '/model-plaza', label: t('nav.modelPlaza'), icon: ChannelIcon },
-    { path: '/app-center', label: t('nav.appCenter'), icon: AppsIcon },
+    { path: '/redeem', label: t('nav.redeem'), icon: GiftIcon, hideInSimpleMode: true },
     ...customMenuItemsForUser.value.map((item): NavItem => ({
       path: `/custom/${item.id}`,
       label: item.label,
@@ -869,6 +867,8 @@ const userNavItems = computed((): NavItem[] => finalizeNav(buildSelfNavItems(tru
 // Admins access 可用渠道 from this section just like regular users — there is no
 // separate admin entry, since the page is purely a user-facing view.
 const personalNavItems = computed((): NavItem[] => finalizeNav(buildSelfNavItems(false)))
+const userNavSections = computed(() => groupUserMenu(userNavItems.value, userMenuStore.config.sections, t('nav.myAccount')))
+const personalNavSections = computed(() => groupUserMenu(personalNavItems.value, userMenuStore.config.sections, t('nav.myAccount')))
 
 // Custom menu items filtered by visibility
 const customMenuItemsForUser = computed(() => {
@@ -919,6 +919,7 @@ const adminNavItems = computed((): NavItem[] => {
     { path: '/admin/plugins', label: t('nav.plugins'), icon: PluginIcon, featureFlag: flagPluginManagement },
     { path: '/admin/app-catalog', label: t('nav.appCatalog'), icon: AppsIcon },
     { path: '/admin/iq-detection', label: t('nav.iqDetection'), icon: IQDetectIcon },
+    { path: '/admin/menu-management', label: t('nav.menuManagement'), icon: FolderIcon },
     { path: '/admin/announcements', label: t('nav.announcements'), icon: BellIcon },
     { path: '/admin/push-notifications', label: t('nav.pushNotifications'), icon: BellIcon },
     { path: '/admin/proxies', label: t('nav.proxies'), icon: ServerIcon },
@@ -1099,6 +1100,7 @@ const taskBadge = computed(() =>
 )
 
 onMounted(() => {
+  void userMenuStore.load(false, isAdmin.value).catch(() => { /* Keep the default navigation if unavailable. */ })
   if (isAdmin.value) {
     adminSettingsStore.fetch()
   }
@@ -1218,52 +1220,6 @@ onBeforeUnmount(() => {
   gap: 0;
   padding-left: 0.875rem;
   padding-right: 0.875rem;
-}
-
-.sidebar-section-title {
-  position: relative;
-  display: flex;
-  align-items: center;
-  min-height: 1.25rem;
-  overflow: hidden;
-  white-space: nowrap;
-}
-
-.sidebar-section-title-text {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  transition:
-    opacity 0.16s ease,
-    transform 0.16s ease;
-}
-
-.sidebar-section-title::after {
-  content: '';
-  position: absolute;
-  left: 0.75rem;
-  right: 0.75rem;
-  top: 50%;
-  height: 1px;
-  background: rgb(229 231 235);
-  opacity: 0;
-  transform: translateY(-50%);
-  transition: opacity 0.18s ease;
-}
-
-.dark .sidebar-section-title::after {
-  background: rgb(55 65 81);
-}
-
-.sidebar-section-title-text-collapsed {
-  opacity: 0;
-  transform: translateX(-4px);
-}
-
-.sidebar-section-title-collapsed::after {
-  opacity: 1;
-  transition-delay: 0.08s;
 }
 
 .sidebar-label {

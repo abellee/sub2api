@@ -149,7 +149,7 @@ func (ap *App) activityNotifyUserIDs(ctx context.Context, activity *lottery.Acti
 	if usages == nil {
 		usages = map[int64]*lottery.UserUsage{}
 	}
-	if activityNeedsRegistration(activity) {
+	if activityNeedsRegistration(activity) || needsHistoricalRecharge(activity.Conditions) {
 		for _, user := range subscribers {
 			if user.ID <= 0 {
 				continue
@@ -159,8 +159,11 @@ func (ap *App) activityNotifyUserIDs(ctx context.Context, activity *lottery.Acti
 				usage = &lottery.UserUsage{UserID: user.ID, Email: user.Email}
 				usages[user.ID] = usage
 			}
-			if usage.RegisteredAt == nil {
+			if activityNeedsRegistration(activity) && usage.RegisteredAt == nil {
 				usage.RegisteredAt = ap.registeredAt(ctx, user.ID, user.Email, nil)
+			}
+			if err := ap.fillHistoricalRecharge(ctx, usages, user.ID, user.Email, activity.Conditions); err != nil {
+				return nil, err
 			}
 		}
 	}
@@ -168,7 +171,8 @@ func (ap *App) activityNotifyUserIDs(ctx context.Context, activity *lottery.Acti
 		return activity.Visibility.ShowsTo(email, true)
 	}, func(userID int64) bool {
 		blocked, _ := ap.repeatPolicyBlocked(activity, userID)
-		return blocked
+		removed, err := ap.Store.HasRemovedParticipant(activity.ID, userID)
+		return blocked || removed || err != nil
 	}), nil
 }
 

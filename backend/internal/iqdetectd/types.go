@@ -134,11 +134,17 @@ type SelectionAccount struct {
 // SelectionGroup is one chosen group with its metadata and chosen accounts.
 // IntervalMinutes drives the per-group scheduled detection (0 = manual only).
 type SelectionGroup struct {
-	ID              int64              `json:"id"`
-	Name            string             `json:"name"`
-	RateMultiplier  float64            `json:"rate_multiplier"`
-	IntervalMinutes int                `json:"interval_minutes,omitempty"`
-	Accounts        []SelectionAccount `json:"accounts"`
+	ID              int64   `json:"id"`
+	Name            string  `json:"name"`
+	RateMultiplier  float64 `json:"rate_multiplier"`
+	IntervalMinutes int     `json:"interval_minutes,omitempty"`
+	// Missing on older selections means visible; this only controls public results.
+	Visible  *bool              `json:"visible,omitempty"`
+	Accounts []SelectionAccount `json:"accounts"`
+}
+
+func (g SelectionGroup) IsPublicVisible() bool {
+	return g.Visible == nil || *g.Visible
 }
 
 // DetectionSelection is the persisted group/account/model selection. A nil

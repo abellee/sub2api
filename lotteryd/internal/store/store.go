@@ -148,6 +148,9 @@ CREATE TABLE IF NOT EXISTS user_registered (
 	registered_at TEXT NOT NULL
 );
 
+ALTER TABLE activities ADD COLUMN IF NOT EXISTS blacklist_json TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE participants ADD COLUMN IF NOT EXISTS removed_at TEXT NOT NULL DEFAULT '';
+
 CREATE INDEX IF NOT EXISTS idx_activities_draws_at ON activities(draws_at);
 CREATE INDEX IF NOT EXISTS idx_participants_user ON participants(user_id);
 CREATE INDEX IF NOT EXISTS idx_winners_user ON winners(user_id);
@@ -179,13 +182,17 @@ func (s *Store) CreateActivity(a *lottery.Activity) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
+	blacklistJSON, err := json.Marshal(lottery.NormalizeBlacklist(a.Blacklist))
+	if err != nil {
+		return 0, err
+	}
 	var id int64
 	err = tx.QueryRow(
-		`INSERT INTO activities (name, description, starts_at, draws_at, max_participants, show_participant_count, condition_match, auto_bonus_percent, status, visible_to_all, visible_users_json, daily_config_id, repeat_group, repeat_policy, visibility_json, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active', $9, $10, $11, $12, $13, $14, $15, $16)
+		`INSERT INTO activities (name, description, starts_at, draws_at, max_participants, show_participant_count, condition_match, auto_bonus_percent, status, visible_to_all, visible_users_json, daily_config_id, repeat_group, repeat_policy, visibility_json, created_at, updated_at, blacklist_json)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active', $9, $10, $11, $12, $13, $14, $15, $16, $17)
 		 RETURNING id`,
 		a.Name, a.Description, fmtTime(a.StartsAt), fmtTime(a.DrawsAt),
-		a.MaxParticipants, a.ShowParticipantCount, a.ConditionMatch, a.AutoBonusPercent, a.VisibleToAll, string(visibleUsersJSON), a.DailyConfigID, a.RepeatGroup, a.RepeatPolicy, string(visibilityJSON), fmtTime(now), fmtTime(now),
+		a.MaxParticipants, a.ShowParticipantCount, a.ConditionMatch, a.AutoBonusPercent, a.VisibleToAll, string(visibleUsersJSON), a.DailyConfigID, a.RepeatGroup, a.RepeatPolicy, string(visibilityJSON), fmtTime(now), fmtTime(now), string(blacklistJSON),
 	).Scan(&id)
 	if err != nil {
 		return 0, err
@@ -246,12 +253,12 @@ func (s *Store) UpdateActivity(a *lottery.Activity) error {
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	var drawn int
-	if err := tx.QueryRow(`SELECT COUNT(*) FROM winners WHERE activity_id = $1`, a.ID).Scan(&drawn); err != nil {
+	if err := lockUndrawnActivity(tx, a.ID); err != nil {
 		return err
 	}
-	if drawn > 0 {
-		return ErrActivityDrawn
+	blacklistJSON, err := json.Marshal(lottery.NormalizeBlacklist(a.Blacklist))
+	if err != nil {
+		return err
 	}
 	visibleUsersJSON, err := json.Marshal(a.VisibleUsers)
 	if err != nil {
@@ -262,9 +269,9 @@ func (s *Store) UpdateActivity(a *lottery.Activity) error {
 		return err
 	}
 	res, err := tx.Exec(
-		`UPDATE activities SET name=$1, description=$2, starts_at=$3, draws_at=$4, max_participants=$5, show_participant_count=$6, condition_match=$7, auto_bonus_percent=$8, visible_to_all=$9, visible_users_json=$10, repeat_group=$11, repeat_policy=$12, visibility_json=$13, updated_at=$14 WHERE id=$15`,
+		`UPDATE activities SET name=$1, description=$2, starts_at=$3, draws_at=$4, max_participants=$5, show_participant_count=$6, condition_match=$7, auto_bonus_percent=$8, visible_to_all=$9, visible_users_json=$10, repeat_group=$11, repeat_policy=$12, visibility_json=$13, updated_at=$14, blacklist_json=$16 WHERE id=$15`,
 		a.Name, a.Description, fmtTime(a.StartsAt), fmtTime(a.DrawsAt),
-		a.MaxParticipants, a.ShowParticipantCount, a.ConditionMatch, a.AutoBonusPercent, a.VisibleToAll, string(visibleUsersJSON), a.RepeatGroup, a.RepeatPolicy, string(visibilityJSON), fmtTime(time.Now().UTC()), a.ID,
+		a.MaxParticipants, a.ShowParticipantCount, a.ConditionMatch, a.AutoBonusPercent, a.VisibleToAll, string(visibleUsersJSON), a.RepeatGroup, a.RepeatPolicy, string(visibilityJSON), fmtTime(time.Now().UTC()), a.ID, string(blacklistJSON),
 	)
 	if err != nil {
 		return err
@@ -308,9 +315,9 @@ func scanActivities(rows *sql.Rows) ([]lottery.Activity, error) {
 	for rows.Next() {
 		var a lottery.Activity
 		var startsAt, drawsAt, createdAt, updatedAt, drawnAt string
-		var visibleUsersJSON, visibilityJSON string
+		var visibleUsersJSON, visibilityJSON, blacklistJSON string
 		if err := rows.Scan(&a.ID, &a.Name, &a.Description, &startsAt, &drawsAt, &a.MaxParticipants, &a.ShowParticipantCount,
-			&a.ConditionMatch, &a.AutoBonusPercent, &a.Status, &drawnAt, &a.VisibleToAll, &visibleUsersJSON, &a.DailyConfigID, &a.RepeatGroup, &a.RepeatPolicy, &visibilityJSON, &createdAt, &updatedAt); err != nil {
+			&a.ConditionMatch, &a.AutoBonusPercent, &a.Status, &drawnAt, &a.VisibleToAll, &visibleUsersJSON, &a.DailyConfigID, &a.RepeatGroup, &a.RepeatPolicy, &visibilityJSON, &createdAt, &updatedAt, &blacklistJSON); err != nil {
 			return nil, err
 		}
 		if visibleUsersJSON != "" && visibleUsersJSON != "[]" {
@@ -318,6 +325,9 @@ func scanActivities(rows *sql.Rows) ([]lottery.Activity, error) {
 		}
 		if visibilityJSON != "" {
 			_ = json.Unmarshal([]byte(visibilityJSON), &a.Visibility)
+		}
+		if err := json.Unmarshal([]byte(blacklistJSON), &a.Blacklist); err != nil {
+			return nil, err
 		}
 		a.Visibility = lottery.NormalizeItemVisibility(a.Visibility)
 		a.StartsAt, a.DrawsAt = parseTime(startsAt), parseTime(drawsAt)
@@ -330,7 +340,7 @@ func scanActivities(rows *sql.Rows) ([]lottery.Activity, error) {
 	return out, rows.Err()
 }
 
-const activityColumns = `id, name, description, starts_at, draws_at, max_participants, show_participant_count, condition_match, auto_bonus_percent, status, drawn_at, visible_to_all, visible_users_json, daily_config_id, repeat_group, repeat_policy, visibility_json, created_at, updated_at`
+const activityColumns = `id, name, description, starts_at, draws_at, max_participants, show_participant_count, condition_match, auto_bonus_percent, status, drawn_at, visible_to_all, visible_users_json, daily_config_id, repeat_group, repeat_policy, visibility_json, created_at, updated_at, blacklist_json`
 
 // SetUndrawnActivityVisibility 把某条定时配置尚未开奖的活动改成同一可见范围。
 func (s *Store) SetUndrawnActivityVisibility(dailyConfigID int64, visibility lottery.Visibility) error {
@@ -365,8 +375,14 @@ func (s *Store) ListActivities() ([]lottery.Activity, error) {
 }
 
 // GetActivity loads one activity with conditions and prizes.
-func (s *Store) GetActivity(id int64) (*lottery.Activity, error) {
-	rows, err := s.db.Query(`SELECT `+activityColumns+` FROM activities WHERE id = $1`, id)
+type activityQuerier interface {
+	Query(string, ...any) (*sql.Rows, error)
+}
+
+func (s *Store) GetActivity(id int64) (*lottery.Activity, error) { return getActivity(s.db, id) }
+
+func getActivity(db activityQuerier, id int64) (*lottery.Activity, error) {
+	rows, err := db.Query(`SELECT `+activityColumns+` FROM activities WHERE id = $1`, id)
 	if err != nil {
 		return nil, err
 	}
@@ -378,7 +394,7 @@ func (s *Store) GetActivity(id int64) (*lottery.Activity, error) {
 	if len(acts) == 0 {
 		return nil, ErrNotFound
 	}
-	if err := s.loadChildren(&acts[0]); err != nil {
+	if err := loadActivityChildren(db, &acts[0]); err != nil {
 		return nil, err
 	}
 	return &acts[0], nil
@@ -407,8 +423,10 @@ func (s *Store) ListDrawableActivities(now time.Time) ([]lottery.Activity, error
 	return acts, nil
 }
 
-func (s *Store) loadChildren(a *lottery.Activity) error {
-	crows, err := s.db.Query(
+func (s *Store) loadChildren(a *lottery.Activity) error { return loadActivityChildren(s.db, a) }
+
+func loadActivityChildren(db activityQuerier, a *lottery.Activity) error {
+	crows, err := db.Query(
 		`SELECT def_json FROM activity_conditions WHERE activity_id = $1 ORDER BY sort_order, id`, a.ID)
 	if err != nil {
 		return err
@@ -429,7 +447,7 @@ func (s *Store) loadChildren(a *lottery.Activity) error {
 	if err := crows.Err(); err != nil {
 		return err
 	}
-	prows, err := s.db.Query(
+	prows, err := db.Query(
 		`SELECT id, activity_id, name, prize_type, value, weight, stock, granted_count, codes_json FROM prizes WHERE activity_id = $1 ORDER BY id`, a.ID)
 	if err != nil {
 		return err

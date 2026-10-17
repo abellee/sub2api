@@ -5,15 +5,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 )
 
 // Condition dimensions.
 const (
-	DimensionTokenUsage     = "token_usage"     // Token 消耗量
-	DimensionActiveDays     = "activity_days"   // 活跃度
-	DimensionRegisteredDays = "registered_days" // 注册时长
+	DimensionTokenUsage         = "token_usage"         // Token 消耗量
+	DimensionActiveDays         = "activity_days"       // 活跃度
+	DimensionRegisteredDays     = "registered_days"     // 注册时长
+	DimensionHistoricalRecharge = "historical_recharge" // 历史累计充值（美元）
 )
 
 // Condition match modes for an activity.
@@ -57,7 +59,8 @@ type ConditionDef struct {
 	// Token 消耗量维度：
 	//   Mode=per_day 时窗口内每天 total_tokens 都要 >= Threshold；
 	//   Mode=total   时窗口内累计 >= Threshold。
-	Mode      string  `json:"mode,omitempty"` // per_day | total
+	Mode string `json:"mode,omitempty"` // per_day | total
+	// Threshold 也用于历史充值维度，表示累计充值金额门槛（美元，无时间窗口）。
 	Threshold float64 `json:"threshold,omitempty"`
 	// 活跃度维度：窗口内有用量（>= DailyMinTokens，默认 >0）的天数 >= MinActiveDays。
 	MinActiveDays  int     `json:"min_active_days,omitempty"`
@@ -100,6 +103,10 @@ func (c ConditionDef) validate() error {
 		if c.MinRegisteredDays > 0 && c.MaxRegisteredDays > 0 && c.MinRegisteredDays > c.MaxRegisteredDays {
 			return fmt.Errorf("registered_days: min_registered_days must be <= max_registered_days")
 		}
+	case DimensionHistoricalRecharge:
+		if c.Threshold <= 0 || math.IsNaN(c.Threshold) || math.IsInf(c.Threshold, 0) {
+			return fmt.Errorf("historical_recharge: threshold must be a finite amount > 0")
+		}
 	default:
 		return fmt.Errorf("unknown dimension %q", c.Dimension)
 	}
@@ -139,6 +146,8 @@ type Activity struct {
 	// 新的可见范围用 Visibility。这两列仍随活动保存，列表过滤不再读它们。
 	VisibleToAll bool    `json:"visible_to_all"`
 	VisibleUsers []int64 `json:"visible_users,omitempty"`
+	// Blacklist 仅在开奖时排除中奖，不影响可见性、参与资格或报名。
+	Blacklist []string `json:"blacklist"`
 	// Visibility 这一场对谁可见。未填写时按全部用户。
 	Visibility Visibility `json:"visibility"`
 	CreatedAt  time.Time  `json:"created_at"`
@@ -149,6 +158,7 @@ type Activity struct {
 }
 
 func (a *Activity) Validate() error {
+	a.Blacklist = NormalizeBlacklist(a.Blacklist)
 	if a.Name == "" {
 		return fmt.Errorf("name is required")
 	}
@@ -296,6 +306,8 @@ type UserUsage struct {
 	Daily []DailyToken
 	// RegisteredAt 账号注册时间（来自主服务；未知为 nil，注册时长条件将不满足）。
 	RegisteredAt *time.Time
+	// TotalRecharged 来自主服务余额历史的累计充值汇总；nil 表示尚未获取。
+	TotalRecharged *float64
 }
 
 // conditionJSON 序列化 ConditionDef 存库。
@@ -434,8 +446,9 @@ func (v Visibility) ShowsTo(email string, eligibleShown bool) bool {
 
 // DailyConfig 日常定时抽奖配置：调度器每天到达 StartTime 后自动创建一场活动。
 type DailyConfig struct {
-	ID      int64 `json:"id"`
-	Enabled bool  `json:"enabled"`
+	Blacklist []string `json:"blacklist"`
+	ID        int64    `json:"id"`
+	Enabled   bool     `json:"enabled"`
 	// 重复参与策略：unlimited 每期独立 / join_once 该系列限参与一次 / win_once 该系列中奖后不能再参与。
 	RepeatPolicy string `json:"repeat_policy"`
 	// RepeatGroup 共用参与组。相同非空组名的配置共用上面的次数；空则只统计本配置。
@@ -552,6 +565,30 @@ func (v Visibility) IsEmailAllowed(email string) bool {
 	email = strings.ToLower(strings.TrimSpace(email))
 	for _, allowed := range v.AllowedEmails {
 		if strings.ToLower(strings.TrimSpace(allowed)) == email {
+			return true
+		}
+	}
+	return false
+}
+
+// NormalizeBlacklist trims, deduplicates and folds email addresses.
+func NormalizeBlacklist(emails []string) []string {
+	out := make([]string, 0, len(emails))
+	seen := map[string]bool{}
+	for _, email := range emails {
+		email = strings.ToLower(strings.TrimSpace(email))
+		if email != "" && !seen[email] {
+			out = append(out, email)
+			seen[email] = true
+		}
+	}
+	return out
+}
+
+func (a *Activity) IsBlacklisted(email string) bool {
+	email = strings.TrimSpace(email)
+	for _, blocked := range a.Blacklist {
+		if strings.EqualFold(strings.TrimSpace(blocked), email) {
 			return true
 		}
 	}

@@ -50,13 +50,16 @@ export interface GroupCategory {
 export interface GroupCategorySnapshot {
   categories: GroupCategory[]
   assignments: Record<string, string>
+  /** 分组上限倍率:分组 ID(十进制字符串)→ 倍率;与分类同库存储。 */
+  group_caps?: Record<string, number>
 }
 
 export async function getCategories(): Promise<GroupCategorySnapshot> {
   const { data } = await apiClient.get<GroupCategorySnapshot>('/groups/categories')
   return {
     categories: data?.categories ?? [],
-    assignments: data?.assignments ?? {}
+    assignments: data?.assignments ?? {},
+    group_caps: data?.group_caps ?? {}
   }
 }
 

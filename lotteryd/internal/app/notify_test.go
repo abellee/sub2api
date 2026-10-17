@@ -13,6 +13,7 @@ import (
 func TestEligibleActivityUserIDsFiltersParticipation(t *testing.T) {
 	now := time.Date(2026, 9, 29, 12, 0, 0, 0, time.UTC)
 	activity := &lottery.Activity{
+		Blacklist:      []string{" ONE@Test.com "},
 		ConditionMatch: lottery.MatchAll,
 		Conditions: []lottery.ConditionDef{{
 			Dimension:  lottery.DimensionTokenUsage,
