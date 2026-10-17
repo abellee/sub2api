@@ -63,6 +63,8 @@ const systemTime = time => {
   return '当前 ' + [date.getHours(), date.getMinutes(), date.getSeconds()].map(n => String(n).padStart(2, '0')).join(':');
 };
 const modelsHidden = () => w.getComputedStyle(w.document.getElementById('modelTabs')).display === 'none';
+const restingTheme = () => w.document.body.classList.contains('is-resting');
+const noticeHidden = () => w.getComputedStyle(w.document.querySelector('.notice')).display === 'none';
 
 (async () => {
   await drain();
@@ -85,16 +87,23 @@ const modelsHidden = () => w.getComputedStyle(w.document.getElementById('modelTa
   assert.equal(restCount(), 0);
   assert.equal(selected().id, 12);
   assert.equal(modelsHidden(), false);
+  assert.equal(restingTheme(), false);
+  assert.equal(noticeHidden(), false);
   // The registered clock enters quiet time without a changed overview response.
   tick('2026-10-18T13:00:00Z');
   assert.equal(restCount(), 1);
   assert.equal(selected().status, 'resting');
   assert.equal(selected().time, systemTime('2026-10-18T13:00:00Z'));
   assert.equal(modelsHidden(), true);
+  assert.equal(restingTheme(), true);
+  assert.equal(noticeHidden(), true);
+  assert.equal(w.getComputedStyle(w.document.body).backgroundColor, 'rgb(21, 48, 59)');
+  assert.equal(w.getComputedStyle(w.document.getElementById('stage')).backgroundColor, 'rgb(21, 48, 59)');
   assert.equal(w.document.querySelector('.tl-item.active .tl-status').textContent, '休息中');
   assert.equal(w.document.getElementById('srcBtn').disabled, true);
   assert.equal(app.state().pending.key, 'sleeping-art');
   assert.match(app.state().pending.html, /<svg[\s\S]*viewBox="0 0 1200 876"/);
+  assert.match(app.state().pending.html, /html,body\{margin:0;background:#15303b\}/);
   app.paint();
   app.settle();
   assert.equal(app.state().front, 'sleeping-art');
@@ -120,6 +129,9 @@ const modelsHidden = () => w.getComputedStyle(w.document.getElementById('modelTa
   await drain();
   assert.equal(selected().id, 11);
   assert.equal(modelsHidden(), false);
+  assert.equal(restingTheme(), false);
+  assert.equal(noticeHidden(), false);
+  assert.equal(w.getComputedStyle(w.document.body).backgroundColor, 'rgb(247, 245, 237)');
   tick('2026-10-18T13:01:01Z');
   assert.equal(selected().id, 11); // Live seconds must not recenter historical selection.
   assert.equal(w.document.querySelector('.tl-item.s-rest .tl-time').textContent, systemTime('2026-10-18T13:01:01Z'));
@@ -139,6 +151,8 @@ const modelsHidden = () => w.getComputedStyle(w.document.getElementById('modelTa
   assert.equal(modelsHidden(), false);
   tick('2026-10-20T13:00:00Z');
   assert.equal(modelsHidden(), true);
+  assert.equal(restingTheme(), true);
+  assert.equal(noticeHidden(), true);
   app.select(0, false); // Reveal model selection by viewing a real detection.
   assert.equal(modelsHidden(), false);
   w.document.querySelectorAll('#modelTabs button')[1].click();
@@ -154,6 +168,8 @@ const modelsHidden = () => w.getComputedStyle(w.document.getElementById('modelTa
   tick('2026-10-21T00:00:00Z');
   assert.equal(app.state().view.length, 0);
   assert.equal(modelsHidden(), false);
+  assert.equal(restingTheme(), false);
+  assert.equal(noticeHidden(), false);
   assert.equal(w.document.querySelector('#tlTrack').textContent, '暂无检测记录');
   const noWindows = JSON.parse(JSON.stringify(data));
   noWindows.settings.quiet_windows = [];
@@ -163,6 +179,6 @@ const modelsHidden = () => w.getComputedStyle(w.document.getElementById('modelTa
   app.overview({ settings: data.settings, groups: [] }, true);
   assert.equal(restCount(), 0); // No visible groups must not get fake results.
   assert.ok(requested.every(url => !url.includes('quiet-now')));
-  console.log('PASS: syntax, Beijing boundaries, live system clock with seconds and persistent blinking separators, model visibility by selection, clock transitions, SVG, history, group memory, empty groups, settings, no synthetic detail requests');
+  console.log('PASS: syntax, Beijing boundaries, live clock, blinking separators, contextual model visibility, night theme and notice visibility, clock transitions, SVG, history, group memory, empty groups, settings, no synthetic detail requests');
   dom.window.close();
 })().catch(error => { console.error(error); dom.window.close(); process.exitCode = 1; });

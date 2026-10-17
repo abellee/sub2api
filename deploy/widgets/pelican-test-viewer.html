@@ -590,6 +590,50 @@
     .tl-track { gap: 30px; }
     .tl-status { font-size: 11px; padding: 1.5px 7px; }
   }
+  /* 休息时整页使用睡眠 SVG 的夜空色，切换真实检测时恢复原配色。 */
+  body.is-resting { background: #15303b; color: #c5d8d6; color-scheme: dark; }
+  .is-resting .stage, .is-resting .frame, .is-resting .testing { background: #15303b; }
+  .is-resting .notice { display: none; }
+  .is-resting .fade-blur {
+    background: linear-gradient(to top, rgba(21, 48, 59, .8), rgba(21, 48, 59, 0) 75%);
+  }
+  .is-resting .load-veil { background: rgba(21, 48, 59, .42); }
+  .is-resting .overlay, .is-resting .group-btn, .is-resting .group-menu,
+  .is-resting .tl-duration, .is-resting .tl-src, .is-resting .tl-reason,
+  .is-resting .candy .bubble, .is-resting .toast, .is-resting .load-pill,
+  .is-resting .src-box, .is-resting .src-copy {
+    background-color: rgba(29, 62, 73, .94); border-color: #466971; color: #c5d8d6;
+    box-shadow: 0 4px 16px rgba(5, 20, 28, .2);
+  }
+  .is-resting .timeline-box { background: rgba(21, 48, 59, .94); }
+  .is-resting .group-option { color: #b7cfcc; }
+  .is-resting .group-btn:hover, .is-resting .group-option:hover,
+  .is-resting .group-option.active, .is-resting .tl-arrow:hover,
+  .is-resting .src-copy:hover, .is-resting .src-close:hover { background-color: #2d5360; color: #e0ebe6; }
+  .is-resting .g-int { background: #344e50; color: #d8cd9f; }
+  .is-resting .tl-item, .is-resting .tl-empty,
+  .is-resting .tl-clock, .is-resting .tl-brain { color: #98b4b7; }
+  .is-resting .tl-item.active.s-rest { color: #d5e6de; }
+  .is-resting .tl-item.s-rest .tl-dot { background: #a7c6c5; border-color: #a7c6c5; }
+  .is-resting .tl-item.active.s-rest .tl-dot { box-shadow: 0 0 0 5px rgba(167, 198, 197, .18); }
+  .is-resting .tl-status, .is-resting .bubble-tag { background: #2c4b54; }
+  .is-resting .tl-status.s-rest, .is-resting .bubble-tag.s-rest { color: #d5e6de; }
+  .is-resting .tl-status.s-pass, .is-resting .tl-status.s-run { color: #a6cebc; }
+  .is-resting .tl-status.s-fail { color: #e4aaa1; }
+  .is-resting .tl-status.s-pend { color: #d8cd9f; }
+  .is-resting .tl-pointer.s-rest { border-top-color: #a7c6c5; }
+  .is-resting .tl-arrow { background: #1d3e49; border-color: #466971; color: #c5d8d6; }
+  .is-resting .tl-duration b, .is-resting .candy .bubble b,
+  .is-resting .src-head, .is-resting .src-code { color: #c5d8d6; }
+  .is-resting .src-head { border-color: #466971; }
+  .is-resting .src-modal { background: rgba(5, 20, 28, .6); }
+  .is-resting .candy .bubble::after { background: #1d3e49; border-color: #466971; }
+  .is-resting .candy.resting {
+    --c-outline: #254751; --c-line: #cadcd5;
+    --c-g1: #7aa3a4; --c-g2: #507d84; --c-g3: #315761;
+    --c-w1: #91b4b3; --c-w2: #5b8584;
+  }
+  .is-resting .group-btn:focus-visible, .is-resting .tl-src:focus-visible { outline-color: #a7c6c5; }
 </style>
 </head>
 <body>
@@ -1384,7 +1428,7 @@
 
   function sleepingDocument() {
     var svg = document.getElementById('sleepingArt').innerHTML.trim();
-    return '<!DOCTYPE html><html><head><meta charset="utf-8"><title>休息中</title><style>html,body{margin:0;background:#f7f5ed}svg{display:block;width:1200px;height:876px}</style></head><body>' + svg + '</body></html>';
+    return '<!DOCTYPE html><html><head><meta charset="utf-8"><title>休息中</title><style>html,body{margin:0;background:#15303b}svg{display:block;width:1200px;height:876px}</style></head><body>' + svg + '</body></html>';
   }
 
   function scheduleHtml(key, html) {
@@ -1745,7 +1789,9 @@
   // 分组相对页面居中：两侧谁更宽，就按那个宽度对称留白，按钮超出则省略
   function layoutGroup() {
     var selected = view[runIdx];
-    document.getElementById('modelTabs').hidden = !!selected && selected.status === 'resting';
+    var resting = !!selected && selected.status === 'resting';
+    document.getElementById('modelTabs').hidden = resting;
+    document.body.classList.toggle('is-resting', resting);
     var bar = groupWrap.parentElement;
     var right = bar.querySelector('.top-right');
     var cs = getComputedStyle(bar);
