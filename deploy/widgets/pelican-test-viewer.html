@@ -592,11 +592,10 @@
   }
   /* 休息时整页使用睡眠 SVG 的夜空色，切换真实检测时恢复原配色。 */
   body.is-resting { background: #15303b; color: #c5d8d6; color-scheme: dark; }
+  .is-resting .stage { bottom: 0; }
   .is-resting .stage, .is-resting .frame, .is-resting .testing { background: #15303b; }
   .is-resting .notice { display: none; }
-  .is-resting .fade-blur {
-    background: linear-gradient(to top, rgba(21, 48, 59, .8), rgba(21, 48, 59, 0) 75%);
-  }
+  .is-resting .fade-blur { display: none; }
   .is-resting .load-veil { background: rgba(21, 48, 59, .42); }
   .is-resting .overlay, .is-resting .group-btn, .is-resting .group-menu,
   .is-resting .tl-duration, .is-resting .tl-src, .is-resting .tl-reason,
@@ -605,7 +604,7 @@
     background-color: rgba(29, 62, 73, .94); border-color: #466971; color: #c5d8d6;
     box-shadow: 0 4px 16px rgba(5, 20, 28, .2);
   }
-  .is-resting .timeline-box { background: rgba(21, 48, 59, .94); }
+  .is-resting .timeline-box { background: transparent; box-shadow: none; }
   .is-resting .group-option { color: #b7cfcc; }
   .is-resting .group-btn:hover, .is-resting .group-option:hover,
   .is-resting .group-option.active, .is-resting .tl-arrow:hover,
@@ -1297,6 +1296,15 @@
     try {
       var doc = f.contentDocument;
       if (!doc || !doc.body) return;
+      // 休息场景自行适配整页，原图外侧由同一份 SVG 背景延伸，不能再按正文缩放。
+      if (doc.documentElement.hasAttribute('data-rest-scene')) {
+        f.style.transform = 'none';
+        f.style.left = '0px';
+        f.style.top = '0px';
+        f.style.width = stage.clientWidth + 'px';
+        f.style.height = stage.clientHeight + 'px';
+        return;
+      }
       doc.documentElement.style.overflow = 'hidden';
       // 先按结果区宽度排版再测量：iframe 默认 300px，且缩放后的尺寸会让内容重排
       f.style.transform = 'none';
@@ -1427,8 +1435,68 @@
   }
 
   function sleepingDocument() {
-    var svg = document.getElementById('sleepingArt').innerHTML.trim();
-    return '<!DOCTYPE html><html><head><meta charset="utf-8"><title>休息中</title><style>html,body{margin:0;background:#15303b}svg{display:block;width:1200px;height:876px}</style></head><body>' + svg + '</body></html>';
+    var svg = document.getElementById('sleepingArt').content.querySelector('svg').cloneNode(true);
+    var ns = 'http://www.w3.org/2000/svg';
+    var background = document.createElementNS(ns, 'g');
+    background.id = 'restSceneBackground';
+    var first = null;
+    // 复用原图“bed”之前的完整背景：渐变、月光动画、海面和沙地路径均保持原样。
+    Array.prototype.some.call(svg.childNodes, function (node) {
+      if (node.nodeType === 8 && node.nodeValue.indexOf('===== bed =====') >= 0) return true;
+      if (node.nodeType === 1 && node.localName !== 'defs' && node.localName !== 'style') {
+        if (!first) first = node;
+        background.appendChild(node.cloneNode(true));
+      }
+      return false;
+    });
+    svg.querySelector('defs').appendChild(background);
+    // 八块边缘只拉伸原背景最外侧的一条像素带，中央原图和动画完全保留。
+    var slices = {
+      left: '0 0 1 876', right: '1199 0 1 876',
+      top: '0 0 1200 1', bottom: '0 875 1200 1',
+      topLeft: '0 0 1 1', topRight: '1199 0 1 1',
+      bottomLeft: '0 875 1 1', bottomRight: '1199 875 1 1'
+    };
+    Object.keys(slices).forEach(function (name) {
+      var slice = document.createElementNS(ns, 'svg');
+      slice.setAttribute('data-rest-edge', name);
+      slice.setAttribute('viewBox', slices[name]);
+      slice.setAttribute('preserveAspectRatio', 'none');
+      slice.setAttribute('overflow', 'hidden');
+      var use = document.createElementNS(ns, 'use');
+      use.setAttribute('href', '#restSceneBackground');
+      slice.appendChild(use);
+      svg.insertBefore(slice, first);
+    });
+    return '<!DOCTYPE html><html data-rest-scene><head><meta charset="utf-8"><title>休息中</title><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#15303b}body>svg{display:block;position:absolute;inset:0;width:100%;height:100%}</style></head><body>' + svg.outerHTML + '<script>(' + layoutRestScene.toString() + ')();<\/script></body></html>';
+  }
+
+  // 运行在休息 iframe 中。画面按工具栏上方可用区域等比居中，背景覆盖整页（含时间线）。
+  function layoutRestScene() {
+    var svg = document.querySelector('body > svg');
+    function fit() {
+      var width = window.innerWidth, height = window.innerHeight;
+      var footer = width <= 768 ? 104 : 112;
+      var available = Math.max(1, height - footer);
+      var scale = Math.min(1, Math.max(1, width) / 1200, available / 876);
+      var left = -(width / scale - 1200) / 2;
+      var top = -(available / scale - 876) / 2;
+      var right = left + width / scale;
+      var bottom = top + height / scale;
+      svg.setAttribute('viewBox', [left, top, width / scale, height / scale].join(' '));
+      var bounds = {
+        left: [left, 0, -left, 876], right: [1200, 0, right - 1200, 876],
+        top: [0, top, 1200, -top], bottom: [0, 876, 1200, bottom - 876],
+        topLeft: [left, top, -left, -top], topRight: [1200, top, right - 1200, -top],
+        bottomLeft: [left, 876, -left, bottom - 876], bottomRight: [1200, 876, right - 1200, bottom - 876]
+      };
+      svg.querySelectorAll('[data-rest-edge]').forEach(function (edge) {
+        var box = bounds[edge.getAttribute('data-rest-edge')];
+        ['x', 'y', 'width', 'height'].forEach(function (key, i) { edge.setAttribute(key, box[i]); });
+      });
+    }
+    window.addEventListener('resize', fit);
+    fit();
   }
 
   function scheduleHtml(key, html) {

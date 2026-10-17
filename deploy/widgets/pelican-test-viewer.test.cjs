@@ -103,7 +103,42 @@ const noticeHidden = () => w.getComputedStyle(w.document.querySelector('.notice'
   assert.equal(w.document.getElementById('srcBtn').disabled, true);
   assert.equal(app.state().pending.key, 'sleeping-art');
   assert.match(app.state().pending.html, /<svg[\s\S]*viewBox="0 0 1200 876"/);
-  assert.match(app.state().pending.html, /html,body\{margin:0;background:#15303b\}/);
+  assert.equal(w.getComputedStyle(w.document.getElementById('stage')).bottom, '0px');
+  assert.equal(w.getComputedStyle(w.document.querySelector('.fade-blur')).display, 'none');
+  assert.equal(w.getComputedStyle(w.document.querySelector('.timeline-box')).backgroundColor, 'rgba(0, 0, 0, 0)');
+  const scene = new JSDOM(app.state().pending.html, { runScripts: 'outside-only' });
+  assert.equal(scene.window.document.documentElement.hasAttribute('data-rest-scene'), true);
+  const sceneSvg = scene.window.document.querySelector('body > svg');
+  assert.equal(sceneSvg.querySelectorAll('[data-rest-edge]').length, 8);
+  assert.equal(sceneSvg.querySelector('#restSceneBackground .breathe'), null);
+  assert.ok(sceneSvg.querySelector('#restSceneBackground .glow')); // Retain the real moonlight animation.
+  // Central artwork and all its gradient/animation definitions must remain exactly as supplied.
+  const artwork = sceneSvg.cloneNode(true);
+  artwork.querySelectorAll('[data-rest-edge]').forEach(el => el.remove());
+  artwork.querySelector('#restSceneBackground').remove();
+  assert.equal(artwork.outerHTML, w.document.getElementById('sleepingArt').content.querySelector('svg').outerHTML);
+  scene.window.eval(scene.window.document.querySelector('script').textContent);
+  for (const [width, height] of [[1920, 1080], [1440, 800], [390, 844], [768, 600]]) {
+    scene.window.innerWidth = width;
+    scene.window.innerHeight = height;
+    scene.window.dispatchEvent(new scene.window.Event('resize'));
+    const [left, top, boxWidth, boxHeight] = sceneSvg.getAttribute('viewBox').split(' ').map(Number);
+    const scale = width / boxWidth;
+    assert.ok(Math.abs(boxWidth / boxHeight - width / height) < 1e-9);
+    assert.ok(-left * scale >= -1e-6);
+    assert.ok((1200 - left) * scale <= width + 1e-6);
+    assert.ok(-top * scale >= -1e-6);
+    assert.ok((876 - top) * scale <= height - (width <= 768 ? 104 : 112) + 1e-6);
+    const bottom = sceneSvg.querySelector('[data-rest-edge="bottom"]');
+    assert.equal(bottom.getAttribute('viewBox'), '0 875 1200 1');
+    assert.ok(Math.abs(876 + Number(bottom.getAttribute('height')) - (top + boxHeight)) < 1e-9);
+    for (const edge of sceneSvg.querySelectorAll('[data-rest-edge]')) {
+      assert.ok(Number(edge.getAttribute('width')) >= -1e-9);
+      assert.ok(Number(edge.getAttribute('height')) >= -1e-9);
+      assert.equal(edge.querySelector('use').getAttribute('href'), '#restSceneBackground');
+    }
+  }
+  scene.window.close();
   app.paint();
   app.settle();
   assert.equal(app.state().front, 'sleeping-art');
@@ -132,6 +167,7 @@ const noticeHidden = () => w.getComputedStyle(w.document.querySelector('.notice'
   assert.equal(restingTheme(), false);
   assert.equal(noticeHidden(), false);
   assert.equal(w.getComputedStyle(w.document.body).backgroundColor, 'rgb(247, 245, 237)');
+  assert.equal(w.getComputedStyle(w.document.getElementById('stage')).bottom, '112px');
   tick('2026-10-18T13:01:01Z');
   assert.equal(selected().id, 11); // Live seconds must not recenter historical selection.
   assert.equal(w.document.querySelector('.tl-item.s-rest .tl-time').textContent, systemTime('2026-10-18T13:01:01Z'));
@@ -179,6 +215,6 @@ const noticeHidden = () => w.getComputedStyle(w.document.querySelector('.notice'
   app.overview({ settings: data.settings, groups: [] }, true);
   assert.equal(restCount(), 0); // No visible groups must not get fake results.
   assert.ok(requested.every(url => !url.includes('quiet-now')));
-  console.log('PASS: syntax, Beijing boundaries, live clock, blinking separators, contextual model visibility, night theme and notice visibility, clock transitions, SVG, history, group memory, empty groups, settings, no synthetic detail requests');
+  console.log('PASS: syntax, Beijing boundaries, live clock, blinking separators, contextual controls/theme, original SVG artwork and animated background reuse, viewport/edge coverage, clock transitions, history, group memory, no synthetic detail requests');
   dom.window.close();
 })().catch(error => { console.error(error); dom.window.close(); process.exitCode = 1; });
