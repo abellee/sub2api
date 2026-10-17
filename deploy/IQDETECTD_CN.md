@@ -61,6 +61,12 @@ docker compose up -d iqdetectd
 `iq-detection:last-group-id` 记住最后一次选择的分组 ID，再次进入时恢复；分组不可见或被删除时
 自动选择第一个可用分组。浏览器不允许存储时仍可正常切换和查看。
 
+静态 HTML 更新时，在 widget 站点 server 块中包含
+[widgets/pelican-test-viewer-cache.conf](widgets/pelican-test-viewer-cache.conf)，禁止旧 HTML 持续缓存。
+对于已经缓存旧 HTML 的客户端，发布时还应把对应自定义菜单的页面 URL 更新为带版本参数的地址，
+例如 `https://widget.llmfree.work/pelican-test-viewer.html?v=20261018-group-memory`。
+分组记忆按分组 ID 保存，不依赖版本参数。上线后必须在主站实际嵌入页验证刷新和离开后再进入。
+
 ## 2. 测试与判分
 
 - **测试**：按检测模型设置里的模型顺序，每个模型从已保存选择中随机挑一个"模型列表包含它且配置过凭据"的账号；鹈鹕/糖果两个探针以两个 goroutine 并发直连该账号自身上游（api_url + api_key），请求带推理等级/温度（留空不传）
