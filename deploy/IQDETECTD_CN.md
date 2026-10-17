@@ -56,6 +56,11 @@ docker compose up -d iqdetectd
 部署后统一将 widget 概览和全部结果详情与 SQLite 实际数据比较，包括复核、答案、HTML、耗时与时间，
 确认隐藏分组不出现在概览、详情返回 404，再核对页面显示。不能仅以接口 200 判断修复完成。
 
+独立结果页源码为 [widgets/pelican-test-viewer.html](widgets/pelican-test-viewer.html)，部署到 widget
+站点静态目录中的同名文件即可，不需要重启服务或更新镜像。页面通过浏览器 localStorage
+`iq-detection:last-group-id` 记住最后一次选择的分组 ID，再次进入时恢复；分组不可见或被删除时
+自动选择第一个可用分组。浏览器不允许存储时仍可正常切换和查看。
+
 ## 2. 测试与判分
 
 - **测试**：按检测模型设置里的模型顺序，每个模型从已保存选择中随机挑一个"模型列表包含它且配置过凭据"的账号；鹈鹕/糖果两个探针以两个 goroutine 并发直连该账号自身上游（api_url + api_key），请求带推理等级/温度（留空不传）
