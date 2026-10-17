@@ -58,9 +58,15 @@ const drain = async () => { for (let i = 0; i < 10; i++) await Promise.resolve()
 const tick = time => { now = Date.parse(time); intervals.find(t => t.ms === 1000).fn(); };
 const selected = () => app.state().selected;
 const restCount = () => app.state().view.filter(r => r.status === 'resting').length;
+const systemTime = time => {
+  const date = new NativeDate(Date.parse(time));
+  return '当前 ' + [date.getHours(), date.getMinutes(), date.getSeconds()].map(n => String(n).padStart(2, '0')).join(':');
+};
+const modelsHidden = () => w.getComputedStyle(w.document.getElementById('modelTabs')).display === 'none';
 
 (async () => {
   await drain();
+  assert.equal(w.document.getElementById('quietWindowsNote'), null);
   // Beijing time is independent of process/browser timezone; start inclusive, end exclusive.
   const cases = [
     [quiet, '2026-10-18T12:59:59Z', false],
@@ -78,11 +84,13 @@ const restCount = () => app.state().view.filter(r => r.status === 'resting').len
   app.overview(data, true);
   assert.equal(restCount(), 0);
   assert.equal(selected().id, 12);
+  assert.equal(modelsHidden(), false);
   // The registered clock enters quiet time without a changed overview response.
   tick('2026-10-18T13:00:00Z');
   assert.equal(restCount(), 1);
   assert.equal(selected().status, 'resting');
-  assert.equal(selected().time, '当前 21:00');
+  assert.equal(selected().time, systemTime('2026-10-18T13:00:00Z'));
+  assert.equal(modelsHidden(), true);
   assert.equal(w.document.querySelector('.tl-item.active .tl-status').textContent, '休息中');
   assert.equal(w.document.getElementById('srcBtn').disabled, true);
   assert.equal(app.state().pending.key, 'sleeping-art');
@@ -94,12 +102,29 @@ const restCount = () => app.state().view.filter(r => r.status === 'resting').len
   app.overview(data, true);
   assert.equal(selected().status, 'resting');
   assert.equal(app.state().pending, null); // Do not reload the SVG on every API change.
+  assert.equal(modelsHidden(), true);
+  const separator = w.document.querySelector('.rest-clock-separator');
+  assert.equal(w.document.querySelectorAll('.rest-clock-separator').length, 2);
+  assert.match(w.getComputedStyle(separator).animation, /restClockBlink 1s/);
+  tick('2026-10-18T13:00:01Z');
+  assert.equal(selected().time, systemTime('2026-10-18T13:00:01Z'));
+  assert.equal(w.document.querySelector('.tl-item.active .tl-time').textContent, selected().time);
+  assert.equal(w.document.querySelector('.rest-clock-separator'), separator);
+  assert.equal(app.state().pending, null); // Ticking must not reload the SVG.
+  tick('2026-10-18T13:00:59Z');
+  assert.equal(selected().time, systemTime('2026-10-18T13:00:59Z'));
   tick('2026-10-18T13:01:00Z');
-  assert.equal(selected().time, '当前 21:01');
-  assert.equal(w.document.querySelector('.tl-item.active .tl-time').textContent, '当前 21:01');
+  assert.equal(selected().time, systemTime('2026-10-18T13:01:00Z'));
+  assert.equal(w.document.querySelector('.tl-item.active .tl-time').textContent, selected().time);
   app.select(0, false);
   await drain();
   assert.equal(selected().id, 11);
+  assert.equal(modelsHidden(), false);
+  tick('2026-10-18T13:01:01Z');
+  assert.equal(selected().id, 11); // Live seconds must not recenter historical selection.
+  assert.equal(w.document.querySelector('.tl-item.s-rest .tl-time').textContent, systemTime('2026-10-18T13:01:01Z'));
+  app.overview(data, true);
+  assert.equal(modelsHidden(), false);
   assert.match(app.state().pending.html, /historical result/);
   app.paint();
   app.settle();
@@ -111,10 +136,15 @@ const restCount = () => app.state().view.filter(r => r.status === 'resting').len
   assert.equal(selected().status, 'resting');
   tick('2026-10-20T00:00:00Z');
   assert.equal(selected().id, 12); // Following latest returns to latest real run.
+  assert.equal(modelsHidden(), false);
   tick('2026-10-20T13:00:00Z');
+  assert.equal(modelsHidden(), true);
+  app.select(0, false); // Reveal model selection by viewing a real detection.
+  assert.equal(modelsHidden(), false);
   w.document.querySelectorAll('#modelTabs button')[1].click();
   assert.equal(restCount(), 1);
   assert.equal(app.state().view[0].id, 13);
+  assert.equal(modelsHidden(), true);
   app.group(1);
   assert.equal(app.state().view.length, 1); // Empty groups can still rest.
   assert.equal(selected().status, 'resting');
@@ -123,6 +153,7 @@ const restCount = () => app.state().view.filter(r => r.status === 'resting').len
   assert.equal(w.document.getElementById('groupLabel').textContent, 'Second');
   tick('2026-10-21T00:00:00Z');
   assert.equal(app.state().view.length, 0);
+  assert.equal(modelsHidden(), false);
   assert.equal(w.document.querySelector('#tlTrack').textContent, '暂无检测记录');
   const noWindows = JSON.parse(JSON.stringify(data));
   noWindows.settings.quiet_windows = [];
@@ -132,6 +163,6 @@ const restCount = () => app.state().view.filter(r => r.status === 'resting').len
   app.overview({ settings: data.settings, groups: [] }, true);
   assert.equal(restCount(), 0); // No visible groups must not get fake results.
   assert.ok(requested.every(url => !url.includes('quiet-now')));
-  console.log('PASS: syntax, Beijing window boundaries, clock transitions, SVG rendering, history, models, group memory, empty groups, settings changes, no synthetic detail requests');
+  console.log('PASS: syntax, Beijing boundaries, live system clock with seconds and persistent blinking separators, model visibility by selection, clock transitions, SVG, history, group memory, empty groups, settings, no synthetic detail requests');
   dom.window.close();
 })().catch(error => { console.error(error); dom.window.close(); process.exitCode = 1; });

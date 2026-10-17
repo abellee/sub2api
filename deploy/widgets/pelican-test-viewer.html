@@ -91,13 +91,6 @@
     white-space: nowrap;
   }
   .notice .ico { font-size: 14px; }
-  .quiet-note {
-    max-width: 100%; white-space: normal; overflow-wrap: anywhere;
-    text-align: center; justify-content: center;
-    color: #39765c; border-color: #b7d0c2;
-    background: rgba(255, 250, 240, .95);
-  }
-  .quiet-note[hidden] { display: none; }
   .toast {
     display: none; align-items: center; gap: 8px;
     max-width: 100%;
@@ -230,6 +223,9 @@
     transition: all .18s ease;
   }
   .tl-time { font-size: 11.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .rest-clock-part { display: inline-block; width: 2ch; text-align: center; }
+  .rest-clock-separator { animation: restClockBlink 1s steps(1, end) infinite; }
+  @keyframes restClockBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
   .tl-empty { color: #8a9281; font-size: 13px; white-space: nowrap; }
   .tl-item.active.s-pass { color: #39765c; }
   .tl-item.active.s-fail { color: #b0443f; }
@@ -427,6 +423,7 @@
     backdrop-filter: blur(8px) saturate(1.05);
     -webkit-backdrop-filter: blur(8px) saturate(1.05);
   }
+  .model-tabs[hidden] { display: none; }
   .model-tab {
     border: none; background: transparent; cursor: pointer;
     font: inherit; font-size: 12px; color: #4b5f52;
@@ -600,7 +597,6 @@
   <!-- 顶部中间：常驻说明，下面是新数据通知 -->
   <div class="top-notes">
     <div class="notice" role="alert"><span class="ico">⚠</span>测试结果仅可查看，不可交互</div>
-    <div class="notice quiet-note" id="quietWindowsNote" role="note" hidden></div>
     <div class="toast" id="toast" role="status" aria-live="polite" aria-hidden="true"></div>
   </div>
 
@@ -1497,10 +1493,10 @@
     view.forEach(function (r, i) {
       var item = document.createElement('button');
       item.className = 'tl-item ' + (STATUS_CLS[r.status] || '') + (i === view.length - 1 ? ' latest' : '');
-      if (r.status === 'resting') item.title = '当前时间（北京时间）';
+      if (r.status === 'resting') item.title = '当前系统时间';
       else if (i === view.length - 1) item.title = '最新';
       item.innerHTML = '<span class="tl-dot"></span>' +
-        '<span class="tl-time">' + (r.status === 'resting' ? r.time : fmtTime(r.time)) + '</span>' +
+        '<span class="tl-time">' + (r.status === 'resting' ? restTimeHtml(r) : fmtTime(r.time)) + '</span>' +
         '<span class="tl-status-row"><span class="tl-status ' + STATUS_CLS[r.status] + '">' + STATUS_TEXT[r.status] + '</span>' +
         '<span class="tl-trunc" hidden title="被截断"><svg viewBox="0 0 12 12" width="9" height="9" aria-hidden="true"><path d="M6 1.4 11 10.2H1Z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M6 4.6v2.4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="6" cy="8.7" r=".65" fill="currentColor"/></svg></span></span>';
       item.addEventListener('click', function () {
@@ -1748,6 +1744,8 @@
   var GROUP_MIN = 180;
   // 分组相对页面居中：两侧谁更宽，就按那个宽度对称留白，按钮超出则省略
   function layoutGroup() {
+    var selected = view[runIdx];
+    document.getElementById('modelTabs').hidden = !!selected && selected.status === 'resting';
     var bar = groupWrap.parentElement;
     var right = bar.querySelector('.top-right');
     var cs = getComputedStyle(bar);
@@ -2090,22 +2088,6 @@
     if (text) text.textContent = label; // 只更新文字节点，保留脑子图标
     badge.hidden = false;
   }
-  function renderQuietWindows(windows) {
-    var note = document.getElementById('quietWindowsNote');
-    var ranges = (Array.isArray(windows) ? windows : []).filter(function (w) {
-      return w && typeof w.start === 'string' && typeof w.end === 'string';
-    }).map(function (w) {
-      var start = w.start.split(':');
-      var end = w.end.split(':');
-      var startMinutes = Number(start[0]) * 60 + Number(start[1]);
-      var endMinutes = Number(end[0]) * 60 + Number(end[1]);
-      if (startMinutes === endMinutes) return '全天';
-      return w.start + '–' + (startMinutes > endMinutes ? '次日 ' : '') + w.end;
-    });
-    note.textContent = '不检测时间段（北京时间）：' + (ranges.length ? '每日 ' + ranges.join('、') : '未设置');
-    note.hidden = false;
-  }
-
   function clockMinutes(value) {
     var match = typeof value === 'string' && /^(\d{1,2}):(\d{2})$/.exec(value);
     if (!match || Number(match[1]) > 23 || Number(match[2]) > 59) return null;
@@ -2127,13 +2109,20 @@
   }
 
   function restRun(now) {
-    var date = beijingDate(now);
-    return { id: REST_ID, at: now, time: '当前 ' + pad2(date.getUTCHours()) + ':' + pad2(date.getUTCMinutes()), status: 'resting', candy: 'resting', duration: '' };
+    var date = new Date(now);
+    var clock = [pad2(date.getHours()), pad2(date.getMinutes()), pad2(date.getSeconds())];
+    return { id: REST_ID, at: now, time: '当前 ' + clock.join(':'), clock: clock, status: 'resting', candy: 'resting', duration: '' };
+  }
+
+  function restTimeHtml(run) {
+    return '当前 ' + run.clock.map(function (part) {
+      return '<span class="rest-clock-part">' + part + '</span>';
+    }).join('<span class="rest-clock-separator">:</span>');
   }
 
   // 即使概览数据没变化，也按时进入/退出休息；看历史时保留原选择。
   function refreshRestPoint() {
-    if (!overviewReady || pendingApply || drag || anim) return;
+    if (!overviewReady || pendingApply) return;
     var last = view[view.length - 1];
     var hasRest = !!last && last.status === 'resting';
     var now = Date.now();
@@ -2144,13 +2133,16 @@
         if (last.time !== rest.time) {
           last.time = rest.time;
           last.at = now;
-          items[items.length - 1].querySelector('.tl-time').textContent = rest.time;
-          measureItems();
-          centerRun(runIdx, false);
+          last.clock = rest.clock;
+          // 只更新等宽数字，保留分隔符节点，让闪烁动画连续且不打断历史浏览/滚动。
+          items[items.length - 1].querySelectorAll('.rest-clock-part').forEach(function (part, i) {
+            if (part.textContent !== rest.clock[i]) part.textContent = rest.clock[i];
+          });
         }
       }
       return;
     }
+    if (drag || anim) return;
     var selected = view[runIdx];
     var followLatest = !selected || runIdx === view.length - 1;
     buildTrack();
@@ -2180,7 +2172,6 @@
     models = (settings.models || []).filter(function (name) { return !!name; });
     reasoningEffort = settings.reasoning_effort || '';
     renderReasoning();
-    renderQuietWindows(settings.quiet_windows);
     quietWindows = Array.isArray(settings.quiet_windows) ? settings.quiet_windows : [];
     groups = ((data && data.groups) || []).map(function (g) {
       return {
