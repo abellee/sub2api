@@ -53,6 +53,10 @@ docker compose up -d iqdetectd
 概览与详情均返回 `candy_review`、`pelican_review`，保留 approved/rejected/pending，
 自动判分 `candy_correct` 与人工复核独立。不要改接缺少复核字段的主站旧接口。
 
+从 0.2.8 起，公开概览 `settings.quiet_windows` 返回不检测时间段（`start` / `end`，北京时间），
+未配置时返回空数组。widget 顶部展示每日时间段，跨天结束标记“次日”，开始与结束相同时展示“全天”，
+未配置时展示“未设置”。后台修改时间段后，页面在下一次概览轮询时更新。
+
 部署后统一将 widget 概览和全部结果详情与 SQLite 实际数据比较，包括复核、答案、HTML、耗时与时间，
 确认隐藏分组不出现在概览、详情返回 404，再核对页面显示。不能仅以接口 200 判断修复完成。
 

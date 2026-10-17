@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -32,6 +33,7 @@ func TestPublicIQDetectionOverviewAndDetail(t *testing.T) {
 		ReasoningEffort: "high",
 		CandyPrompt:     "SECRET-PROMPT",
 		CandyAnswer:     "SECRET-ANSWER",
+		QuietWindows:    []QuietWindow{{Start: "23:00", End: "07:00"}, {Start: "12:00", End: "13:00"}},
 	}); err != nil {
 		t.Fatalf("save prompts: %v", err)
 	}
@@ -110,6 +112,9 @@ func TestPublicIQDetectionOverviewAndDetail(t *testing.T) {
 	}
 	if overviewEnv.Data.Settings.ReasoningEffort != "high" {
 		t.Fatalf("reasoning = %q", overviewEnv.Data.Settings.ReasoningEffort)
+	}
+	if !reflect.DeepEqual(overviewEnv.Data.Settings.QuietWindows, []QuietWindow{{Start: "23:00", End: "07:00"}, {Start: "12:00", End: "13:00"}}) {
+		t.Fatalf("quiet windows = %+v", overviewEnv.Data.Settings.QuietWindows)
 	}
 	if len(overviewEnv.Data.Groups) != 1 {
 		t.Fatalf("groups = %#v", overviewEnv.Data.Groups)
@@ -235,6 +240,15 @@ func TestPublicIQDetectionOverviewAndDetail(t *testing.T) {
 	handler.ServeHTTP(postRec, httptest.NewRequest(http.MethodPost, "/iq-detection/overview", strings.NewReader("{}")))
 	if postRec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("post status = %d", postRec.Code)
+	}
+}
+
+func TestPublicOverviewWithoutQuietWindows(t *testing.T) {
+	srv, _ := newTestServer(t)
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/iq-detection/overview", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"quiet_windows":[]`) {
+		t.Fatalf("unset quiet windows should be an empty array: status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }
 

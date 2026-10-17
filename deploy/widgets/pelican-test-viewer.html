@@ -91,6 +91,13 @@
     white-space: nowrap;
   }
   .notice .ico { font-size: 14px; }
+  .quiet-note {
+    max-width: 100%; white-space: normal; overflow-wrap: anywhere;
+    text-align: center; justify-content: center;
+    color: #39765c; border-color: #b7d0c2;
+    background: rgba(255, 250, 240, .95);
+  }
+  .quiet-note[hidden] { display: none; }
   .toast {
     display: none; align-items: center; gap: 8px;
     max-width: 100%;
@@ -583,6 +590,7 @@
   <!-- 顶部中间：常驻说明，下面是新数据通知 -->
   <div class="top-notes">
     <div class="notice" role="alert"><span class="ico">⚠</span>测试结果仅可查看，不可交互</div>
+    <div class="notice quiet-note" id="quietWindowsNote" role="note" hidden></div>
     <div class="toast" id="toast" role="status" aria-live="polite" aria-hidden="true"></div>
   </div>
 
@@ -1727,6 +1735,21 @@
     if (text) text.textContent = label; // 只更新文字节点，保留脑子图标
     badge.hidden = false;
   }
+  function renderQuietWindows(windows) {
+    var note = document.getElementById('quietWindowsNote');
+    var ranges = (Array.isArray(windows) ? windows : []).filter(function (w) {
+      return w && typeof w.start === 'string' && typeof w.end === 'string';
+    }).map(function (w) {
+      var start = w.start.split(':');
+      var end = w.end.split(':');
+      var startMinutes = Number(start[0]) * 60 + Number(start[1]);
+      var endMinutes = Number(end[0]) * 60 + Number(end[1]);
+      if (startMinutes === endMinutes) return '全天';
+      return w.start + '–' + (startMinutes > endMinutes ? '次日 ' : '') + w.end;
+    });
+    note.textContent = '不检测时间段（北京时间）：' + (ranges.length ? '每日 ' + ranges.join('、') : '未设置');
+    note.hidden = false;
+  }
   // 正在看最新一条时，新结果出现后继续停在最新。看更早的记录时留在原地。
   function applyOverview(data, preserve) {
     var prevGroupId = preserve && groups[groupIdx] ? groups[groupIdx].id : null;
@@ -1746,6 +1769,7 @@
     models = (settings.models || []).filter(function (name) { return !!name; });
     reasoningEffort = settings.reasoning_effort || '';
     renderReasoning();
+    renderQuietWindows(settings.quiet_windows);
     groups = ((data && data.groups) || []).map(function (g) {
       return {
         id: g.id,
@@ -1889,7 +1913,7 @@
         }).sort(function (a, b) { return (a[0] > b[0] ? 1 : a[0] < b[0] ? -1 : 0); })
       };
     }).sort(function (a, b) { return (a.id > b.id ? 1 : a.id < b.id ? -1 : 0); });
-    return JSON.stringify({ models: settings.models || [], effort: settings.reasoning_effort || '', groups: list });
+    return JSON.stringify({ models: settings.models || [], effort: settings.reasoning_effort || '', quietWindows: settings.quiet_windows || [], groups: list });
   }
 
   function flushApply() {

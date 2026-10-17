@@ -74,8 +74,9 @@ type publicResult struct {
 }
 
 type publicSettings struct {
-	Models          []string `json:"models"`
-	ReasoningEffort string   `json:"reasoning_effort"`
+	Models          []string      `json:"models"`
+	ReasoningEffort string        `json:"reasoning_effort"`
+	QuietWindows    []QuietWindow `json:"quiet_windows"`
 }
 
 type publicOverview struct {
@@ -140,7 +141,10 @@ func (s *Server) loadPublicOverview(ctx context.Context) (*publicOverview, error
 	if err != nil {
 		return nil, err
 	}
-	out := &publicOverview{Groups: []publicGroup{}}
+	out := &publicOverview{
+		Settings: publicSettings{QuietWindows: []QuietWindow{}},
+		Groups:   []publicGroup{},
+	}
 	if models, err := s.Store.ListDetectionModels(ctx); err == nil {
 		out.Settings.Models = make([]string, 0, len(models))
 		for _, model := range models {
@@ -149,6 +153,7 @@ func (s *Server) loadPublicOverview(ctx context.Context) (*publicOverview, error
 	}
 	if prompts, err := s.Store.GetDetectionPrompts(ctx); err == nil && prompts != nil {
 		out.Settings.ReasoningEffort = prompts.ReasoningEffort
+		out.Settings.QuietWindows = append(out.Settings.QuietWindows, prompts.QuietWindows...)
 	}
 	for _, group := range selection.Groups {
 		if group.IntervalMinutes <= 0 || !group.IsPublicVisible() {
