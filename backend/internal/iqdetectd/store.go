@@ -1008,24 +1008,27 @@ func (s *Store) LastTestedAtByGroup(ctx context.Context) (map[int64]time.Time, e
 	return result, rows.Err()
 }
 
-// LastTestedAtByAccount returns, for each given account, the created_at of its
-// most recent test result row; missing entries mean never tested. Used by the
-// round-robin account rotation of the test runner.
-func (s *Store) LastTestedAtByAccount(ctx context.Context, accountIDs []int64) (map[int64]time.Time, error) {
+// LastTestedAtByAccount returns the most recent attempt for each account in
+// this group and model. Other groups/models must not move its rotation slot.
+// Failed, running and stopped attempts count too; missing means never tested.
+func (s *Store) LastTestedAtByAccount(ctx context.Context, groupID int64, model string, accountIDs []int64) (map[int64]time.Time, error) {
 	result := make(map[int64]time.Time, len(accountIDs))
 	if len(accountIDs) == 0 {
 		return result, nil
 	}
 	placeholders := make([]string, len(accountIDs))
-	args := make([]any, len(accountIDs))
+	args := []any{groupID, model}
 	for i, id := range accountIDs {
 		placeholders[i] = "?"
-		args[i] = id
+		args = append(args, id)
 	}
 	rows, err := s.db.QueryContext(ctx, `
-SELECT account_id, max(created_at) FROM test_results
-WHERE account_id IN (`+strings.Join(placeholders, ",")+`)
-GROUP BY account_id`, args...)
+SELECT account_id, created_at FROM test_results
+WHERE id IN (
+  SELECT max(id) FROM test_results
+  WHERE group_id = ? AND model = ? AND account_id IN (`+strings.Join(placeholders, ",")+`)
+  GROUP BY account_id
+)`, args...)
 	if err != nil {
 		return nil, err
 	}

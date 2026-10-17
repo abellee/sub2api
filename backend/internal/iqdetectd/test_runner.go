@@ -73,10 +73,10 @@ func candidateIDs(candidates []candidate) []int64 {
 // pickCandidate returns the candidate with the oldest last-tested timestamp
 // (zero for never-tested accounts), breaking ties randomly.
 func pickCandidate(candidates []candidate, lastTested map[int64]time.Time) candidate {
-	var oldest time.Time
-	for _, c := range candidates {
+	oldest := lastTested[candidates[0].id]
+	for _, c := range candidates[1:] {
 		ts := lastTested[c.id] // 零值 = 从未测过，天然最旧
-		if oldest.IsZero() || ts.Before(oldest) {
+		if ts.Before(oldest) {
 			oldest = ts
 		}
 	}
@@ -118,9 +118,13 @@ func (r *TestRunner) tryLockGroup(groupID int64, cancel context.CancelFunc) bool
 
 func (r *TestRunner) releaseGroup(groupID int64) {
 	r.mu.Lock()
+	cancel := r.runCancels[groupID]
 	delete(r.runningGroups, groupID)
 	delete(r.runCancels, groupID)
 	r.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
 }
 
 // StopTestRuns cancels every in-flight group run (scheduled or manual) and
@@ -244,40 +248,15 @@ func (r *TestRunner) buildGroupJobs(ctx context.Context, group SelectionGroup, i
 		return nil, nil, err
 	}
 	var jobs []testJob
-	seen := map[int64]bool{}
 	for _, dm := range models {
-		var candidates []candidate
-		for _, account := range group.Accounts {
-			if seen[account.ID] {
-				continue
-			}
-			if !slices.Contains(account.Models, dm.Name) {
-				continue
-			}
-			apiURL, apiKey := "", ""
-			if cred, ok := injected[account.ID]; ok {
-				apiURL, apiKey = cred.APIURL, cred.APIKey
-			} else {
-				apiURL, apiKey, err = r.Store.GetAccountCallCreds(ctx, account.ID)
-				if err != nil {
-					continue
-				}
-			}
-			if strings.TrimSpace(apiURL) == "" || strings.TrimSpace(apiKey) == "" {
-				continue
-			}
-			seen[account.ID] = true
-			candidates = append(candidates, candidate{
-				id: account.ID, name: account.Name, apiURL: apiURL, apiKey: apiKey,
-			})
-		}
+		candidates := r.groupCandidates(ctx, group, dm.Name, injected)
 		if len(candidates) == 0 {
 			continue
 		}
 		// 轮换制：优先选最久没被测过的账号，同批内随机
-		lastTested, err := r.Store.LastTestedAtByAccount(ctx, candidateIDs(candidates))
+		lastTested, err := r.Store.LastTestedAtByAccount(ctx, group.ID, dm.Name, candidateIDs(candidates))
 		if err != nil {
-			lastTested = nil
+			return nil, nil, fmt.Errorf("load account rotation: %w", err)
 		}
 		pick := pickCandidate(candidates, lastTested)
 		jobs = append(jobs, testJob{
@@ -314,13 +293,34 @@ func (r *TestRunner) TriggerTestRun(ctx context.Context, injected []TestRunCrede
 
 	plan := &TestRunPlan{Items: []TestRunPlanItem{}}
 	jobsByGroup := map[int64][]testJob{}
+	// Reserve groups before reading their history. A concurrent manual request
+	// or scheduler tick must not plan from the same pre-run snapshot.
+	runCtx := context.WithoutCancel(ctx)
+	groupContexts := map[int64]context.Context{}
+	reserved := map[int64]context.CancelFunc{}
+	dispatched := false
+	defer func() {
+		if !dispatched {
+			for id, cancel := range reserved {
+				cancel()
+				r.releaseGroup(id)
+			}
+		}
+	}()
 	for _, group := range selection.Groups {
 		if groupID > 0 && group.ID != groupID {
 			continue
 		}
+		groupCtx, cancel := context.WithCancel(runCtx)
+		locked := r.tryLockGroup(group.ID, cancel)
+		if locked {
+			reserved[group.ID] = cancel
+		} else {
+			cancel()
+		}
 		for _, dm := range models {
 			item := TestRunPlanItem{Model: dm.Name, GroupID: group.ID, GroupName: group.Name}
-			if r.isGroupRunning(group.ID) {
+			if !locked {
 				item.Skipped = true
 				item.Reason = "a test for this group is already running"
 				plan.Items = append(plan.Items, item)
@@ -334,9 +334,9 @@ func (r *TestRunner) TriggerTestRun(ctx context.Context, injected []TestRunCrede
 				continue
 			}
 			// 轮换制：优先选最久没被测过的账号，同批内随机
-			lastTested, err := r.Store.LastTestedAtByAccount(ctx, candidateIDs(candidates))
+			lastTested, err := r.Store.LastTestedAtByAccount(ctx, group.ID, dm.Name, candidateIDs(candidates))
 			if err != nil {
-				lastTested = nil
+				return nil, fmt.Errorf("load account rotation: %w", err)
 			}
 			pick := pickCandidate(candidates, lastTested)
 			item.AccountID = pick.id
@@ -348,6 +348,14 @@ func (r *TestRunner) TriggerTestRun(ctx context.Context, injected []TestRunCrede
 				apiURL: pick.apiURL, apiKey: pick.apiKey,
 			})
 		}
+		if locked && len(jobsByGroup[group.ID]) == 0 {
+			cancel()
+			r.releaseGroup(group.ID)
+			delete(reserved, group.ID)
+		} else if locked {
+			// Keep the same cancellation context registered by tryLockGroup.
+			groupContexts[group.ID] = groupCtx
+		}
 	}
 	plan.Triggered = 0
 	for _, jobs := range jobsByGroup {
@@ -357,7 +365,8 @@ func (r *TestRunner) TriggerTestRun(ctx context.Context, injected []TestRunCrede
 	if len(jobsByGroup) == 0 {
 		return plan, nil
 	}
-	go r.executeGroups(context.WithoutCancel(ctx), jobsByGroup)
+	dispatched = true
+	go r.executeGroups(groupContexts, jobsByGroup)
 	return plan, nil
 }
 
@@ -367,21 +376,15 @@ func (r *TestRunner) isGroupRunning(groupID int64) bool {
 	return r.runningGroups[groupID]
 }
 
-// executeGroups runs each group's job list in its own goroutine so selected
-// groups are tested concurrently; within a group the models run sequentially.
-// Each group gets its own cancelable context so StopTestRuns can abort them.
-func (r *TestRunner) executeGroups(ctx context.Context, jobsByGroup map[int64][]testJob) {
+// executeGroups executes groups reserved by TriggerTestRun concurrently. Each
+// group keeps its registered context so StopTestRuns can abort it immediately.
+func (r *TestRunner) executeGroups(groupContexts map[int64]context.Context, jobsByGroup map[int64][]testJob) {
 	var wg sync.WaitGroup
 	for groupID, jobs := range jobsByGroup {
 		wg.Add(1)
 		go func(groupID int64, jobs []testJob) {
 			defer wg.Done()
-			runCtx, cancel := context.WithCancel(ctx)
-			if !r.tryLockGroup(groupID, cancel) {
-				cancel()
-				r.logInfo("iqdetectd: group skipped, already running", "group", groupID)
-				return
-			}
+			runCtx := groupContexts[groupID]
 			defer r.releaseGroup(groupID)
 			prompts, err := r.Store.GetDetectionPrompts(runCtx)
 			if err != nil {
