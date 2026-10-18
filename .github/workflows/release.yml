@@ -127,6 +127,7 @@ jobs:
         if: ${{ steps.audit-sdk.outputs.commit != '' }}
         env:
           AUDIT_SDK_BUNDLE: ${{ secrets[format('AUDIT_SDK_{0}', steps.audit-sdk.outputs.commit)] }}
+          AUDIT_SDK_BUNDLE_PART2: ${{ secrets[format('AUDIT_SDK_{0}_PART2', steps.audit-sdk.outputs.commit)] }}
         run: python3 .github/release-tools/audit_sdk.py restore
       - uses: actions/download-artifact@v8
         with:
@@ -173,6 +174,7 @@ jobs:
           version: '~> v2'
           args: release --snapshot --clean --skip=validate,publish,docker,announce --config=${{ runner.temp }}/goreleaser.matrix.yaml
         env:
+          AUDIT_SDK_COMMIT: ${{ steps.audit-sdk.outputs.commit }}
           GITHUB_REPO_OWNER: ${{ github.repository_owner }}
           GITHUB_REPO_OWNER_LOWER: ${{ needs.prepare.outputs.owner_lower }}
           GITHUB_REPO_NAME: ${{ github.event.repository.name }}

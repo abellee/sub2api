@@ -11,6 +11,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/audit-sdk/auditclient"
 	"github.com/Wei-Shaw/sub2api/audit-sdk/auditcore"
+	"github.com/Wei-Shaw/sub2api/audit-sdk/auditrpc"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 )
@@ -24,7 +25,7 @@ func TestModelSessionCaptureLeavesBusinessStatusHeadersAndBodyUnchanged(t *testi
 		canceled    bool
 	}{{"success", 200, false, false, false}, {"business failure", 429, false, false, false}, {"stream failure", 200, true, false, false}, {"panic", 200, false, true, false}, {"canceled", 200, false, false, true}} {
 		t.Run(scenario.name, func(t *testing.T) {
-			offline := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(503) }))
+			offline := httptest.NewServer(auditrpc.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(503) }), false))
 			defer offline.Close()
 			dir := t.TempDir()
 			client, err := auditclient.New(auditclient.Config{RelayURL: offline.URL, Token: strings.Repeat("t", 32), SpoolDir: dir, SpoolBytes: 1 << 20})

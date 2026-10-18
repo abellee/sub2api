@@ -25,6 +25,8 @@ builds:
       - -X main.Commit={{.Commit}}
       - -X main.Date={{.Date}}
       - -X main.BuildType=release
+      - -X github.com/Wei-Shaw/sub2api/audit-sdk/auditclient.Commit={{ .Env.AUDIT_SDK_COMMIT }}
+      - -X github.com/Wei-Shaw/sub2api/audit-sdk/auditclient.Dirty=false
 
 # 跳过 archives
 archives: []

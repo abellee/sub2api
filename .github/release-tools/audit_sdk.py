@@ -28,7 +28,7 @@ def expected_commit():
 def restore(encoded, expected, destination):
     if not encoded:
         raise ValueError(f'Missing private SDK secret AUDIT_SDK_{expected}; source is never fetched from a public remote')
-    if len(encoded) > 48 * 1024:
+    if len(encoded) > 96 * 1024:
         raise ValueError('SDK secret exceeds the supported size')
     packed = base64.b64decode(encoded, validate=True)
     with gzip.GzipFile(fileobj=io.BytesIO(packed)) as stream:
@@ -83,7 +83,7 @@ def main():
         with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
             output.write('commit=' + expected + '\n')
     else:
-        restore(os.environ.get('AUDIT_SDK_BUNDLE', ''), expected, SDK_PATH)
+        restore(os.environ.get('AUDIT_SDK_BUNDLE', '') + os.environ.get('AUDIT_SDK_BUNDLE_PART2', ''), expected, SDK_PATH)
 
 
 if __name__ == '__main__':
