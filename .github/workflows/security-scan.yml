@@ -24,6 +24,7 @@ jobs:
         env:
           AUDIT_SDK_BUNDLE: ${{ secrets[format('AUDIT_SDK_{0}', steps.audit-sdk.outputs.commit)] }}
           AUDIT_SDK_BUNDLE_PART2: ${{ secrets[format('AUDIT_SDK_{0}_PART2', steps.audit-sdk.outputs.commit)] }}
+          AUDIT_SDK_BUNDLE_PART3: ${{ secrets[format('AUDIT_SDK_{0}_PART3', steps.audit-sdk.outputs.commit)] }}
         run: python3 .github/release-tools/audit_sdk.py restore
       - name: Set up Go
         uses: actions/setup-go@v6
