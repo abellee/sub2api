@@ -1,6 +1,6 @@
 module github.com/Wei-Shaw/sub2api
 
-go 1.27.2
+go 1.27.3
 
 replace github.com/Wei-Shaw/sub2api/audit-sdk => ./audit-sdk
 
