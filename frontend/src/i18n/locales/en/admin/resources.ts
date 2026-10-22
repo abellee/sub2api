@@ -436,6 +436,8 @@ export default {
       timeImmediate: 'Immediate',
       timeNever: 'Never',
       readStatus: 'Read Status',
+      read: 'Read',
+      readCount: 'Read by {count} users',
       preview: 'Preview',
       eligible: 'Eligible',
       readAt: 'Read at',

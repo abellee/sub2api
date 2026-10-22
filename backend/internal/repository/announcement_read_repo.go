@@ -6,6 +6,7 @@ import (
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/announcementread"
+	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
@@ -78,7 +79,7 @@ func (r *announcementReadRepository) GetReadMapByUsers(ctx context.Context, anno
 
 func (r *announcementReadRepository) CountByAnnouncementID(ctx context.Context, announcementID int64) (int64, error) {
 	count, err := r.client.AnnouncementRead.Query().
-		Where(announcementread.AnnouncementIDEQ(announcementID)).
+		Where(announcementread.AnnouncementIDEQ(announcementID), announcementread.HasUserWith(user.DeletedAtIsNil())).
 		Count(ctx)
 	if err != nil {
 		return 0, err

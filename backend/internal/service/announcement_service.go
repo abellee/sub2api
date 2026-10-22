@@ -339,19 +339,27 @@ func (s *AnnouncementService) ListUserReadStatus(
 	announcementID int64,
 	params pagination.PaginationParams,
 	search string,
-) ([]AnnouncementUserReadStatus, *pagination.PaginationResult, error) {
+	readOnly bool,
+) ([]AnnouncementUserReadStatus, *pagination.PaginationResult, int64, error) {
 	ann, err := s.announcementRepo.GetByID(ctx, announcementID)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, 0, err
 	}
 
 	filters := UserListFilters{
 		Search: strings.TrimSpace(search),
 	}
+	if readOnly {
+		filters.ReadAnnouncementID = announcementID
+	}
+	readCount, err := s.readRepo.CountByAnnouncementID(ctx, announcementID)
+	if err != nil {
+		return nil, nil, 0, fmt.Errorf("count read users: %w", err)
+	}
 
 	users, page, err := s.userRepo.ListWithFilters(ctx, params, filters)
 	if err != nil {
-		return nil, nil, fmt.Errorf("list users: %w", err)
+		return nil, nil, 0, fmt.Errorf("list users: %w", err)
 	}
 
 	userIDs := make([]int64, 0, len(users))
@@ -361,7 +369,7 @@ func (s *AnnouncementService) ListUserReadStatus(
 
 	readMap, err := s.readRepo.GetReadMapByUsers(ctx, announcementID, userIDs)
 	if err != nil {
-		return nil, nil, fmt.Errorf("get read map: %w", err)
+		return nil, nil, 0, fmt.Errorf("get read map: %w", err)
 	}
 
 	out := make([]AnnouncementUserReadStatus, 0, len(users))
@@ -369,7 +377,7 @@ func (s *AnnouncementService) ListUserReadStatus(
 		u := users[i]
 		subs, err := s.userSubRepo.ListActiveByUserID(ctx, u.ID)
 		if err != nil {
-			return nil, nil, fmt.Errorf("list active subscriptions: %w", err)
+			return nil, nil, 0, fmt.Errorf("list active subscriptions: %w", err)
 		}
 		activeGroupIDs := make(map[int64]struct{}, len(subs))
 		for j := range subs {
@@ -393,7 +401,7 @@ func (s *AnnouncementService) ListUserReadStatus(
 		})
 	}
 
-	return out, page, nil
+	return out, page, readCount, nil
 }
 
 func isValidAnnouncementStatus(status string) bool {

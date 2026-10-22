@@ -433,6 +433,8 @@ export default {
       timeImmediate: '立即',
       timeNever: '永久',
       readStatus: '已读情况',
+      read: '已读',
+      readCount: '已读 {count} 人',
       preview: '预览',
       eligible: '符合条件',
       readAt: '已读时间',

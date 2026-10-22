@@ -10,6 +10,7 @@ import (
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/ent/announcementread"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
 	"github.com/Wei-Shaw/sub2api/ent/authidentity"
 	"github.com/Wei-Shaw/sub2api/ent/authidentitychannel"
@@ -531,6 +532,10 @@ func (r *userRepository) ListWithFilters(ctx context.Context, params pagination.
 	}
 
 	q := r.client.User.Query()
+
+	if filters.ReadAnnouncementID > 0 {
+		q = q.Where(dbuser.HasAnnouncementReadsWith(announcementread.AnnouncementIDEQ(filters.ReadAnnouncementID)))
+	}
 
 	if filters.Status != "" {
 		q = q.Where(dbuser.StatusEQ(filters.Status))
