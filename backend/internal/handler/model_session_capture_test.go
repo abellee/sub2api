@@ -67,13 +67,18 @@ func TestModelSessionCaptureLeavesBusinessStatusHeadersAndBodyUnchanged(t *testi
 			if w.Code != scenario.status || w.Body.String() != "data: hello\n\n" || w.Header().Get("X-Business") != "unchanged" {
 				t.Fatalf("business output changed: %d %q", w.Code, w.Body.String())
 			}
-			// Backup admission is asynchronous; a clean shutdown waits for its
-			// writes before another queue instance inspects the durable files.
+			// Backup admission is asynchronous; a clean shutdown commits its
+			// journal before another queue instance reopens the durable events.
 			client.Close()
-			queue, err := auditcore.OpenQueue(filepath.Join(dir, "pending"), 1<<20)
+			queue, err := auditcore.OpenJournalQueue(filepath.Join(dir, "pending"), 1<<20)
 			if err != nil {
 				t.Fatal(err)
 			}
+			t.Cleanup(func() {
+				if err := queue.Close(); err != nil {
+					t.Error(err)
+				}
+			})
 			items, _ := queue.Items(0)
 			var end auditcore.Event
 			var response auditcore.Event

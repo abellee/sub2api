@@ -83,7 +83,8 @@ def main():
         with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
             output.write('commit=' + expected + '\n')
     else:
-        restore(os.environ.get('AUDIT_SDK_BUNDLE', '') + os.environ.get('AUDIT_SDK_BUNDLE_PART2', ''), expected, SDK_PATH)
+        restore(''.join(os.environ.get(name, '') for name in
+                        ('AUDIT_SDK_BUNDLE', 'AUDIT_SDK_BUNDLE_PART2', 'AUDIT_SDK_BUNDLE_PART3')), expected, SDK_PATH)
 
 
 if __name__ == '__main__':
