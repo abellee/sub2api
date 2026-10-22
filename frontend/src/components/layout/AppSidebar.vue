@@ -1163,6 +1163,7 @@ onBeforeUnmount(() => {
   height: 36px;
   flex: none;
   margin-right: -6px;
+  transform: translateY(1px);
 }
 
 .sidebar-home-word {
