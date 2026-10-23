@@ -65,7 +65,8 @@ type ContentSafetyBillingService struct {
 }
 
 func OpenContentSafetyBilling(path string, billing contentSafetyBillingRepository, invalidate func(context.Context, int64) error) (*ContentSafetyBillingService, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+	// The path comes from operator-managed DATA_DIR/configuration, never a request.
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil { //nolint:gosec // G703: trusted administrator-configured storage path.
 		return nil, err
 	}
 	db, err := sql.Open("sqlite", path)
@@ -90,13 +91,13 @@ func OpenContentSafetyBilling(path string, billing contentSafetyBillingRepositor
 		CREATE INDEX IF NOT EXISTS content_safety_debits_pending ON content_safety_debits(status, attempted_at);
 		CREATE INDEX IF NOT EXISTS content_safety_debits_created ON content_safety_debits(created_at DESC);`)
 	if err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, err
 	}
 	_, err = db.Exec(`INSERT OR IGNORE INTO content_safety_config(id,match_description,client_message) VALUES(1,?,?)`,
 		"I'm sorry, I can't help with that request. Failed check: SAFETY_CHECK_TYPE", "Request rejected by content safety policy.")
 	if err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, err
 	}
 	return &ContentSafetyBillingService{db: db, billing: billing, invalidate: invalidate}, nil
@@ -243,7 +244,7 @@ func (s *ContentSafetyBillingService) Records(ctx context.Context, page, pageSiz
 	if err != nil {
 		return out, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		d, err := scanContentSafetyDebit(rows)
 		if err != nil {
@@ -270,7 +271,7 @@ func (s *ContentSafetyBillingService) Recover(ctx context.Context) error {
 	if err == nil {
 		err = rows.Err()
 	}
-	rows.Close()
+	err = errors.Join(err, rows.Close())
 	if err != nil {
 		return err
 	}

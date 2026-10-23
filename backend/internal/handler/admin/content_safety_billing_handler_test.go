@@ -16,7 +16,7 @@ import (
 func TestContentSafetyBillingAdminValidationAndPersistence(t *testing.T) {
 	s, err := service.OpenContentSafetyBilling(filepath.Join(t.TempDir(), "billing.sqlite"), nil, nil)
 	require.NoError(t, err)
-	defer s.Close()
+	t.Cleanup(func() { require.NoError(t, s.Close()) })
 	h := &SettingHandler{}
 	h.SetContentSafetyBilling(s)
 	r := gin.New()

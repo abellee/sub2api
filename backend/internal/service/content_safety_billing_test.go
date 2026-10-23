@@ -159,7 +159,7 @@ func TestContentSafetyBillingRecoveryAfterCommitAndRestart(t *testing.T) {
 	require.NoError(t, s.Close())
 	s, err = OpenContentSafetyBilling(path, b, nil)
 	require.NoError(t, err)
-	defer s.Close()
+	t.Cleanup(func() { require.NoError(t, s.Close()) })
 	persisted, err := s.Config(ctx)
 	require.NoError(t, err)
 	require.Equal(t, c, persisted)

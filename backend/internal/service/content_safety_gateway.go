@@ -24,8 +24,10 @@ func (s *OpenAIGatewayService) contentSafetyRejection(c *gin.Context, account *A
 		return "", false
 	}
 	key := "content_safety_billing:" + scope
-	if message, exists := c.Get(key); exists {
-		return message.(string), true
+	if value, exists := c.Get(key); exists {
+		if message, ok := value.(string); ok {
+			return message, true
+		}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
