@@ -526,7 +526,7 @@ func buildPublicTransitGroups(configuredGroups []Group, channels []AvailableChan
 				out = byKey[key]
 			}
 			for _, m := range ch.SupportedModels {
-				if m.Platform != g.Platform {
+				if m.Platform != g.Platform || !groupByKey[key].ModelAllowlist.Allows(m.Name) {
 					continue
 				}
 				modelKey := strings.ToLower(m.Platform + "\x00" + m.Name)
@@ -544,7 +544,7 @@ func buildPublicTransitGroups(configuredGroups []Group, channels []AvailableChan
 		if g.Status != "" && g.Status != StatusActive {
 			continue
 		}
-		if g.IsExclusive || !g.CustomModelsListEnabled() {
+		if g.IsExclusive || !g.ModelAllowlistEnabled() {
 			continue
 		}
 		key := groupKey{id: g.ID, name: g.Name, platform: g.Platform}
@@ -552,9 +552,9 @@ func buildPublicTransitGroups(configuredGroups []Group, channels []AvailableChan
 		if !ok {
 			continue
 		}
-		for _, modelName := range g.ModelsListConfig.Models {
+		for _, modelName := range g.ModelAllowlist.Models {
 			modelName = strings.TrimSpace(modelName)
-			if modelName == "" {
+			if modelName == "" || strings.Contains(modelName, "*") {
 				continue
 			}
 			modelKey := strings.ToLower(g.Platform + "\x00" + modelName)

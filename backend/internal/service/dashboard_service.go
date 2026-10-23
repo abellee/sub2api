@@ -212,11 +212,40 @@ func (s *DashboardService) GetGroupStatsWithUsageFilters(ctx context.Context, st
 	return s.GetGroupStatsWithFilters(ctx, startTime, endTime, filters.UserID, filters.APIKeyID, filters.AccountID, filters.GroupID, filters.RequestType, filters.Stream, filters.BillingType)
 }
 
-// GetGroupUsageSummary returns today's/cumulative cost and rolling cache usage for all groups.
-func (s *DashboardService) GetGroupUsageSummary(ctx context.Context, todayStart, since24h, since7d time.Time) ([]usagestats.GroupUsageSummary, error) {
-	results, err := s.usageRepo.GetAllGroupUsageSummary(ctx, todayStart, since24h, since7d)
+// GetGroupUsageSummary returns today's, yesterday's, and cumulative cost for all groups.
+func (s *DashboardService) GetGroupUsageSummary(ctx context.Context, todayStart time.Time) ([]usagestats.GroupUsageSummary, error) {
+	results, err := s.usageRepo.GetAllGroupUsageSummary(ctx, todayStart)
 	if err != nil {
 		return nil, fmt.Errorf("get group usage summary: %w", err)
+	}
+	now := time.Now()
+	cacheRows, err := s.usageRepo.GetGroupCacheUsageSummary(ctx, now.Add(-24*time.Hour), now.Add(-7*24*time.Hour))
+	if err != nil {
+		return nil, fmt.Errorf("get group cache usage summary: %w", err)
+	}
+	cacheByGroup := make(map[int64]usagestats.GroupCacheUsageSummary, len(cacheRows))
+	for _, row := range cacheRows {
+		cacheByGroup[row.GroupID] = row
+	}
+	for i := range results {
+		row := &results[i]
+		cache := cacheByGroup[row.GroupID]
+		row.TodayInputTokens = cache.Today.InputTokens
+		row.TodayCacheCreationTokens = cache.Today.CacheCreationTokens
+		row.TodayCacheReadTokens = cache.Today.CacheReadTokens
+		row.TodayCacheHitRate = cache.Today.CacheHitRate
+		row.Last24hInputTokens = cache.Last24h.InputTokens
+		row.Last24hCacheCreationTokens = cache.Last24h.CacheCreationTokens
+		row.Last24hCacheReadTokens = cache.Last24h.CacheReadTokens
+		row.Last24hCacheHitRate = cache.Last24h.CacheHitRate
+		row.Last7dInputTokens = cache.Last7d.InputTokens
+		row.Last7dCacheCreationTokens = cache.Last7d.CacheCreationTokens
+		row.Last7dCacheReadTokens = cache.Last7d.CacheReadTokens
+		row.Last7dCacheHitRate = cache.Last7d.CacheHitRate
+		row.TotalInputTokens = cache.Total.InputTokens
+		row.TotalCacheCreationTokens = cache.Total.CacheCreationTokens
+		row.TotalCacheReadTokens = cache.Total.CacheReadTokens
+		row.TotalCacheHitRate = cache.Total.CacheHitRate
 	}
 	return results, nil
 }
@@ -392,8 +421,8 @@ func (s *DashboardService) GetAPIKeyUsageTrend(ctx context.Context, startTime, e
 	return trend, nil
 }
 
-func (s *DashboardService) GetUserUsageTrend(ctx context.Context, startTime, endTime time.Time, granularity string, limit int) ([]usagestats.UserUsageTrendPoint, error) {
-	trend, err := s.usageRepo.GetUserUsageTrend(ctx, startTime, endTime, granularity, limit)
+func (s *DashboardService) GetUserUsageTrend(ctx context.Context, startTime, endTime time.Time, granularity string, limit int, metric string) ([]usagestats.UserUsageTrendPoint, error) {
+	trend, err := s.usageRepo.GetUserUsageTrend(ctx, startTime, endTime, granularity, limit, metric)
 	if err != nil {
 		return nil, fmt.Errorf("get user usage trend: %w", err)
 	}

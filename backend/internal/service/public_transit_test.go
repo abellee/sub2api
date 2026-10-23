@@ -195,9 +195,9 @@ func TestBuildPublicTransitGroups_ExportsEnabledGroupModelsList(t *testing.T) {
 		Platform:       "openai",
 		RateMultiplier: 0.1,
 		Status:         StatusActive,
-		ModelsListConfig: GroupModelsListConfig{
+		ModelAllowlist: GroupModelAllowlist{
 			Enabled: true,
-			Models:  []string{"gpt-5.5", "gpt-image-2"},
+			Models:  []string{"gpt-5.5", "gpt-image-2", "claude-*"},
 		},
 	}}, nil, nil, nil)
 

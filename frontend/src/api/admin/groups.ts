@@ -103,15 +103,15 @@ export async function getById(id: number): Promise<AdminGroup> {
 }
 
 /**
- * Get candidate models for custom /v1/models list.
+ * Get candidate models for the group model allowlist.
  * id=0 returns platform default models for create flow.
  */
-export async function getModelsListCandidates(
+export async function getModelAllowlistCandidates(
   id: number,
   platform?: GroupPlatform
 ): Promise<string[]> {
   const { data } = await apiClient.get<{ models: string[] }>(
-    `/admin/groups/${id}/models-list-candidates`,
+    `/admin/groups/${id}/model-allowlist-candidates`,
     {
       params: platform ? { platform } : undefined
     }
@@ -446,13 +446,13 @@ export async function clearGroupRPMOverrides(id: number): Promise<{ message: str
 }
 
 /**
- * Get usage summary (today + cumulative cost) for all groups
- * @param timezone - IANA timezone string (e.g. "Asia/Shanghai")
+ * Get usage summary (today + yesterday + cumulative cost) for all groups
  * @returns Array of group usage summaries
  */
 export interface GroupUsageSummary {
   group_id: number
   today_cost: number
+  yesterday_cost: number
   total_cost: number
   today_input_tokens: number
   today_cache_creation_tokens: number
@@ -472,12 +472,8 @@ export interface GroupUsageSummary {
   total_cache_hit_rate: number
 }
 
-export async function getUsageSummary(
-  timezone?: string
-): Promise<GroupUsageSummary[]> {
-  const { data } = await apiClient.get<GroupUsageSummary[]>('/admin/groups/usage-summary', {
-    params: timezone ? { timezone } : undefined
-  })
+export async function getUsageSummary(): Promise<GroupUsageSummary[]> {
+  const { data } = await apiClient.get<GroupUsageSummary[]>('/admin/groups/usage-summary')
   return data
 }
 
@@ -500,7 +496,7 @@ export const groupsAPI = {
   getAllIncludingInactive,
   getLiveCapability,
   getById,
-  getModelsListCandidates,
+  getModelAllowlistCandidates,
   create,
   duplicate,
   update,
