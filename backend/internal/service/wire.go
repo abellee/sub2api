@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"os"
+	"path/filepath"
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
@@ -16,6 +17,30 @@ import (
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 )
+
+func ProvideContentSafetyBillingService(cfg *config.Config, billing UsageBillingRepository, cache *BillingCacheService, apiKeys *APIKeyService) (*ContentSafetyBillingService, error) {
+	dir := os.Getenv("DATA_DIR")
+	if dir == "" {
+		dir = cfg.Pricing.DataDir
+	}
+	if dir == "" {
+		dir = "./data"
+	}
+	svc, err := OpenContentSafetyBilling(filepath.Join(dir, "content-safety-billing.sqlite"), billing, func(ctx context.Context, userID int64) error {
+		if apiKeys != nil {
+			apiKeys.InvalidateAuthCacheByUserID(ctx, userID)
+		}
+		if cache != nil {
+			return cache.InvalidateUserBalance(ctx, userID)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	svc.Start()
+	return svc, nil
+}
 
 func ProvideGrokOAuthService(proxyRepo ProxyRepository, oauthClient GrokOAuthClient, cfg *config.Config, redisClient *redis.Client) *GrokOAuthService {
 	svc := NewGrokOAuthService(proxyRepo, oauthClient, cfg)
@@ -768,6 +793,7 @@ var ProviderSet = wire.NewSet(
 	NewAdminService,
 	NewGatewayService,
 	NewOpenAIGatewayService,
+	ProvideContentSafetyBillingService,
 	ProvideImageStorageSettingService,
 	ProvideImageTaskService,
 	ProvideBatchImageModelPricingResolver,

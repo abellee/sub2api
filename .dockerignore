@@ -6,6 +6,7 @@
 .git
 .gitignore
 .gitattributes
+.audit-local/
 
 # Documentation
 *.md

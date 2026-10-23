@@ -34,6 +34,9 @@ importers:
       chart.js:
         specifier: ^4.4.1
         version: 4.5.1
+      decimal.js:
+        specifier: ^10.6.0
+        version: 10.6.0
       dompurify:
         specifier: ^3.3.1
         version: 3.3.1

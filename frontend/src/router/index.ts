@@ -33,7 +33,7 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/home',
     name: 'Home',
-    component: () => import('@/views/HomeView.vue'),
+    component: () => import('@/views/TokenFreeHomeView.vue'),
     meta: {
       requiresAuth: false,
       title: 'Home'
@@ -173,6 +173,16 @@ const routes: RouteRecordRaw[] = [
     meta: {
       requiresAuth: false,
       title: 'Legal Document'
+    }
+  },
+  {
+    path: '/models',
+    name: 'CustomModelPlaza',
+    component: () => import('@/views/CustomModelPlazaView.vue'),
+    meta: {
+      requiresAuth: false,
+      title: 'Model Plaza',
+      titleKey: 'modelPlaza.title'
     }
   },
   {
@@ -601,6 +611,18 @@ const routes: RouteRecordRaw[] = [
       titleKey: 'admin.riskControl.title',
       descriptionKey: 'admin.riskControl.description',
       requiresRiskControl: true
+    }
+  },
+  {
+    path: '/admin/content-safety-billing',
+    name: 'AdminContentSafetyBilling',
+    component: () => import('@/views/admin/ContentSafetyBillingView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Content Safety Billing',
+      titleKey: 'admin.contentSafetyBilling.title',
+      descriptionKey: 'admin.contentSafetyBilling.description',
     }
   },
   {

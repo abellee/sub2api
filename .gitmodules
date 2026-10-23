@@ -1,0 +1,3 @@
+[submodule "audit-sdk"]
+	path = backend/audit-sdk
+	url = C:/Users/abellee/Documents/sub2api-audit-sdk

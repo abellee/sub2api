@@ -162,6 +162,10 @@ const fallbackText = computed(() => props.model.charAt(0).toUpperCase())
 const iconKey = computed(() => {
   const modelLower = props.model.toLowerCase()
 
+  // Catalog cards pass provider names rather than model identifiers.
+  if (modelLower === 'openai') return 'openai'
+  if (modelLower === 'anthropic') return 'claude'
+
   // OpenAI models
   if (modelLower.startsWith('gpt') || modelLower.startsWith('o1') ||
       modelLower.startsWith('o3') || modelLower.startsWith('o4') ||

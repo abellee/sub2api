@@ -47,7 +47,11 @@ func ProvideAdminHandlers(
 	auditLogHandler *admin.AuditLogHandler,
 	upstreamBillingProbe *service.UpstreamBillingProbeService,
 	ollamaCloudUsage *service.OllamaCloudUsageService,
+	contentSafetyBilling *service.ContentSafetyBillingService,
+	openAIGateway *service.OpenAIGatewayService,
 ) *AdminHandlers {
+	settingHandler.SetContentSafetyBilling(contentSafetyBilling)
+	openAIGateway.SetContentSafetyBilling(contentSafetyBilling)
 	accountHandler.SetUpstreamBillingProbeService(upstreamBillingProbe)
 	accountHandler.SetOllamaCloudUsageService(ollamaCloudUsage)
 	return &AdminHandlers{

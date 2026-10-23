@@ -532,6 +532,9 @@ func registerPromoCodeRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 }
 
 func registerSettingsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	admin.GET("/content-safety-billing", h.Admin.Setting.GetContentSafetyBilling)
+	admin.PUT("/content-safety-billing", h.Admin.Setting.UpdateContentSafetyBilling)
+	admin.GET("/content-safety-billing/records", h.Admin.Setting.ListContentSafetyDebits)
 	adminSettings := admin.Group("/settings")
 	{
 		adminSettings.GET("", h.Admin.Setting.GetSettings)

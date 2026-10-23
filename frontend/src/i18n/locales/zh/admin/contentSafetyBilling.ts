@@ -1,0 +1,22 @@
+export default {
+  contentSafetyBilling: {
+    title: '内容安全扣费',
+    description: 'Grok 上游返回 403 且错误描述包含指定文本时，按固定金额扣除用户余额，并向客户端返回统一错误信息。',
+    enabled: '启用内容安全扣费',
+    amount: '每次扣款金额（USD）',
+    amountHint: '直接从用户余额扣除固定金额，不乘分组倍率；订阅用户同样扣除余额。',
+    match: '错误描述检测内容',
+    matchHint: '区分大小写的包含匹配，仅检测上游 403 错误描述；此文本同时保存为扣款备注。',
+    clientMessage: '标准化错误信息',
+    clientMessageHint: '命中后保持 HTTP 403，在客户端协议对应的 error.message 中返回此文本，并停止换号重试。',
+    records: '扣款记录',
+    recordsHint: '处理中记录会自动重试；每条记录使用固定扣款编号，避免重复扣款。',
+    refresh: '刷新记录', retry: '重试',
+    time: '时间 / 扣款编号', identity: '用户 / API Key / 上游账号', debit: '扣款金额（USD）',
+    note: '扣款备注', status: '状态', charged: '已扣款', pending: '处理中', empty: '暂无扣款记录',
+    pagination: '第 {page} 页 · 共 {total} 条', previous: '上一页', next: '下一页',
+    loadError: '配置加载失败，请重试。',
+    saveError: '未能确认保存成功，请检查金额和文本后重试。',
+    recordsError: '扣款记录加载失败，请刷新重试。',
+  },
+}

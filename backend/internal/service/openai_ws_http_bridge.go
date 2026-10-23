@@ -243,6 +243,10 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 
 	if resp.StatusCode >= 400 {
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, openAIWSHTTPBridgeErrorBodyLimitBytes))
+		if message, matched := s.contentSafetyRejection(c, account, resp, respBody, fmt.Sprintf("ws:%d", turn)); matched {
+			_ = writeClientMessage(buildOpenAIWSHTTPBridgeErrorEvent(http.StatusForbidden, message))
+			return nil, errContentSafetyRejected
+		}
 		upstreamMsg := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(respBody)))
 		if upstreamMsg == "" {
 			upstreamMsg = http.StatusText(resp.StatusCode)

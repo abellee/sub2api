@@ -1,0 +1,22 @@
+export default {
+  contentSafetyBilling: {
+    title: 'Content Safety Billing',
+    description: 'Debit a fixed amount from the user balance when a Grok upstream returns 403 with matching error text, and return a standard message to the client.',
+    enabled: 'Enable content safety billing',
+    amount: 'Debit per request (USD)',
+    amountHint: 'A fixed balance debit without group multipliers. Subscription users are also charged from their balance.',
+    match: 'Error description to detect',
+    matchHint: 'Case-sensitive substring match on upstream 403 error descriptions. This text is also saved as the debit note.',
+    clientMessage: 'Standard error message',
+    clientMessageHint: 'Keep HTTP 403 and return this text in the protocol error.message. Account failover stops for this request.',
+    records: 'Debit records',
+    recordsHint: 'Pending records retry automatically using the same debit ID to prevent duplicate charges.',
+    refresh: 'Refresh records', retry: 'Retry',
+    time: 'Time / Debit ID', identity: 'User / API Key / Upstream account', debit: 'Amount (USD)',
+    note: 'Debit note', status: 'Status', charged: 'Charged', pending: 'Pending', empty: 'No debit records',
+    pagination: 'Page {page} · {total} records', previous: 'Previous', next: 'Next',
+    loadError: 'Unable to load configuration. Please retry.',
+    saveError: 'Unable to confirm the save. Check the amount and text, then retry.',
+    recordsError: 'Unable to load debit records. Please refresh.',
+  },
+}
