@@ -1,0 +1,1453 @@
+// Package app wires the store, the Sub2API client and the lottery domain
+// logic into the application services used by the HTTP layer and schedulers.
+package app
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log/slog"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
+	"lotteryd/internal/lottery"
+	"lotteryd/internal/push"
+	"lotteryd/internal/store"
+	"lotteryd/internal/sub2api"
+)
+
+const stateTokensLastDate = "tokens_last_date"
+const stateAdminAPIKey = "admin_api_key"
+const stateVisibility = "visibility_json"
+const stateTaskVisibility = "task_visibility_json"
+const stateDailyConfigs = "daily_activity_configs"
+const stateDailyConfigLegacy = "daily_activity_config"
+
+// AdminSettings 管理页「设置」弹窗的数据。
+type AdminSettings struct {
+	Sub2APIURL        string `json:"sub2api_url"`
+	AdminAPIKeySet    bool   `json:"admin_api_key_set"`
+	AdminAPIKeyMasked string `json:"admin_api_key_masked"`
+}
+
+// ErrSettlementDisabled 表示本地测试门禁拦住了奖励发放和任务结算。开奖仍会进行。
+var ErrSettlementDisabled = errors.New("本地测试已关闭奖励发放，不会入账或生成兑换码")
+
+// Config holds runtime-tunable behaviour.
+type Config struct {
+	// BackfillDays 首次同步及修复旧快照时回溯的天数（含今天）。
+	BackfillDays int
+	// DisableSettlement 为真时，仍会开奖并记下中奖者，但不发放奖品，也不做任务结算。
+	DisableSettlement bool
+}
+
+// App is the application core.
+type App struct {
+	Store   *store.Store
+	Sub2API *sub2api.Client
+	Cfg     Config
+	Push    *push.Client
+}
+
+// New creates the application core.
+func New(st *store.Store, client *sub2api.Client, cfg Config) *App {
+	if cfg.BackfillDays <= 0 {
+		cfg.BackfillDays = 35
+	}
+	return &App{Store: st, Sub2API: client, Cfg: cfg}
+}
+
+// ---- Views ----
+
+// PrizeView 用户可见的奖品信息。
+type PrizeView struct {
+	ID           int64   `json:"id"`
+	Name         string  `json:"name"`
+	PrizeType    string  `json:"prize_type"`
+	Value        float64 `json:"value"`
+	Weight       float64 `json:"weight"`
+	Stock        int64   `json:"stock"`
+	GrantedCount int64   `json:"granted_count"`
+}
+
+// ActivityView 用户/管理侧的活动视图。
+type ActivityView struct {
+	ID              int64     `json:"id"`
+	Name            string    `json:"name"`
+	Description     string    `json:"description"`
+	StartsAt        time.Time `json:"starts_at"`
+	DrawsAt         time.Time `json:"draws_at"`
+	MaxParticipants int64     `json:"max_participants"`
+	// ParticipantCount 关闭“显示参与人数”时为 nil，用户侧 JSON 不包含该字段。
+	ParticipantCount     *int64               `json:"participant_count,omitempty"`
+	ShowParticipantCount bool                 `json:"show_participant_count"`
+	ConditionMatch       string               `json:"condition_match"`
+	Phase                string               `json:"phase"`
+	Conditions           []lottery.EvalResult `json:"conditions,omitempty"`
+	Eligible             bool                 `json:"eligible"`
+	EligibleReason       string               `json:"eligible_reason,omitempty"`
+	Weight               float64              `json:"weight,omitempty"`
+	Joined               bool                 `json:"joined"`
+	Won                  *lottery.Winner      `json:"won,omitempty"`
+	Prizes               []PrizeView          `json:"prizes"`
+	DrawnAt              *time.Time           `json:"drawn_at,omitempty"`
+	Winners              []lottery.Winner     `json:"winners,omitempty"`
+	Status               string               `json:"status"`
+	CreatedAt            time.Time            `json:"created_at"`
+	// 来源日常定时抽奖配置 ID（0 = 手动创建；仅管理端视图填充）。
+	DailyConfigID int64 `json:"daily_config_id,omitempty"`
+	// 管理端列表展示当前生效的共用参与组和重复策略。用户侧不填，JSON 省略。
+	RepeatGroup  string `json:"repeat_group,omitempty"`
+	RepeatPolicy string `json:"repeat_policy,omitempty"`
+	// Notifications 只在管理端列表填充。未发送的阶段为 nil。
+	Notifications *ActivityNotificationView `json:"notifications,omitempty"`
+	Extra         map[string]interface{}    `json:"-"`
+}
+
+func prizeViews(prizes []lottery.Prize) []PrizeView {
+	out := make([]PrizeView, 0, len(prizes))
+	for _, p := range prizes {
+		out = append(out, PrizeView{
+			ID: p.ID, Name: p.Name, PrizeType: p.PrizeType,
+			Value: p.Value, Weight: p.Weight, Stock: p.Stock, GrantedCount: p.GrantedCount,
+		})
+	}
+	return out
+}
+
+func maskWinner(w lottery.Winner) lottery.Winner {
+	w.Email = lottery.MaskEmail(w.Email)
+	w.RedeemCode = "" // 兑换码只发给中奖者本人
+	return w
+}
+
+func maxWindowDays(acts []lottery.Activity) int {
+	maxDays := 1
+	for _, a := range acts {
+		for _, c := range a.Conditions {
+			if c.WindowDays > maxDays {
+				maxDays = c.WindowDays
+			}
+		}
+	}
+	return maxDays
+}
+
+func dateStr(t time.Time) string { return lottery.InBeijing(t).Format("2006-01-02") }
+
+// registeredAt 解析用户注册时间：优先取缓存，其次用 identity 种子（introspect 带回的
+// created_at），最后回退查主服务单用户接口。注册时间不可变，查到即缓存。
+func (ap *App) registeredAt(ctx context.Context, userID int64, email string, seed *time.Time) *time.Time {
+	if t, err := ap.Store.GetRegisteredAt(userID); err == nil && t != nil {
+		return t
+	}
+	if seed != nil && !seed.IsZero() {
+		_ = ap.Store.UpsertRegisteredAt(userID, email, *seed)
+		return seed
+	}
+	if u, err := ap.Sub2API.GetUser(ctx, userID); err == nil && u.CreatedAt != "" {
+		if t, err := time.Parse(time.RFC3339, u.CreatedAt); err == nil {
+			_ = ap.Store.UpsertRegisteredAt(userID, u.Email, t)
+			return &t
+		}
+	}
+	return nil
+}
+
+// applyRegistered 把注册时间写入 usage（map 里可能还没有该用户的条目）。
+func applyRegistered(usages map[int64]*lottery.UserUsage, userID int64, email string, ra *time.Time) {
+	if ra == nil {
+		return
+	}
+	u := usages[userID]
+	if u == nil {
+		u = &lottery.UserUsage{UserID: userID, Email: email}
+		usages[userID] = u
+	}
+	u.RegisteredAt = ra
+}
+
+// usageWindow 拉取评估窗口（含 maxDays 个完整天，终点为昨天）内的用量。
+func (ap *App) usageWindow(ctx context.Context, maxDays int) (map[int64]*lottery.UserUsage, error) {
+	end := time.Now().In(lottery.Beijing()).AddDate(0, 0, -1)
+	start := end.AddDate(0, 0, -(maxDays - 1))
+	return ap.Store.DailyTokensWindow(dateStr(start), dateStr(end))
+}
+
+// ---- User endpoints ----
+
+// ListUserActivities 返回当前用户能看到的活动。
+// 已删除，以及已关闭、已归档且未开奖的场次不下发。
+// 每场活动自己决定可见范围：全部用户都看得到；部分用户只给名单内的邮箱；
+// 仅符合条件的用户只看自己能参与的场次，已参与或已中奖的场次仍保留。管理员不受限。
+// 右上角的抽奖可见范围不参与这里，它只决定菜单。
+func (ap *App) ListUserActivities(ctx context.Context, userID int64, email, role string, registeredAt *time.Time) ([]ActivityView, error) {
+	return ap.userActivityViews(ctx, userID, email, role, registeredAt, true)
+}
+
+func (ap *App) userActivityViews(ctx context.Context, userID int64, email, role string, registeredAt *time.Time, filterItem bool) ([]ActivityView, error) {
+	admin := role == "admin"
+	acts, err := ap.Store.ListActivities()
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	candidates := make([]*lottery.Activity, 0, len(acts))
+	for i := range acts {
+		a := &acts[i]
+		if a.Status == "deleted" || (a.Status != "active" && a.DrawnAt.IsZero()) {
+			continue // 已删除，以及已关闭/已归档且未开奖的活动对用户不可见
+		}
+		candidates = append(candidates, a)
+	}
+	var usages map[int64]*lottery.UserUsage
+	if len(candidates) > 0 {
+		usages, err = ap.userUsageWindow(ctx, userID, email, acts)
+		if err != nil {
+			return nil, err
+		}
+		applyRegistered(usages, userID, email, ap.registeredAt(ctx, userID, email, registeredAt))
+	}
+	out := make([]ActivityView, 0, len(candidates))
+	for _, a := range candidates {
+		v, err := ap.buildActivityView(ctx, a, userID, email, registeredAt, now, usages, false)
+		if err != nil {
+			return nil, err
+		}
+		if filterItem && !admin && !a.Visibility.ShowsTo(email, v.Joined || v.Won != nil || v.Eligible) {
+			continue
+		}
+		out = append(out, *v)
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].DrawsAt.Before(out[j].DrawsAt) })
+	return out, nil
+}
+
+// UserCanSeeActivity 用户侧中奖名单：场次要在该用户的可见列表里。
+func (ap *App) UserCanSeeActivity(ctx context.Context, activityID, userID int64, email, role string, registeredAt *time.Time) (bool, error) {
+	a, err := ap.Store.GetActivity(activityID)
+	if err != nil {
+		return false, err
+	}
+	if a.Status == "deleted" || (a.Status != "active" && a.DrawnAt.IsZero()) {
+		return false, nil
+	}
+	if role == "admin" {
+		return true, nil
+	}
+	acts, err := ap.ListUserActivities(ctx, userID, email, role, registeredAt)
+	if err != nil {
+		return false, err
+	}
+	for _, view := range acts {
+		if view.ID == activityID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (ap *App) buildActivityView(ctx context.Context, a *lottery.Activity, userID int64, email string, registeredAt *time.Time, now time.Time, usages map[int64]*lottery.UserUsage, withWinners bool) (*ActivityView, error) {
+	joined, err := ap.Store.HasParticipant(a.ID, userID)
+	if err != nil {
+		return nil, err
+	}
+	won, err := ap.Store.HasWinner(a.ID, userID)
+	if err != nil {
+		return nil, err
+	}
+	count, err := ap.Store.CountParticipants(a.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	v := &ActivityView{
+		ID: a.ID, Name: a.Name, Description: a.Description,
+		StartsAt: a.StartsAt, DrawsAt: a.DrawsAt,
+		MaxParticipants:      a.MaxParticipants,
+		ShowParticipantCount: a.ShowParticipantCount,
+		ConditionMatch:       a.ConditionMatch,
+		Phase:                a.Phase(now),
+		Joined:               joined,
+		Prizes:               prizeViews(a.Prizes),
+		Status:               a.Status,
+		CreatedAt:            a.CreatedAt,
+	}
+	if a.ShowParticipantCount {
+		n := count
+		v.ParticipantCount = &n
+	}
+	if !a.DrawnAt.IsZero() {
+		t := a.DrawnAt
+		v.DrawnAt = &t
+	}
+	if won {
+		ws, err := ap.Store.ListWinnersByUser(userID)
+		if err != nil {
+			return nil, err
+		}
+		for i := range ws {
+			if ws[i].ActivityID == a.ID {
+				w := ws[i]
+				w.Email = lottery.MaskEmail(w.Email)
+				v.Won = &w
+				break
+			}
+		}
+	}
+	removed, err := ap.Store.HasRemovedParticipant(a.ID, userID)
+	if err != nil {
+		return nil, err
+	}
+	if removed {
+		v.EligibleReason = store.ErrParticipantRemoved.Error()
+	}
+	// 未参与的场次都评估资格，供参与按钮使用。列表本身不再按资格隐藏。
+	if !removed && !joined && !won && phaseNeedsEligibility(v.Phase) {
+		if usages == nil {
+			var loadErr error
+			usages, loadErr = ap.userUsageWindow(ctx, userID, email, []lottery.Activity{*a})
+			if loadErr != nil {
+				return nil, loadErr
+			}
+			applyRegistered(usages, userID, email, ap.registeredAt(ctx, userID, email, registeredAt))
+		}
+		if err := ap.fillHistoricalRecharge(ctx, usages, userID, email, a.Conditions); err != nil {
+			return nil, err
+		}
+		el := a.Evaluate(usages[userID], now)
+		v.Eligible = el.Eligible
+		v.EligibleReason = el.Reason
+		v.Weight = el.Weight
+		v.Conditions = el.Results
+		// 重复参与策略：系列内已参与/已中奖 → 显示为不可参与
+		if v.Eligible {
+			if blocked, reason := ap.repeatPolicyBlocked(a, userID); blocked {
+				v.Eligible = false
+				v.EligibleReason = reason
+			}
+		}
+		// 用户侧不展示加成/权重（运营工具内部概念）。
+		v.Weight = 1
+		for i := range v.Conditions {
+			v.Conditions[i].BonusPercent = 0
+		}
+		if !el.Eligible && !v.Joined {
+			v.EligibleReason = el.Reason
+		}
+	}
+	if withWinners && !a.DrawnAt.IsZero() {
+		ws, err := ap.Store.ListWinnersByActivity(a.ID)
+		if err != nil {
+			return nil, err
+		}
+		v.Winners = make([]lottery.Winner, 0, len(ws))
+		for _, w := range ws {
+			v.Winners = append(v.Winners, maskWinner(w))
+		}
+	}
+	return v, nil
+}
+
+// EligibilityList 返回参与中、符合条件且未参与的活动（供全局引导弹窗）。
+func (ap *App) EligibilityList(ctx context.Context, userID int64, email string, registeredAt *time.Time) ([]ActivityView, error) {
+	acts, err := ap.Store.ListActivities()
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	usages, err := ap.userUsageWindow(ctx, userID, email, acts)
+	if err != nil {
+		return nil, err
+	}
+	applyRegistered(usages, userID, email, ap.registeredAt(ctx, userID, email, registeredAt))
+	out := make([]ActivityView, 0)
+	for i := range acts {
+		a := &acts[i]
+		if a.Status != "active" || !a.DrawnAt.IsZero() || !now.After(a.StartsAt) {
+			continue
+		}
+		removed, err := ap.Store.HasRemovedParticipant(a.ID, userID)
+		if err != nil {
+			return nil, err
+		}
+		if removed {
+			continue
+		}
+		// 部分用户：名单外不弹。全部用户和仅符合条件的用户仍按参与条件判断。
+		if !a.Visibility.ShowsTo(email, true) {
+			continue
+		}
+		joined, err := ap.Store.HasParticipant(a.ID, userID)
+		if err != nil {
+			return nil, err
+		}
+		if joined {
+			continue
+		}
+		if a.MaxParticipants > 0 {
+			count, err := ap.Store.CountParticipants(a.ID)
+			if err != nil {
+				return nil, err
+			}
+			if count >= a.MaxParticipants {
+				continue
+			}
+		}
+		if err := ap.fillHistoricalRecharge(ctx, usages, userID, email, a.Conditions); err != nil {
+			return nil, err
+		}
+		el := a.Evaluate(usages[userID], now)
+		if !el.Eligible {
+			continue
+		}
+		// 重复参与策略：被排除的用户不弹引导窗
+		if blocked, _ := ap.repeatPolicyBlocked(a, userID); blocked {
+			continue
+		}
+		// 用户侧不展示加成/权重（运营工具内部概念）。
+		for i := range el.Results {
+			el.Results[i].BonusPercent = 0
+		}
+		out = append(out, ActivityView{
+			ID: a.ID, Name: a.Name, Description: a.Description,
+			StartsAt: a.StartsAt, DrawsAt: a.DrawsAt,
+			ConditionMatch: a.ConditionMatch,
+			Phase:          a.Phase(now),
+			Eligible:       true,
+			Weight:         1,
+			Conditions:     el.Results,
+			Prizes:         prizeViews(a.Prizes),
+		})
+	}
+	return out, nil
+}
+
+// Participate 在校验窗口、资格、容量后把用户登记为参与者。
+// identity 由 HTTP 层通过 /auth/me 复核后传入。
+func (ap *App) Participate(ctx context.Context, activityID, userID int64, identity *sub2api.Identity, now time.Time) (*ActivityView, error) {
+	a, err := ap.Store.GetActivity(activityID)
+	if err != nil {
+		return nil, err
+	}
+	if a.Status != "active" {
+		return nil, store.ErrNotJoinable
+	}
+	if !a.DrawnAt.IsZero() {
+		return nil, store.ErrNotJoinable
+	}
+	if now.Before(a.StartsAt) {
+		return nil, store.ErrNotJoinable
+	}
+	if !now.Before(a.DrawsAt) {
+		return nil, store.ErrNotJoinable
+	}
+	removed, err := ap.Store.HasRemovedParticipant(a.ID, userID)
+	if err != nil {
+		return nil, err
+	}
+	if removed {
+		return nil, store.ErrParticipantRemoved
+	}
+	// 这一场设为部分用户时，名单外的用户不可参与。管理员不受限。
+	if identity.Role != "admin" && !a.Visibility.ShowsTo(identity.Email, true) {
+		return nil, store.ErrNotVisible
+	}
+	joined, err := ap.Store.HasParticipant(a.ID, userID)
+	if err != nil {
+		return nil, err
+	}
+	if joined {
+		return nil, store.ErrAlreadyJoined
+	}
+	won, err := ap.Store.HasWinner(a.ID, userID)
+	if err != nil {
+		return nil, err
+	}
+	if won {
+		return nil, store.ErrAlreadyJoined
+	}
+	if a.MaxParticipants > 0 {
+		count, err := ap.Store.CountParticipants(a.ID)
+		if err != nil {
+			return nil, err
+		}
+		if count >= a.MaxParticipants {
+			return nil, store.ErrActivityFull
+		}
+	}
+	usages, err := ap.userUsageWindow(ctx, userID, identity.Email, []lottery.Activity{*a})
+	if err != nil {
+		return nil, err
+	}
+	applyRegistered(usages, userID, identity.Email, ap.registeredAt(ctx, userID, identity.Email, identity.RegisteredAt))
+	if err := ap.fillHistoricalRecharge(ctx, usages, userID, identity.Email, a.Conditions); err != nil {
+		return nil, err
+	}
+	el := a.Evaluate(usages[userID], now)
+	if !el.Eligible {
+		return nil, store.ErrNotEligible
+	}
+	// 重复参与策略（日常定时抽奖系列）
+	if derr := ap.repeatPolicyDeniedErr(a, userID); derr != nil {
+		return nil, derr
+	}
+	if err := ap.Store.AddParticipant(a.ID, userID, identity.Email, el.Weight, a.MaxParticipants); err != nil {
+		return nil, err
+	}
+	return ap.buildActivityView(ctx, a, userID, identity.Email, identity.RegisteredAt, now, nil, false)
+}
+
+// phaseNeedsEligibility 这些阶段需要知道用户当前是否满足参与条件。
+func phaseNeedsEligibility(phase string) bool {
+	switch phase {
+	case lottery.ActivityJoining, lottery.ActivityUpcoming, lottery.ActivityDrawn, lottery.ActivityFulfilled:
+		return true
+	default:
+		return false
+	}
+}
+
+// MyWinnings 用户的中奖记录（兑换码仅本人可见）。
+func (ap *App) MyWinnings(userID int64) ([]lottery.Winner, error) {
+	ws, err := ap.Store.ListWinnersByUser(userID)
+	if err != nil {
+		return nil, err
+	}
+	if ws == nil {
+		ws = make([]lottery.Winner, 0)
+	}
+	for i := range ws {
+		ws[i].Email = lottery.MaskEmail(ws[i].Email)
+	}
+	return ws, nil
+}
+
+// ---- Admin ----
+
+// AdminListActivities 管理端活动列表（含各活动参与者与中奖名单摘要）。
+func (ap *App) AdminListActivities(ctx context.Context) ([]ActivityView, error) {
+	acts, err := ap.Store.ListActivities()
+	if err != nil {
+		return nil, err
+	}
+	notifyStages, err := ap.Store.ListActivityNotifyStages()
+	if err != nil {
+		return nil, err
+	}
+	pushLogs, err := ap.Store.ListActivityPushLogs()
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	out := make([]ActivityView, 0, len(acts))
+	for i := range acts {
+		a := &acts[i]
+		if a.Status == "deleted" {
+			continue
+		}
+		count, err := ap.Store.CountParticipants(a.ID)
+		if err != nil {
+			return nil, err
+		}
+		n := count
+		v := &ActivityView{
+			ID: a.ID, Name: a.Name, Description: a.Description,
+			StartsAt: a.StartsAt, DrawsAt: a.DrawsAt,
+			MaxParticipants:      a.MaxParticipants,
+			ParticipantCount:     &n,
+			ShowParticipantCount: a.ShowParticipantCount,
+			ConditionMatch:       a.ConditionMatch,
+			Phase:                a.Phase(now),
+			Prizes:               prizeViews(a.Prizes),
+			Status:               a.Status,
+			CreatedAt:            a.CreatedAt,
+			DailyConfigID:        a.DailyConfigID,
+		}
+		policy, group, _ := ap.repeatScope(a)
+		if group != "" {
+			v.RepeatGroup = group
+		}
+		if policy != "" && policy != lottery.RepeatUnlimited {
+			v.RepeatPolicy = policy
+		}
+		counts := pushLogs[a.ID]
+		stages := notifyStages[a.ID]
+		if stages == nil {
+			stages = []string{}
+		}
+		v.Notifications = &ActivityNotificationView{
+			Enabled:     len(stages) > 0,
+			Stages:      stages,
+			BeforeStart: stageCountPtr(counts, lottery.StageBeforeStart),
+			Started:     stageCountPtr(counts, lottery.StageStarted),
+			BeforeDraw:  stageCountPtr(counts, lottery.StageBeforeDraw),
+			Results:     stageCountPtr(counts, lottery.StageResults),
+		}
+		if !a.DrawnAt.IsZero() {
+			t := a.DrawnAt
+			v.DrawnAt = &t
+		}
+		out = append(out, *v)
+	}
+	return out, nil
+}
+
+// AdminWinners 管理端中奖名单（邮箱脱敏）。
+func (ap *App) AdminWinners(activityID int64) ([]lottery.Winner, error) {
+	// 管理端（运营工具）：保留完整邮箱，便于核对与发放排查。
+	return ap.Store.ListWinnersByActivity(activityID)
+}
+
+// AdminParticipants 管理端参与者名单（完整邮箱，供运营核对）。
+func (ap *App) AdminParticipants(activityID int64) ([]lottery.Participant, error) {
+	return ap.Store.ListParticipants(activityID)
+}
+
+// LoadRuntimeSettings 启动时把持久化的运行时设置（如管理员 API Key）应用到客户端。
+func (ap *App) LoadRuntimeSettings() {
+	if key, err := ap.Store.GetState(stateAdminAPIKey); err == nil && key != "" {
+		ap.Sub2API.SetAdminAPIKey(key)
+	}
+}
+
+// GetAdminSettings 返回设置弹窗所需信息（密钥脱敏）。
+func (ap *App) GetAdminSettings() AdminSettings {
+	key := ap.Sub2API.AdminAPIKey()
+	masked := lottery.MaskSecret(key)
+	return AdminSettings{
+		Sub2APIURL:        ap.Sub2API.BaseURL(),
+		AdminAPIKeySet:    key != "",
+		AdminAPIKeyMasked: masked,
+	}
+}
+
+// SetAdminAPIKey 保存并立即应用新的管理员 API Key（无需重启）。
+func (ap *App) SetAdminAPIKey(key string) error {
+	if err := ap.Store.SetState(stateAdminAPIKey, key); err != nil {
+		return err
+	}
+	ap.Sub2API.SetAdminAPIKey(key)
+	return nil
+}
+
+// ---- Visibility ----
+
+// GetVisibility 读取抽奖显隐配置（未配置 = 部分人可见，白名单为空即仅管理员可见）。
+func (ap *App) GetVisibility() lottery.Visibility {
+	return ap.getVisibilityState(stateVisibility)
+}
+
+// errMenuVisibilityMode 右上角菜单只接受全部用户或部分用户。
+var errMenuVisibilityMode = errors.New("菜单可见范围只能是全部用户或部分用户")
+
+// SetVisibility 保存抽奖菜单显隐配置。
+func (ap *App) SetVisibility(v lottery.Visibility) error {
+	v, err := normalizeMenuVisibility(v)
+	if err != nil {
+		return err
+	}
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	return ap.Store.SetState(stateVisibility, string(raw))
+}
+
+// GetTaskVisibility 读取任务中心显隐配置（未配置 = 部分人可见）。
+func (ap *App) GetTaskVisibility() lottery.Visibility {
+	return ap.getVisibilityState(stateTaskVisibility)
+}
+
+// SetTaskVisibility 保存任务中心菜单显隐配置。
+func (ap *App) SetTaskVisibility(v lottery.Visibility) error {
+	v, err := normalizeMenuVisibility(v)
+	if err != nil {
+		return err
+	}
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	return ap.Store.SetState(stateTaskVisibility, string(raw))
+}
+
+// normalizeMenuVisibility 菜单只保留全部用户和部分用户。仅符合条件的用户属于每一场或每一条。
+func normalizeMenuVisibility(v lottery.Visibility) (lottery.Visibility, error) {
+	if v.Mode == lottery.VisibilityEligible {
+		return lottery.Visibility{}, errMenuVisibilityMode
+	}
+	if err := v.Validate(); err != nil {
+		return lottery.Visibility{}, err
+	}
+	return v, nil
+}
+
+// getVisibilityState 读取菜单显隐；未配置、解析失败，或旧的「仅符合条件」都按部分用户处理。
+func (ap *App) getVisibilityState(key string) lottery.Visibility {
+	raw, err := ap.Store.GetState(key)
+	if err != nil || raw == "" {
+		return lottery.Visibility{Mode: lottery.VisibilityPartial}
+	}
+	var v lottery.Visibility
+	if err := json.Unmarshal([]byte(raw), &v); err != nil {
+		return lottery.Visibility{Mode: lottery.VisibilityPartial}
+	}
+	if v.Mode != lottery.VisibilityAll && v.Mode != lottery.VisibilityPartial {
+		v.Mode = lottery.VisibilityPartial
+	}
+	return v
+}
+
+// IsUserAllowed 列表、弹窗和参与不看右上角设置。右上角只决定抽奖菜单。
+func (ap *App) IsUserAllowed(role, email string) bool {
+	return true
+}
+
+// IsUserAllowedTask 列表、弹窗和结算不看右上角设置。右上角只决定任务中心菜单。
+func (ap *App) IsUserAllowedTask(role, email string) bool {
+	return true
+}
+
+// ---- Daily activity ----
+
+// repeatPolicyBlocked 按活动所属日常配置的重复参与策略判断用户是否被排除。
+// 配置还在时，组名以当前配置为准，所以改组后立刻作用于已生成的场次。
+// 组名相同的配置放在一起统计；组名为空时仍只统计本配置。
+func (ap *App) repeatPolicyBlocked(a *lottery.Activity, userID int64) (bool, string) {
+	policy, group, configIDs := ap.repeatScope(a)
+	switch policy {
+	case lottery.RepeatJoinOnce:
+		if joined, err := ap.userRepeatHit(false, a, group, configIDs, userID); err == nil && joined {
+			return true, "您已参与过该系列抽奖"
+		}
+	case lottery.RepeatWinOnce:
+		if won, err := ap.userRepeatHit(true, a, group, configIDs, userID); err == nil && won {
+			return true, "您已在该系列抽奖中中奖"
+		}
+	}
+	return false, ""
+}
+
+// repeatScope 返回这场活动当前生效的策略、共用组和应一并统计的配置 ID。
+// 定时场次在配置还在时以配置为准。手动场次，以及配置已删除的场次，用场次自己记下的策略和组名。
+func (ap *App) repeatScope(a *lottery.Activity) (policy, group string, configIDs []int64) {
+	configs := ap.GetDailyConfigs()
+	found := false
+	if a.DailyConfigID > 0 {
+		for _, dc := range configs {
+			if dc.ID != a.DailyConfigID {
+				continue
+			}
+			found = true
+			policy = dc.RepeatPolicy
+			group = lottery.NormalizeRepeatGroup(dc.RepeatGroup)
+			break
+		}
+	}
+	if !found {
+		policy = a.RepeatPolicy
+		group = lottery.NormalizeRepeatGroup(a.RepeatGroup)
+	}
+	if policy == "" {
+		policy = lottery.RepeatUnlimited
+	}
+	if group == "" {
+		return policy, "", nil
+	}
+	for _, dc := range configs {
+		if dc.ID > 0 && lottery.NormalizeRepeatGroup(dc.RepeatGroup) == group {
+			configIDs = append(configIDs, dc.ID)
+		}
+	}
+	return policy, group, configIDs
+}
+
+func (ap *App) userRepeatHit(win bool, a *lottery.Activity, group string, configIDs []int64, userID int64) (bool, error) {
+	if group != "" {
+		kind := "join"
+		if win {
+			kind = "win"
+		}
+		return ap.Store.HasUserRecordInRepeatSet(kind, group, configIDs, userID)
+	}
+	if a.DailyConfigID <= 0 {
+		return false, nil
+	}
+	if win {
+		return ap.Store.HasUserWonInConfig(a.DailyConfigID, userID)
+	}
+	return ap.Store.HasUserParticipatedInConfig(a.DailyConfigID, userID)
+}
+
+// ApplyRepeatGroup 规范化场次上的重复策略和共用参与组。
+// 挂在日常配置上的场次，组名以配置当前值为准，避免和系列脱节。
+func (ap *App) ApplyRepeatGroup(a *lottery.Activity) error {
+	policy, err := lottery.NormalizeRepeatPolicy(a.RepeatPolicy)
+	if err != nil {
+		return err
+	}
+	a.RepeatPolicy = policy
+	a.RepeatGroup = lottery.NormalizeRepeatGroup(a.RepeatGroup)
+	if len([]rune(a.RepeatGroup)) > 64 {
+		return lottery.ErrRepeatGroupTooLong
+	}
+	if a.DailyConfigID <= 0 {
+		return nil
+	}
+	for _, dc := range ap.GetDailyConfigs() {
+		if dc.ID == a.DailyConfigID {
+			a.RepeatGroup = lottery.NormalizeRepeatGroup(dc.RepeatGroup)
+			if dc.RepeatPolicy != "" {
+				a.RepeatPolicy = dc.RepeatPolicy
+			}
+			return nil
+		}
+	}
+	return nil
+}
+
+// repeatPolicyDeniedErr 按活动所属日常配置的重复参与策略判断用户是否被排除，
+// 被排除时返回对应哨兵错误（HTTP 层映射为 403 中文提示）。
+func (ap *App) repeatPolicyDeniedErr(a *lottery.Activity, userID int64) error {
+	blocked, reason := ap.repeatPolicyBlocked(a, userID)
+	if !blocked {
+		return nil
+	}
+	if reason == "您已在该系列抽奖中中奖" {
+		return store.ErrRepeatWin
+	}
+	return store.ErrRepeatJoin
+}
+
+// ---- Daily activity（多配置：每个配置独立启停/删除） ----
+
+func normalizeDailyConfigs(list []lottery.DailyConfig) []lottery.DailyConfig {
+	for i := range list {
+		list[i].Visibility = lottery.NormalizeItemVisibility(list[i].Visibility)
+	}
+	return list
+}
+
+// GetDailyConfigs 读取全部日常定时抽奖配置（首次读取时自动迁移旧的单配置数据）。
+func (ap *App) GetDailyConfigs() []lottery.DailyConfig {
+	raw, err := ap.Store.GetState(stateDailyConfigs)
+	if err == nil && raw != "" {
+		var list []lottery.DailyConfig
+		if err := json.Unmarshal([]byte(raw), &list); err == nil {
+			return normalizeDailyConfigs(list)
+		}
+	}
+	// 新键为空：迁移旧版单配置（stateDailyConfig 键，对象而非数组）
+	if legacy, lerr := ap.Store.GetState(stateDailyConfigLegacy); lerr == nil && legacy != "" {
+		var single lottery.DailyConfig
+		if err := json.Unmarshal([]byte(legacy), &single); err == nil && single.Name != "" {
+			single.ID = 1
+			list := []lottery.DailyConfig{single}
+			if raw, err := json.Marshal(list); err == nil {
+				_ = ap.Store.SetState(stateDailyConfigs, string(raw))
+			}
+			return normalizeDailyConfigs(list)
+		}
+	}
+	return []lottery.DailyConfig{}
+}
+
+// SaveDailyConfig 新建（ID=0）或更新日常定时抽奖配置，返回带 ID 的配置。
+// 可见范围未填时，新建按全部用户，更新保留原来的范围。保存后同步到该配置尚未开奖的场次。
+func (ap *App) SaveDailyConfig(c lottery.DailyConfig) (lottery.DailyConfig, error) {
+	c.RepeatGroup = lottery.NormalizeRepeatGroup(c.RepeatGroup)
+	list := ap.GetDailyConfigs()
+	if c.ID > 0 {
+		found := false
+		for i := range list {
+			if list[i].ID != c.ID {
+				continue
+			}
+			if c.Blacklist == nil {
+				c.Blacklist = list[i].Blacklist
+			}
+			if strings.TrimSpace(c.Visibility.Mode) == "" {
+				c.Visibility = list[i].Visibility
+			}
+			found = true
+			break
+		}
+		if !found {
+			return c, store.ErrNotFound
+		}
+	}
+	c.Blacklist = lottery.NormalizeBlacklist(c.Blacklist)
+	c.Visibility = lottery.NormalizeItemVisibility(c.Visibility)
+	if err := c.Validate(); err != nil {
+		return c, err
+	}
+	if c.ID > 0 {
+		for i := range list {
+			if list[i].ID == c.ID {
+				list[i] = c
+				break
+			}
+		}
+	} else {
+		next := int64(1)
+		for _, item := range list {
+			if item.ID >= next {
+				next = item.ID + 1
+			}
+		}
+		c.ID = next
+		list = append(list, c)
+	}
+	raw, err := json.Marshal(list)
+	if err != nil {
+		return c, err
+	}
+	if err := ap.Store.SetState(stateDailyConfigs, string(raw)); err != nil {
+		return c, err
+	}
+	if err := ap.Store.SetUndrawnActivityVisibility(c.ID, c.Visibility); err != nil {
+		return c, err
+	}
+	if err := ap.Store.SetUndrawnActivityBlacklist(c.ID, c.Blacklist); err != nil {
+		return c, err
+	}
+	return c, nil
+}
+
+// UpdateDailyConfigRepeat 只改一条日常配置的重复策略和共用参与组。
+// 编辑已生成的场次时，这两项写回配置，这一场和之后的场次一起生效。
+func (ap *App) UpdateDailyConfigRepeat(id int64, policy, group string) (string, string, error) {
+	policy, err := lottery.NormalizeRepeatPolicy(policy)
+	if err != nil {
+		return "", "", err
+	}
+	group = lottery.NormalizeRepeatGroup(group)
+	if len([]rune(group)) > 64 {
+		return "", "", lottery.ErrRepeatGroupTooLong
+	}
+	list := ap.GetDailyConfigs()
+	for i := range list {
+		if list[i].ID != id {
+			continue
+		}
+		list[i].RepeatPolicy = policy
+		list[i].RepeatGroup = group
+		raw, err := json.Marshal(list)
+		if err != nil {
+			return "", "", err
+		}
+		if err := ap.Store.SetState(stateDailyConfigs, string(raw)); err != nil {
+			return "", "", err
+		}
+		return policy, group, nil
+	}
+	return "", "", store.ErrNotFound
+}
+
+// UpdateDailyConfigVisibility 把可见范围写回定时配置，并同步到它尚未开奖的场次。
+// 配置已删除时返回 store.ErrNotFound，调用方仍可只保存当前这场。
+func (ap *App) UpdateDailyConfigVisibility(id int64, v lottery.Visibility) error {
+	v = lottery.NormalizeItemVisibility(v)
+	if err := v.Validate(); err != nil {
+		return err
+	}
+	list := ap.GetDailyConfigs()
+	found := false
+	for i := range list {
+		if list[i].ID != id {
+			continue
+		}
+		list[i].Visibility = v
+		found = true
+		break
+	}
+	if !found {
+		return store.ErrNotFound
+	}
+	raw, err := json.Marshal(list)
+	if err != nil {
+		return err
+	}
+	if err := ap.Store.SetState(stateDailyConfigs, string(raw)); err != nil {
+		return err
+	}
+	return ap.Store.SetUndrawnActivityVisibility(id, v)
+}
+
+// SetDailyConfigEnabled 启用/停用单个配置（保留其余字段）。
+// 启用时立即预约下一场次（不等调度器 tick），前端刷新即可见。
+func (ap *App) SetDailyConfigEnabled(id int64, enabled bool) (lottery.DailyConfig, error) {
+	list := ap.GetDailyConfigs()
+	for i := range list {
+		if list[i].ID != id {
+			continue
+		}
+		list[i].Enabled = enabled
+		raw, err := json.Marshal(list)
+		if err != nil {
+			return list[i], err
+		}
+		if err := ap.Store.SetState(stateDailyConfigs, string(raw)); err != nil {
+			return list[i], err
+		}
+		if enabled {
+			// 重新启用：清空日期推进记录，从当前时刻重新计算下一场（不往后顺延）
+			ap.clearDailyRoundKeys(id, time.Now())
+			if err := ap.ensureNextDailyRound(list[i], time.Now()); err != nil {
+				slog.Warn("daily round ensure failed on enable", "config", id, "err", err)
+			}
+		}
+		return list[i], nil
+	}
+	return lottery.DailyConfig{}, store.ErrNotFound
+}
+
+// DeleteDailyConfig 删除单个配置（已创建的场次不受影响）。
+func (ap *App) DeleteDailyConfig(id int64) error {
+	list := ap.GetDailyConfigs()
+	out := list[:0]
+	for _, item := range list {
+		if item.ID != id {
+			out = append(out, item)
+		}
+	}
+	raw, err := json.Marshal(out)
+	if err != nil {
+		return err
+	}
+	return ap.Store.SetState(stateDailyConfigs, string(raw))
+}
+
+// UserLotteryAccess 返回侧边栏是否展示抽奖，以及该用户看到的角标。
+// 菜单是否出现由右上角可见范围决定。角标只统计这个用户能看到的场次。
+// 管理员始终看到菜单，角标按全部进行中场次计算。
+func (ap *App) UserLotteryAccess(ctx context.Context, userID int64, email, role string, registeredAt *time.Time) (bool, string) {
+	if role == "admin" {
+		return true, ap.CurrentLotteryPhase()
+	}
+	acts, err := ap.ListUserActivities(ctx, userID, email, role, registeredAt)
+	if err != nil {
+		return false, ""
+	}
+	phase := ""
+	if len(acts) > 0 {
+		phase = phaseFromActivityViews(acts)
+	}
+	if !ap.GetVisibility().ShowsTo(email, false) {
+		return false, ""
+	}
+	return true, phase
+}
+
+func phaseFromActivityViews(views []ActivityView) string {
+	joining, upcoming, drawn := false, false, false
+	for _, v := range views {
+		if v.Status != "" && v.Status != "active" {
+			continue
+		}
+		switch v.Phase {
+		case lottery.ActivityJoining:
+			joining = true
+		case lottery.ActivityUpcoming:
+			upcoming = true
+		case lottery.ActivityDrawn, lottery.ActivityFulfilled:
+			drawn = true
+		}
+	}
+	switch {
+	case joining:
+		return "joining"
+	case upcoming:
+		return "upcoming"
+	case drawn:
+		return "drawn"
+	}
+	return ""
+}
+
+// CurrentLotteryPhase 全部 status=active 场次的全局状态（joining/upcoming/drawn，无活动返回空串）。
+// 已关闭、已归档不计入。所有登录用户看到同一个角标。
+func (ap *App) CurrentLotteryPhase() string {
+	acts, err := ap.Store.ListActivities()
+	if err != nil {
+		return ""
+	}
+	now := time.Now()
+	joining, upcoming, drawn := false, false, false
+	for i := range acts {
+		a := &acts[i]
+		if a.Status != "active" {
+			continue
+		}
+		switch {
+		case !a.DrawnAt.IsZero():
+			drawn = true
+		case now.Before(a.StartsAt):
+			upcoming = true
+		default:
+			joining = true
+		}
+	}
+	switch {
+	case joining:
+		return "joining"
+	case upcoming:
+		return "upcoming"
+	case drawn:
+		return "drawn"
+	}
+	return ""
+}
+
+// clearDailyRoundKeys 清空配置的全部日期推进记录（启用时重置计算起点用）。
+func (ap *App) clearDailyRoundKeys(cfgID int64, now time.Time) {
+	now = now.In(lottery.Beijing())
+	for i := -30; i <= 30; i++ {
+		key := fmt.Sprintf("daily_created:%d:%s", cfgID, now.AddDate(0, 0, i).Format("2006-01-02"))
+		if v, err := ap.Store.GetState(key); err == nil && v != "" {
+			_ = ap.Store.SetState(key, "")
+		}
+	}
+}
+
+// MarkDailySkip 若被关闭的活动来自某个日常配置，记录该日期为跳过（不再自动补建当天场次）。
+func (ap *App) MarkDailySkip(activityID int64) {
+	a, err := ap.Store.GetActivity(activityID)
+	if err != nil || a.DailyConfigID <= 0 {
+		return
+	}
+	list := ap.GetDailyConfigs()
+	for i := range list {
+		if list[i].ID != a.DailyConfigID {
+			continue
+		}
+		list[i].SkipDate = lottery.InBeijing(a.StartsAt).Format("2006-01-02")
+		if raw, merr := json.Marshal(list); merr == nil {
+			_ = ap.Store.SetState(stateDailyConfigs, string(raw))
+		}
+		return
+	}
+}
+
+// CreateDueDailyActivity 每个调度 tick 调用：保证每个启用的配置始终存在一场
+// 未开奖的场次——当前场次开奖后立即创建下一次（用户因此总能看到即将到来的活动）。
+func (ap *App) CreateDueDailyActivity(now time.Time) error {
+	var firstErr error
+	for _, cfg := range ap.GetDailyConfigs() {
+		if !cfg.Enabled {
+			continue
+		}
+		if err := ap.ensureNextDailyRound(cfg, now); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
+}
+
+// ensureNextDailyRound 保证该配置始终有一场未开奖的场次：
+//  1. 收集该配置创建的场次（近 7 天 + 未来 2 天的记录）：存在进行中或未开始的（active 且未开奖）→ 已预约，不动；
+//  2. 否则以「最后创建日期 + 1 天」为下一场日期（手动关闭/开奖的场次视为已跳过那天），
+//     无任何记录时以 start_time 的下一次出现为准；
+//  3. 若该场开启时刻已过（如隔天 tick），顺延一天。
+func (ap *App) ensureNextDailyRound(cfg lottery.DailyConfig, now time.Time) error {
+	now = now.In(lottery.Beijing())
+	st, err := time.ParseInLocation("15:04", cfg.StartTime, lottery.Beijing())
+	if err != nil {
+		return fmt.Errorf("daily config %d start_time: %w", cfg.ID, err)
+	}
+	keyFor := func(t time.Time) string {
+		return fmt.Sprintf("daily_created:%d:%s", cfg.ID, t.Format("2006-01-02"))
+	}
+	// 1) 收集该配置创建过的场次
+	ids := map[int64]bool{}
+	lastKeyDate := time.Time{}
+	for i := -30; i <= 30; i++ {
+		t := now.AddDate(0, 0, -i)
+		if idStr, err := ap.Store.GetState(keyFor(t)); err == nil && idStr != "" {
+			if id, perr := strconv.ParseInt(idStr, 10, 64); perr == nil {
+				ids[id] = true
+			}
+			if lastKeyDate.IsZero() || t.After(lastKeyDate) {
+				lastKeyDate = t
+			}
+		}
+	}
+	// 2) 存在进行中/未开始的关联场次 → 已预约
+	for id := range ids {
+		if a, err := ap.Store.GetActivity(id); err == nil && a.Status == "active" && a.DrawnAt.IsZero() {
+			return nil
+		}
+	}
+	// 3) 下一场日期
+	todayStart := time.Date(now.Year(), now.Month(), now.Day(), st.Hour(), st.Minute(), 0, 0, lottery.Beijing())
+	var base time.Time
+	if lastKeyDate.IsZero() {
+		base = now
+		if !now.Before(todayStart) {
+			base = now.AddDate(0, 0, 1)
+		}
+	} else {
+		base = lastKeyDate.AddDate(0, 0, 1)
+	}
+	start := time.Date(base.Year(), base.Month(), base.Day(), st.Hour(), st.Minute(), 0, 0, lottery.Beijing())
+	// 场次开启时刻已过（隔天 tick 等场景）→ 顺延一天，避免创建即开奖
+	if !start.After(now) {
+		start = start.AddDate(0, 0, 1)
+		base = start
+	}
+	// 4) 该日期已有在用场次 → 不重复（已开奖/已关闭/已归档的允许覆盖重建）
+	if prev, err := ap.Store.GetState(keyFor(start)); err == nil && prev != "" {
+		if pid, perr := strconv.ParseInt(prev, 10, 64); perr == nil {
+			if a, gerr := ap.Store.GetActivity(pid); gerr == nil && a.Status == "active" {
+				return nil
+			}
+		}
+	}
+	id, err := ap.Store.CreateActivity(dailyActivityFromConfig(cfg, start))
+	if err != nil {
+		return err
+	}
+	ap.SaveActivityNotify(id, cfg.NotifyStages, cfg.Notify)
+	slog.Info("daily activity created", "id", id, "config", cfg.ID, "name", cfg.Name, "start", start.Format(time.RFC3339))
+	return ap.Store.SetState(keyFor(start), strconv.FormatInt(id, 10))
+}
+
+// SaveActivityNotify 把勾选的阶段写到活动上。旧配置只有总开关时，打开表示四个阶段都发。
+func (ap *App) SaveActivityNotify(id int64, stages []string, legacyAll bool) {
+	resolved := lottery.ResolveNotifyStages(stages, legacyAll)
+	if nerr := ap.Store.SetActivityNotify(id, resolved); nerr != nil {
+		slog.Warn("activity notify stages", "id", id, "err", nerr)
+	}
+}
+
+// dailyActivityFromConfig 按配置构建一场活动（开启时刻由调用方决定）。
+func dailyActivityFromConfig(cfg lottery.DailyConfig, start time.Time) *lottery.Activity {
+	a := &lottery.Activity{
+		Name:                 cfg.Name,
+		Description:          cfg.Description,
+		StartsAt:             start,
+		DrawsAt:              start.Add(time.Duration(cfg.DurationHours * float64(time.Hour))),
+		MaxParticipants:      cfg.MaxParticipants,
+		ShowParticipantCount: cfg.ShowsParticipants(),
+		ConditionMatch:       cfg.ConditionMatch,
+		AutoBonusPercent:     cfg.AutoBonusPercent,
+		Conditions:           cfg.Conditions,
+		DailyConfigID:        cfg.ID,
+		RepeatGroup:          lottery.NormalizeRepeatGroup(cfg.RepeatGroup),
+		RepeatPolicy:         cfg.RepeatPolicy,
+		Visibility:           lottery.NormalizeItemVisibility(cfg.Visibility),
+		Blacklist:            lottery.NormalizeBlacklist(cfg.Blacklist),
+	}
+	if a.ConditionMatch == "" {
+		a.ConditionMatch = lottery.MatchAll
+	}
+	for _, p := range cfg.Prizes {
+		a.Prizes = append(a.Prizes, lottery.Prize{
+			Name: p.Name, PrizeType: p.PrizeType, Value: p.Value, Weight: p.Weight, Stock: p.Stock,
+			Codes: p.Codes,
+		})
+	}
+	return a
+}
+
+// ErrRegenerateBlocked 当前场次已有用户参与，不能重新生成。
+var ErrRegenerateBlocked = errors.New("当前场次已有用户参与，不能重新生成；请先「关闭」该场次或改日操作")
+
+// RegenerateDailyRound 保存并重建：归档该配置当前未开奖的场次（有用户参与时拒绝），
+// 清空日期预约记录，并按最新配置立即创建今天的新场次（开启时刻已过则立即开启）。
+func (ap *App) RegenerateDailyRound(cfgID int64, now time.Time) error {
+	var cfg *lottery.DailyConfig
+	list := ap.GetDailyConfigs()
+	for i := range list {
+		if list[i].ID == cfgID {
+			cfg = &list[i]
+			break
+		}
+	}
+	if cfg == nil {
+		return store.ErrNotFound
+	}
+	acts, err := ap.Store.ListActivities()
+	if err != nil {
+		return err
+	}
+	for _, a := range acts {
+		if a.DailyConfigID != cfgID || a.Status != "active" || !a.DrawnAt.IsZero() {
+			continue
+		}
+		n, err := ap.Store.CountParticipants(a.ID)
+		if err != nil {
+			return err
+		}
+		if n > 0 {
+			return ErrRegenerateBlocked
+		}
+		if err := ap.Store.SetActivityStatus(a.ID, "archived"); err != nil {
+			return err
+		}
+		slog.Info("daily round archived for regeneration", "config", cfgID, "activity", a.ID)
+	}
+	ap.clearDailyRoundKeys(cfgID, now)
+
+	now = now.In(lottery.Beijing())
+	st, err := time.ParseInLocation("15:04", cfg.StartTime, lottery.Beijing())
+	if err != nil {
+		return fmt.Errorf("daily config %d start_time: %w", cfg.ID, err)
+	}
+	start := time.Date(now.Year(), now.Month(), now.Day(), st.Hour(), st.Minute(), 0, 0, lottery.Beijing())
+	if !start.After(now) {
+		start = now // 今日开启时刻已过：立即开启
+	}
+	a := dailyActivityFromConfig(*cfg, start)
+	if err := a.Validate(); err != nil {
+		return fmt.Errorf("daily activity invalid: %w", err)
+	}
+	id, err := ap.Store.CreateActivity(a)
+	if err != nil {
+		return err
+	}
+	ap.SaveActivityNotify(id, cfg.NotifyStages, cfg.Notify)
+	key := fmt.Sprintf("daily_created:%d:%s", cfg.ID, start.Format("2006-01-02"))
+	if err := ap.Store.SetState(key, strconv.FormatInt(id, 10)); err != nil {
+		return err
+	}
+	slog.Info("daily round regenerated", "config", cfgID, "activity", id, "start", start.Format(time.RFC3339))
+	return nil
+}
+
+// ---- Daily sync ----
+
+// SyncTokens refreshes today's partial snapshot and finalizes yesterday. The
+// first run after this fix also repairs historical snapshots frozen by the old watermark.
+func (ap *App) SyncTokens(ctx context.Context, now time.Time) error {
+	now = now.In(lottery.Beijing())
+	last, err := ap.Store.GetState(stateTokensLastDate)
+	if err != nil {
+		return err
+	}
+	repaired, err := ap.Store.GetState("tokens_snapshot_repair_v1")
+	if err != nil {
+		return err
+	}
+	days := ap.Cfg.BackfillDays
+	acts, err := ap.Store.ListActivities()
+	if err != nil {
+		return err
+	}
+	if n := maxWindowDays(acts) + 1; n > days {
+		days = n
+	}
+	start := now.AddDate(0, 0, -(days - 1))
+	if last != "" && repaired == "done" {
+		if t, parseErr := time.ParseInLocation("2006-01-02", last, lottery.Beijing()); parseErr == nil {
+			start = t
+			yesterday := now.AddDate(0, 0, -1)
+			if dateStr(start) > dateStr(yesterday) {
+				start = yesterday
+			}
+		}
+	}
+	today := dateStr(now)
+	for d := start; dateStr(d) <= today; d = d.AddDate(0, 0, 1) {
+		date := dateStr(d)
+		tokens, err := ap.Sub2API.FetchDailyTokens(ctx, date)
+		if err != nil {
+			return fmt.Errorf("fetch %s: %w", date, err)
+		}
+		if err := ap.Store.ReplaceDailyTokens(date, tokens); err != nil {
+			return fmt.Errorf("replace %s: %w", date, err)
+		}
+		if err := ap.Store.SetState(stateTokensLastDate, date); err != nil {
+			return err
+		}
+		slog.Info("lotteryd sync day done", "date", date, "users", len(tokens))
+	}
+	return ap.Store.SetState("tokens_snapshot_repair_v1", "done")
+}
+
+// ---- Draw & fulfillment ----
+
+// DrawDueActivities 对所有到点未开奖的活动执行开奖。奖励发放由门禁单独决定。
+func (ap *App) DrawDueActivities(ctx context.Context, now time.Time) error {
+	acts, err := ap.Store.ListDrawableActivities(now)
+	if err != nil {
+		return err
+	}
+	for i := range acts {
+		if err := ap.DrawActivity(ctx, &acts[i]); err != nil {
+			slog.Error("lotteryd draw failed", "activity", acts[i].ID, "err", err)
+		}
+	}
+	return nil
+}
+
+// DrawActivity 对单个活动开奖并登记中奖者（发放随后执行）。
+// 兑换码奖若配置了预存码池，则在开奖时按序分配。
+func (ap *App) DrawActivity(ctx context.Context, a *lottery.Activity) error {
+	fresh, err := ap.Store.DrawActivity(a.ID)
+	if err != nil {
+		return err
+	}
+	*a = *fresh
+	return ap.FulfillPending(ctx, a)
+}
+
+// FulfillPending 对活动中 pending/failed 的中奖记录执行发放：
+// 兑换码奖 → 生成兑换码；余额奖 → 调接口入账并备注「抽奖名称+金额」。
+func (ap *App) FulfillPending(ctx context.Context, a *lottery.Activity) error {
+	if ap.Cfg.DisableSettlement {
+		slog.Info("lotteryd fulfillment skipped", "activity", a.ID, "reason", "settlement gate")
+		return nil
+	}
+	ws, err := ap.Store.ListUnfulfilledWinners(a.ID)
+	if err != nil {
+		return err
+	}
+	for i := range ws {
+		w := &ws[i]
+		var code, note, errMsg string
+		switch w.PrizeType {
+		case lottery.PrizeBalance:
+			note = fmt.Sprintf("抽奖活动: %s +%s", a.Name, lottery.FormatValue(w.Value))
+			err = ap.Sub2API.AddBalance(ctx, w.UserID, w.Value, note)
+		case lottery.PrizeRedeemCode:
+			if w.RedeemCode != "" {
+				// 开奖时已从管理员预存的码池分配，无需调用主服务。
+				code = w.RedeemCode
+			} else {
+				code, err = ap.Sub2API.GenerateRedeemCode(ctx, w.Value)
+			}
+		default:
+			err = fmt.Errorf("unknown prize type %q", w.PrizeType)
+		}
+		if err != nil {
+			errMsg = err.Error()
+			slog.Error("lotteryd fulfill failed", "winner", w.ID, "err", errMsg)
+			if uerr := ap.Store.UpdateWinnerFulfillment(w.ID, lottery.FulfillmentFailed, code, note, errMsg); uerr != nil {
+				return uerr
+			}
+			continue
+		}
+		if err := ap.Store.UpdateWinnerFulfillment(w.ID, lottery.FulfillmentDone, code, note, ""); err != nil {
+			return err
+		}
+		slog.Info("lotteryd fulfilled", "winner", w.ID, "type", w.PrizeType)
+	}
+	return nil
+}
+
+// RetryFulfillment 管理端手动重试某活动的失败发放。
+func (ap *App) RetryFulfillment(ctx context.Context, activityID int64) error {
+	if ap.Cfg.DisableSettlement {
+		return ErrSettlementDisabled
+	}
+	a, err := ap.Store.GetActivity(activityID)
+	if err != nil {
+		return err
+	}
+	return ap.FulfillPending(ctx, a)
+}

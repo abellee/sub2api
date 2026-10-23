@@ -15,6 +15,17 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
+      - name: Resolve pinned private SDK
+        if: ${{ hashFiles('.github/release-tools/audit_sdk.py') != '' }}
+        id: audit-sdk
+        run: python3 .github/release-tools/audit_sdk.py ref
+      - name: Restore private SDK for this checkout
+        if: ${{ steps.audit-sdk.outputs.commit != '' }}
+        env:
+          AUDIT_SDK_BUNDLE: ${{ secrets[format('AUDIT_SDK_{0}', steps.audit-sdk.outputs.commit)] }}
+          AUDIT_SDK_BUNDLE_PART2: ${{ secrets[format('AUDIT_SDK_{0}_PART2', steps.audit-sdk.outputs.commit)] }}
+          AUDIT_SDK_BUNDLE_PART3: ${{ secrets[format('AUDIT_SDK_{0}_PART3', steps.audit-sdk.outputs.commit)] }}
+        run: python3 .github/release-tools/audit_sdk.py restore
       - name: Set up Go
         uses: actions/setup-go@v6
         with:

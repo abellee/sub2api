@@ -716,6 +716,7 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 	var resp *http.Response
 	// checkedPolicy 是循环内对当前 resp 的错误策略检查结果，未检查时为 nil。
 	var checkedPolicy *ErrorPolicyResult
+	upstreamEndpoint := ""
 	signatureRetryStage := 0
 	for attempt := 1; attempt <= geminiMaxRetries; attempt++ {
 		checkedPolicy = nil
@@ -734,6 +735,7 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 			return nil, s.writeClaudeError(c, http.StatusBadGateway, "upstream_error", err.Error())
 		}
 		requestIDHeader = idHeader
+		upstreamEndpoint = normalizeGeminiUpstreamEndpoint(upstreamReq.URL.Path)
 
 		resp, err = s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
 		if err != nil {
@@ -1063,6 +1065,7 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 
 	return &ForwardResult{
 		RequestID:                     requestID,
+		UpstreamEndpoint:              upstreamEndpoint,
 		UpstreamHeaders:               resp.Header,
 		Usage:                         *usage,
 		Model:                         originalModel,
@@ -1268,6 +1271,7 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 	var resp *http.Response
 	// checkedPolicy 是循环内对当前 resp 的错误策略检查结果，未检查时为 nil。
 	var checkedPolicy *ErrorPolicyResult
+	upstreamEndpoint := ""
 	for attempt := 1; attempt <= geminiMaxRetries; attempt++ {
 		checkedPolicy = nil
 		upstreamReq, idHeader, err := buildReq(ctx)
@@ -1285,6 +1289,7 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 			return nil, s.writeGoogleError(c, http.StatusBadGateway, err.Error())
 		}
 		requestIDHeader = idHeader
+		upstreamEndpoint = normalizeGeminiUpstreamEndpoint(upstreamReq.URL.Path)
 
 		resp, err = s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
 		if err != nil {
@@ -1598,6 +1603,7 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 
 	return &ForwardResult{
 		RequestID:                     requestID,
+		UpstreamEndpoint:              upstreamEndpoint,
 		UpstreamHeaders:               resp.Header,
 		Usage:                         *usage,
 		Model:                         originalModel,
@@ -2445,6 +2451,9 @@ func (s *GeminiMessagesCompatService) handleStreamingResponse(c *gin.Context, re
 	if usage.InputTokens > 0 {
 		usageObj["input_tokens"] = usage.InputTokens
 	}
+	if usage.CacheReadInputTokens > 0 {
+		usageObj["cache_read_input_tokens"] = usage.CacheReadInputTokens
+	}
 	writeSSE(c.Writer, "message_delta", map[string]any{
 		"type": "message_delta",
 		"delta": map[string]any{
@@ -3040,8 +3049,33 @@ func convertGeminiToClaudeMessage(geminiResp map[string]any, originalModel strin
 			"output_tokens": usage.OutputTokens,
 		},
 	}
+	if usage.CacheReadInputTokens > 0 {
+		if respUsage, ok := resp["usage"].(map[string]any); ok {
+			respUsage["cache_read_input_tokens"] = usage.CacheReadInputTokens
+		}
+	}
 
 	return resp, usage
+}
+
+// normalizeGeminiUpstreamEndpoint keeps usage records tied to the path that
+// was actually requested. Custom Gemini-compatible relays may use Anthropic's
+// /v1/messages path instead of Google's /v1beta/models path, so deriving this
+// from the account platform alone is incorrect.
+func normalizeGeminiUpstreamEndpoint(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return ""
+	}
+	for _, endpoint := range []string{"/v1/messages", "/v1beta/models"} {
+		if idx := strings.Index(path, endpoint); idx >= 0 {
+			return endpoint
+		}
+	}
+	if idx := strings.Index(path, "/v1internal:"); idx >= 0 {
+		return path[idx:]
+	}
+	return path
 }
 
 func isGeminiInlineImageMIMEType(mimeType string) bool {

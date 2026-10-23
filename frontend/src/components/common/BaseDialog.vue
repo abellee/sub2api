@@ -59,7 +59,7 @@ const dialogRef = ref<HTMLElement | null>(null)
 const modalBodyRef = ref<HTMLElement | null>(null)
 let previousActiveElement: HTMLElement | null = null
 
-type DialogWidth = 'narrow' | 'normal' | 'wide' | 'extra-wide' | 'full'
+type DialogWidth = 'narrow' | 'normal' | 'medium-wide' | 'wide' | 'extra-wide' | 'full'
 
 interface Props {
   show: boolean
@@ -97,6 +97,8 @@ const widthClasses = computed(() => {
   const widths: Record<DialogWidth, string> = {
     narrow: 'max-w-md',
     normal: 'max-w-lg',
+    // extra-wide（xl 下 72rem）收窄 1/3 的档位，lg 起为 48rem
+    'medium-wide': 'w-full sm:max-w-xl md:max-w-2xl lg:max-w-3xl',
     wide: 'w-full sm:max-w-2xl md:max-w-3xl lg:max-w-4xl',
     'extra-wide': 'w-full sm:max-w-3xl md:max-w-4xl lg:max-w-5xl xl:max-w-6xl',
     full: 'w-full sm:max-w-4xl md:max-w-5xl lg:max-w-6xl xl:max-w-7xl'

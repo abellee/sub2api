@@ -192,6 +192,8 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyChannelMonitorHideThroughput:         "true",
 		SettingKeyChannelMonitorShowQuota:              "false",
 		SettingKeyChannelMonitorHideUserRanking:        "false",
+		SettingKeyChannelMonitorVisibility:             ChannelMonitorVisibilitySelected,
+		SettingKeyChannelMonitorVisibleUserIDs:         "[]",
 
 		// Grok compatibility defaults: cross-client mapping stays enabled unless
 		// operators explicitly disable it.
@@ -815,6 +817,8 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	// （与 setting_public.go 公开读取路径保持一致）。
 	result.ChannelMonitorShowQuota = settings[SettingKeyChannelMonitorShowQuota] == "true"
 	result.ChannelMonitorHideUserRanking = isTrueSettingValue(settings[SettingKeyChannelMonitorHideUserRanking])
+	result.ChannelMonitorVisibility = normalizeChannelMonitorVisibility(settings[SettingKeyChannelMonitorVisibility])
+	result.ChannelMonitorVisibleUserIDs = parseChannelMonitorVisibleUserIDs(settings[SettingKeyChannelMonitorVisibleUserIDs])
 
 	// Grok default mapping policy
 	result.GrokDefaultTextModel = strings.TrimSpace(settings[SettingKeyGrokDefaultTextModel])
@@ -1035,6 +1039,15 @@ func isFalseSettingValue(value string) bool {
 	}
 }
 
+func isTrueSettingValue(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "true", "1", "on", "enabled":
+		return true
+	default:
+		return false
+	}
+}
+
 func publicTransitPageEnabledFromSettings(settings map[string]string) bool {
 	if settings == nil || isFalseSettingValue(settings[SettingKeyPublicTransitEnabled]) {
 		return false
@@ -1044,15 +1057,6 @@ func publicTransitPageEnabledFromSettings(settings map[string]string) bool {
 		return value == "true"
 	}
 	return settings[SettingKeyPublicTransitEnabled] == "true"
-}
-
-func isTrueSettingValue(value string) bool {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "true", "1", "on", "enabled":
-		return true
-	default:
-		return false
-	}
 }
 
 func normalizeVisibleMethodSettingSource(method, source string, enabled bool) (string, error) {

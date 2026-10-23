@@ -484,8 +484,31 @@ func (s *PaymentService) markCompleted(ctx context.Context, o *dbent.PaymentOrde
 			"payAmount":      o.PayAmount,
 		})
 		s.dispatchPaymentFulfillmentNotification(o, auditAction)
+		// 通知 lotteryd（协程异步，失败只记日志，不影响主流程）。
+		s.notifyLotterydCompleted(o)
 	}
 	return nil
+}
+
+// notifyLotterydCompleted 把已完成的充值订单异步推给 lotteryd（积分/道具）。
+func (s *PaymentService) notifyLotterydCompleted(o *dbent.PaymentOrder) {
+	if s == nil || s.lotterydNotifier == nil || o == nil {
+		return
+	}
+	providerKey := ""
+	if o.ProviderKey != nil {
+		providerKey = *o.ProviderKey
+	}
+	s.lotterydNotifier.NotifyPaymentCompleted(
+		o.OutTradeNo, o.PaymentTradeNo, o.UserID, o.UserEmail,
+		o.OrderType, providerKey,
+		o.Amount, o.PayAmount,
+		map[string]string{
+			"recharge_code": o.RechargeCode,
+			"order_id":      strconv.FormatInt(o.ID, 10),
+			"audit_action":  "RECHARGE_SUCCESS",
+		},
+	)
 }
 
 func (s *PaymentService) dispatchPaymentFulfillmentNotification(o *dbent.PaymentOrder, auditAction string) {

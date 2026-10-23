@@ -47,6 +47,9 @@ func ProvideAdminHandlers(
 	affiliateHandler *admin.AffiliateHandler,
 	complianceHandler *admin.ComplianceHandler,
 	auditLogHandler *admin.AuditLogHandler,
+	wechatGroupQRHandler *admin.WechatGroupQRHandler,
+	appCatalogHandler *admin.AppCatalogHandler,
+	iqDetectHandler *admin.IQDetectHandler,
 	upstreamBillingProbe *service.UpstreamBillingProbeService,
 	ollamaCloudUsage *service.OllamaCloudUsageService,
 	contentSafetyBilling *service.ContentSafetyBillingService,
@@ -97,7 +100,22 @@ func ProvideAdminHandlers(
 		Affiliate:              affiliateHandler,
 		Compliance:             complianceHandler,
 		AuditLog:               auditLogHandler,
+		WechatGroupQR:          wechatGroupQRHandler,
+		AppCatalog:             appCatalogHandler,
+		IQDetect:               iqDetectHandler,
 	}
+}
+
+func ProvideAPIKeyHandler(apiKeyService *service.APIKeyService, recommendationStore *service.GroupRecommendationStore) *APIKeyHandler {
+	h := NewAPIKeyHandler(apiKeyService)
+	h.SetGroupRecommendationStore(recommendationStore)
+	return h
+}
+
+func ProvideAdminGroupHandler(adminService service.AdminService, dashboardService *service.DashboardService, groupCapacityService *service.GroupCapacityService, recommendationStore *service.GroupRecommendationStore, cfg *config.Config) *admin.GroupHandler {
+	h := admin.NewGroupHandlerWithConfig(adminService, dashboardService, groupCapacityService, cfg)
+	h.SetRecommendationStore(recommendationStore)
+	return h
 }
 
 func ProvideGatewayHandler(
@@ -193,6 +211,7 @@ func ProvideHandlers(
 	subscriptionHandler *SubscriptionHandler,
 	announcementHandler *AnnouncementHandler,
 	channelMonitorUserHandler *ChannelMonitorUserHandler,
+	iqDetectPublicHandler *IQDetectPublicHandler,
 	channelMonitorV2Handler *ChannelMonitorV2Handler,
 	adminHandlers *AdminHandlers,
 	gatewayHandler *GatewayHandler,
@@ -220,6 +239,7 @@ func ProvideHandlers(
 		Subscription:     subscriptionHandler,
 		Announcement:     announcementHandler,
 		ChannelMonitor:   channelMonitorUserHandler,
+		IQDetectPublic:   iqDetectPublicHandler,
 		ChannelMonitorV2: channelMonitorV2Handler,
 		Admin:            adminHandlers,
 		Gateway:          gatewayHandler,
@@ -242,12 +262,13 @@ var ProviderSet = wire.NewSet(
 	// Top-level handlers
 	NewAuthHandler,
 	NewUserHandler,
-	NewAPIKeyHandler,
+	ProvideAPIKeyHandler,
 	NewUsageHandler,
 	NewRedeemHandler,
 	NewSubscriptionHandler,
 	NewAnnouncementHandler,
 	NewChannelMonitorUserHandler,
+	NewIQDetectPublicHandler,
 	NewChannelMonitorV2Handler,
 	ProvideGatewayHandler,
 	ProvideOpenAIGatewayHandler,
@@ -265,7 +286,7 @@ var ProviderSet = wire.NewSet(
 	// Admin handlers
 	admin.NewDashboardHandler,
 	admin.NewUserHandler,
-	admin.NewGroupHandlerWithConfig,
+	ProvideAdminGroupHandler,
 	admin.ProvideAccountHandler,
 	admin.NewAnnouncementHandler,
 	admin.NewDataManagementHandler,
@@ -298,6 +319,9 @@ var ProviderSet = wire.NewSet(
 	admin.NewAffiliateHandler,
 	admin.NewComplianceHandler,
 	admin.NewAuditLogHandler,
+	admin.NewWechatGroupQRHandler,
+	admin.NewAppCatalogHandler,
+	admin.NewIQDetectHandler,
 
 	// AdminHandlers and Handlers constructors
 	ProvideAdminHandlers,

@@ -2,6 +2,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useAuthStore } from '@/stores/auth'
 
+const { fetchPublicSettings } = vi.hoisted(() => ({
+  fetchPublicSettings: vi.fn().mockResolvedValue(null),
+}))
+
+vi.mock('@/stores/app', () => ({
+  useAppStore: () => ({ fetchPublicSettings }),
+}))
+
 // Mock authAPI
 const mockLogin = vi.fn()
 const mockLogin2FA = vi.fn()
@@ -57,6 +65,7 @@ describe('useAuthStore', () => {
     localStorage.clear()
     vi.useFakeTimers()
     vi.clearAllMocks()
+    fetchPublicSettings.mockReset().mockResolvedValue(null)
   })
 
   afterEach(() => {
@@ -77,6 +86,7 @@ describe('useAuthStore', () => {
       expect(store.isAuthenticated).toBe(true)
       expect(localStorage.getItem('auth_token')).toBe('test-token-123')
       expect(localStorage.getItem('auth_user')).toBe(JSON.stringify(fakeUser))
+      expect(fetchPublicSettings).toHaveBeenCalledWith(true)
     })
 
     it('登录失败时清除状态并抛出错误', async () => {
@@ -155,6 +165,7 @@ describe('useAuthStore', () => {
       expect(localStorage.getItem('auth_user')).toBeNull()
       expect(localStorage.getItem('refresh_token')).toBeNull()
       expect(localStorage.getItem('token_expires_at')).toBeNull()
+      expect(fetchPublicSettings).toHaveBeenCalledWith(true)
     })
   })
 

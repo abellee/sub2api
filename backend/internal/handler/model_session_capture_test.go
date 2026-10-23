@@ -22,7 +22,8 @@ func TestModelSessionCaptureLeavesBusinessStatusHeadersAndBodyUnchanged(t *testi
 		status      int
 		streamError bool
 		panicValue  bool
-	}{{"success", 200, false, false}, {"business failure", 429, false, false}, {"stream failure", 200, true, false}, {"panic", 200, false, true}} {
+		canceled    bool
+	}{{"success", 200, false, false, false}, {"business failure", 429, false, false, false}, {"stream failure", 200, true, false, false}, {"panic", 200, false, true, false}, {"canceled", 200, false, false, true}} {
 		t.Run(scenario.name, func(t *testing.T) {
 			offline := httptest.NewServer(auditrpc.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(503) }), false))
 			defer offline.Close()
@@ -36,6 +37,12 @@ func TestModelSessionCaptureLeavesBusinessStatusHeadersAndBodyUnchanged(t *testi
 			router := gin.New()
 			router.Use(gin.CustomRecovery(func(c *gin.Context, v any) { c.Abort() }))
 			router.Use(ModelSessionCaptureCompletion())
+			// Exercise the real production nesting: ops releases its pooled
+			// writer before outer audit completion, while modelSessionWriter
+			// remains installed in c.Writer.
+			router.Use(OpsErrorLoggerMiddleware(nil))
+			requestContext, cancel := context.WithCancel(context.Background())
+			defer cancel()
 			router.POST("/v1/responses", func(c *gin.Context) {
 				ctx, s := client.Begin(c.Request.Context(), auditcore.Meta{UserID: 1, Model: "test-model"})
 				c.Request = c.Request.WithContext(ctx)
@@ -48,24 +55,33 @@ func TestModelSessionCaptureLeavesBusinessStatusHeadersAndBodyUnchanged(t *testi
 				if scenario.streamError {
 					service.MarkOpsStreamError(c, "error", "test", 500)
 				}
+				if scenario.canceled {
+					cancel()
+				}
 				if scenario.panicValue {
 					panic("business panic")
 				}
 			})
 			w := httptest.NewRecorder()
-			router.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader("input")))
+			router.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader("input")).WithContext(requestContext))
 			if w.Code != scenario.status || w.Body.String() != "data: hello\n\n" || w.Header().Get("X-Business") != "unchanged" {
 				t.Fatalf("business output changed: %d %q", w.Code, w.Body.String())
 			}
-			// Completion returns independently of durable spool writes. Join the
-			// SDK before inspecting its on-disk records through another queue.
+			// Backup admission is asynchronous; a clean shutdown commits its
+			// journal before another queue instance reopens the durable events.
 			client.Close()
-			queue, err := auditcore.OpenQueue(filepath.Join(dir, "pending"), 1<<20)
+			queue, err := auditcore.OpenJournalQueue(filepath.Join(dir, "pending"), 1<<20)
 			if err != nil {
 				t.Fatal(err)
 			}
+			t.Cleanup(func() {
+				if err := queue.Close(); err != nil {
+					t.Error(err)
+				}
+			})
 			items, _ := queue.Items(0)
 			var end auditcore.Event
+			var response auditcore.Event
 			for _, item := range items {
 				b, _ := queue.Read(item.ID)
 				var e auditcore.Event
@@ -73,9 +89,15 @@ func TestModelSessionCaptureLeavesBusinessStatusHeadersAndBodyUnchanged(t *testi
 				if e.Kind == "end" {
 					end = e
 				}
+				if e.Direction == "client-response" && e.Headers != nil {
+					response = e
+				}
 			}
-			if end.Kind != "end" || end.Failed != (scenario.streamError || scenario.panicValue) {
+			if end.Kind != "end" || end.Status != scenario.status || end.Failed != (scenario.streamError || scenario.panicValue || scenario.canceled) {
 				t.Fatalf("bad completion event %+v", end)
+			}
+			if response.Status != scenario.status || response.Headers.Get("X-Business") != "unchanged" {
+				t.Fatalf("lost final response metadata %+v", response)
 			}
 		})
 	}

@@ -45,9 +45,6 @@ export default {
           enabled: '启用可用渠道',
           enabledHint: '关闭后用户端侧边栏入口隐藏，接口返回空数组。',
         },
-        publicTransit: {
-          title: '公开资料出口', description: '开放标准公开快照接口，并可选开放可视化页面。', configureLink: '打开公开资料页面', apiEnabled: '公开资料接口', apiEnabledHint: '开放发现与快照接口，不暴露账号凭据。', pageEnabled: '公开资料页面', pageEnabledHint: '开放 /public/transit 给访客访问。'
-        },
         siteBillingMode: {
           title: '站点类型',
           description: '决定用户端提供哪些购买方式。默认「充值 & 订阅」。',
@@ -62,6 +59,9 @@ export default {
             rechargeOnly: '用户端隐藏「我的订阅」、购买页订阅套餐、顶栏订阅进度与用量页「计费类型」筛选，直接访问「我的订阅」会跳回仪表盘；管理端侧边栏同时隐藏「订阅管理」入口（页面仍可通过地址访问）。已有订阅的计费与兑换码发放的订阅不受影响。',
             subscriptionOnly: '用户端购买页只保留订阅套餐，侧边栏入口显示为「订阅」，余额充值下单会被拒绝；兑换码、返利等余额入账不受影响。',
           },
+        },
+        publicTransit: {
+          title: '公开资料出口', description: '开放标准公开快照接口，并可选开放可视化页面。', configureLink: '打开公开资料页面', previewLink: '在后台预览', apiEnabled: '公开资料接口', apiEnabledHint: '开放发现与快照接口，不暴露账号凭据。', pageEnabled: '公开资料页面', pageEnabledHint: '开放 /public/transit 给访客访问。'
         },
         modelPlaza: {
           title: '模型广场',

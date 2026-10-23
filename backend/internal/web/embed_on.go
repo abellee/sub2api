@@ -95,7 +95,7 @@ func (s *FrontendServer) Middleware() gin.HandlerFunc {
 		path := c.Request.URL.Path
 
 		// Skip API routes
-		if shouldBypassEmbeddedFrontend(path) {
+		if shouldBypassEmbeddedFrontend(path, c.GetHeader("Accept")) {
 			c.Next()
 			return
 		}
@@ -307,6 +307,10 @@ func injectSiteTitle(html, settingsJSON []byte) []byte {
 	if titleStart == -1 || titleEnd == -1 || titleEnd <= titleStart {
 		return html
 	}
+	currentTitle := strings.TrimSpace(string(html[titleStart+len("<title>") : titleEnd]))
+	if currentTitle != "Sub2API" && currentTitle != "Sub2API - AI API Gateway" {
+		return html
+	}
 
 	newTitle := []byte("<title>" + htmlpkg.EscapeString(cfg.SiteName) + " - AI API Gateway</title>")
 	var buf bytes.Buffer
@@ -334,7 +338,7 @@ func ServeEmbeddedFrontend() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		path := c.Request.URL.Path
 
-		if shouldBypassEmbeddedFrontend(path) {
+		if shouldBypassEmbeddedFrontend(path, c.GetHeader("Accept")) {
 			c.Next()
 			return
 		}
@@ -375,8 +379,11 @@ func tryServeOverrideFile(c *gin.Context, overrideDir, cleanPath string) bool {
 	return true
 }
 
-func shouldBypassEmbeddedFrontend(path string) bool {
+func shouldBypassEmbeddedFrontend(path string, acceptHeaders ...string) bool {
 	trimmed := strings.TrimSpace(path)
+	if trimmed == "/models" {
+		return len(acceptHeaders) == 0 || !strings.Contains(strings.ToLower(acceptHeaders[0]), "text/html")
+	}
 	return strings.HasPrefix(trimmed, "/api/") ||
 		strings.HasPrefix(trimmed, "/.well-known/") ||
 		strings.HasPrefix(trimmed, "/v1/") ||

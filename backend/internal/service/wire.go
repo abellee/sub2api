@@ -490,7 +490,11 @@ func ProvideDeferredService(accountRepo AccountRepository, timingWheel *TimingWh
 // ProvideConcurrencyService creates ConcurrencyService and starts slot cleanup worker.
 func ProvideConcurrencyService(cache ConcurrencyCache, accountRepo AccountRepository, cfg *config.Config) *ConcurrencyService {
 	svc := NewConcurrencyService(cache)
-	if err := svc.CleanupStaleProcessSlots(context.Background()); err != nil {
+	// During a rolling deployment, another process still owns live slots.
+	// Keep those slots until released or expired instead of treating them as stale.
+	if os.Getenv("CONCURRENCY_SKIP_STARTUP_CLEANUP") == "true" {
+		logger.LegacyPrintf("service.concurrency", "Startup process-slot cleanup disabled for rolling deployment; TTL cleanup remains enabled")
+	} else if err := svc.CleanupStaleProcessSlots(context.Background()); err != nil {
 		logger.LegacyPrintf("service.concurrency", "Warning: startup cleanup stale process slots failed: %v", err)
 	}
 	if cfg != nil {
@@ -881,6 +885,7 @@ func ProvideAPIKeyService(
 
 // ProviderSet is the Wire provider set for all services
 var ProviderSet = wire.NewSet(
+	ProvideGroupRecommendationStore,
 	// Core services
 	ProvideAuthService,
 	NewPasskeyService,
@@ -945,6 +950,8 @@ var ProviderSet = wire.NewSet(
 	ProvideOpenCodeGoUsageService,
 	ProvideSettingService,
 	NewDataManagementService,
+	NewAppCatalogService,
+	ProvideIQDetectService,
 	ProvideBackupService,
 	ProvideOpsSystemLogSink,
 	ProvideOpsService,
@@ -997,13 +1004,14 @@ var ProviderSet = wire.NewSet(
 	ProvideScheduledTestRunnerService,
 	NewGroupCapacityService,
 	NewChannelService,
-	NewPublicTransitService,
 	wire.Bind(new(ChannelCacheInvalidator), new(*ChannelService)),
+	ProvidePublicTransitService,
 	NewModelPricingResolver,
 	NewModelPlazaService,
 	NewContentModerationService,
 	NewAffiliateService,
 	ProvidePaymentConfigService,
+	ProvideLotterydNotifier,
 	ProvidePaymentService,
 	ProvidePaymentOrderExpiryService,
 	ProvideBalanceNotifyService,
@@ -1015,6 +1023,25 @@ var ProviderSet = wire.NewSet(
 	NewChannelMonitorRequestTemplateService,
 	ProvideUserPlatformQuotaUsageFlusher,
 )
+
+// ProvidePublicTransitService wires the optional passive-monitor repository
+// without changing NewPublicTransitService's constructor contract.
+func ProvidePublicTransitService(
+	channelService *ChannelService,
+	monitorService *ChannelMonitorService,
+	settingService *SettingService,
+	paymentConfig *PaymentConfigService,
+	groupRepo GroupRepository,
+	usageRepo UsageLogRepository,
+	opsRepo OpsRepository,
+	monitorV2 *ChannelMonitorV2Service,
+) *PublicTransitService {
+	svc := NewPublicTransitService(channelService, monitorService, monitorV2, settingService, paymentConfig, groupRepo, usageRepo)
+	if passiveRepo, ok := any(opsRepo).(PublicTransitPassiveMonitorRepository); ok {
+		svc.SetPassiveMonitorRepository(passiveRepo)
+	}
+	return svc
+}
 
 // ProvideUserPlatformQuotaUsageFlusher 创建并启动 UserPlatformQuotaUsageFlusher。
 func ProvideUserPlatformQuotaUsageFlusher(cfg *config.Config, cache BillingCache, quotaRepo UserPlatformQuotaRepository, tw *TimingWheelService) *UserPlatformQuotaUsageFlusher {
@@ -1037,10 +1064,19 @@ func ProvideBalanceNotifyService(emailService *EmailService, settingRepo Setting
 }
 
 // ProvidePaymentService creates PaymentService and attaches notification email delivery.
-func ProvidePaymentService(entClient *dbent.Client, registry *payment.Registry, loadBalancer payment.LoadBalancer, redeemService *RedeemService, subscriptionSvc *SubscriptionService, configService *PaymentConfigService, userRepo UserRepository, groupRepo GroupRepository, affiliateService *AffiliateService, notificationEmailService *NotificationEmailService) *PaymentService {
+func ProvidePaymentService(entClient *dbent.Client, registry *payment.Registry, loadBalancer payment.LoadBalancer, redeemService *RedeemService, subscriptionSvc *SubscriptionService, configService *PaymentConfigService, userRepo UserRepository, groupRepo GroupRepository, affiliateService *AffiliateService, notificationEmailService *NotificationEmailService, lotterydNotifier *LotterydNotifier) *PaymentService {
 	svc := NewPaymentService(entClient, registry, loadBalancer, redeemService, subscriptionSvc, configService, userRepo, groupRepo, affiliateService)
 	svc.SetNotificationEmailService(notificationEmailService)
+	svc.SetLotterydNotifier(lotterydNotifier)
 	return svc
+}
+
+// ProvideLotterydNotifier 按配置构造 lotteryd 充值通知器（未配置时返回 nil）。
+func ProvideLotterydNotifier(cfg *config.Config) *LotterydNotifier {
+	if cfg == nil {
+		return nil
+	}
+	return NewLotterydNotifier(cfg.Lotteryd)
 }
 
 // ProvidePaymentOrderExpiryService creates and starts PaymentOrderExpiryService.
@@ -1113,4 +1149,9 @@ func ProvideClaudeResetCreditService(accounts AccountRepository, tokens *ClaudeT
 	s := NewClaudeResetCreditService(accounts, tokens, proxies, settings)
 	s.ConfigureRedemption(idem, locks)
 	return s
+}
+
+// ProvideIQDetectService supplies the account source through the shared repository contract.
+func ProvideIQDetectService(cfg *config.Config, accounts AccountRepository) *IQDetectService {
+	return NewIQDetectService(cfg, accounts)
 }

@@ -45,9 +45,6 @@ export default {
           enabled: 'Enable Available Channels',
           enabledHint: 'When off, the sidebar entry is hidden and the endpoint returns an empty list.',
         },
-        publicTransit: {
-          title: 'Public Transit Export', description: 'Expose a standard public snapshot API and optional visual page.', configureLink: 'Open public data page', apiEnabled: 'Public data API', apiEnabledHint: 'Exposes discovery and snapshot endpoints without private credentials.', pageEnabled: 'Public data page', pageEnabledHint: 'Expose /public/transit for visitors.'
-        },
         siteBillingMode: {
           title: 'Site Billing Mode',
           description: 'Controls which purchase options users see. Defaults to "Recharge & Subscription".',
@@ -62,6 +59,9 @@ export default {
             rechargeOnly: 'Hides "My Subscriptions", the purchase-page subscription tab, the header subscription badge and the usage billing-type filter; direct visits to "My Subscriptions" return to the dashboard. The admin sidebar also hides the "Subscription Management" entry (the page stays reachable by URL). Existing subscription billing and redeem-code subscriptions are unaffected.',
             subscriptionOnly: 'The purchase page only offers subscription plans and the sidebar entry reads "Subscription"; balance top-up orders are rejected. Redeem codes, affiliate payouts and other balance credits are unaffected.',
           },
+        },
+        publicTransit: {
+          title: 'Public Transit Export', description: 'Expose a standard public snapshot API and optional visual page.', configureLink: 'Open public data page', previewLink: 'Preview in admin', apiEnabled: 'Public data API', apiEnabledHint: 'Exposes discovery and snapshot endpoints without private credentials.', pageEnabled: 'Public data page', pageEnabledHint: 'Expose /public/transit for visitors.'
         },
         modelPlaza: {
           title: 'Model Plaza',

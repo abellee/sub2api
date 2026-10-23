@@ -43,6 +43,9 @@ type AdminHandlers struct {
 	Affiliate              *admin.AffiliateHandler
 	Compliance             *admin.ComplianceHandler
 	AuditLog               *admin.AuditLogHandler
+	WechatGroupQR          *admin.WechatGroupQRHandler
+	AppCatalog             *admin.AppCatalogHandler
+	IQDetect               *admin.IQDetectHandler
 }
 
 // Handlers contains all HTTP handlers
@@ -55,6 +58,7 @@ type Handlers struct {
 	Subscription     *SubscriptionHandler
 	Announcement     *AnnouncementHandler
 	ChannelMonitor   *ChannelMonitorUserHandler
+	IQDetectPublic   *IQDetectPublicHandler
 	ChannelMonitorV2 *ChannelMonitorV2Handler
 	Admin            *AdminHandlers
 	Gateway          *GatewayHandler

@@ -241,16 +241,26 @@ func (h *AnnouncementHandler) ListReadStatus(c *gin.Context) {
 		search = search[:200]
 	}
 
-	items, paginationResult, err := h.announcementService.ListUserReadStatus(
+	items, paginationResult, readCount, err := h.announcementService.ListUserReadStatus(
 		c.Request.Context(),
 		announcementID,
 		params,
 		search,
+		c.Query("read_status") == "read",
 	)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
 
-	response.Paginated(c, items, paginationResult.Total, page, pageSize)
+	response.Success(c, struct {
+		response.PaginatedData
+		ReadCount int64 `json:"read_count"`
+	}{
+		PaginatedData: response.PaginatedData{
+			Items: items, Total: paginationResult.Total, Page: page, PageSize: pageSize,
+			Pages: max(1, paginationResult.Pages),
+		},
+		ReadCount: readCount,
+	})
 }

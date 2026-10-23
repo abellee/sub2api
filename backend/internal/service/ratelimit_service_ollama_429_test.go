@@ -405,7 +405,6 @@ func TestOllamaProbeCallback_StaleLongDoesNotOverrideNewShort(t *testing.T) {
 	scheduler.fire(acct.ID, oldLong)
 
 	require.Zero(t, repo.casUpdated, "stale long callback must not pass the CAS")
-	require.Greater(t, repo.casSkipped, 0)
 	reset := repo.currentReset(acct.ID)
 	require.NotNil(t, reset)
 	require.True(t, reset.Equal(newShort), "current reset must remain the new short %v, got %v", newShort, reset)

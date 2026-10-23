@@ -3,9 +3,9 @@
     <header class="border-b border-gray-200 bg-white/95 dark:border-dark-800 dark:bg-dark-900/95">
       <div class="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-5 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
         <div>
-          <router-link to="/home" class="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-primary-600 dark:text-dark-300 dark:hover:text-primary-400">
+          <router-link :to="adminPreview ? '/admin/settings' : '/home'" class="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-primary-600 dark:text-dark-300 dark:hover:text-primary-400">
             <Icon name="arrowLeft" size="sm" />
-            {{ t('publicTransit.backHome') }}
+            {{ adminPreview ? t('publicTransit.backToSettings') : t('publicTransit.backHome') }}
           </router-link>
           <h1 class="mt-3 text-2xl font-semibold tracking-normal text-gray-950 dark:text-white">
             {{ snapshot?.station.name || t('publicTransit.title') }}
@@ -13,15 +13,15 @@
           <p class="mt-1 text-sm text-gray-500 dark:text-dark-300">
             {{ t('publicTransit.subtitle') }}
           </p>
+          <div class="mt-3 inline-flex items-center gap-2 rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-600 dark:bg-dark-800 dark:text-dark-300">
+            <span class="h-1.5 w-1.5 rounded-full" :class="monitoringMode === 'v2' ? 'bg-sky-500' : 'bg-emerald-500'" aria-hidden="true"></span>
+            {{ monitoringMode === 'v2' ? t('publicTransit.monitoringModeV2') : t('publicTransit.monitoringModeV1') }}
+          </div>
         </div>
         <div class="flex flex-wrap gap-2">
-          <button class="btn btn-secondary" type="button" @click="copy(discoveryUrl)">
-            <Icon name="copy" size="sm" />
-            {{ t('publicTransit.copyDiscovery') }}
-          </button>
           <button class="btn btn-secondary" type="button" @click="copy(snapshotUrl)">
             <Icon name="copy" size="sm" />
-            {{ t('publicTransit.copySnapshot') }}
+            {{ t('publicTransit.copyEndpoint') }}
           </button>
           <a class="btn btn-primary" :href="snapshotUrl" target="_blank" rel="noopener noreferrer">
             <Icon name="externalLink" size="sm" />
@@ -229,7 +229,7 @@
           </div>
         </section>
 
-        <section class="mt-5 rounded-lg border border-gray-200 bg-white dark:border-dark-800 dark:bg-dark-900">
+        <section v-if="monitoringMode === 'v1'" class="mt-5 rounded-lg border border-gray-200 bg-white dark:border-dark-800 dark:bg-dark-900">
           <div class="flex flex-col gap-3 border-b border-gray-200 p-4 dark:border-dark-800 md:flex-row md:items-center md:justify-between">
             <div>
               <h2 class="text-base font-semibold">{{ t('publicTransit.monitoring') }}</h2>
@@ -265,6 +265,16 @@
             </div>
           </div>
         </section>
+
+        <PublicPassiveMonitorPanel
+          v-else-if="monitoringMode === 'v2'"
+          :monitoring="passiveMonitoring"
+          :groups="snapshot.groups"
+          :range="passiveRange"
+          :loading="loading || passiveLoading"
+          :error="passiveError"
+          @update:range="setPassiveRange"
+        />
 
         <p class="mt-4 text-xs leading-relaxed text-gray-500 dark:text-dark-400">
           {{ t('publicTransit.publicNote', {
@@ -338,35 +348,49 @@ import Skeleton from '@/components/common/Skeleton.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import PlatformIcon from '@/components/common/PlatformIcon.vue'
 import MonitorCardGrid from '@/components/user/monitor/MonitorCardGrid.vue'
+import PublicPassiveMonitorPanel from '@/features/channel-monitor-v2/PublicPassiveMonitorPanel.vue'
 import { useClipboard } from '@/composables/useClipboard'
 import { useChannelMonitorFormat } from '@/composables/useChannelMonitorFormat'
 import type { MonitorStatus, Provider, UserMonitorDetail, UserMonitorView } from '@/api/channelMonitor'
 import {
-  getPublicTransitSnapshot,
+  getPublicTransitSnapshotAuto,
   type PublicTransitCacheUsageWindow,
   type PublicTransitGroup,
   type PublicTransitModel,
   type PublicTransitMonitor,
   type PublicTransitSnapshot,
+  type PublicTransitSnapshotV2,
 } from '@/api/publicTransit'
+
+const props = defineProps<{ adminPreview?: boolean }>()
+const adminPreview = computed(() => props.adminPreview === true)
 
 const { t } = useI18n()
 const { copyToClipboard } = useClipboard()
 const monitorFormat = useChannelMonitorFormat()
 
 const snapshot = ref<PublicTransitSnapshot | null>(null)
+const passiveSnapshot = ref<PublicTransitSnapshotV2 | null>(null)
 const loading = ref(true)
 const error = ref('')
+const passiveError = ref('')
+const passiveLoading = ref(false)
 const search = ref('')
 const platformFilter = ref('')
 const expandedGroups = ref<Set<string>>(new Set())
 const monitorWindow = ref<'7d' | '15d' | '30d'>('7d')
 const monitorWindows = ['7d', '15d', '30d'] as const
+type PassiveRange = '90m' | '24h' | '7d' | '30d'
+const passiveRange = ref<PassiveRange>('24h')
 const showMonitorDetail = ref(false)
 const selectedMonitorId = ref<number | null>(null)
 
-const discoveryUrl = computed(() => snapshot.value?.endpoints.discovery_url || `${window.location.origin}/.well-known/ai-transit.json`)
-const snapshotUrl = computed(() => snapshot.value?.endpoints.snapshot_url || `${window.location.origin}/api/public/transit/v1/snapshot`)
+const snapshotUrl = computed(() => snapshot.value?.endpoints.snapshot_url || `${window.location.origin}/api/public/transit/snapshot`)
+const passiveMonitoring = computed(() => passiveSnapshot.value?.passive_monitoring || null)
+const monitoringMode = computed<'v1' | 'v2'>(() => {
+  const mode = snapshot.value?.monitoring_mode || passiveSnapshot.value?.monitoring_mode
+  return mode === 'v2' ? 'v2' : 'v1'
+})
 
 const modelCount = computed(() => {
   return (snapshot.value?.groups || []).reduce((total, group) => total + (group.models?.length || 0), 0)
@@ -425,6 +449,31 @@ const selectedMonitorDetail = computed(() => {
   if (selectedMonitorId.value == null) return null
   return publicMonitorDetailCache.value[selectedMonitorId.value] || null
 })
+
+function setPassiveRange(range: PassiveRange) {
+  if (passiveRange.value === range) return
+  passiveRange.value = range
+  void reloadPassive()
+}
+
+async function reloadPassive() {
+  passiveLoading.value = true
+  try {
+    const result = await getPublicTransitSnapshotAuto({
+      range: passiveRange.value,
+      cacheBust: adminPreview.value ? Date.now() : undefined,
+    })
+    if ('passive_monitoring' in result) {
+      snapshot.value = result
+      passiveSnapshot.value = result
+    }
+    passiveError.value = ''
+  } catch (reason) {
+    passiveError.value = reason instanceof Error ? reason.message : String(reason)
+  } finally {
+    passiveLoading.value = false
+  }
+}
 
 function formatPrice(value?: number) {
   if (value == null) return '-'
@@ -711,13 +760,21 @@ async function copy(value: string) {
 onMounted(async () => {
   loading.value = true
   error.value = ''
+  passiveError.value = ''
+  const previewCacheBust = adminPreview.value ? Date.now() : undefined
   try {
-    snapshot.value = await getPublicTransitSnapshot()
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : String(err)
-  } finally {
-    loading.value = false
+    const result = await getPublicTransitSnapshotAuto({
+      range: passiveRange.value,
+      cacheBust: previewCacheBust,
+    })
+    snapshot.value = result
+    if ('passive_monitoring' in result) {
+      passiveSnapshot.value = result
+    }
+  } catch (reason) {
+    error.value = reason instanceof Error ? reason.message : String(reason)
   }
+  loading.value = false
 })
 </script>
 

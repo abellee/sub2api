@@ -84,3 +84,9 @@ deploy/redis_data/
 .claude/
 issues/
 CLAUDE.md
+
+# Local workspaces and audit management data
+.codex/
+.audit-local/
+.tools/
+backend/audit-sdk/.git

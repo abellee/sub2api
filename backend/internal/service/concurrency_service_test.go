@@ -193,6 +193,22 @@ func TestCleanupStaleProcessSlots_DelegatesPrefix(t *testing.T) {
 	require.Equal(t, RequestIDPrefix(), cache.cleanupPrefix)
 }
 
+func TestProvideConcurrencyService_StartupCleanup(t *testing.T) {
+	for _, value := range []string{"", "false", "true"} {
+		t.Run("skip="+value, func(t *testing.T) {
+			t.Setenv("CONCURRENCY_SKIP_STARTUP_CLEANUP", value)
+			cache := &trackingConcurrencyCache{}
+			svc := ProvideConcurrencyService(cache, nil, nil)
+			require.NotNil(t, svc)
+			if value == "true" {
+				require.Empty(t, cache.cleanupPrefix, "rolling startup must preserve other processes' live slots")
+			} else {
+				require.Equal(t, RequestIDPrefix(), cache.cleanupPrefix)
+			}
+		})
+	}
+}
+
 func TestAcquireAccountSlot_Success(t *testing.T) {
 	cache := &stubConcurrencyCacheForTest{acquireResult: true}
 	svc := NewConcurrencyService(cache)

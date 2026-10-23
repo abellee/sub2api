@@ -11,8 +11,8 @@ vi.mock('@/utils/featureFlags', () => ({
 vi.mock('../ChannelStatusV1View.vue', () => ({
   default: defineComponent({ name: 'ChannelStatusV1View', setup: () => () => h('div', { 'data-testid': 'v1' }) }),
 }))
-vi.mock('../ChannelStatusV2View.vue', () => ({
-  default: defineComponent({ name: 'ChannelStatusV2View', setup: () => () => h('div', { 'data-testid': 'v2' }) }),
+vi.mock('../ChannelStatusV2StudioView.vue', () => ({
+  default: defineComponent({ name: 'ChannelStatusV2StudioView', setup: () => () => h('div', { 'data-testid': 'v2' }) }),
 }))
 
 import ChannelStatusView from '../ChannelStatusView.vue'

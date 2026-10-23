@@ -1,18 +1,26 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { RouterLink } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { useAuthStore } from "@/stores/auth";
+import { useAppStore } from "@/stores/app";
 import { setLocale } from "@/i18n";
+import { useTheme, type ThemeChoice } from "@/composables/useTheme";
 import { tokenFreeEnglish } from "./tokenfreeCopy";
 
 const authStore = useAuthStore();
+const appStore = useAppStore();
 const { locale } = useI18n();
 const isEnglish = computed(() => locale.value === "en");
 const copy = (zh: string) =>
   isEnglish.value ? (tokenFreeEnglish[zh] ?? zh) : zh;
 const dashboardPath = computed(() =>
   authStore.isAdmin ? "/admin/dashboard" : "/dashboard",
+);
+const showPublicTransitEntry = computed(
+  () =>
+    !appStore.publicSettingsLoaded ||
+    appStore.cachedPublicSettings?.public_transit_page_enabled !== false,
 );
 const primaryPath = computed(() =>
   authStore.isAuthenticated ? dashboardPath.value : "/register",
@@ -34,38 +42,7 @@ const copyStatus = computed(() =>
       : "",
 );
 
-type Theme = "dark" | "light" | "system";
-function readTheme(): Theme {
-  try {
-    const homeTheme = localStorage.getItem("tokenfree-home-theme");
-    if (homeTheme === "dark" || homeTheme === "light" || homeTheme === "system") return homeTheme;
-    const saved = localStorage.getItem("theme");
-    if (saved === "dark" || saved === "light") return saved;
-    if (saved === "system") return "system";
-  } catch {
-    /* Storage may be disabled. */
-  }
-  return "dark";
-}
-const theme = ref<Theme>(readTheme());
-const prefersLight = ref(false);
-const resolvedTheme = computed(() =>
-  theme.value === "system"
-    ? prefersLight.value
-      ? "light"
-      : "dark"
-    : theme.value,
-);
-let systemTheme: MediaQueryList | undefined;
-function syncSystemTheme() {
-  prefersLight.value = systemTheme?.matches ?? false;
-}
-function applyTheme() {
-  document.documentElement.classList.toggle(
-    "dark",
-    resolvedTheme.value === "dark",
-  );
-}
+const { theme, resolvedTheme, setTheme } = useTheme();
 function closeMenus(restoreFocus = false) {
   root.value
     ?.querySelectorAll<HTMLDetailsElement>(".tf-nav-menu[open]")
@@ -98,16 +75,8 @@ async function changeLanguage(language: "zh" | "en") {
   copyResult.value = null;
   closeMenus(true);
 }
-function changeTheme(value: Theme) {
-  theme.value = value;
-  // The rest of Sub2API treats an absent theme setting as system mode.
-  try {
-    localStorage.setItem("tokenfree-home-theme", value);
-    if (value === "system") localStorage.removeItem("theme");
-    else localStorage.setItem("theme", value);
-  } catch {
-    /* Keep the selection for this visit. */
-  }
+function changeTheme(value: ThemeChoice) {
+  setTheme(value);
   closeMenus(true);
 }
 async function copySupport() {
@@ -118,20 +87,14 @@ async function copySupport() {
     copyResult.value = "error";
   }
 }
-watch(resolvedTheme, applyTheme);
 onMounted(() => {
   syncScroll();
   window.addEventListener("scroll", syncScroll, { passive: true });
-  systemTheme = window.matchMedia("(prefers-color-scheme: light)");
-  syncSystemTheme();
-  systemTheme.addEventListener("change", syncSystemTheme);
-  applyTheme();
   document.addEventListener("click", onDocumentClick);
   document.addEventListener("keydown", onKeyDown);
 });
 onBeforeUnmount(() => {
   window.removeEventListener("scroll", syncScroll);
-  systemTheme?.removeEventListener("change", syncSystemTheme);
   document.removeEventListener("click", onDocumentClick);
   document.removeEventListener("keydown", onKeyDown);
 });
@@ -275,6 +238,11 @@ onBeforeUnmount(() => {
           </div>
           <div class="tf-nav-auth">
             <RouterLink
+              class="tf-nav-login"
+              v-if="!authStore.isAuthenticated && showPublicTransitEntry"
+              to="/public/transit"
+              >{{ copy("公开资料") }}</RouterLink
+            ><RouterLink
               class="tf-nav-register"
               v-if="!authStore.isAuthenticated"
               to="/register"
@@ -294,6 +262,15 @@ onBeforeUnmount(() => {
           </div>
         </div>
       </nav>
+    </div>
+    <div class="tf-rebrand-wrap">
+      <aside class="tf-rebrand-notice" role="note" :aria-label="copy('更名公告')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 11v6M12 7v1" stroke-linecap="round" />
+        </svg>
+        <p><strong>{{ copy('更名公告') }}</strong><span>{{ copy('LLM Free 现已更名为 TokenFree。') }}</span></p>
+      </aside>
     </div>
     <header class="tf-hero">
       <div class="tf-hero-inner" id="top">
@@ -680,6 +657,40 @@ a:focus-visible {
   align-items: center;
   position: relative;
   z-index: 3;
+}
+.tf-rebrand-wrap {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 0 clamp(20px, 3vw, 36px);
+}
+.tf-rebrand-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 16px;
+  border: 1px solid rgb(137 155 255 / 0.3);
+  border-radius: 12px;
+  color: var(--ink);
+  background: linear-gradient(110deg, rgb(83 110 255 / 0.1), rgb(119 85 243 / 0.04));
+  font-size: 12px;
+  line-height: 1.7;
+}
+.tf-rebrand-notice svg {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  margin-top: 1px;
+  color: var(--tf-console-active-ink, #b7c2ff);
+}
+.tf-rebrand-notice p {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 12px;
+  margin: 0;
+}
+.tf-rebrand-notice strong {
+  color: var(--tf-console-active-ink, #b7c2ff);
+  font-weight: 600;
 }
 .tf-brand {
   display: flex;

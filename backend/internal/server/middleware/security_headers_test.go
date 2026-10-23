@@ -417,6 +417,7 @@ func TestEnhanceCSPPolicy(t *testing.T) {
 		assert.Contains(t, enhanced, AirwallexDemoCheckoutDomain)
 		assert.Contains(t, enhanced, "style-src 'self'")
 		assert.Contains(t, enhanced, "frame-src 'self'")
+		assert.Equal(t, 1, countDirectiveValue(enhanced, "frame-src", WidgetDomain))
 	})
 
 	t.Run("does_not_duplicate_airwallex_domains", func(t *testing.T) {
@@ -433,6 +434,7 @@ func TestEnhanceCSPPolicy(t *testing.T) {
 		assert.Equal(t, 1, countDirectiveValue(enhanced, "style-src", AirwallexDemoStaticDomain))
 		assert.Equal(t, 1, countDirectiveValue(enhanced, "style-src", AirwallexDemoCheckoutDomain))
 		assert.Equal(t, 1, countDirectiveValue(enhanced, "frame-src", AirwallexDemoCheckoutDomain))
+		assert.Equal(t, 1, countDirectiveValue(enhanced, "frame-src", WidgetDomain))
 	})
 }
 

@@ -3,25 +3,17 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
 import { setLocale } from '@/i18n'
-import ModelPlazaContent from '@/components/custom-model-plaza/ModelPlazaContent.vue'
+import ModelPlazaContent from '@/components/model-plaza/ModelPlazaContent.vue'
+import { useTheme, type ThemeChoice } from '@/composables/useTheme'
 
-type ThemeChoice = 'system' | 'light' | 'dark'
-
-
-
-const THEME_KEY = 'tokenfree-home-theme'
 const authStore = useAuthStore()
 const { locale } = useI18n()
 const pageRef = ref<HTMLElement | null>(null)
 const hasScrolled = ref(false)
 function syncScroll() { hasScrolled.value = window.scrollY > 0 }
-const systemDark = ref(window.matchMedia('(prefers-color-scheme: dark)').matches)
-const savedTheme = localStorage.getItem(THEME_KEY) ?? localStorage.getItem('theme')
-const themeChoice = ref<ThemeChoice>(savedTheme === 'light' || savedTheme === 'dark' || savedTheme === 'system' ? savedTheme : 'dark')
-const systemThemeQuery = window.matchMedia('(prefers-color-scheme: dark)')
+const { theme: themeChoice, resolvedTheme, setTheme } = useTheme()
 
 const language = ref<'zh' | 'en'>(locale.value.startsWith('zh') ? 'zh' : 'en')
-const resolvedTheme = computed<'light' | 'dark'>(() => themeChoice.value === 'system' ? (systemDark.value ? 'dark' : 'light') : themeChoice.value)
 const isAuthenticated = computed(() => authStore.isAuthenticated)
 const dashboardPath = computed(() => authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
 
@@ -37,8 +29,7 @@ async function selectLanguage(code: 'zh' | 'en', event: Event) {
 }
 
 function selectTheme(theme: ThemeChoice, event: Event) {
-  themeChoice.value = theme
-  localStorage.setItem(THEME_KEY, theme)
+  setTheme(theme)
   closeDropdown(event)
 }
 
@@ -57,23 +48,15 @@ function handleDocumentClick(event: MouseEvent) {
   })
 }
 
-function handleSystemThemeChange(event: MediaQueryListEvent) {
-  systemDark.value = event.matches
-}
-
 onMounted(() => {
   syncScroll()
   window.addEventListener('scroll', syncScroll, { passive: true })
   document.addEventListener('click', handleDocumentClick)
-  systemThemeQuery.addEventListener('change', handleSystemThemeChange)
-
-
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('scroll', syncScroll)
   document.removeEventListener('click', handleDocumentClick)
-  systemThemeQuery.removeEventListener('change', handleSystemThemeChange)
 })
 </script>
 
@@ -1539,8 +1522,8 @@ onBeforeUnmount(() => {
   --muted: #99a3b9;
   --line: #ffffff16;
   --line-strong: #899bff40;
-  --forest: #71f6df;
-  --forest-soft: #71f6df10;
+  --forest: #899bff;
+  --forest-soft: #536eff18;
   --burgundy: #a994ff;
   --code: #0b0f1b;
   --shadow: #00000030;
@@ -1552,8 +1535,8 @@ onBeforeUnmount(() => {
   --muted: #53617c;
   --line: #182b5318;
   --line-strong: #536eff40;
-  --forest: #087e76;
-  --forest-soft: #087e7610;
+  --forest: #4652e0;
+  --forest-soft: #536eff18;
   --burgundy: #7755cf;
   --code: #eef1fc;
   --shadow: #536eff12;

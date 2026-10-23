@@ -37,6 +37,31 @@ func (h *PublicTransitHandler) Snapshot(c *gin.Context) {
 	c.JSON(http.StatusOK, payload)
 }
 
+// SnapshotAuto serves the single mode-aware public contract. The selected
+// monitor mode determines whether the response is the V1 active-probe shape
+// or the V2 passive-aggregation shape.
+func (h *PublicTransitHandler) SnapshotAuto(c *gin.Context) {
+	payload, err := h.publicTransitService.SnapshotAuto(c.Request.Context(), requestBaseURL(c), c.Query("range"))
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	c.Header("Cache-Control", "public, max-age=60")
+	c.JSON(http.StatusOK, payload)
+}
+
+// SnapshotV2 serves the passive, real-traffic aggregation contract. V1 is
+// intentionally left untouched for existing crawlers.
+func (h *PublicTransitHandler) SnapshotV2(c *gin.Context) {
+	payload, err := h.publicTransitService.SnapshotV2Range(c.Request.Context(), requestBaseURL(c), c.Query("range"))
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	c.Header("Cache-Control", "public, max-age=60")
+	c.JSON(http.StatusOK, payload)
+}
+
 func requestBaseURL(c *gin.Context) string {
 	if c == nil || c.Request == nil {
 		return ""

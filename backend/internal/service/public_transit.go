@@ -16,8 +16,13 @@ const (
 	PublicTransitSystem        = "sub2api"
 
 	PublicTransitWellKnownPath = "/.well-known/ai-transit.json"
-	PublicTransitSnapshotPath  = "/api/public/transit/v1/snapshot"
-	PublicTransitPagePath      = "/public/transit"
+	// PublicTransitSnapshotPath is the single public contract endpoint. It
+	// selects the response shape from the mutually-exclusive monitor mode.
+	PublicTransitSnapshotPath = "/api/public/transit/snapshot"
+	// PublicTransitV1SnapshotPath is retained for older integrations that
+	// explicitly pinned the original active-probe contract.
+	PublicTransitV1SnapshotPath = "/api/public/transit/v1/snapshot"
+	PublicTransitPagePath       = "/public/transit"
 )
 
 // PublicTransitService assembles a read-only, whitelisted public snapshot for
@@ -31,6 +36,7 @@ type PublicTransitService struct {
 	paymentConfig  *PaymentConfigService
 	groupRepo      GroupRepository
 	usageRepo      UsageLogRepository
+	passiveRepo    PublicTransitPassiveMonitorRepository
 }
 
 func NewPublicTransitService(
@@ -87,6 +93,21 @@ func (s *PublicTransitService) Enabled(ctx context.Context) bool {
 	return s.settingService.GetPublicTransitRuntime(ctx).APIEnabled
 }
 
+// SnapshotAuto returns the one public snapshot contract. When passive V2
+// monitoring is selected it returns the V2 payload; otherwise it returns the
+// stable V1 payload. The versioned endpoints remain available for backwards
+// compatibility, while new consumers only need this endpoint.
+func (s *PublicTransitService) SnapshotAuto(ctx context.Context, baseURL, rawRange string) (any, error) {
+	if !s.Enabled(ctx) {
+		return nil, infraerrors.NotFound("PUBLIC_TRANSIT_DISABLED", "public transit snapshot is disabled")
+	}
+	monitorRuntime := s.settingService.GetChannelMonitorRuntime(ctx)
+	if monitorRuntime.PassiveAggregationAllowed() {
+		return s.SnapshotV2Range(ctx, baseURL, rawRange)
+	}
+	return s.Snapshot(ctx, baseURL)
+}
+
 func (s *PublicTransitService) PageEnabled(ctx context.Context) bool {
 	if s == nil || s.settingService == nil {
 		return false
@@ -95,26 +116,30 @@ func (s *PublicTransitService) PageEnabled(ctx context.Context) bool {
 }
 
 type PublicTransitDiscovery struct {
-	SchemaVersion string `json:"schema_version"`
-	System        string `json:"system"`
-	SnapshotURL   string `json:"snapshot_url"`
-	HomepageURL   string `json:"homepage_url,omitempty"`
-	GeneratedAt   string `json:"generated_at"`
+	SchemaVersion  string   `json:"schema_version"`
+	System         string   `json:"system"`
+	SnapshotURL    string   `json:"snapshot_url"`
+	SnapshotV2URL  string   `json:"snapshot_v2_url,omitempty"`
+	MonitoringMode string   `json:"monitoring_mode,omitempty"`
+	Capabilities   []string `json:"capabilities,omitempty"`
+	HomepageURL    string   `json:"homepage_url,omitempty"`
+	GeneratedAt    string   `json:"generated_at"`
 }
 
 type PublicTransitSnapshot struct {
-	SchemaVersion string                        `json:"schema_version"`
-	System        string                        `json:"system"`
-	GeneratedAt   string                        `json:"generated_at"`
-	Station       PublicTransitStation          `json:"station"`
-	Billing       PublicTransitBilling          `json:"billing"`
-	Groups        []PublicTransitGroup          `json:"groups"`
-	Monitoring    []PublicTransitMonitor        `json:"monitoring"`
-	Cache         PublicTransitCacheDisclosure  `json:"cache"`
-	Disclosure    PublicTransitSourceDisclosure `json:"disclosure"`
-	Limits        PublicTransitLimits           `json:"limits"`
-	Completeness  PublicTransitCompleteness     `json:"completeness"`
-	Endpoints     PublicTransitEndpoints        `json:"endpoints"`
+	SchemaVersion  string                        `json:"schema_version"`
+	System         string                        `json:"system"`
+	GeneratedAt    string                        `json:"generated_at"`
+	MonitoringMode string                        `json:"monitoring_mode,omitempty"`
+	Station        PublicTransitStation          `json:"station"`
+	Billing        PublicTransitBilling          `json:"billing"`
+	Groups         []PublicTransitGroup          `json:"groups"`
+	Monitoring     []PublicTransitMonitor        `json:"monitoring"`
+	Cache          PublicTransitCacheDisclosure  `json:"cache"`
+	Disclosure     PublicTransitSourceDisclosure `json:"disclosure"`
+	Limits         PublicTransitLimits           `json:"limits"`
+	Completeness   PublicTransitCompleteness     `json:"completeness"`
+	Endpoints      PublicTransitEndpoints        `json:"endpoints"`
 }
 
 type PublicTransitStation struct {
@@ -139,6 +164,7 @@ type PublicTransitBilling struct {
 }
 
 type PublicTransitGroup struct {
+	ID               int64                   `json:"-"`
 	Name             string                  `json:"name"`
 	Platform         string                  `json:"platform"`
 	SubscriptionType string                  `json:"subscription_type,omitempty"`
@@ -280,6 +306,7 @@ type PublicTransitCompleteness struct {
 type PublicTransitEndpoints struct {
 	DiscoveryURL  string `json:"discovery_url"`
 	SnapshotURL   string `json:"snapshot_url"`
+	SnapshotV2URL string `json:"snapshot_v2_url,omitempty"`
 	PublicPageURL string `json:"public_page_url,omitempty"`
 }
 
@@ -289,11 +316,22 @@ func (s *PublicTransitService) Discovery(ctx context.Context, baseURL string) (*
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	runtime := s.settingService.GetPublicTransitRuntime(ctx)
+	monitorRuntime := s.settingService.GetChannelMonitorRuntime(ctx)
+	capabilities := []string{}
+	if monitorRuntime.ActiveProbesAllowed() {
+		capabilities = append(capabilities, "active_monitoring")
+	}
+	if monitorRuntime.PassiveAggregationAllowed() {
+		capabilities = append(capabilities, "passive_monitoring")
+	}
 	payload := &PublicTransitDiscovery{
-		SchemaVersion: PublicTransitSchemaVersion,
-		System:        PublicTransitSystem,
-		SnapshotURL:   absoluteURL(baseURL, PublicTransitSnapshotPath),
-		GeneratedAt:   now,
+		SchemaVersion:  PublicTransitSchemaVersion,
+		System:         PublicTransitSystem,
+		SnapshotURL:    absoluteURL(baseURL, PublicTransitSnapshotPath),
+		SnapshotV2URL:  absoluteURL(baseURL, PublicTransitPassiveSnapshotPath),
+		MonitoringMode: monitorRuntime.Mode,
+		Capabilities:   capabilities,
+		GeneratedAt:    now,
 	}
 	if runtime.PageEnabled {
 		payload.HomepageURL = absoluteURL(baseURL, PublicTransitPagePath)
@@ -326,19 +364,9 @@ func (s *PublicTransitService) Snapshot(ctx context.Context, baseURL string) (*P
 		return nil, fmt.Errorf("list public groups: %w", err)
 	}
 
-	monitorItems := []PublicTransitMonitor{}
 	monitorRuntime := s.settingService.GetChannelMonitorRuntime(ctx)
-	if monitorRuntime.PassiveAggregationAllowed() && s.monitorV2 != nil {
-		filter, err := s.monitorV2.ParseFilter("7d", nil, nil, nil)
-		if err != nil {
-			return nil, fmt.Errorf("build public monitor v2 filter: %w", err)
-		}
-		models, err := s.monitorV2.Models(ctx, filter, false)
-		if err != nil {
-			return nil, fmt.Errorf("list public monitor v2 models: %w", err)
-		}
-		monitorItems = buildPublicTransitMonitorsV2(models)
-	} else if monitorRuntime.ActiveProbesAllowed() && s.monitorService != nil {
+	var monitorItems []PublicTransitMonitor
+	if monitorRuntime.ActiveProbesAllowed() {
 		monitors, err := s.monitorService.ListUserView(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("list public monitors: %w", err)
@@ -367,8 +395,9 @@ func (s *PublicTransitService) Snapshot(ctx context.Context, baseURL string) (*P
 		SystemType:  PublicTransitSystem,
 	}
 	endpoints := PublicTransitEndpoints{
-		DiscoveryURL: absoluteURL(baseURL, PublicTransitWellKnownPath),
-		SnapshotURL:  absoluteURL(baseURL, PublicTransitSnapshotPath),
+		DiscoveryURL:  absoluteURL(baseURL, PublicTransitWellKnownPath),
+		SnapshotURL:   absoluteURL(baseURL, PublicTransitSnapshotPath),
+		SnapshotV2URL: absoluteURL(baseURL, PublicTransitPassiveSnapshotPath),
 	}
 	if runtime.PageEnabled {
 		station.PriceURL = absoluteURL(baseURL, PublicTransitPagePath)
@@ -377,10 +406,11 @@ func (s *PublicTransitService) Snapshot(ctx context.Context, baseURL string) (*P
 	}
 
 	return &PublicTransitSnapshot{
-		SchemaVersion: PublicTransitSchemaVersion,
-		System:        PublicTransitSystem,
-		GeneratedAt:   now,
-		Station:       station,
+		SchemaVersion:  PublicTransitSchemaVersion,
+		System:         PublicTransitSystem,
+		GeneratedAt:    now,
+		MonitoringMode: monitorRuntime.Mode,
+		Station:        station,
 		Billing: PublicTransitBilling{
 			Currency:                 "CNY",
 			CreditCurrency:           "USD",
@@ -414,54 +444,6 @@ func (s *PublicTransitService) Snapshot(ctx context.Context, baseURL string) (*P
 	}, nil
 }
 
-func buildPublicTransitMonitorsV2(list *ChannelMonitorV2List[ChannelMonitorV2ModelRow]) []PublicTransitMonitor {
-	if list == nil {
-		return []PublicTransitMonitor{}
-	}
-	out := make([]PublicTransitMonitor, 0, len(list.Items))
-	for _, row := range list.Items {
-		model := strings.TrimSpace(row.Model)
-		if model == "" || row.Metrics.RequestCount <= 0 {
-			continue
-		}
-		avgLatency := roundedIntPointer(row.Metrics.TTFT.AvgMs)
-		status := strings.TrimSpace(row.Health.Overall)
-		if status == "" {
-			status = "unknown"
-		}
-		out = append(out, PublicTransitMonitor{
-			Name:           strings.TrimSpace(row.Platform + " " + model),
-			Provider:       row.Platform,
-			PrimaryModel:   model,
-			PrimaryStatus:  status,
-			Availability7d: row.Metrics.SuccessRate,
-			AvgLatency7dMs: avgLatency,
-			Models: []PublicTransitMonitorModel{{
-				Model:          model,
-				LatestStatus:   status,
-				Availability7d: row.Metrics.SuccessRate,
-				AvgLatency7dMs: avgLatency,
-			}},
-			Timeline: []PublicTransitMonitorTimeline{},
-		})
-	}
-	sort.SliceStable(out, func(i, j int) bool {
-		if out[i].Provider == out[j].Provider {
-			return strings.ToLower(out[i].PrimaryModel) < strings.ToLower(out[j].PrimaryModel)
-		}
-		return out[i].Provider < out[j].Provider
-	})
-	return out
-}
-
-func roundedIntPointer(value *float64) *int {
-	if value == nil {
-		return nil
-	}
-	rounded := int(*value + 0.5)
-	return &rounded
-}
-
 func buildPublicTransitGroups(configuredGroups []Group, channels []AvailableChannel, cacheUsageByGroupID map[int64]PublicTransitCacheUsage, pricingService *PricingService) []PublicTransitGroup {
 	type groupKey struct {
 		id       int64
@@ -482,6 +464,7 @@ func buildPublicTransitGroups(configuredGroups []Group, channels []AvailableChan
 		key := groupKey{id: g.ID, name: g.Name, platform: g.Platform}
 		groupByKey[key] = g
 		byKey[key] = &PublicTransitGroup{
+			ID:               g.ID,
 			Name:             g.Name,
 			Platform:         g.Platform,
 			SubscriptionType: g.SubscriptionType,
@@ -514,6 +497,7 @@ func buildPublicTransitGroups(configuredGroups []Group, channels []AvailableChan
 					Status:           StatusActive,
 				}
 				byKey[key] = &PublicTransitGroup{
+					ID:               g.ID,
 					Name:             g.Name,
 					Platform:         g.Platform,
 					SubscriptionType: g.SubscriptionType,
@@ -791,11 +775,7 @@ func buildPublicTransitMonitors(views []*UserMonitorView, details map[int64]*Use
 		}
 		extras := make([]PublicTransitExtraModelStatus, 0, len(v.ExtraModels))
 		for _, e := range v.ExtraModels {
-			extras = append(extras, PublicTransitExtraModelStatus{
-				Model:     e.Model,
-				Status:    e.Status,
-				LatencyMs: e.LatencyMs,
-			})
+			extras = append(extras, PublicTransitExtraModelStatus(e))
 		}
 		models := buildPublicTransitMonitorModels(details[v.ID])
 		timeline := buildPublicTransitMonitorTimeline(v.Timeline)
@@ -842,15 +822,7 @@ func buildPublicTransitMonitorModels(detail *UserMonitorDetail) []PublicTransitM
 	}
 	out := make([]PublicTransitMonitorModel, 0, len(detail.Models))
 	for _, m := range detail.Models {
-		out = append(out, PublicTransitMonitorModel{
-			Model:           m.Model,
-			LatestStatus:    m.LatestStatus,
-			LatestLatencyMs: m.LatestLatencyMs,
-			Availability7d:  m.Availability7d,
-			Availability15d: m.Availability15d,
-			Availability30d: m.Availability30d,
-			AvgLatency7dMs:  m.AvgLatency7dMs,
-		})
+		out = append(out, PublicTransitMonitorModel(m))
 	}
 	return out
 }

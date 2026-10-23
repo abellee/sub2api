@@ -70,6 +70,10 @@ RUN apk add --no-cache git ca-certificates tzdata
 
 WORKDIR /app/backend
 
+# lotteryd is a sibling Go module the backend imports via a replace directive
+# (recharge callback gRPC notifications).
+COPY lotteryd/go.mod lotteryd/go.sum /app/lotteryd/
+
 # Copy go mod files first (better caching)
 COPY backend/go.mod backend/go.sum ./
 COPY backend/audit-sdk/ ./audit-sdk/
@@ -80,6 +84,7 @@ RUN --mount=type=cache,id=sub2api-gomod,target=/go/pkg/mod \
 
 # Copy backend source first
 COPY backend/ ./
+COPY lotteryd/ /app/lotteryd/
 
 # Copy frontend dist from previous stage (must be after backend copy to avoid being overwritten)
 COPY --from=frontend-builder /app/backend/internal/web/dist ./internal/web/dist

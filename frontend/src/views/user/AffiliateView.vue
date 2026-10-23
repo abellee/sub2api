@@ -48,7 +48,7 @@
           <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('affiliate.title') }}</h3>
           <p class="mt-1 text-sm text-gray-500 dark:text-dark-400">{{ t('affiliate.description') }}</p>
 
-          <div class="mt-5 grid gap-4 md:grid-cols-2">
+          <div class="mt-5 space-y-5">
             <div class="space-y-2">
               <p class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('affiliate.yourCode') }}</p>
               <div class="flex flex-col items-stretch gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 dark:border-dark-700 dark:bg-dark-900 sm:flex-row sm:items-center">
@@ -136,6 +136,7 @@
         </div>
       </template>
     </div>
+
   </AppLayout>
 </template>
 
@@ -160,7 +161,6 @@ const { copyToClipboard } = useClipboard()
 const loading = ref(true)
 const transferring = ref(false)
 const detail = ref<UserAffiliateDetail | null>(null)
-
 const inviteLink = computed(() => {
   if (!detail.value) return ''
   if (typeof window === 'undefined') return `/register?aff=${encodeURIComponent(detail.value.aff_code)}`
