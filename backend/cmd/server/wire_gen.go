@@ -295,7 +295,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	appCatalogHandler := admin.NewAppCatalogHandler(appCatalogService)
 	iqDetectHandler := admin.NewIQDetectHandler(iqDetectService)
 	upstreamBillingProbeService := service.ProvideUpstreamBillingProbeService(accountRepository, accountTestService, settingService, leaderLockCache, db)
-	contentSafetyBillingService, err := service.ProvideContentSafetyBillingService(configConfig, usageBillingRepository, billingCacheService, apiKeyService)
+	contentSafetyBillingService, err := service.ProvideContentSafetyBillingService(configConfig, usageBillingRepository, usageLogRepository, billingCacheService, apiKeyService)
 	if err != nil {
 		return nil, err
 	}

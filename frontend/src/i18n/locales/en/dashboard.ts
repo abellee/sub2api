@@ -420,6 +420,7 @@ export default {
     allCompactionTypes: 'All Requests',
     compactionOnly: 'Compaction Only',
     cyber: 'Cyber',
+    contentSafety: 'Content safety charge',
     live: 'Live',
     unknown: 'Unknown',
     in: 'In',

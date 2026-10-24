@@ -43,13 +43,54 @@ func (b *safetyBillingFake) Apply(_ context.Context, cmd *UsageBillingCommand) (
 	return &UsageBillingApplyResult{Applied: true}, nil
 }
 
+type safetyUsageFake struct {
+	mu    sync.Mutex
+	logs  []UsageLog
+	fail  bool
+	calls int
+}
+
+func (u *safetyUsageFake) Create(_ context.Context, log *UsageLog) (bool, error) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	u.calls++
+	if u.fail {
+		return false, errors.New("usage log offline")
+	}
+	for _, existing := range u.logs {
+		if existing.RequestID == log.RequestID && existing.APIKeyID == log.APIKeyID {
+			return false, nil
+		}
+	}
+	copied := *log
+	if log.BillingMode != nil {
+		mode := *log.BillingMode
+		copied.BillingMode = &mode
+	}
+	if log.UpstreamRequestID != nil {
+		upstream := *log.UpstreamRequestID
+		copied.UpstreamRequestID = &upstream
+	}
+	if log.AccountStatsCost != nil {
+		cost := *log.AccountStatsCost
+		copied.AccountStatsCost = &cost
+	}
+	u.logs = append(u.logs, copied)
+	return true, nil
+}
+
 func safetyTestConfig() ContentSafetyBillingConfig {
 	return ContentSafetyBillingConfig{Enabled: true, Amount: 0.125, MatchDescription: "Failed check: SAFETY_CHECK_TYPE", ClientMessage: "请求未通过内容安全检查"}
 }
 
 func newSafetyTestService(t *testing.T, billing *safetyBillingFake) *ContentSafetyBillingService {
 	t.Helper()
-	s, err := OpenContentSafetyBilling(filepath.Join(t.TempDir(), "safety.sqlite"), billing, nil)
+	return openSafetyTestService(t, filepath.Join(t.TempDir(), "safety.sqlite"), billing, &safetyUsageFake{})
+}
+
+func openSafetyTestService(t *testing.T, path string, billing *safetyBillingFake, usage *safetyUsageFake) *ContentSafetyBillingService {
+	t.Helper()
+	s, err := OpenContentSafetyBilling(path, billing, usage, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, s.Close()) })
 	require.NoError(t, s.UpdateConfig(context.Background(), safetyTestConfig()))
@@ -146,18 +187,20 @@ func TestContentSafetyBillingRecoveryAfterCommitAndRestart(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "safety.sqlite")
 	b := &safetyBillingFake{balance: 1, loseAck: true}
-	s, err := OpenContentSafetyBilling(path, b, nil)
+	usage := &safetyUsageFake{}
+	s, err := OpenContentSafetyBilling(path, b, usage, nil)
 	require.NoError(t, err)
 	c := safetyTestConfig()
 	require.NoError(t, s.UpdateConfig(ctx, c))
 	d := ContentSafetyDebit{ID: "stable-money-event", UserID: 11, APIKeyID: 22, AccountID: 33}
 	require.Error(t, s.Debit(ctx, d, c))
 	require.Equal(t, 0.875, b.balance)
+	require.Empty(t, usage.logs)
 	page, err := s.Records(ctx, 1, 20)
 	require.NoError(t, err)
 	require.Equal(t, "pending", page.Items[0].Status)
 	require.NoError(t, s.Close())
-	s, err = OpenContentSafetyBilling(path, b, nil)
+	s, err = OpenContentSafetyBilling(path, b, usage, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, s.Close()) })
 	persisted, err := s.Config(ctx)
@@ -177,6 +220,49 @@ func TestContentSafetyBillingRecoveryAfterCommitAndRestart(t *testing.T) {
 	require.Equal(t, "charged", page.Items[0].Status)
 	require.Equal(t, 0.125, page.Items[0].Amount)
 	require.Empty(t, page.Items[0].LastError)
+	require.Len(t, usage.logs, 1)
+	require.Equal(t, contentSafetyUsageRequestID("stable-money-event"), usage.logs[0].RequestID)
+}
+
+func TestContentSafetyBillingUsageRecordVisibleAndRetriedWithoutSecondCharge(t *testing.T) {
+	ctx := context.Background()
+	b := &safetyBillingFake{balance: 1}
+	usage := &safetyUsageFake{fail: true}
+	s := openSafetyTestService(t, filepath.Join(t.TempDir(), "safety.sqlite"), b, usage)
+	d := ContentSafetyDebit{ID: "visible-charge", UserID: 11, APIKeyID: 22, AccountID: 33, UpstreamRequestID: "xai-123"}
+	require.Error(t, s.Debit(ctx, d, safetyTestConfig()))
+	require.Equal(t, 0.875, b.balance)
+	require.Empty(t, usage.logs)
+	page, err := s.Records(ctx, 1, 20)
+	require.NoError(t, err)
+	require.Equal(t, "pending", page.Items[0].Status)
+	require.Contains(t, page.Items[0].LastError, "Usage record pending")
+
+	usage.fail = false
+	require.NoError(t, s.Recover(ctx))
+	require.NoError(t, s.Recover(ctx))
+	require.Len(t, b.commands, 1)
+	require.Equal(t, 0.875, b.balance)
+	require.Len(t, usage.logs, 1)
+	entry := usage.logs[0]
+	require.Equal(t, int64(11), entry.UserID)
+	require.Equal(t, int64(22), entry.APIKeyID)
+	require.Equal(t, ContentSafetyUsageModel, entry.Model)
+	require.Equal(t, ContentSafetyUsageModel, entry.RequestedModel)
+	require.Equal(t, ContentSafetyBillingMode, *entry.BillingMode)
+	require.Equal(t, RequestTypeCyberBlocked, entry.RequestType)
+	require.Equal(t, BillingTypeBalance, entry.BillingType)
+	require.Equal(t, 0.125, entry.ActualCost)
+	require.Equal(t, 0.125, entry.TotalCost)
+	require.Zero(t, entry.InputTokens)
+	require.Zero(t, entry.OutputTokens)
+	require.NotNil(t, entry.AccountStatsCost)
+	require.Zero(t, *entry.AccountStatsCost)
+	require.Equal(t, "xai-123", *entry.UpstreamRequestID)
+	require.Equal(t, contentSafetyUsageRequestID("visible-charge"), entry.RequestID)
+	page, err = s.Records(ctx, 1, 20)
+	require.NoError(t, err)
+	require.Equal(t, "charged", page.Items[0].Status)
 }
 
 func TestContentSafetyBillingRecoveryOnBalanceFailureAndCacheFailure(t *testing.T) {
@@ -199,6 +285,22 @@ func TestContentSafetyBillingRecoveryOnBalanceFailureAndCacheFailure(t *testing.
 	require.Equal(t, int64(1), invalidated)
 	require.Len(t, b.commands, 1)
 	require.InDelta(t, -0.115, b.balance, 1e-8)
+}
+
+func TestContentSafetyBillingRecoverLeavesAlreadyChargedRowsUntouched(t *testing.T) {
+	ctx := context.Background()
+	b := &safetyBillingFake{balance: 1}
+	usage := &safetyUsageFake{}
+	s := openSafetyTestService(t, filepath.Join(t.TempDir(), "safety.sqlite"), b, usage)
+	_, err := s.db.Exec(`INSERT INTO content_safety_debits
+		(id,user_id,api_key_id,account_id,upstream_request_id,amount_units,notes,client_message,status,created_at,charged_at)
+		VALUES('already-charged',11,22,33,'xai-old',12500000,'note','msg','charged','2026-10-24T00:00:00Z','2026-10-24T00:00:01Z')`)
+	require.NoError(t, err)
+
+	require.NoError(t, s.Recover(ctx))
+	require.Empty(t, usage.logs)
+	require.Zero(t, b.attempts)
+	require.Equal(t, float64(1), b.balance)
 }
 
 func TestContentSafetyBillingJournalFailureDoesNotDebit(t *testing.T) {

@@ -19,7 +19,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func ProvideContentSafetyBillingService(cfg *config.Config, billing UsageBillingRepository, cache *BillingCacheService, apiKeys *APIKeyService) (*ContentSafetyBillingService, error) {
+func ProvideContentSafetyBillingService(cfg *config.Config, billing UsageBillingRepository, usage UsageLogRepository, cache *BillingCacheService, apiKeys *APIKeyService) (*ContentSafetyBillingService, error) {
 	dir := os.Getenv("DATA_DIR")
 	if dir == "" {
 		dir = cfg.Pricing.DataDir
@@ -27,7 +27,7 @@ func ProvideContentSafetyBillingService(cfg *config.Config, billing UsageBilling
 	if dir == "" {
 		dir = "./data"
 	}
-	svc, err := OpenContentSafetyBilling(filepath.Join(dir, "content-safety-billing.sqlite"), billing, func(ctx context.Context, userID int64) error {
+	svc, err := OpenContentSafetyBilling(filepath.Join(dir, "content-safety-billing.sqlite"), billing, usage, func(ctx context.Context, userID int64) error {
 		if apiKeys != nil {
 			apiKeys.InvalidateAuthCacheByUserID(ctx, userID)
 		}

@@ -238,7 +238,7 @@ import Icon from '@/components/icons/Icon.vue'
 import UserErrorRequestsTable from '@/components/user/UserErrorRequestsTable.vue'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 import { formatReasoningEffort } from '@/utils/format'
-import { getBillingModeLabel, getDisplayBillingMode as resolveDisplayBillingMode } from '@/utils/billingMode'
+import { getBillingModeLabel, getDisplayBillingMode as resolveDisplayBillingMode, isContentSafetyUsage, usageModelLabel } from '@/utils/billingMode'
 import { resolveUsageRequestType, requestTypeToLegacyStream } from '@/utils/usageRequestType'
 import type {
   ApiKey,
@@ -404,6 +404,7 @@ const billingModeOptions = computed<SelectOption[]>(() => [
   { value: 'per_request', label: t('admin.usage.billingModePerRequest') },
   { value: 'image', label: t('admin.usage.billingModeImage') },
   { value: 'video', label: t('admin.usage.billingModeVideo') },
+  { value: 'content_safety', label: t('admin.usage.billingModeContentSafety') },
 ])
 
 const apiKeys = ref<ApiKey[]>([])
@@ -420,7 +421,7 @@ const groupOptions = computed<SelectOption[]>(() => [
 ])
 const modelOptions = computed<SelectOption[]>(() => [
   { value: null, label: t('admin.usage.allModels') },
-  ...modelOptionValues.value.map((model) => ({ value: model, label: model })),
+  ...modelOptionValues.value.map((model) => ({ value: model, label: usageModelLabel(model, t) })),
 ])
 
 const normalizedFilters = computed<UsageQueryParams>(() => {
@@ -608,6 +609,7 @@ const handleIpGeoBatchFailed = () => {
 }
 
 const getRequestTypeExportText = (log: UsageLog): string => {
+  if (isContentSafetyUsage(log)) return t('usage.cyber')
   const requestType = resolveUsageRequestType(log)
   if (requestType === 'cyber') return 'Cyber'
   if (requestType === 'live') return 'Live'
@@ -673,7 +675,7 @@ const exportToCSV = async () => {
     const rows = allLogs.map((log) => [
       log.created_at,
       log.api_key?.name || '',
-      log.model,
+      usageModelLabel(log.model, t),
       formatReasoningEffort(log.reasoning_effort),
       log.inbound_endpoint || '',
       log.ip_address || '',

@@ -82,13 +82,13 @@
             </div>
             <div v-else-if="row.upstream_model && row.upstream_model !== row.model" class="space-y-0.5">
               <div class="break-all font-medium text-gray-900 dark:text-white">
-                {{ row.model }}
+                {{ usageModelLabel(row.model, t) }}
               </div>
               <div class="break-all text-gray-500 dark:text-gray-400">
                 <span class="mr-0.5">↳</span>{{ row.upstream_model }}
               </div>
             </div>
-            <span v-else class="font-medium text-gray-900 dark:text-white">{{ row.model }}</span>
+            <span v-else class="font-medium text-gray-900 dark:text-white">{{ usageModelLabel(row.model, t) }}</span>
             <div
               v-if="row.upstream_model_mismatch === true && row.upstream_response_model"
               class="break-all pl-3 text-[11px]"
@@ -622,9 +622,11 @@ import {
   BILLING_MODE_TOKEN,
   getBillingModeLabel,
   getBillingModeBadgeClass,
+  isContentSafetyUsage,
   isImageUsage,
   getDisplayBillingMode,
   imageUnitPrice,
+  usageModelLabel,
 } from '@/utils/billingMode'
 import {
   formatImageBillingSize,
@@ -861,6 +863,7 @@ const accountHoverCache = ref<Record<number, AccountHoverCacheEntry>>({})
 const accountTooltipInfo = computed(() => resolveAccountHover(accountTooltipRow.value, accountHoverCache.value))
 
 const getRequestTypeLabel = (row: AdminUsageLog): string => {
+  if (isContentSafetyUsage(row)) return t('usage.cyber')
   const requestType = resolveUsageRequestType(row)
   if (requestType === 'cyber') return t('usage.cyber')
   if (requestType === 'live') return t('usage.live')
@@ -871,6 +874,7 @@ const getRequestTypeLabel = (row: AdminUsageLog): string => {
 }
 
 const getRequestTypeBadgeClass = (row: AdminUsageLog): string => {
+  if (isContentSafetyUsage(row)) return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
   const requestType = resolveUsageRequestType(row)
   if (requestType === 'cyber') return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
   if (requestType === 'live') return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200'

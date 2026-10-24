@@ -239,6 +239,9 @@ func buildRequestTypeFilterConditionWithAlias(startArgIndex int, requestType int
 		return fmt.Sprintf("(%srequest_type = $%d OR (%srequest_type = %d AND %sstream = TRUE AND %sopenai_ws_mode = FALSE))", prefix, startArgIndex, prefix, int16(service.RequestTypeUnknown), prefix, prefix), []any{requestTypeArg}
 	case service.RequestTypeWSV2:
 		return fmt.Sprintf("(%srequest_type = $%d OR (%srequest_type = %d AND %sopenai_ws_mode = TRUE))", prefix, startArgIndex, prefix, int16(service.RequestTypeUnknown), prefix), []any{requestTypeArg}
+	case service.RequestTypeCyberBlocked:
+		// 内容安全固定扣费在改成 cyber 之前曾写成同步请求，筛选「安全策略」时一并带上。
+		return fmt.Sprintf("(%srequest_type = $%d OR %sbilling_mode = $%d OR %smodel = $%d)", prefix, startArgIndex, prefix, startArgIndex+1, prefix, startArgIndex+2), []any{requestTypeArg, string(service.BillingModeContentSafety), service.ContentSafetyUsageModel}
 	default:
 		return fmt.Sprintf("%srequest_type = $%d", prefix, startArgIndex), []any{requestTypeArg}
 	}

@@ -200,6 +200,18 @@ func TestUserUsageListAllowsVideoBillingMode(t *testing.T) {
 	require.Equal(t, "video", repo.listFilters.BillingMode)
 }
 
+func TestUserUsageListAllowsContentSafetyBillingMode(t *testing.T) {
+	repo := &userUsageRepoCapture{}
+	router := newUserUsageRequestTypeTestRouter(repo)
+
+	req := httptest.NewRequest(http.MethodGet, "/usage?billing_mode=content_safety", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "content_safety", repo.listFilters.BillingMode)
+}
+
 func TestUserUsageListKeepsUserBillingAndIPWithoutAdminCostFields(t *testing.T) {
 	ipAddress := "203.0.113.10"
 	upstreamModel := "upstream-private-model"

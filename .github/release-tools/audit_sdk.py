@@ -15,6 +15,8 @@ import tempfile
 
 SDK_PATH = 'backend/audit-sdk'
 MAX_PAYLOAD = 2 * 1024 * 1024
+# Four repository-secret parts, each at most 32 KiB, under GitHub's 48 KiB secret limit.
+MAX_ENCODED = 128 * 1024
 
 
 def expected_commit():
@@ -28,7 +30,7 @@ def expected_commit():
 def restore(encoded, expected, destination):
     if not encoded:
         raise ValueError(f'Missing private SDK secret AUDIT_SDK_{expected}; source is never fetched from a public remote')
-    if len(encoded) > 96 * 1024:
+    if len(encoded) > MAX_ENCODED:
         raise ValueError('SDK secret exceeds the supported size')
     packed = base64.b64decode(encoded, validate=True)
     with gzip.GzipFile(fileobj=io.BytesIO(packed)) as stream:
@@ -84,7 +86,7 @@ def main():
             output.write('commit=' + expected + '\n')
     else:
         restore(''.join(os.environ.get(name, '') for name in
-                        ('AUDIT_SDK_BUNDLE', 'AUDIT_SDK_BUNDLE_PART2', 'AUDIT_SDK_BUNDLE_PART3')), expected, SDK_PATH)
+                        ('AUDIT_SDK_BUNDLE', 'AUDIT_SDK_BUNDLE_PART2', 'AUDIT_SDK_BUNDLE_PART3', 'AUDIT_SDK_BUNDLE_PART4')), expected, SDK_PATH)
 
 
 if __name__ == '__main__':

@@ -852,6 +852,7 @@ func TestBuildRequestTypeFilterConditionLegacyFallback(t *testing.T) {
 		request   int16
 		wantWhere string
 		wantArg   int16
+		wantArgs  []any
 	}{
 		{
 			name:      "sync_with_legacy_fallback",
@@ -872,6 +873,12 @@ func TestBuildRequestTypeFilterConditionLegacyFallback(t *testing.T) {
 			wantArg:   int16(service.RequestTypeWSV2),
 		},
 		{
+			name:      "cyber_includes_content_safety_charges",
+			request:   int16(service.RequestTypeCyberBlocked),
+			wantWhere: "(request_type = $3 OR billing_mode = $4 OR model = $5)",
+			wantArgs:  []any{int16(service.RequestTypeCyberBlocked), string(service.BillingModeContentSafety), service.ContentSafetyUsageModel},
+		},
+		{
 			name:      "invalid_request_type_normalized_to_unknown",
 			request:   int16(99),
 			wantWhere: "request_type = $3",
@@ -883,7 +890,11 @@ func TestBuildRequestTypeFilterConditionLegacyFallback(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			where, args := buildRequestTypeFilterCondition(3, tt.request)
 			require.Equal(t, tt.wantWhere, where)
-			require.Equal(t, []any{tt.wantArg}, args)
+			wantArgs := tt.wantArgs
+			if wantArgs == nil {
+				wantArgs = []any{tt.wantArg}
+			}
+			require.Equal(t, wantArgs, args)
 		})
 	}
 }

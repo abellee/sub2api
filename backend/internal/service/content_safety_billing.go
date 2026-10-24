@@ -51,20 +51,32 @@ type ContentSafetyDebitPage struct {
 	PageSize int                  `json:"page_size"`
 }
 
+const (
+	// ContentSafetyUsageModel is the stable usage-log model users see for a safety debit.
+	ContentSafetyUsageModel = "content-safety"
+	// ContentSafetyBillingMode marks that usage row as a fixed content-safety charge.
+	ContentSafetyBillingMode = string(BillingModeContentSafety)
+)
+
 type contentSafetyBillingRepository interface {
 	Apply(context.Context, *UsageBillingCommand) (*UsageBillingApplyResult, error)
+}
+
+type contentSafetyUsageRecorder interface {
+	Create(context.Context, *UsageLog) (bool, error)
 }
 
 type ContentSafetyBillingService struct {
 	db         *sql.DB
 	billing    contentSafetyBillingRepository
+	usage      contentSafetyUsageRecorder
 	invalidate func(context.Context, int64) error
 	processMu  sync.Mutex
 	cancel     context.CancelFunc
 	done       chan struct{}
 }
 
-func OpenContentSafetyBilling(path string, billing contentSafetyBillingRepository, invalidate func(context.Context, int64) error) (*ContentSafetyBillingService, error) {
+func OpenContentSafetyBilling(path string, billing contentSafetyBillingRepository, usage contentSafetyUsageRecorder, invalidate func(context.Context, int64) error) (*ContentSafetyBillingService, error) {
 	// The path comes from operator-managed DATA_DIR/configuration, never a request.
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil { //nolint:gosec // G703: trusted administrator-configured storage path.
 		return nil, err
@@ -100,7 +112,7 @@ func OpenContentSafetyBilling(path string, billing contentSafetyBillingRepositor
 		_ = db.Close()
 		return nil, err
 	}
-	return &ContentSafetyBillingService{db: db, billing: billing, invalidate: invalidate}, nil
+	return &ContentSafetyBillingService{db: db, billing: billing, usage: usage, invalidate: invalidate}, nil
 }
 
 func (s *ContentSafetyBillingService) Config(ctx context.Context) (ContentSafetyBillingConfig, error) {
@@ -211,13 +223,17 @@ func (s *ContentSafetyBillingService) settle(ctx context.Context, id string) err
 		return errors.New("content safety billing repository unavailable")
 	}
 	_, err = s.billing.Apply(ctx, &UsageBillingCommand{
-		RequestID: "content-safety:" + d.ID, APIKeyID: d.APIKeyID, UserID: d.UserID,
-		AccountID: d.AccountID, Model: "content-safety", BalanceCost: d.Amount,
+		RequestID: contentSafetyUsageRequestID(d.ID), APIKeyID: d.APIKeyID, UserID: d.UserID,
+		AccountID: d.AccountID, Model: ContentSafetyUsageModel, BalanceCost: d.Amount,
 	})
 	if err != nil {
 		// The main commit may have succeeded even when the connection failed. Keep
 		// pending and replay the SAME key; never issue a second, fresh debit.
 		_, recordErr := s.db.ExecContext(ctx, `UPDATE content_safety_debits SET last_error='Balance settlement pending; automatic retry scheduled',attempted_at=? WHERE id=?`, time.Now().UTC().Format(time.RFC3339Nano), id)
+		return errors.Join(err, recordErr)
+	}
+	if err := s.recordUsage(ctx, d); err != nil {
+		_, recordErr := s.db.ExecContext(ctx, `UPDATE content_safety_debits SET last_error='Usage record pending; automatic retry scheduled',attempted_at=? WHERE id=?`, time.Now().UTC().Format(time.RFC3339Nano), id)
 		return errors.Join(err, recordErr)
 	}
 	if s.invalidate != nil {
@@ -227,6 +243,34 @@ func (s *ContentSafetyBillingService) settle(ctx context.Context, id string) err
 	}
 	_, err = s.db.ExecContext(ctx, `UPDATE content_safety_debits SET status='charged',charged_at=?,last_error='' WHERE id=?`, time.Now().UTC().Format(time.RFC3339Nano), id)
 	return err
+}
+
+func contentSafetyUsageRequestID(id string) string {
+	return "content-safety:" + id
+}
+
+func (s *ContentSafetyBillingService) recordUsage(ctx context.Context, d ContentSafetyDebit) error {
+	if s.usage == nil {
+		return errors.New("content safety usage recorder unavailable")
+	}
+	mode := ContentSafetyBillingMode
+	accountCost := 0.0
+	entry := &UsageLog{
+		UserID: d.UserID, APIKeyID: d.APIKeyID, AccountID: d.AccountID,
+		RequestID: contentSafetyUsageRequestID(d.ID), Model: ContentSafetyUsageModel, RequestedModel: ContentSafetyUsageModel,
+		BillingMode: &mode, BillingType: BillingTypeBalance, RequestType: RequestTypeCyberBlocked,
+		TotalCost: d.Amount, ActualCost: d.Amount, RateMultiplier: 1, AccountStatsCost: &accountCost,
+	}
+	if createdAt, err := time.Parse(time.RFC3339Nano, d.CreatedAt); err == nil {
+		entry.CreatedAt = createdAt
+	}
+	if upstream := strings.TrimSpace(d.UpstreamRequestID); upstream != "" && len(upstream) <= 128 {
+		entry.UpstreamRequestID = &upstream
+	}
+	if _, err := s.usage.Create(ctx, entry); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s *ContentSafetyBillingService) Records(ctx context.Context, page, pageSize int) (ContentSafetyDebitPage, error) {

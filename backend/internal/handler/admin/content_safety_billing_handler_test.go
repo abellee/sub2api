@@ -14,7 +14,7 @@ import (
 )
 
 func TestContentSafetyBillingAdminValidationAndPersistence(t *testing.T) {
-	s, err := service.OpenContentSafetyBilling(filepath.Join(t.TempDir(), "billing.sqlite"), nil, nil)
+	s, err := service.OpenContentSafetyBilling(filepath.Join(t.TempDir(), "billing.sqlite"), nil, nil, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, s.Close()) })
 	h := &SettingHandler{}

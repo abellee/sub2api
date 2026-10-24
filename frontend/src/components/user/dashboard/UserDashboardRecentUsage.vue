@@ -18,7 +18,7 @@
               <Icon name="beaker" size="md" class="text-primary-600 dark:text-primary-400" />
             </div>
             <div>
-              <p class="text-sm font-medium text-gray-900 dark:text-white">{{ log.model }}</p>
+              <p class="text-sm font-medium text-gray-900 dark:text-white">{{ usageModelLabel(log.model, t) }}</p>
               <p class="text-xs text-gray-500 dark:text-dark-400">{{ formatDateTime(log.created_at) }}</p>
             </div>
           </div>
@@ -46,6 +46,7 @@ import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { formatDateTime } from '@/utils/format'
+import { usageModelLabel } from '@/utils/billingMode'
 import type { UsageLog } from '@/types'
 
 defineProps<{
