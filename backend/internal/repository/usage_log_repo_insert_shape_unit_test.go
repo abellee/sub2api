@@ -78,6 +78,8 @@ func TestUsageLogStaticInsertShape_PlaceholdersMatchArgTypes(t *testing.T) {
 		UpstreamRequestID: &upstreamRequestID,
 		Model:             "claude-3",
 		InputTokens:       10,
+		SearchCount:       2,
+		SearchCost:        0.0392,
 		CreatedAt:         time.Date(2026, 9, 2, 12, 0, 0, 0, time.UTC),
 	}
 	prepared := prepareUsageLogInsert(log)

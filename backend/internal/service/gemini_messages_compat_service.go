@@ -529,7 +529,7 @@ func (s *GeminiMessagesCompatService) HasAntigravityAccounts(ctx context.Context
 	return len(accounts) > 0, nil
 }
 
-func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Context, account *Account, body []byte) (*ForwardResult, error) {
+func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Context, account *Account, body []byte) (result *ForwardResult, forwardErr error) {
 	beginUpstreamResponseModelObservation(c)
 	beginGeminiImageOutputObservation(c)
 	startTime := time.Now()
@@ -718,9 +718,21 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 	var checkedPolicy *ErrorPolicyResult
 	upstreamEndpoint := ""
 	signatureRetryStage := 0
+	upstreamCtx, billingDrain := s.beginBillingDrain(ctx, c, req.Stream)
+	beginGeminiSearchObservation(c)
+	defer func() {
+		finishGeminiSearchObservation(c, result)
+		billingDrain.finish(c, account, result)
+	}()
 	for attempt := 1; attempt <= geminiMaxRetries; attempt++ {
 		checkedPolicy = nil
-		upstreamReq, idHeader, err := buildReq(ctx)
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if billingDrain.disconnected() {
+			return nil, context.Canceled
+		}
+		upstreamReq, idHeader, err := buildReq(upstreamCtx)
 		if err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				return nil, err
@@ -737,6 +749,13 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 		requestIDHeader = idHeader
 		upstreamEndpoint = normalizeGeminiUpstreamEndpoint(upstreamReq.URL.Path)
 
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if billingDrain.disconnected() {
+			return nil, context.Canceled
+		}
+		billingDrain.dispatched = true
 		resp, err = s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
 		if err != nil {
 			return nil, s.handleUpstreamTransportError(ctx, c, account, err)
@@ -1033,12 +1052,13 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 		streamFinished = streamRes.finished
 	} else {
 		if useUpstreamStream {
-			collected, usageObj, err := collectGeminiSSE(resp.Body, true)
+			collected, usageObj, _, err := collectGeminiSSEObserved(resp.Body, true, func(raw []byte) { observeGeminiSearch(c, raw) })
 			if err != nil {
 				return nil, s.writeClaudeError(c, http.StatusBadGateway, "upstream_error", "Failed to read upstream stream")
 			}
 			collectedBytes, _ := json.Marshal(collected)
 			upstreamResponseModelObserverFromContext(c).ObserveGemini(collectedBytes)
+			observeGeminiSearch(c, collectedBytes)
 			observeGeminiImageOutputs(c, collectedBytes)
 			claudeResp, usageObj2 := convertGeminiToClaudeMessage(collected, originalModel, collectedBytes, false)
 			c.JSON(http.StatusOK, claudeResp)
@@ -1054,6 +1074,7 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 		}
 	}
 
+	clientDisconnect = clientDisconnect || billingDrain.disconnected()
 	// 图片生成计费
 	imageInputSize := s.extractImageInputSize(body)
 	imageSize := normalizeOpenAIImageSizeTier(imageInputSize)
@@ -1091,7 +1112,7 @@ func isGeminiSignatureRelatedError(respBody []byte) bool {
 	return strings.Contains(msg, "thought_signature") || strings.Contains(msg, "signature")
 }
 
-func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.Context, account *Account, originalModel string, action string, stream bool, body []byte) (*ForwardResult, error) {
+func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.Context, account *Account, originalModel string, action string, stream bool, body []byte) (result *ForwardResult, forwardErr error) {
 	beginUpstreamResponseModelObservation(c)
 	beginGeminiImageOutputObservation(c)
 	startTime := time.Now()
@@ -1272,9 +1293,21 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 	// checkedPolicy 是循环内对当前 resp 的错误策略检查结果，未检查时为 nil。
 	var checkedPolicy *ErrorPolicyResult
 	upstreamEndpoint := ""
+	upstreamCtx, billingDrain := s.beginBillingDrain(ctx, c, stream)
+	beginGeminiSearchObservation(c)
+	defer func() {
+		finishGeminiSearchObservation(c, result)
+		billingDrain.finish(c, account, result)
+	}()
 	for attempt := 1; attempt <= geminiMaxRetries; attempt++ {
 		checkedPolicy = nil
-		upstreamReq, idHeader, err := buildReq(ctx)
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if billingDrain.disconnected() {
+			return nil, context.Canceled
+		}
+		upstreamReq, idHeader, err := buildReq(upstreamCtx)
 		if err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				return nil, err
@@ -1291,6 +1324,13 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 		requestIDHeader = idHeader
 		upstreamEndpoint = normalizeGeminiUpstreamEndpoint(upstreamReq.URL.Path)
 
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if billingDrain.disconnected() {
+			return nil, context.Canceled
+		}
+		billingDrain.dispatched = true
 		resp, err = s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
 		if err != nil {
 			transportErr := s.handleUpstreamTransportError(ctx, c, account, err)
@@ -1566,6 +1606,7 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 		if useUpstreamStream {
 			var best geminiResponseSignal
 			collected, usageObj, stats, err := collectGeminiSSEObserved(resp.Body, isOAuth, func(rawBytes []byte) {
+				observeGeminiSearch(c, rawBytes)
 				if sig, ok := detectGeminiResponseSignal(rawBytes); ok && sig.Kind > best.Kind {
 					best = sig
 				}
@@ -1576,6 +1617,7 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 			s.finalizeGeminiSSESignal(c, account, false, requestID, best, stats.dataEvents > 0, stats.fallback)
 			b, _ := json.Marshal(collected)
 			upstreamResponseModelObserverFromContext(c).ObserveGemini(b)
+			observeGeminiSearch(c, b)
 			observeGeminiImageOutputs(c, b)
 			c.Data(http.StatusOK, "application/json", b)
 			usage = usageObj
@@ -1591,6 +1633,7 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 	if usage == nil {
 		usage = &ClaudeUsage{}
 	}
+	clientDisconnect = clientDisconnect || billingDrain.disconnected()
 
 	// 图片生成计费
 	imageInputSize := s.extractImageInputSize(body)
@@ -2119,6 +2162,7 @@ func (s *GeminiMessagesCompatService) handleNonStreamingResponse(c *gin.Context,
 		observer = beginUpstreamResponseModelObservation(c)
 	}
 	observer.ObserveGemini(unwrappedBody)
+	observeGeminiSearch(c, unwrappedBody)
 	observeGeminiImageOutputs(c, unwrappedBody)
 
 	var geminiResp map[string]any
@@ -2218,6 +2262,7 @@ func (s *GeminiMessagesCompatService) handleStreamingResponse(c *gin.Context, re
 			observer = beginUpstreamResponseModelObservation(c)
 		}
 		observer.ObserveGemini(unwrappedBytes)
+		observeGeminiSearch(c, unwrappedBytes)
 		observeGeminiImageOutputs(c, unwrappedBytes)
 
 		var geminiResp map[string]any
@@ -2822,6 +2867,7 @@ func (s *GeminiMessagesCompatService) handleNativeNonStreamingResponse(c *gin.Co
 		observer = beginUpstreamResponseModelObservation(c)
 	}
 	observer.ObserveGemini(respBody)
+	observeGeminiSearch(c, respBody)
 	observeGeminiImageOutputs(c, respBody)
 	if sig, ok := detectGeminiResponseSignalInBody(respBody); ok {
 		s.markGeminiResponseSignal(c, account, sig, false, upstreamRequestID)
@@ -2921,6 +2967,7 @@ func (s *GeminiMessagesCompatService) handleNativeStreamingResponse(c *gin.Conte
 						usage = u
 					}
 					observer.ObserveGemini(rawBytes)
+					observeGeminiSearch(c, rawBytes)
 					observeGeminiImageOutputs(c, rawBytes)
 
 					if gjson.GetBytes(rawBytes, "candidates.0.finishReason").String() != "" {

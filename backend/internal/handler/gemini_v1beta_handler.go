@@ -399,8 +399,10 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 		googleConcurrencyError(c, err, "user")
 		return
 	}
-	// 确保请求取消时也会释放槽位，避免长连接被动中断造成泄漏
-	userReleaseFunc = wrapReleaseOnDone(c.Request.Context(), userReleaseFunc)
+	// Streaming Gemini requests retain user admission until billing drain ends.
+	if !stream || effectiveAPIKeyPlatform(c, apiKey) != service.PlatformGemini {
+		userReleaseFunc = wrapReleaseOnDone(c.Request.Context(), userReleaseFunc)
+	}
 	if userReleaseFunc != nil {
 		defer userReleaseFunc()
 	}
@@ -718,7 +720,14 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 			}
 		}
 		// 账号槽位/等待计数需要在超时或断开时安全回收
-		accountReleaseFunc = wrapReleaseOnDone(c.Request.Context(), accountReleaseFunc)
+		if account.Platform != service.PlatformGemini || !stream {
+			accountReleaseFunc = wrapReleaseOnDone(c.Request.Context(), accountReleaseFunc)
+		} else {
+			accountReleaseFunc = wrapReleaseOnDone(context.WithoutCancel(c.Request.Context()), accountReleaseFunc)
+			if accountReleaseFunc != nil {
+				defer accountReleaseFunc()
+			}
+		}
 
 		// 5) forward (根据平台分流)
 		var result *service.ForwardResult

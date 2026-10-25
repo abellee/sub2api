@@ -325,6 +325,30 @@ describe('GroupsView duplicate action', () => {
     wrapper.unmount()
   })
 
+  it('edits Gemini Google Search per-call pricing and sends the per-1000 API value', async () => {
+    const group = { ...sourceGroup, platform: 'gemini', search_price_per_1k: 19.6, rate_multiplier: 1.75 }
+    listGroups.mockResolvedValue({ items: [group], total: 1, page: 1, page_size: 20, pages: 1 })
+    updateGroup.mockResolvedValue(group)
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.findAll('button').find(button => button.text() === 'common.edit')!.trigger('click')
+    await flushPromises()
+    const price = wrapper.get<HTMLInputElement>('[data-testid="edit-google-search-price"]')
+    expect(price.element.value).toBe('0.019600')
+    expect(wrapper.text()).toContain('$0.034300')
+    await price.setValue('0.02')
+    await wrapper.get('#edit-group-form').trigger('submit')
+    await flushPromises()
+    expect(updateGroup).toHaveBeenCalledWith(42, expect.objectContaining({ search_price_per_1k: 20 }))
+    await wrapper.findAll('button').find(button => button.text() === 'common.edit')!.trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="edit-google-search-price"]').setValue('')
+    await wrapper.get('#edit-group-form').trigger('submit')
+    await flushPromises()
+    expect(updateGroup).toHaveBeenLastCalledWith(42, expect.objectContaining({ search_price_per_1k: -1 }))
+    wrapper.unmount()
+  })
+
   it('loads, edits, and saves custom reasoning multipliers for group pricing', async () => {
     const group = {
       ...sourceGroup,

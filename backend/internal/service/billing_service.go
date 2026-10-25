@@ -199,6 +199,7 @@ type UsageTokens struct {
 
 // CostBreakdown 费用明细
 type CostBreakdown struct {
+	SearchCost                float64 // Search surcharge before the user rate multiplier.
 	InputCost                 float64 // 文本输入费用（不含图片输入，图片输入单独记入 ImageInputCost）
 	ImageInputCost            float64 // 图片输入 token 费用（如 gpt-image-2 图片编辑）
 	OutputCost                float64
@@ -215,6 +216,7 @@ func applyCostBreakdownMultiplier(cost *CostBreakdown, multiplier float64) {
 	if cost == nil || multiplier == 1 {
 		return
 	}
+	cost.SearchCost *= multiplier
 	cost.InputCost *= multiplier
 	cost.ImageInputCost *= multiplier
 	cost.OutputCost *= multiplier

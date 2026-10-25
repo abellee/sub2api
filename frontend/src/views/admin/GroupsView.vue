@@ -1530,6 +1530,13 @@
         </div>
 
         <!-- Grok Voice 显式定价（仅 grok 平台） -->
+        <div v-if="createForm.platform === 'gemini'" class="border-t border-gray-200 dark:border-dark-400 pt-4 mt-4">
+          <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('admin.groups.googleSearchPricing.title') }}</h4>
+          <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">{{ t('admin.groups.googleSearchPricing.description') }}</p>
+          <label class="input-label">{{ t('admin.groups.googleSearchPricing.pricePerCall') }}</label>
+          <input :value="searchPricePerCall(createForm.search_price_per_1k)" @input="createForm.search_price_per_1k = searchPricePer1k(($event.target as HTMLInputElement).value)" type="number" step="0.000001" min="0" class="input" placeholder="0.019600" data-testid="create-google-search-price" />
+          <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">{{ t('admin.groups.googleSearchPricing.preview') }}: {{ searchPricePreview(createForm.search_price_per_1k, createForm.rate_multiplier) }}</p>
+        </div>
         <div
           v-if="createForm.platform === 'grok'"
           class="border-t border-gray-200 dark:border-dark-400 pt-4 mt-4"
@@ -3180,6 +3187,13 @@
         </div>
 
         <!-- Grok Voice 显式定价（仅 grok 平台） -->
+        <div v-if="editForm.platform === 'gemini'" class="border-t border-gray-200 dark:border-dark-400 pt-4 mt-4">
+          <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('admin.groups.googleSearchPricing.title') }}</h4>
+          <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">{{ t('admin.groups.googleSearchPricing.description') }}</p>
+          <label class="input-label">{{ t('admin.groups.googleSearchPricing.pricePerCall') }}</label>
+          <input :value="searchPricePerCall(editForm.search_price_per_1k)" @input="editForm.search_price_per_1k = searchPricePer1k(($event.target as HTMLInputElement).value)" type="number" step="0.000001" min="0" class="input" placeholder="0.019600" data-testid="edit-google-search-price" />
+          <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">{{ t('admin.groups.googleSearchPricing.preview') }}: {{ searchPricePreview(editForm.search_price_per_1k, editForm.rate_multiplier) }}</p>
+        </div>
         <div
           v-if="editForm.platform === 'grok'"
           class="border-t border-gray-200 dark:border-dark-400 pt-4 mt-4"
@@ -4387,6 +4401,7 @@
 </template>
 
 <script setup lang="ts">
+import { searchPricePerCall, searchPricePer1k, searchPricePreview } from "./groupsSearchPricing";
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useAppStore } from "@/stores/app";

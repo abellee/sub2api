@@ -653,6 +653,7 @@ type ForwardResult struct {
 	ImageOutputSizes   []string
 	ImageSizeSource    string
 	ImageSizeBreakdown map[string]int
+	SearchProvider     string // "google" uses explicit group pricing; no Grok default.
 	SearchCount        int
 	AudioUsage         *AudioUsage
 	// CacheStorageTokenHours 显式上下文缓存的存储量（缓存 token 数 × 存储小时数），按计费模型的

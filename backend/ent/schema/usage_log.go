@@ -121,6 +121,9 @@ func (UsageLog) Fields() []ent.Field {
 			Nillable().
 			SchemaType(map[string]string{dialect.Postgres: "decimal(10,4)"}),
 
+		field.Int("search_count").Default(0),
+		field.Float("search_cost").Default(0).SchemaType(map[string]string{dialect.Postgres: "decimal(20,10)"}),
+
 		// 其他字段
 		field.Int8("billing_type").
 			Default(0),

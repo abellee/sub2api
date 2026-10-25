@@ -516,6 +516,10 @@
               <span class="font-medium text-white">${{ tooltipData.cache_read_cost.toFixed(8) }}</span>
             </div>
           </div>
+          <div v-if="tooltipData && (tooltipData.search_count ?? 0) > 0" class="flex items-center justify-between gap-4">
+            <span class="text-gray-400">{{ t('usage.searchCost') }} ({{ tooltipData.search_count }})</span>
+            <span class="font-medium text-white">${{ (tooltipData.search_cost ?? 0).toFixed(8) }}</span>
+          </div>
           <!-- Rate and Summary -->
           <div class="flex items-center justify-between gap-6">
             <span class="text-gray-400">{{ t('usage.serviceTier') }}</span>

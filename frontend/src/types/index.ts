@@ -1822,6 +1822,8 @@ export interface UsageLog {
   image_input_tokens: number
   image_input_cost: number
   image_output_tokens: number
+  search_count?: number
+  search_cost?: number
   image_output_cost: number
 
   // User-Agent

@@ -256,8 +256,11 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 		h.handleConcurrencyError(c, err, "user", streamStarted)
 		return
 	}
-	// 在请求结束或 Context 取消时确保释放槽位，避免客户端断开造成泄漏
-	userReleaseFunc = wrapReleaseOnDone(c.Request.Context(), userReleaseFunc)
+	// Gemini drains dispatched streams for billing and retains user admission
+	// until that bounded operation finishes.
+	if !reqStream || effectiveAPIKeyPlatform(c, apiKey) != service.PlatformGemini {
+		userReleaseFunc = wrapReleaseOnDone(c.Request.Context(), userReleaseFunc)
+	}
 	if userReleaseFunc != nil {
 		defer userReleaseFunc()
 	}
@@ -487,8 +490,16 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 					reqLog.Warn("gateway.bind_sticky_session_after_profit_admission_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 				}
 			}
-			// 账号槽位/等待计数需要在超时或断开时安全回收
-			accountReleaseFunc = wrapReleaseOnDone(c.Request.Context(), accountReleaseFunc)
+			// Gemini retains its account slot while collecting usage after a
+			// client disconnect; Forward bounds this billing drain.
+			if account.Platform != service.PlatformGemini || !reqStream {
+				accountReleaseFunc = wrapReleaseOnDone(c.Request.Context(), accountReleaseFunc)
+			} else {
+				accountReleaseFunc = wrapReleaseOnDone(context.WithoutCancel(c.Request.Context()), accountReleaseFunc)
+				if accountReleaseFunc != nil {
+					defer accountReleaseFunc()
+				}
+			}
 
 			// 转发请求 - 根据账号平台分流
 			var result *service.ForwardResult

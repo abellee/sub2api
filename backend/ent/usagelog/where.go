@@ -205,6 +205,16 @@ func AccountRateMultiplier(v float64) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldAccountRateMultiplier, v))
 }
 
+// SearchCount applies equality check predicate on the "search_count" field. It's identical to SearchCountEQ.
+func SearchCount(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldSearchCount, v))
+}
+
+// SearchCost applies equality check predicate on the "search_cost" field. It's identical to SearchCostEQ.
+func SearchCost(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldSearchCost, v))
+}
+
 // BillingType applies equality check predicate on the "billing_type" field. It's identical to BillingTypeEQ.
 func BillingType(v int8) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldBillingType, v))
@@ -1633,6 +1643,86 @@ func AccountRateMultiplierIsNil() predicate.UsageLog {
 // AccountRateMultiplierNotNil applies the NotNil predicate on the "account_rate_multiplier" field.
 func AccountRateMultiplierNotNil() predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldNotNull(FieldAccountRateMultiplier))
+}
+
+// SearchCountEQ applies the EQ predicate on the "search_count" field.
+func SearchCountEQ(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldSearchCount, v))
+}
+
+// SearchCountNEQ applies the NEQ predicate on the "search_count" field.
+func SearchCountNEQ(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldSearchCount, v))
+}
+
+// SearchCountIn applies the In predicate on the "search_count" field.
+func SearchCountIn(vs ...int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldSearchCount, vs...))
+}
+
+// SearchCountNotIn applies the NotIn predicate on the "search_count" field.
+func SearchCountNotIn(vs ...int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldSearchCount, vs...))
+}
+
+// SearchCountGT applies the GT predicate on the "search_count" field.
+func SearchCountGT(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldSearchCount, v))
+}
+
+// SearchCountGTE applies the GTE predicate on the "search_count" field.
+func SearchCountGTE(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldSearchCount, v))
+}
+
+// SearchCountLT applies the LT predicate on the "search_count" field.
+func SearchCountLT(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldSearchCount, v))
+}
+
+// SearchCountLTE applies the LTE predicate on the "search_count" field.
+func SearchCountLTE(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldSearchCount, v))
+}
+
+// SearchCostEQ applies the EQ predicate on the "search_cost" field.
+func SearchCostEQ(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldSearchCost, v))
+}
+
+// SearchCostNEQ applies the NEQ predicate on the "search_cost" field.
+func SearchCostNEQ(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldSearchCost, v))
+}
+
+// SearchCostIn applies the In predicate on the "search_cost" field.
+func SearchCostIn(vs ...float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldSearchCost, vs...))
+}
+
+// SearchCostNotIn applies the NotIn predicate on the "search_cost" field.
+func SearchCostNotIn(vs ...float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldSearchCost, vs...))
+}
+
+// SearchCostGT applies the GT predicate on the "search_cost" field.
+func SearchCostGT(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldSearchCost, v))
+}
+
+// SearchCostGTE applies the GTE predicate on the "search_cost" field.
+func SearchCostGTE(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldSearchCost, v))
+}
+
+// SearchCostLT applies the LT predicate on the "search_cost" field.
+func SearchCostLT(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldSearchCost, v))
+}
+
+// SearchCostLTE applies the LTE predicate on the "search_cost" field.
+func SearchCostLTE(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldSearchCost, v))
 }
 
 // BillingTypeEQ applies the EQ predicate on the "billing_type" field.

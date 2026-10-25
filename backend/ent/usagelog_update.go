@@ -623,6 +623,48 @@ func (_u *UsageLogUpdate) ClearAccountRateMultiplier() *UsageLogUpdate {
 	return _u
 }
 
+// SetSearchCount sets the "search_count" field.
+func (_u *UsageLogUpdate) SetSearchCount(v int) *UsageLogUpdate {
+	_u.mutation.ResetSearchCount()
+	_u.mutation.SetSearchCount(v)
+	return _u
+}
+
+// SetNillableSearchCount sets the "search_count" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableSearchCount(v *int) *UsageLogUpdate {
+	if v != nil {
+		_u.SetSearchCount(*v)
+	}
+	return _u
+}
+
+// AddSearchCount adds value to the "search_count" field.
+func (_u *UsageLogUpdate) AddSearchCount(v int) *UsageLogUpdate {
+	_u.mutation.AddSearchCount(v)
+	return _u
+}
+
+// SetSearchCost sets the "search_cost" field.
+func (_u *UsageLogUpdate) SetSearchCost(v float64) *UsageLogUpdate {
+	_u.mutation.ResetSearchCost()
+	_u.mutation.SetSearchCost(v)
+	return _u
+}
+
+// SetNillableSearchCost sets the "search_cost" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableSearchCost(v *float64) *UsageLogUpdate {
+	if v != nil {
+		_u.SetSearchCost(*v)
+	}
+	return _u
+}
+
+// AddSearchCost adds value to the "search_cost" field.
+func (_u *UsageLogUpdate) AddSearchCost(v float64) *UsageLogUpdate {
+	_u.mutation.AddSearchCost(v)
+	return _u
+}
+
 // SetBillingType sets the "billing_type" field.
 func (_u *UsageLogUpdate) SetBillingType(v int8) *UsageLogUpdate {
 	_u.mutation.ResetBillingType()
@@ -1281,6 +1323,18 @@ func (_u *UsageLogUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.AccountRateMultiplierCleared() {
 		_spec.ClearField(usagelog.FieldAccountRateMultiplier, field.TypeFloat64)
+	}
+	if value, ok := _u.mutation.SearchCount(); ok {
+		_spec.SetField(usagelog.FieldSearchCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedSearchCount(); ok {
+		_spec.AddField(usagelog.FieldSearchCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.SearchCost(); ok {
+		_spec.SetField(usagelog.FieldSearchCost, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedSearchCost(); ok {
+		_spec.AddField(usagelog.FieldSearchCost, field.TypeFloat64, value)
 	}
 	if value, ok := _u.mutation.BillingType(); ok {
 		_spec.SetField(usagelog.FieldBillingType, field.TypeInt8, value)
@@ -2137,6 +2191,48 @@ func (_u *UsageLogUpdateOne) ClearAccountRateMultiplier() *UsageLogUpdateOne {
 	return _u
 }
 
+// SetSearchCount sets the "search_count" field.
+func (_u *UsageLogUpdateOne) SetSearchCount(v int) *UsageLogUpdateOne {
+	_u.mutation.ResetSearchCount()
+	_u.mutation.SetSearchCount(v)
+	return _u
+}
+
+// SetNillableSearchCount sets the "search_count" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableSearchCount(v *int) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetSearchCount(*v)
+	}
+	return _u
+}
+
+// AddSearchCount adds value to the "search_count" field.
+func (_u *UsageLogUpdateOne) AddSearchCount(v int) *UsageLogUpdateOne {
+	_u.mutation.AddSearchCount(v)
+	return _u
+}
+
+// SetSearchCost sets the "search_cost" field.
+func (_u *UsageLogUpdateOne) SetSearchCost(v float64) *UsageLogUpdateOne {
+	_u.mutation.ResetSearchCost()
+	_u.mutation.SetSearchCost(v)
+	return _u
+}
+
+// SetNillableSearchCost sets the "search_cost" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableSearchCost(v *float64) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetSearchCost(*v)
+	}
+	return _u
+}
+
+// AddSearchCost adds value to the "search_cost" field.
+func (_u *UsageLogUpdateOne) AddSearchCost(v float64) *UsageLogUpdateOne {
+	_u.mutation.AddSearchCost(v)
+	return _u
+}
+
 // SetBillingType sets the "billing_type" field.
 func (_u *UsageLogUpdateOne) SetBillingType(v int8) *UsageLogUpdateOne {
 	_u.mutation.ResetBillingType()
@@ -2825,6 +2921,18 @@ func (_u *UsageLogUpdateOne) sqlSave(ctx context.Context) (_node *UsageLog, err 
 	}
 	if _u.mutation.AccountRateMultiplierCleared() {
 		_spec.ClearField(usagelog.FieldAccountRateMultiplier, field.TypeFloat64)
+	}
+	if value, ok := _u.mutation.SearchCount(); ok {
+		_spec.SetField(usagelog.FieldSearchCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedSearchCount(); ok {
+		_spec.AddField(usagelog.FieldSearchCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.SearchCost(); ok {
+		_spec.SetField(usagelog.FieldSearchCost, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedSearchCost(); ok {
+		_spec.AddField(usagelog.FieldSearchCost, field.TypeFloat64, value)
 	}
 	if value, ok := _u.mutation.BillingType(); ok {
 		_spec.SetField(usagelog.FieldBillingType, field.TypeInt8, value)

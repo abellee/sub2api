@@ -79,7 +79,7 @@ func (s *GeminiMessagesCompatService) forwardClaudeBodyAsChatCompletions(
 	clientStream bool,
 	includeUsage bool,
 	startTime time.Time,
-) (*ForwardResult, error) {
+) (result *ForwardResult, forwardErr error) {
 	var req struct {
 		Model  string `json:"model"`
 		Stream bool   `json:"stream"`
@@ -125,10 +125,22 @@ func (s *GeminiMessagesCompatService) forwardClaudeBodyAsChatCompletions(
 	)
 
 	var resp *http.Response
+	upstreamCtx, billingDrain := s.beginBillingDrain(ctx, c, clientStream)
+	beginGeminiSearchObservation(c)
+	defer func() {
+		finishGeminiSearchObservation(c, result)
+		billingDrain.finish(c, account, result)
+	}()
 	// checkedPolicy 是循环内对当前 resp 的错误策略检查结果，未检查时为 nil。
 	var checkedPolicy *ErrorPolicyResult
 	for attempt := 1; attempt <= geminiMaxRetries; attempt++ {
-		upstreamReq, idHeader, err := buildReq(ctx)
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if billingDrain.disconnected() {
+			return nil, context.Canceled
+		}
+		upstreamReq, idHeader, err := buildReq(upstreamCtx)
 		if err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				return nil, err
@@ -140,6 +152,13 @@ func (s *GeminiMessagesCompatService) forwardClaudeBodyAsChatCompletions(
 		}
 		requestIDHeader = idHeader
 
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if billingDrain.disconnected() {
+			return nil, context.Canceled
+		}
+		billingDrain.dispatched = true
 		resp, err = s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
 		if err != nil {
 			return nil, s.handleUpstreamTransportError(ctx, c, account, err)
@@ -265,7 +284,7 @@ func (s *GeminiMessagesCompatService) forwardClaudeBodyAsChatCompletions(
 		clientDisconnect = streamRes.clientDisconnect
 		streamFinished = streamRes.finished
 	} else if useUpstreamStream {
-		collected, usageObj, err := collectGeminiSSE(resp.Body, account.Type == AccountTypeOAuth)
+		collected, usageObj, _, err := collectGeminiSSEObserved(resp.Body, account.Type == AccountTypeOAuth, func(raw []byte) { observeGeminiSearch(c, raw) })
 		if err != nil {
 			return nil, s.writeChatCompletionsError(c, http.StatusBadGateway, "upstream_error", "Failed to read upstream stream")
 		}
@@ -287,6 +306,7 @@ func (s *GeminiMessagesCompatService) forwardClaudeBodyAsChatCompletions(
 	if usage == nil {
 		usage = &ClaudeUsage{}
 	}
+	clientDisconnect = clientDisconnect || billingDrain.disconnected()
 
 	imageCount := 0
 	imageInputSize := s.extractImageInputSize(claudeBody)
@@ -469,6 +489,7 @@ func (s *GeminiMessagesCompatService) handleChatCompletionsNonStreamingResponseF
 		}
 	}
 
+	observeGeminiSearch(c, respBody)
 	var geminiResp map[string]any
 	if err := json.Unmarshal(respBody, &geminiResp); err != nil {
 		return nil, s.writeChatCompletionsError(c, http.StatusBadGateway, "upstream_error", "Failed to parse upstream response")
@@ -636,6 +657,7 @@ func (s *GeminiMessagesCompatService) handleChatCompletionsStreamingResponseFrom
 						}
 					}
 
+					observeGeminiSearch(c, rawBytes)
 					var geminiResp map[string]any
 					if err := json.Unmarshal(rawBytes, &geminiResp); err == nil {
 						if firstChunk {

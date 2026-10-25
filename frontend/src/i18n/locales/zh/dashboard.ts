@@ -448,6 +448,7 @@ export default {
     imageInputCost: '图片输入费用',
     imageOutputTokens: '图片输出 Token',
     imageOutputTokenPrice: '图片输出单价',
+    searchCost: '搜索费用（倍率前）',
     imageOutputCost: '图片输出费用',
     imageSizeSource: '尺寸来源',
     imageSizeBreakdown: '尺寸明细',

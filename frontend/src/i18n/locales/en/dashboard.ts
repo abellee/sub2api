@@ -443,6 +443,7 @@ export default {
     imageInputCost: 'Image Input Cost',
     imageOutputTokens: 'Image Output Tokens',
     imageOutputTokenPrice: 'Image Output Price',
+    searchCost: 'Search cost (before rate)',
     imageOutputCost: 'Image Output Cost',
     imageSizeSource: 'Size source',
     imageSizeBreakdown: 'Size breakdown',

@@ -1152,6 +1152,12 @@ export default {
         finalPricePreview: '最终每秒价格预览',
         notConfigured: '未配置'
       },
+      googleSearchPricing: {
+        title: 'Google Search 计费',
+        description: '按响应中实际返回的搜索查询数计费，叠加 Token 费用及当前分组有效倍率。留空不收搜索费，0 表示免费。重复流事件去重；上游未返回查询时无法计数。',
+        pricePerCall: '每次搜索价格（USD，倍率前）',
+        preview: '按分组倍率预览（USD / 次）'
+      },
       explicitPricing: {
         title: 'Grok 搜索与 Voice 定价',
         description: '分组级 web_search（每千次）与 Voice realtime / TTS / STT 单价（USD）。留空表示未配置。',

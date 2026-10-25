@@ -18,8 +18,13 @@ func geminiStreamAbortedWithBillableOutput(c *gin.Context, err error, usage *Cla
 	}
 	clientGone := errors.Is(err, context.Canceled) ||
 		(c != nil && c.Request != nil && c.Request.Context().Err() != nil)
+	if c != nil {
+		if writer, ok := c.Writer.(*geminiDrainWriter); ok && writer.drain.disconnected() {
+			clientGone = true
+		}
+	}
 	if !clientGone {
 		return false
 	}
-	return usage.hasObservedTokens() || observedGeminiImageOutputs(c) > 0
+	return usage.hasObservedTokens() || observedGeminiImageOutputs(c) > 0 || observedGeminiSearches(c) > 0
 }

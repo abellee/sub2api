@@ -1155,6 +1155,12 @@ export default {
         finalPricePreview: 'Final per-second price preview',
         notConfigured: 'Not configured'
       },
+      googleSearchPricing: {
+        title: 'Google Search billing',
+        description: 'Charge queries reported in the response, in addition to tokens, using the effective group rate. Blank or 0 means no search charge. Repeated stream events are deduplicated; queries omitted by the upstream cannot be counted.',
+        pricePerCall: 'Price per search (USD, before multiplier)',
+        preview: 'Preview at group rate (USD / search)'
+      },
       explicitPricing: {
         title: 'Grok Search & Voice Pricing',
         description: 'Optional per-group prices for web_search (per 1k calls) and Voice realtime / TTS / STT (USD). Leave empty if unused.',

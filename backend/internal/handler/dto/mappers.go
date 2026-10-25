@@ -737,6 +737,8 @@ func usageLogFromServiceUser(l *service.UsageLog) UsageLog {
 		ImageInputCost:            l.ImageInputCost,
 		ImageOutputTokens:         l.ImageOutputTokens,
 		ImageOutputCost:           l.ImageOutputCost,
+		SearchCount:               l.SearchCount,
+		SearchCost:                l.SearchCost,
 		ImageSizeSource:           l.ImageSizeSource,
 		ImageSizeBreakdown:        l.ImageSizeBreakdown,
 		MediaType:                 l.MediaType,

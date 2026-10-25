@@ -407,6 +407,34 @@ func (_c *UsageLogCreate) SetNillableAccountRateMultiplier(v *float64) *UsageLog
 	return _c
 }
 
+// SetSearchCount sets the "search_count" field.
+func (_c *UsageLogCreate) SetSearchCount(v int) *UsageLogCreate {
+	_c.mutation.SetSearchCount(v)
+	return _c
+}
+
+// SetNillableSearchCount sets the "search_count" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableSearchCount(v *int) *UsageLogCreate {
+	if v != nil {
+		_c.SetSearchCount(*v)
+	}
+	return _c
+}
+
+// SetSearchCost sets the "search_cost" field.
+func (_c *UsageLogCreate) SetSearchCost(v float64) *UsageLogCreate {
+	_c.mutation.SetSearchCost(v)
+	return _c
+}
+
+// SetNillableSearchCost sets the "search_cost" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableSearchCost(v *float64) *UsageLogCreate {
+	if v != nil {
+		_c.SetSearchCost(*v)
+	}
+	return _c
+}
+
 // SetBillingType sets the "billing_type" field.
 func (_c *UsageLogCreate) SetBillingType(v int8) *UsageLogCreate {
 	_c.mutation.SetBillingType(v)
@@ -753,6 +781,14 @@ func (_c *UsageLogCreate) defaults() {
 		v := usagelog.DefaultLongContextBillingApplied
 		_c.mutation.SetLongContextBillingApplied(v)
 	}
+	if _, ok := _c.mutation.SearchCount(); !ok {
+		v := usagelog.DefaultSearchCount
+		_c.mutation.SetSearchCount(v)
+	}
+	if _, ok := _c.mutation.SearchCost(); !ok {
+		v := usagelog.DefaultSearchCost
+		_c.mutation.SetSearchCost(v)
+	}
 	if _, ok := _c.mutation.BillingType(); !ok {
 		v := usagelog.DefaultBillingType
 		_c.mutation.SetBillingType(v)
@@ -877,6 +913,12 @@ func (_c *UsageLogCreate) check() error {
 	}
 	if _, ok := _c.mutation.LongContextBillingApplied(); !ok {
 		return &ValidationError{Name: "long_context_billing_applied", err: errors.New(`ent: missing required field "UsageLog.long_context_billing_applied"`)}
+	}
+	if _, ok := _c.mutation.SearchCount(); !ok {
+		return &ValidationError{Name: "search_count", err: errors.New(`ent: missing required field "UsageLog.search_count"`)}
+	}
+	if _, ok := _c.mutation.SearchCost(); !ok {
+		return &ValidationError{Name: "search_cost", err: errors.New(`ent: missing required field "UsageLog.search_cost"`)}
 	}
 	if _, ok := _c.mutation.BillingType(); !ok {
 		return &ValidationError{Name: "billing_type", err: errors.New(`ent: missing required field "UsageLog.billing_type"`)}
@@ -1066,6 +1108,14 @@ func (_c *UsageLogCreate) createSpec() (*UsageLog, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.AccountRateMultiplier(); ok {
 		_spec.SetField(usagelog.FieldAccountRateMultiplier, field.TypeFloat64, value)
 		_node.AccountRateMultiplier = &value
+	}
+	if value, ok := _c.mutation.SearchCount(); ok {
+		_spec.SetField(usagelog.FieldSearchCount, field.TypeInt, value)
+		_node.SearchCount = value
+	}
+	if value, ok := _c.mutation.SearchCost(); ok {
+		_spec.SetField(usagelog.FieldSearchCost, field.TypeFloat64, value)
+		_node.SearchCost = value
 	}
 	if value, ok := _c.mutation.BillingType(); ok {
 		_spec.SetField(usagelog.FieldBillingType, field.TypeInt8, value)
@@ -1785,6 +1835,42 @@ func (u *UsageLogUpsert) AddAccountRateMultiplier(v float64) *UsageLogUpsert {
 // ClearAccountRateMultiplier clears the value of the "account_rate_multiplier" field.
 func (u *UsageLogUpsert) ClearAccountRateMultiplier() *UsageLogUpsert {
 	u.SetNull(usagelog.FieldAccountRateMultiplier)
+	return u
+}
+
+// SetSearchCount sets the "search_count" field.
+func (u *UsageLogUpsert) SetSearchCount(v int) *UsageLogUpsert {
+	u.Set(usagelog.FieldSearchCount, v)
+	return u
+}
+
+// UpdateSearchCount sets the "search_count" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateSearchCount() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldSearchCount)
+	return u
+}
+
+// AddSearchCount adds v to the "search_count" field.
+func (u *UsageLogUpsert) AddSearchCount(v int) *UsageLogUpsert {
+	u.Add(usagelog.FieldSearchCount, v)
+	return u
+}
+
+// SetSearchCost sets the "search_cost" field.
+func (u *UsageLogUpsert) SetSearchCost(v float64) *UsageLogUpsert {
+	u.Set(usagelog.FieldSearchCost, v)
+	return u
+}
+
+// UpdateSearchCost sets the "search_cost" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateSearchCost() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldSearchCost)
+	return u
+}
+
+// AddSearchCost adds v to the "search_cost" field.
+func (u *UsageLogUpsert) AddSearchCost(v float64) *UsageLogUpsert {
+	u.Add(usagelog.FieldSearchCost, v)
 	return u
 }
 
@@ -2726,6 +2812,48 @@ func (u *UsageLogUpsertOne) UpdateAccountRateMultiplier() *UsageLogUpsertOne {
 func (u *UsageLogUpsertOne) ClearAccountRateMultiplier() *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.ClearAccountRateMultiplier()
+	})
+}
+
+// SetSearchCount sets the "search_count" field.
+func (u *UsageLogUpsertOne) SetSearchCount(v int) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetSearchCount(v)
+	})
+}
+
+// AddSearchCount adds v to the "search_count" field.
+func (u *UsageLogUpsertOne) AddSearchCount(v int) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddSearchCount(v)
+	})
+}
+
+// UpdateSearchCount sets the "search_count" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateSearchCount() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateSearchCount()
+	})
+}
+
+// SetSearchCost sets the "search_cost" field.
+func (u *UsageLogUpsertOne) SetSearchCost(v float64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetSearchCost(v)
+	})
+}
+
+// AddSearchCost adds v to the "search_cost" field.
+func (u *UsageLogUpsertOne) AddSearchCost(v float64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddSearchCost(v)
+	})
+}
+
+// UpdateSearchCost sets the "search_cost" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateSearchCost() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateSearchCost()
 	})
 }
 
@@ -3882,6 +4010,48 @@ func (u *UsageLogUpsertBulk) UpdateAccountRateMultiplier() *UsageLogUpsertBulk {
 func (u *UsageLogUpsertBulk) ClearAccountRateMultiplier() *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.ClearAccountRateMultiplier()
+	})
+}
+
+// SetSearchCount sets the "search_count" field.
+func (u *UsageLogUpsertBulk) SetSearchCount(v int) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetSearchCount(v)
+	})
+}
+
+// AddSearchCount adds v to the "search_count" field.
+func (u *UsageLogUpsertBulk) AddSearchCount(v int) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddSearchCount(v)
+	})
+}
+
+// UpdateSearchCount sets the "search_count" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateSearchCount() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateSearchCount()
+	})
+}
+
+// SetSearchCost sets the "search_cost" field.
+func (u *UsageLogUpsertBulk) SetSearchCost(v float64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetSearchCost(v)
+	})
+}
+
+// AddSearchCost adds v to the "search_cost" field.
+func (u *UsageLogUpsertBulk) AddSearchCost(v float64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddSearchCost(v)
+	})
+}
+
+// UpdateSearchCost sets the "search_cost" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateSearchCost() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateSearchCost()
 	})
 }
 

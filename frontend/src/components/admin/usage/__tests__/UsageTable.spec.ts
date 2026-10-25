@@ -50,6 +50,7 @@ const messages: Record<string, string> = {
   'usage.outputTps': 'Output TPS',
   'admin.usage.userDeletedBadge': 'Deleted',
   'usage.costDetails': 'Cost Breakdown',
+  'usage.searchCost': 'Search cost (before rate)',
   'admin.usage.inputCost': 'Input Cost',
   'admin.usage.outputCost': 'Output Cost',
   'admin.usage.cacheCreationCost': 'Cache Creation Cost',
@@ -1188,5 +1189,22 @@ describe('admin UsageTable user notes', () => {
     expect(userApiMocks.getById).toHaveBeenCalledWith(10, true)
     expect(wrapper.text()).toContain('Carol 备注')
     expect(wrapper.text()).not.toContain('carol@example.com')
+  })
+})
+
+
+describe('Google Search cost details', () => {
+  it('shows observed query count, base search fee, and the final debit', async () => {
+    const row = { ...baseImageRow, billing_mode: 'token', image_count: 0, search_count: 2, search_cost: 0.0392, rate_multiplier: 1.75, total_cost: 0.0392, actual_cost: 0.0686 }
+    const wrapper = mount(UsageTable, {
+      props: { data: [row], loading: false, columns: [] },
+      global: { stubs: { DataTable: DataTableStub, EmptyState: true, Icon: true, Teleport: true } },
+    })
+    const triggers = wrapper.findAll('.group.relative')
+    await triggers[triggers.length - 1].trigger('mouseenter')
+    expect(wrapper.text()).toContain('Search cost (before rate) (2)')
+    expect(wrapper.text()).toContain('$0.03920000')
+    expect(wrapper.text()).toContain('$0.06860000')
+    wrapper.unmount()
   })
 })

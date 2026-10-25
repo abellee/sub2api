@@ -855,10 +855,10 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 				CacheReadTokens:     result.Usage.CacheReadInputTokens,
 				ImageOutputTokens:   result.Usage.ImageOutputTokens,
 			},
-			cost.TotalCost-cacheStorageCost, pricingAt,
+			cost.TotalCost-cacheStorageCost-cost.SearchCost, pricingAt,
 			accountStatsLongContextPricingEnabled(nil),
 		)
-		addCacheStorageToAccountStatsCost(usageLog, cacheStorageCost)
+		addCacheStorageToAccountStatsCost(usageLog, cacheStorageCost+cost.SearchCost)
 	}
 
 	simpleModeKeyRateLimitOnly := simpleModeKeyRateLimitBillingEnabled(s.cfg, apiKey)
@@ -1010,8 +1010,35 @@ func addCacheStorageToAccountStatsCost(usageLog *UsageLog, storageCost float64) 
 	usageLog.AccountStatsCost = &cost
 }
 
-// calculateRecordUsageCost 根据请求类型计算费用。
-func (s *GatewayService) calculateRecordUsageCost(
+// searchUsageCost prices observed queries using the configured group search rate.
+func (s *GatewayService) searchUsageCost(result *ForwardResult, apiKey *APIKey, multiplier float64) *CostBreakdown {
+	if result.SearchCount <= 0 || s.billingService == nil {
+		return nil
+	}
+	price := groupSearchPricePer1kFromAPIKey(apiKey)
+	// A custom upstream Google Search rate must be explicitly configured. Never
+	// silently use the Grok $5/1000 fallback on Gemini or composite routes.
+	if result.SearchProvider == "google" && price == nil {
+		return nil
+	}
+	return s.billingService.CalculateSearchCost(result.SearchCount, price, multiplier)
+}
+
+// calculateRecordUsageCost adds search charges after all base billing modes.
+func (s *GatewayService) calculateRecordUsageCost(ctx context.Context, result *ForwardResult, apiKey *APIKey, billingModel string, multiplier, imageMultiplier float64, pricingAt time.Time) *CostBreakdown {
+	cost := s.calculateRecordUsageBaseCost(ctx, result, apiKey, billingModel, multiplier, imageMultiplier, pricingAt)
+	if search := s.searchUsageCost(result, apiKey, multiplier); search != nil {
+		if cost == nil {
+			cost = &CostBreakdown{}
+		}
+		cost.SearchCost = search.TotalCost
+		cost.TotalCost += search.TotalCost
+		cost.ActualCost += search.ActualCost
+	}
+	return cost
+}
+
+func (s *GatewayService) calculateRecordUsageBaseCost(
 	ctx context.Context,
 	result *ForwardResult,
 	apiKey *APIKey,
@@ -1053,20 +1080,6 @@ func (s *GatewayService) calculateRecordUsageCost(
 		tokenCost = &CostBreakdown{}
 	} else {
 		tokenCost = s.calculateTokenCost(ctx, result, apiKey, billingModel, multiplier, pricingAt)
-	}
-	if result.SearchCount > 0 {
-		price := groupSearchPricePer1kFromAPIKey(apiKey)
-		if price != nil && *price == 0 {
-			logger.LegacyPrintf("service.gateway", "[Billing] search_price_per_1k explicit 0; search free group_model=%s count=%d", billingModel, result.SearchCount)
-		}
-		searchCost := s.billingService.CalculateSearchCost(result.SearchCount, price, multiplier)
-		if searchCost != nil && (searchCost.TotalCost > 0 || searchCost.ActualCost > 0) {
-			if tokenCost == nil {
-				return searchCost
-			}
-			tokenCost.TotalCost += searchCost.TotalCost
-			tokenCost.ActualCost += searchCost.ActualCost
-		}
 	}
 	// 显式缓存存储费同为叠加 surcharge，与 token 费用使用同一计费模型与倍率。
 	if storageCost := s.cacheStorageCost(result, billingModel); storageCost > 0 {
@@ -1305,6 +1318,7 @@ func (s *GatewayService) buildRecordUsageLog(
 		RequestedReasoningEffort: coalesceRequestedReasoningEffort(result.RequestedReasoningEffort, result.ReasoningEffort),
 		InboundEndpoint:          optionalTrimmedStringPtr(input.InboundEndpoint),
 		UpstreamEndpoint:         optionalTrimmedStringPtr(input.UpstreamEndpoint),
+		SearchCount:              result.SearchCount,
 		InputTokens:              result.Usage.InputTokens,
 		OutputTokens:             result.Usage.OutputTokens,
 		CacheCreationTokens:      result.Usage.CacheCreationInputTokens,
@@ -1339,6 +1353,7 @@ func (s *GatewayService) buildRecordUsageLog(
 		usageLog.RateMultiplier = imageMultiplier
 	}
 	if cost != nil {
+		usageLog.SearchCost = cost.SearchCost
 		usageLog.InputCost = cost.InputCost
 		usageLog.OutputCost = cost.OutputCost
 		usageLog.ImageOutputCost = cost.ImageOutputCost

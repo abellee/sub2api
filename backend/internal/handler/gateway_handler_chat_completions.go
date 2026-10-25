@@ -138,7 +138,9 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 		h.handleConcurrencyError(c, err, "user", streamStarted)
 		return
 	}
-	userReleaseFunc = wrapReleaseOnDone(c.Request.Context(), userReleaseFunc)
+	if !reqStream || effectiveAPIKeyPlatform(c, apiKey) != service.PlatformGemini {
+		userReleaseFunc = wrapReleaseOnDone(c.Request.Context(), userReleaseFunc)
+	}
 	if userReleaseFunc != nil {
 		defer userReleaseFunc()
 	}
@@ -276,7 +278,16 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 				reqLog.Warn("gateway.cc.bind_sticky_session_after_profit_admission_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 			}
 		}
-		accountReleaseFunc = wrapReleaseOnDone(c.Request.Context(), accountReleaseFunc)
+		// Gemini keeps a dispatched upstream alive to collect billing usage.
+		// Hold its account slot until Forward returns, including bounded draining.
+		if account.Platform != service.PlatformGemini || !reqStream {
+			accountReleaseFunc = wrapReleaseOnDone(c.Request.Context(), accountReleaseFunc)
+		} else {
+			accountReleaseFunc = wrapReleaseOnDone(context.WithoutCancel(c.Request.Context()), accountReleaseFunc)
+			if accountReleaseFunc != nil {
+				defer accountReleaseFunc()
+			}
+		}
 
 		if groupPlatform == service.PlatformGemini && account.Platform != service.PlatformGemini {
 			if accountReleaseFunc != nil {
