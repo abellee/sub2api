@@ -12,7 +12,7 @@ import (
 func TestPublicTransitPassiveAggregatesSkipsUnassignedPlatform(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	now := time.Date(2026, 10, 25, 16, 0, 0, 0, time.UTC)
 	since := now.Add(-24 * time.Hour)
