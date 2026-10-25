@@ -102,15 +102,16 @@ ORDER BY platform, model, group_name, bucket_start`
 	out := make([]service.PublicTransitPassiveAggregate, 0)
 	for rows.Next() {
 		var bucketStart time.Time
-		var platform, groupName, model string
+		var rawPlatform sql.NullString
+		var groupName, model string
 		var groupID sql.NullInt64
 		var requestCount, successCount, errorCount, latencySum, latencySamples, ttftSum, ttftSamples int64
 		var inputTokens, cacheCreationTokens, cacheReadTokens int64
 		var lastRequestAt sql.NullTime
-		if err := rows.Scan(&bucketStart, &platform, &groupID, &groupName, &model, &requestCount, &successCount, &errorCount, &latencySum, &latencySamples, &ttftSum, &ttftSamples, &inputTokens, &cacheCreationTokens, &cacheReadTokens, &lastRequestAt); err != nil {
+		if err := rows.Scan(&bucketStart, &rawPlatform, &groupID, &groupName, &model, &requestCount, &successCount, &errorCount, &latencySum, &latencySamples, &ttftSum, &ttftSamples, &inputTokens, &cacheCreationTokens, &cacheReadTokens, &lastRequestAt); err != nil {
 			return nil, err
 		}
-		platform = strings.TrimSpace(platform)
+		platform := strings.TrimSpace(rawPlatform.String)
 		model = strings.TrimSpace(model)
 		if platform == "" || model == "" {
 			continue
