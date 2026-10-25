@@ -605,6 +605,8 @@ func TestAPIContracts(t *testing.T) {
 							"output_cost": 0,
 							"cache_creation_cost": 0,
 							"cache_read_cost": 0,
+							"search_count": 0,
+							"search_cost": 0,
 						"total_cost": 0.5,
 						"actual_cost": 0.5,
 						"rate_multiplier": 1,

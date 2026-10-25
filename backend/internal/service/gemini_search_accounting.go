@@ -28,7 +28,10 @@ func observeGeminiSearch(c *gin.Context, payload []byte) {
 	if !ok {
 		return
 	}
-	counter := v.(geminiSearchCounter)
+	counter, ok := v.(geminiSearchCounter)
+	if !ok {
+		return
+	}
 	root := gjson.ParseBytes(payload)
 	if response := root.Get("response"); response.Exists() {
 		root = response
@@ -62,8 +65,12 @@ func observedGeminiSearches(c *gin.Context) int {
 	if !ok {
 		return 0
 	}
+	counter, ok := v.(geminiSearchCounter)
+	if !ok {
+		return 0
+	}
 	total := 0
-	for _, count := range v.(geminiSearchCounter) {
+	for _, count := range counter {
 		total += count
 	}
 	return total
