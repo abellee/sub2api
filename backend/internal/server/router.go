@@ -70,6 +70,11 @@ func SetupRouter(
 	}))
 	r.Use(middleware2.ServerTiming(cfg.Server.EnableServerTiming))
 	r.Use(handler.ModelSessionCaptureCompletion())
+	// Video playback and download use the rewritten CDN path directly, with no API key.
+	// Recorded video paths and legacy relay /m/{id} links are proxied.
+	if handlers != nil && handlers.OpenAIGateway != nil {
+		r.Use(handlers.OpenAIGateway.ProxyStoredGrokVideo())
+	}
 
 	// Serve embedded frontend with settings injection if available
 	if web.HasEmbeddedFrontend() {

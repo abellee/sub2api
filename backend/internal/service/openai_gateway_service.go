@@ -448,6 +448,9 @@ type OpenAIGatewayService struct {
 	userRepo              UserRepository
 	userSubRepo           UserSubscriptionRepository
 	cache                 GatewayCache
+	grokVideoCDN          GrokVideoCDNStore
+	localGrokVideoCDNOnce sync.Once
+	localGrokVideoCDN     *localGrokVideoCDNStore
 	cfg                   *config.Config
 	codexDetector         CodexClientRestrictionDetector
 	schedulerSnapshot     *SchedulerSnapshotService

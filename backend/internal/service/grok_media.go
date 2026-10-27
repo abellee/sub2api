@@ -8,14 +8,18 @@ import (
 	"io"
 	"mime"
 	"mime/multipart"
+	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
+	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -756,12 +760,12 @@ func (s *OpenAIGatewayService) ForwardGrokMedia(
 			}
 		}
 	}
-	if endpoint == GrokMediaEndpointVideoStatus {
-		respBody = rewriteGrokMediaVideoContentURLs(
-			respBody,
-			requestID,
-			grokMediaContentProxyURL(c, requestID),
-		)
+	if grokMediaEndpointRewritesVideoURLs(endpoint) {
+		rewriteID := strings.TrimSpace(requestID)
+		if rewriteID == "" {
+			rewriteID = extractGrokMediaVideoRequestID(respBody)
+		}
+		respBody = s.rewriteGrokMediaSuccessVideoURLs(c, respBody, rewriteID)
 	}
 	writeGrokMediaResponse(c, resp, respBody, s.responseHeaderFilter)
 	usage := grokMediaUsageFromResponse(endpoint, requestInfo, respBody)
@@ -866,8 +870,14 @@ func (s *OpenAIGatewayService) forwardGrokMediaVideoContent(
 		}
 	}
 
+	contentCtx := WithHTTPUpstreamRedirectsDisabled(upstreamCtx)
+	if signedContent {
+		// The URL comes from the upstream status body. Keep redirects off and
+		// require a public address so a hostile CDN host cannot reach private nets.
+		contentCtx = WithHTTPUpstreamPublicHostsOnly(contentCtx)
+	}
 	contentReq, err := http.NewRequestWithContext(
-		WithHTTPUpstreamRedirectsDisabled(upstreamCtx),
+		contentCtx,
 		http.MethodGet,
 		contentURL,
 		nil,
@@ -929,8 +939,17 @@ func (s *OpenAIGatewayService) forwardGrokMediaVideoContent(
 	return result, nil
 }
 
+func grokMediaEndpointRewritesVideoURLs(endpoint GrokMediaEndpoint) bool {
+	switch endpoint {
+	case GrokMediaEndpointVideoStatus, GrokMediaEndpointVideosGenerations, GrokMediaEndpointVideosEdits, GrokMediaEndpointVideosExtensions:
+		return true
+	default:
+		return false
+	}
+}
+
 func grokMediaSignedVideoContentURL(body []byte, requestID string) (string, error) {
-	rawURL := strings.TrimSpace(gjson.GetBytes(body, "video.url").String())
+	rawURL := grokMediaUpstreamVideoURL(body)
 	if rawURL == "" {
 		return "", nil
 	}
@@ -941,10 +960,52 @@ func grokMediaSignedVideoContentURL(body []byte, requestID string) (string, erro
 	if isGrokMediaVideoContentURL(rawURL, requestID) {
 		return "", nil
 	}
-	parsed, err := url.Parse(rawURL)
-	if err != nil || !strings.EqualFold(parsed.Scheme, "https") ||
-		!strings.EqualFold(parsed.Hostname(), "vidgen.x.ai") ||
-		(parsed.Port() != "" && parsed.Port() != "443") || parsed.User != nil {
+	return validateGrokMediaPublicVideoURL(rawURL)
+}
+
+// grokMediaUpstreamVideoURL returns the first upstream video file URL from a
+// status or create body. Official xAI uses video.url; some relays put the CDN
+// link in content or video_url.
+func grokMediaUpstreamVideoURL(body []byte) string {
+	if len(body) == 0 || !gjson.ValidBytes(body) {
+		return ""
+	}
+	for _, path := range []string{
+		"video.url",
+		"content",
+		"content.video_url",
+		"content.url",
+		"video_url",
+		"result_url",
+		"data.video.url",
+		"data.content",
+		"data.content.video_url",
+		"data.content.url",
+		"data.video_url",
+		"data.result_url",
+	} {
+		value := gjson.GetBytes(body, path)
+		if value.Type != gjson.String {
+			continue
+		}
+		rawURL := strings.TrimSpace(value.String())
+		if rawURL != "" {
+			return rawURL
+		}
+	}
+	return ""
+}
+
+func validateGrokMediaPublicVideoURL(rawURL string) (string, error) {
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil || parsed.User != nil || !strings.EqualFold(parsed.Scheme, "https") {
+		return "", fmt.Errorf("grok media status returned an unsupported video content URL")
+	}
+	host := parsed.Hostname()
+	if host == "" || urlvalidator.IsBlockedHost(host) || isBlockedHostname(host) {
+		return "", fmt.Errorf("grok media status returned an unsupported video content URL")
+	}
+	if port := parsed.Port(); port != "" && port != "443" {
 		return "", fmt.Errorf("grok media status returned an unsupported video content URL")
 	}
 	return parsed.String(), nil
@@ -1403,11 +1464,10 @@ func writeGrokMediaResponse(c *gin.Context, resp *http.Response, body []byte, fi
 	c.Data(resp.StatusCode, contentType, body)
 }
 
-func writeGrokMediaContentResponse(c *gin.Context, resp *http.Response) error {
-	if c == nil || resp == nil || resp.Body == nil {
-		return fmt.Errorf("grok media content response is incomplete")
+func writeGrokMediaContentHeaders(c *gin.Context, resp *http.Response) {
+	if c == nil || resp == nil {
+		return
 	}
-
 	for _, name := range []string{
 		"Content-Type",
 		"Content-Length",
@@ -1425,14 +1485,401 @@ func writeGrokMediaContentResponse(c *gin.Context, resp *http.Response) error {
 	if strings.TrimSpace(c.Writer.Header().Get("Content-Type")) == "" {
 		c.Header("Content-Type", "application/octet-stream")
 	}
+}
+
+func writeGrokMediaContentResponse(c *gin.Context, resp *http.Response) error {
+	if c == nil || resp == nil || resp.Body == nil {
+		return fmt.Errorf("grok media content response is incomplete")
+	}
+	writeGrokMediaContentHeaders(c, resp)
 	c.Status(resp.StatusCode)
 	MarkResponseCommitted(c)
 	_, err := io.Copy(c.Writer, resp.Body)
 	return err
 }
 
-func rewriteGrokMediaVideoContentURLs(body []byte, requestID, proxyURL string) []byte {
-	if len(body) == 0 || strings.TrimSpace(requestID) == "" || strings.TrimSpace(proxyURL) == "" || !gjson.ValidBytes(body) {
+func grokMediaSwapVideoHost(rawURL, origin string) (publicURL, upstreamURL, publicPath string, ok bool) {
+	upstreamURL, err := validateGrokMediaPublicVideoURL(rawURL)
+	if err != nil {
+		return "", "", "", false
+	}
+	parsed, err := url.Parse(upstreamURL)
+	if err != nil {
+		return "", "", "", false
+	}
+	originURL, err := url.Parse(strings.TrimSpace(origin))
+	if err != nil || originURL.Scheme == "" || originURL.Host == "" {
+		return "", "", "", false
+	}
+	if strings.EqualFold(parsed.Scheme, originURL.Scheme) && strings.EqualFold(parsed.Host, originURL.Host) {
+		return "", "", "", false
+	}
+	publicPath = grokMediaRequestPublicPath(parsed)
+	pathOnly, _, _ := strings.Cut(publicPath, "?")
+	if grokMediaProxyPathReserved(pathOnly) {
+		return "", "", "", false
+	}
+	publicURL = originURL.Scheme + "://" + originURL.Host + publicPath
+	return publicURL, parsed.String(), publicPath, true
+}
+
+func grokMediaRequestPublicPath(u *url.URL) string {
+	if u == nil {
+		return ""
+	}
+	path := u.EscapedPath()
+	if path == "" {
+		path = u.Path
+	}
+	if path == "" {
+		return ""
+	}
+	if u.RawQuery != "" {
+		return path + "?" + u.RawQuery
+	}
+	return path
+}
+
+func normalizeGrokMediaPublicVideoPath(publicPath string) (string, bool) {
+	publicPath = strings.TrimSpace(publicPath)
+	if publicPath == "" || strings.ContainsAny(publicPath, " \t\r\n\\") || strings.HasPrefix(publicPath, "//") {
+		return "", false
+	}
+	pathOnly, query, _ := strings.Cut(publicPath, "?")
+	if !strings.HasPrefix(pathOnly, "/") || strings.Contains(pathOnly, "..") || grokMediaProxyPathReserved(pathOnly) {
+		return "", false
+	}
+	if query != "" {
+		return pathOnly + "?" + query, true
+	}
+	return pathOnly, true
+}
+
+func grokMediaUpstreamMatchesPublicPath(upstream, publicPath string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(upstream))
+	if err != nil {
+		return false
+	}
+	return grokMediaRequestPublicPath(parsed) == publicPath
+}
+
+func grokMediaProxyPathReserved(path string) bool {
+	path = strings.TrimSpace(path)
+	if path == "" || path == "/" {
+		return true
+	}
+	switch path {
+	case "/health", "/models", "/responses", "/chat/completions", "/embeddings",
+		"/messages/count_tokens", "/alpha/search", "/web_search", "/x_search",
+		"/tts", "/stt", "/realtime", "/videos", "/contents/generations/tasks",
+		"/v3/contents/generations/tasks":
+		return true
+	}
+	for _, prefix := range []string{
+		"/api/", "/v1/", "/v1beta/", "/.well-known/", "/backend-api/", "/antigravity/",
+		"/setup/", "/models/", "/responses/", "/custom-voices/", "/images/", "/videos/",
+		"/contents/generations/tasks/", "/v3/contents/generations/tasks/",
+		"/assets/", "/static/",
+	} {
+		if strings.HasPrefix(path, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// GrokVideoCDNStore remembers an upstream video file so a later download on
+// this gateway's host can stream that file. The public path keeps the upstream
+// path and query; only the host shown to the client changes.
+type GrokVideoCDNStore interface {
+	SetGrokVideoCDN(ctx context.Context, publicPath, upstreamURL string, ttl time.Duration) error
+	GetGrokVideoCDN(ctx context.Context, publicPath string) (string, error)
+}
+
+const grokVideoCDNDefaultTTL = 7 * 24 * time.Hour
+
+// grokVideoDownloadOrigin is the public host for rewritten video files.
+// API calls stay on the request host. Playback of /m/{id} cannot send an API key.
+const grokVideoDownloadOrigin = "https://d.tokenfree.dev"
+
+type grokMediaVideoRewriteOptions struct {
+	contentProxyURL string
+	origin          string
+	store           func(publicPath, upstreamURL string) bool
+}
+
+func (s *OpenAIGatewayService) grokVideoCDNStore() GrokVideoCDNStore {
+	if s == nil {
+		return nil
+	}
+	if s.grokVideoCDN != nil {
+		return s.grokVideoCDN
+	}
+	store, _ := s.cache.(GrokVideoCDNStore)
+	return store
+}
+
+func (s *OpenAIGatewayService) localGrokVideoCDNStore() *localGrokVideoCDNStore {
+	if s == nil {
+		return nil
+	}
+	s.localGrokVideoCDNOnce.Do(func() {
+		s.localGrokVideoCDN = newLocalGrokVideoCDNStore()
+	})
+	return s.localGrokVideoCDN
+}
+
+func (s *OpenAIGatewayService) rewriteGrokMediaSuccessVideoURLs(c *gin.Context, body []byte, requestID string) []byte {
+	if s == nil {
+		return body
+	}
+	var ctx context.Context
+	if c != nil && c.Request != nil {
+		ctx = c.Request.Context()
+	}
+	return rewriteGrokMediaVideoContentURLs(body, requestID, grokMediaVideoRewriteOptions{
+		contentProxyURL: grokMediaContentProxyURL(c, s.cfg, requestID),
+		origin:          grokVideoDownloadOrigin,
+		store: func(publicPath, upstreamURL string) bool {
+			return s.rememberGrokVideoCDN(ctx, publicPath, upstreamURL)
+		},
+	})
+}
+
+type grokVideoRememberResult int
+
+const (
+	grokVideoRemembered grokVideoRememberResult = iota
+	grokVideoRememberRejected
+	grokVideoRememberUnavailable
+)
+
+func (s *OpenAIGatewayService) rememberGrokVideoCDN(ctx context.Context, publicPath, upstream string) bool {
+	switch rememberGrokVideoCDN(ctx, s.grokVideoCDNStore(), publicPath, upstream) {
+	case grokVideoRemembered:
+		return true
+	case grokVideoRememberRejected:
+		return false
+	default:
+		// Redis missing or down must not leave the client on the upstream CDN.
+		// This process can still stream the file it just recorded.
+		return rememberGrokVideoCDN(ctx, s.localGrokVideoCDNStore(), publicPath, upstream) == grokVideoRemembered
+	}
+}
+
+func rememberGrokVideoCDN(ctx context.Context, store GrokVideoCDNStore, publicPath, upstream string) grokVideoRememberResult {
+	if store == nil {
+		return grokVideoRememberUnavailable
+	}
+	publicPath, ok := normalizeGrokMediaPublicVideoPath(publicPath)
+	if !ok {
+		return grokVideoRememberRejected
+	}
+	upstream, err := validateGrokMediaPublicVideoURL(upstream)
+	if err != nil || !grokMediaUpstreamMatchesPublicPath(upstream, publicPath) {
+		return grokVideoRememberRejected
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	existing, err := store.GetGrokVideoCDN(ctx, publicPath)
+	if err != nil {
+		return grokVideoRememberUnavailable
+	}
+	if strings.TrimSpace(existing) != "" && existing != upstream {
+		return grokVideoRememberRejected
+	}
+	if err := store.SetGrokVideoCDN(ctx, publicPath, upstream, grokVideoCDNDefaultTTL); err != nil {
+		return grokVideoRememberUnavailable
+	}
+	return grokVideoRemembered
+}
+
+func (s *OpenAIGatewayService) lookupGrokVideoCDN(ctx context.Context, publicPath string) (string, bool) {
+	if s == nil {
+		return "", false
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	for _, store := range []GrokVideoCDNStore{s.grokVideoCDNStore(), s.localGrokVideoCDNStore()} {
+		if store == nil {
+			continue
+		}
+		upstream, err := store.GetGrokVideoCDN(ctx, publicPath)
+		if err != nil || strings.TrimSpace(upstream) == "" {
+			continue
+		}
+		return upstream, true
+	}
+	return grokMediaRelayCDNFallback(publicPath)
+}
+
+// grokMediaRelayCDNFallback serves /m/{id} when the status rewrite could not
+// record a mapping. The id is the unguessable file id from cdn.91topgo.com;
+// other paths stay unproxied.
+func grokMediaRelayCDNFallback(publicPath string) (string, bool) {
+	pathOnly, query, _ := strings.Cut(strings.TrimSpace(publicPath), "?")
+	if query != "" || !grokMediaRelayMediaPath(pathOnly) {
+		return "", false
+	}
+	return "https://cdn.91topgo.com" + pathOnly, true
+}
+
+func grokMediaRelayMediaPath(path string) bool {
+	const prefix = "/m/"
+	if !strings.HasPrefix(path, prefix) {
+		return false
+	}
+	id := path[len(prefix):]
+	if len(id) < 16 || len(id) > 64 {
+		return false
+	}
+	for _, r := range id {
+		switch {
+		case r >= '0' && r <= '9', r >= 'a' && r <= 'f', r >= 'A' && r <= 'F':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+const localGrokVideoCDNMaxItems = 4096
+
+type localGrokVideoCDNItem struct {
+	upstream string
+	expires  time.Time
+}
+
+type localGrokVideoCDNStore struct {
+	mu    sync.Mutex
+	items map[string]localGrokVideoCDNItem
+}
+
+func newLocalGrokVideoCDNStore() *localGrokVideoCDNStore {
+	return &localGrokVideoCDNStore{items: map[string]localGrokVideoCDNItem{}}
+}
+
+func (s *localGrokVideoCDNStore) SetGrokVideoCDN(_ context.Context, publicPath, upstreamURL string, ttl time.Duration) error {
+	if s == nil {
+		return fmt.Errorf("grok video cdn store unavailable")
+	}
+	publicPath = strings.TrimSpace(publicPath)
+	upstreamURL = strings.TrimSpace(upstreamURL)
+	if publicPath == "" || upstreamURL == "" {
+		return fmt.Errorf("invalid grok video cdn mapping")
+	}
+	if ttl <= 0 {
+		ttl = grokVideoCDNDefaultTTL
+	}
+	now := time.Now()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.items == nil {
+		s.items = map[string]localGrokVideoCDNItem{}
+	}
+	if _, exists := s.items[publicPath]; !exists && len(s.items) >= localGrokVideoCDNMaxItems {
+		for key, item := range s.items {
+			if now.After(item.expires) {
+				delete(s.items, key)
+			}
+		}
+		if len(s.items) >= localGrokVideoCDNMaxItems {
+			for key := range s.items {
+				delete(s.items, key)
+				break
+			}
+		}
+	}
+	s.items[publicPath] = localGrokVideoCDNItem{upstream: upstreamURL, expires: now.Add(ttl)}
+	return nil
+}
+
+func (s *localGrokVideoCDNStore) GetGrokVideoCDN(_ context.Context, publicPath string) (string, error) {
+	if s == nil {
+		return "", fmt.Errorf("grok video cdn store unavailable")
+	}
+	publicPath = strings.TrimSpace(publicPath)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	item, ok := s.items[publicPath]
+	if !ok {
+		return "", nil
+	}
+	if time.Now().After(item.expires) {
+		delete(s.items, publicPath)
+		return "", nil
+	}
+	return item.upstream, nil
+}
+
+// TryProxyStoredGrokVideo streams a stored upstream video for this request.
+// An unrecorded /m/{id} falls back to the relay CDN. Anything else returns
+// false so other routes still run. A recorded URL that fails validation is a
+// 404 and does not fall through to that CDN.
+func (s *OpenAIGatewayService) TryProxyStoredGrokVideo(c *gin.Context) bool {
+	if s == nil || c == nil || c.Request == nil || c.Request.URL == nil {
+		return false
+	}
+	if c.Request.Method != http.MethodGet && c.Request.Method != http.MethodHead {
+		return false
+	}
+	publicPath := grokMediaRequestPublicPath(c.Request.URL)
+	pathOnly, _, _ := strings.Cut(publicPath, "?")
+	if grokMediaProxyPathReserved(pathOnly) {
+		return false
+	}
+	upstream, ok := s.lookupGrokVideoCDN(c.Request.Context(), publicPath)
+	if !ok {
+		return false
+	}
+	validated, err := validateGrokMediaPublicVideoURL(upstream)
+	if err != nil || !grokMediaUpstreamMatchesPublicPath(validated, publicPath) {
+		c.AbortWithStatus(http.StatusNotFound)
+		return true
+	}
+	if s.httpUpstream == nil {
+		c.AbortWithStatus(http.StatusBadGateway)
+		return true
+	}
+
+	reqCtx := WithHTTPUpstreamPublicHostsOnly(WithHTTPUpstreamRedirectsDisabled(c.Request.Context()))
+	contentReq, err := http.NewRequestWithContext(reqCtx, c.Request.Method, validated, nil)
+	if err != nil {
+		c.AbortWithStatus(http.StatusBadGateway)
+		return true
+	}
+	contentReq.Header.Set("Accept", "*/*")
+	if c.Request.Method == http.MethodGet {
+		if rangeHeader := strings.TrimSpace(c.GetHeader("Range")); rangeHeader != "" {
+			contentReq.Header.Set("Range", rangeHeader)
+		}
+	}
+	contentResp, err := s.httpUpstream.Do(contentReq, "", 0, 0)
+	if err != nil {
+		c.AbortWithStatus(http.StatusBadGateway)
+		return true
+	}
+	defer func() { _ = contentResp.Body.Close() }()
+	if contentResp.StatusCode >= 300 && contentResp.StatusCode < 400 {
+		c.AbortWithStatus(http.StatusBadGateway)
+		return true
+	}
+	if c.Request.Method == http.MethodHead {
+		writeGrokMediaContentHeaders(c, contentResp)
+		c.Status(contentResp.StatusCode)
+		return true
+	}
+	_ = writeGrokMediaContentResponse(c, contentResp)
+	return true
+}
+
+func rewriteGrokMediaVideoContentURLs(body []byte, requestID string, opts grokMediaVideoRewriteOptions) []byte {
+	if len(body) == 0 || !gjson.ValidBytes(body) {
+		return body
+	}
+	if strings.TrimSpace(requestID) == "" && strings.TrimSpace(opts.origin) == "" {
 		return body
 	}
 
@@ -1442,8 +1889,12 @@ func rewriteGrokMediaVideoContentURLs(body []byte, requestID, proxyURL string) [
 	if err := decoder.Decode(&value); err != nil {
 		return body
 	}
-	changed := rewriteGrokMediaKnownVideoURL(&value, proxyURL)
-	if rewriteGrokMediaVideoContentURLValue(&value, requestID, proxyURL) {
+	changed := rewriteGrokMediaKnownVideoURL(&value, opts)
+	if rewriteGrokMediaOutputVideoFields(&value, opts) {
+		changed = true
+	}
+	if strings.TrimSpace(requestID) != "" && strings.TrimSpace(opts.contentProxyURL) != "" &&
+		rewriteGrokMediaVideoContentURLValue(&value, requestID, opts.contentProxyURL) {
 		changed = true
 	}
 	if !changed {
@@ -1456,7 +1907,7 @@ func rewriteGrokMediaVideoContentURLs(body []byte, requestID, proxyURL string) [
 	return rewritten
 }
 
-func rewriteGrokMediaKnownVideoURL(value *any, proxyURL string) bool {
+func rewriteGrokMediaKnownVideoURL(value *any, opts grokMediaVideoRewriteOptions) bool {
 	if value == nil {
 		return false
 	}
@@ -1464,16 +1915,113 @@ func rewriteGrokMediaKnownVideoURL(value *any, proxyURL string) bool {
 	if !ok {
 		return false
 	}
-	video, ok := root["video"].(map[string]any)
+	return rewriteGrokMediaVideoObjectURL(root, opts)
+}
+
+func rewriteGrokMediaVideoObjectURL(obj map[string]any, opts grokMediaVideoRewriteOptions) bool {
+	video, ok := obj["video"].(map[string]any)
 	if !ok {
 		return false
 	}
-	rawURL, ok := video["url"].(string)
-	if !ok || strings.TrimSpace(rawURL) == "" {
+	return rewriteStoredHTTPURLField(video, "url", opts)
+}
+
+// rewriteGrokMediaOutputVideoFields replaces upstream CDN links in the fields
+// clients read as the finished video. The path and query stay the same.
+// Unrelated strings stay untouched.
+func rewriteGrokMediaOutputVideoFields(value *any, opts grokMediaVideoRewriteOptions) bool {
+	if value == nil || strings.TrimSpace(opts.origin) == "" {
 		return false
 	}
-	video["url"] = proxyURL
+	root, ok := (*value).(map[string]any)
+	if !ok {
+		return false
+	}
+	changed := rewriteGrokMediaOutputNode(root, opts)
+	for _, key := range []string{"data", "output", "result", "generations"} {
+		if rewriteGrokMediaOutputVideoValue(root[key], opts) {
+			changed = true
+		}
+	}
+	return changed
+}
+
+func rewriteGrokMediaOutputVideoValue(value any, opts grokMediaVideoRewriteOptions) bool {
+	switch typed := value.(type) {
+	case map[string]any:
+		return rewriteGrokMediaOutputNode(typed, opts)
+	case []any:
+		changed := false
+		for _, item := range typed {
+			if rewriteGrokMediaOutputVideoValue(item, opts) {
+				changed = true
+			}
+		}
+		return changed
+	default:
+		return false
+	}
+}
+
+func rewriteGrokMediaOutputNode(obj map[string]any, opts grokMediaVideoRewriteOptions) bool {
+	if obj == nil {
+		return false
+	}
+	changed := rewriteGrokMediaOutputVideoObject(obj, opts)
+	if rewriteGrokMediaVideoObjectURL(obj, opts) {
+		changed = true
+	}
+	return changed
+}
+
+func rewriteGrokMediaOutputVideoObject(obj map[string]any, opts grokMediaVideoRewriteOptions) bool {
+	if obj == nil {
+		return false
+	}
+	changed := false
+	if rewriteStoredHTTPURLField(obj, "content", opts) {
+		changed = true
+	}
+	if content, ok := obj["content"].(map[string]any); ok {
+		if rewriteStoredHTTPURLField(content, "url", opts) {
+			changed = true
+		}
+		if rewriteStoredHTTPURLField(content, "video_url", opts) {
+			changed = true
+		}
+	}
+	for _, key := range []string{"url", "download_url", "video_url", "result_url"} {
+		if rewriteStoredHTTPURLField(obj, key, opts) {
+			changed = true
+		}
+	}
+	return changed
+}
+
+func rewriteStoredHTTPURLField(obj map[string]any, key string, opts grokMediaVideoRewriteOptions) bool {
+	raw, ok := obj[key].(string)
+	if !ok || !isHTTPURL(raw) {
+		return false
+	}
+	swapped, ok := opts.swapStoredFileURL(raw)
+	if !ok {
+		return false
+	}
+	obj[key] = swapped
 	return true
+}
+
+func (opts grokMediaVideoRewriteOptions) swapStoredFileURL(raw string) (string, bool) {
+	publicURL, upstreamURL, publicPath, ok := grokMediaSwapVideoHost(raw, opts.origin)
+	if !ok || opts.store == nil || !opts.store(publicPath, upstreamURL) {
+		return "", false
+	}
+	return publicURL, true
+}
+
+func isHTTPURL(raw string) bool {
+	raw = strings.TrimSpace(raw)
+	return strings.HasPrefix(raw, "https://") || strings.HasPrefix(raw, "http://")
 }
 
 func rewriteGrokMediaVideoContentURLValue(value *any, requestID, proxyURL string) bool {
@@ -1529,7 +2077,7 @@ func isGrokMediaVideoContentURL(rawURL, requestID string) bool {
 		segments[len(segments)-1] == "content"
 }
 
-func grokMediaContentProxyURL(c *gin.Context, requestID string) string {
+func grokMediaContentProxyURL(c *gin.Context, cfg *config.Config, requestID string) string {
 	if c == nil || c.Request == nil || c.Request.URL == nil || strings.TrimSpace(requestID) == "" {
 		return ""
 	}
@@ -1537,5 +2085,98 @@ func grokMediaContentProxyURL(c *gin.Context, requestID string) string {
 	if strings.HasPrefix(c.Request.URL.Path, "/v1/") {
 		pathPrefix = "/v1"
 	}
-	return pathPrefix + "/videos/" + url.PathEscape(strings.Trim(requestID, "/")) + "/content"
+	path := pathPrefix + "/videos/" + url.PathEscape(strings.Trim(requestID, "/")) + "/content"
+	origin := grokMediaPublicOrigin(c, cfg)
+	if origin == "" {
+		return path
+	}
+	return origin + path
+}
+
+// grokMediaPublicOrigin is the scheme and host of this gateway as the client
+// called it. Forwarded host and proto are used only when the immediate peer is
+// a configured trusted proxy, so a client cannot put an arbitrary domain in the
+// video link.
+func grokMediaPublicOrigin(c *gin.Context, cfg *config.Config) string {
+	if c == nil || c.Request == nil {
+		return ""
+	}
+	host := ""
+	scheme := ""
+	if grokMediaRequestFromTrustedProxy(cfg, c.Request.RemoteAddr) {
+		host = sanitizeGrokMediaPublicHost(firstCommaValue(c.GetHeader("X-Forwarded-Host")))
+		scheme = sanitizeGrokMediaPublicScheme(firstCommaValue(c.GetHeader("X-Forwarded-Proto")))
+	}
+	if host == "" {
+		host = sanitizeGrokMediaPublicHost(c.Request.Host)
+	}
+	if host == "" && c.Request.URL != nil {
+		host = sanitizeGrokMediaPublicHost(c.Request.URL.Host)
+	}
+	if host == "" {
+		return ""
+	}
+	if scheme == "" {
+		switch {
+		case c.Request.TLS != nil:
+			scheme = "https"
+		case c.Request.URL != nil && (c.Request.URL.Scheme == "https" || c.Request.URL.Scheme == "http"):
+			scheme = c.Request.URL.Scheme
+		default:
+			scheme = "http"
+		}
+	}
+	return scheme + "://" + host
+}
+
+func grokMediaRequestFromTrustedProxy(cfg *config.Config, remoteAddr string) bool {
+	if cfg == nil || !cfg.Server.TrustedProxiesConfigured || len(cfg.Server.TrustedProxies) == 0 {
+		return false
+	}
+	host, _, err := net.SplitHostPort(strings.TrimSpace(remoteAddr))
+	if err != nil {
+		host = strings.TrimSpace(remoteAddr)
+	}
+	ip, err := netip.ParseAddr(host)
+	if err != nil {
+		return false
+	}
+	for _, raw := range cfg.Server.TrustedProxies {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
+		}
+		if prefix, err := netip.ParsePrefix(raw); err == nil && prefix.Contains(ip) {
+			return true
+		}
+		if addr, err := netip.ParseAddr(raw); err == nil && addr == ip {
+			return true
+		}
+	}
+	return false
+}
+
+func firstCommaValue(value string) string {
+	value = strings.TrimSpace(value)
+	if i := strings.IndexByte(value, ','); i >= 0 {
+		value = value[:i]
+	}
+	return strings.TrimSpace(value)
+}
+
+func sanitizeGrokMediaPublicScheme(scheme string) string {
+	switch strings.ToLower(strings.TrimSpace(scheme)) {
+	case "https", "http":
+		return strings.ToLower(strings.TrimSpace(scheme))
+	default:
+		return ""
+	}
+}
+
+func sanitizeGrokMediaPublicHost(host string) string {
+	host = strings.TrimSpace(host)
+	if host == "" || strings.ContainsAny(host, " \t\r\n/@\\") {
+		return ""
+	}
+	return host
 }

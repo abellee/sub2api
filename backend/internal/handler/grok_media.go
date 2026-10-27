@@ -17,6 +17,18 @@ import (
 	"go.uber.org/zap"
 )
 
+// ProxyStoredGrokVideo streams a previously recorded upstream video when the
+// request path matches a host-swapped result URL. Other requests continue.
+func (h *OpenAIGatewayHandler) ProxyStoredGrokVideo() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if h != nil && h.gatewayService != nil && h.gatewayService.TryProxyStoredGrokVideo(c) {
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
+}
+
 // GrokImages handles xAI image generation/editing through Grok groups.
 func (h *OpenAIGatewayHandler) GrokImages(c *gin.Context) {
 	endpoint := service.GrokMediaEndpointImagesGenerations

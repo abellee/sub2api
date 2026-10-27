@@ -164,7 +164,43 @@ var _ service.OpenAIWSSessionPreemptionCache = (*gatewayCache)(nil)
 const (
 	grokVideoPendingBillingPrefix = "grok_video_pending:"
 	grokVideoBilledPrefix         = "grok_video_billed:"
+	grokVideoCDNPrefix            = "grok_video_cdn:"
 )
+
+func (c *gatewayCache) SetGrokVideoCDN(ctx context.Context, publicPath, upstreamURL string, ttl time.Duration) error {
+	if c == nil || c.rdb == nil {
+		return errors.New("gateway cache unavailable")
+	}
+	publicPath = strings.TrimSpace(publicPath)
+	upstreamURL = strings.TrimSpace(upstreamURL)
+	if publicPath == "" || upstreamURL == "" || len(publicPath) > 4096 || len(upstreamURL) > 8192 {
+		return errors.New("invalid grok video cdn mapping")
+	}
+	if ttl <= 0 {
+		ttl = 7 * 24 * time.Hour
+	}
+	sum := sha256.Sum256([]byte(publicPath))
+	return c.rdb.Set(ctx, grokVideoCDNPrefix+hex.EncodeToString(sum[:]), upstreamURL, ttl).Err()
+}
+
+func (c *gatewayCache) GetGrokVideoCDN(ctx context.Context, publicPath string) (string, error) {
+	if c == nil || c.rdb == nil {
+		return "", errors.New("gateway cache unavailable")
+	}
+	publicPath = strings.TrimSpace(publicPath)
+	if publicPath == "" {
+		return "", errors.New("invalid grok video cdn path")
+	}
+	sum := sha256.Sum256([]byte(publicPath))
+	val, err := c.rdb.Get(ctx, grokVideoCDNPrefix+hex.EncodeToString(sum[:])).Result()
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			return "", nil
+		}
+		return "", err
+	}
+	return val, nil
+}
 
 func (c *gatewayCache) SetGrokVideoPendingBilling(ctx context.Context, key string, payload []byte, ttl time.Duration) error {
 	if c == nil || c.rdb == nil {
@@ -226,6 +262,7 @@ func (c *gatewayCache) ReleaseGrokVideoBilled(ctx context.Context, key string) e
 // Compile-time assertion: gatewayCache must implement CyberSessionBlockStore.
 var _ service.CyberSessionBlockStore = (*gatewayCache)(nil)
 var _ service.LiveCallStore = (*gatewayCache)(nil)
+var _ service.GrokVideoCDNStore = (*gatewayCache)(nil)
 
 const reasoningContentPrefix = "reasoning_content:"
 
