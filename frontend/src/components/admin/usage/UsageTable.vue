@@ -193,7 +193,7 @@
               <div v-if="row.cache_read_tokens > 0 || row.cache_creation_tokens > 0" class="flex items-center gap-2">
                 <div v-if="row.cache_read_tokens > 0" class="inline-flex items-center gap-1">
                   <svg class="h-3.5 w-3.5 text-sky-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>
-                  <span class="font-medium text-sky-600 dark:text-sky-400">{{ formatCacheTokens(row.cache_read_tokens) }}</span>
+                  <span class="whitespace-nowrap font-medium text-sky-600 dark:text-sky-400">{{ formatCacheTokens(row.cache_read_tokens) }} <span class="text-emerald-600 dark:text-emerald-400">({{ cacheHitRate(row) }}%)</span></span>
                 </div>
                 <div v-if="row.cache_creation_tokens > 0" class="inline-flex items-center gap-1">
                   <svg class="h-3.5 w-3.5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
@@ -664,6 +664,12 @@ import { fetchBatch, getEntry } from '@/utils/ipGeoLookup'
 import { upstreamDeclaredRateFromExtra } from '@/utils/upstreamDeclaredRate'
 import type { AdminUsageLog, UsageLogAccountSummary } from '@/types'
 import type { Column } from '@/components/common/types'
+
+function cacheHitRate(row: Pick<AdminUsageLog, 'input_tokens' | 'cache_creation_tokens' | 'cache_read_tokens'>): string {
+  const cached = row.cache_read_tokens || 0
+  const total = (row.input_tokens || 0) + (row.cache_creation_tokens || 0) + cached
+  return (total > 0 ? cached / total * 100 : 0).toFixed(2)
+}
 
 interface AccountHoverCacheEntry {
   rate: number | null

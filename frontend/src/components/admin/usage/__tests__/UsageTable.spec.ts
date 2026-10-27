@@ -162,6 +162,23 @@ const baseImageRow = {
 }
 
 describe('admin UsageTable tooltip', () => {
+  it.each([
+    [100, 100, 800, '800 (80.00%)'],
+    [2, 0, 1, '1 (33.33%)'],
+    [0, 0, 1000, '1.0K (100.00%)'],
+  ])('shows the cache hit rate beside cached tokens (%i, %i, %i)', (input, created, cached, expected) => {
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [{ ...baseImageRow, image_count: 0, billing_mode: 'token', input_tokens: input, output_tokens: 500, cache_creation_tokens: created, cache_read_tokens: cached }],
+        loading: false,
+        columns: [{ key: 'tokens', label: 'Tokens' }],
+      },
+      global: { stubs: { DataTable: DataTableStub, EmptyState: true, Icon: true, Teleport: true } },
+    })
+    expect(wrapper.find('.text-sky-600').text()).toBe(expected)
+    wrapper.unmount()
+  })
+
   it('shows output TPS in the latency cell using total duration', () => {
     const row = { ...baseImageRow, image_count: 0, billing_mode: 'token', output_tokens: 1000, duration_ms: 20_000, first_token_ms: 10_000 }
     const wrapper = mount(UsageTable, {
