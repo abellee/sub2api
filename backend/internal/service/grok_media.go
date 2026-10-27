@@ -1978,10 +1978,7 @@ func rewriteGrokMediaOutputVideoObject(obj map[string]any, opts grokMediaVideoRe
 	if obj == nil {
 		return false
 	}
-	changed := false
-	if rewriteStoredHTTPURLField(obj, "content", opts) {
-		changed = true
-	}
+	changed := rewriteStoredHTTPURLField(obj, "content", opts)
 	if content, ok := obj["content"].(map[string]any); ok {
 		if rewriteStoredHTTPURLField(content, "url", opts) {
 			changed = true
