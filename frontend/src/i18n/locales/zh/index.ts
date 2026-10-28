@@ -1,3 +1,4 @@
+import adminAccessKeys from './adminAccessKeys'
 import landing from './landing'
 import common from './common'
 import dashboard from './dashboard'
@@ -9,6 +10,7 @@ import pushNotifications from './pushNotifications'
 import publicTransit from './publicTransit'
 
 export default {
+  adminAccessKeys,
   ...landing,
   ...common,
   ...dashboard,

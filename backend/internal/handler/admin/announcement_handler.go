@@ -258,7 +258,7 @@ func (h *AnnouncementHandler) ListReadStatus(c *gin.Context) {
 		ReadCount int64 `json:"read_count"`
 	}{
 		PaginatedData: response.PaginatedData{
-			Items: items, Total: paginationResult.Total, Page: page, PageSize: pageSize,
+			Items: adminAnnouncementReadResponse(c, items), Total: paginationResult.Total, Page: page, PageSize: pageSize,
 			Pages: max(1, paginationResult.Pages),
 		},
 		ReadCount: readCount,

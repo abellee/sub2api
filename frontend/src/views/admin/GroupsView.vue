@@ -953,6 +953,20 @@
               />
               {{ t(imagePricingI18nKey(createForm.platform, "independentMultiplier")) }}
             </label>
+            <label
+              v-if="
+                createForm.allow_image_generation &&
+                (createForm.platform === 'composite' || createForm.platform === 'openai')
+              "
+              class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300"
+            >
+              <input
+                v-model="createForm.image_count_billing"
+                type="checkbox"
+                class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              {{ t("admin.groups.imagePricing.perImageBilling") }}
+            </label>
           </div>
           <div
             v-if="createForm.image_rate_independent"
@@ -2599,6 +2613,20 @@
                 class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
               />
               {{ t(imagePricingI18nKey(editForm.platform, "independentMultiplier")) }}
+            </label>
+            <label
+              v-if="
+                editForm.allow_image_generation &&
+                (editForm.platform === 'composite' || editForm.platform === 'openai')
+              "
+              class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300"
+            >
+              <input
+                v-model="editForm.image_count_billing"
+                type="checkbox"
+                class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              {{ t("admin.groups.imagePricing.perImageBilling") }}
             </label>
           </div>
           <div
@@ -4930,7 +4958,7 @@ const devGroupFixtures: AdminGroup[] = [
   {
     id: 1001, name: 'GPT 标准池', description: 'OpenAI 通用模型，适合日常对话与代码任务', platform: 'openai', rate_multiplier: 0.06,
     is_exclusive: false, status: 'active', subscription_type: 'standard', daily_limit_usd: null, weekly_limit_usd: null, monthly_limit_usd: null,
-    long_context_pricing_enabled: true, allow_image_generation: false, allow_batch_image_generation: false, image_rate_independent: false, image_rate_multiplier: 1,
+    long_context_pricing_enabled: true, allow_image_generation: false, allow_batch_image_generation: false, image_count_billing: false, image_rate_independent: false, image_rate_multiplier: 1,
     batch_image_discount_multiplier: 0.5, batch_image_hold_multiplier: 0.6, image_price_1k: null, image_price_2k: null, image_price_4k: null,
     video_rate_independent: false, video_rate_multiplier: 1, video_price_480p: null, video_price_720p: null, video_price_1080p: null,
     web_search_price_per_call: null, search_price_per_1k: null, audio_realtime_price_per_min: null, audio_tts_price_per_million_chars: null, audio_stt_price_per_hour: null,
@@ -4941,7 +4969,7 @@ const devGroupFixtures: AdminGroup[] = [
   {
     id: 1002, name: 'GPT 高峰池', description: 'OpenAI 高峰时段线路，适合高并发请求', platform: 'openai', rate_multiplier: 0.08,
     is_exclusive: false, status: 'active', subscription_type: 'standard', daily_limit_usd: null, weekly_limit_usd: null, monthly_limit_usd: null,
-    long_context_pricing_enabled: true, allow_image_generation: false, allow_batch_image_generation: false, image_rate_independent: false, image_rate_multiplier: 1,
+    long_context_pricing_enabled: true, allow_image_generation: false, allow_batch_image_generation: false, image_count_billing: false, image_rate_independent: false, image_rate_multiplier: 1,
     batch_image_discount_multiplier: 0.5, batch_image_hold_multiplier: 0.6, image_price_1k: null, image_price_2k: null, image_price_4k: null,
     video_rate_independent: false, video_rate_multiplier: 1, video_price_480p: null, video_price_720p: null, video_price_1080p: null,
     web_search_price_per_call: null, search_price_per_1k: null, audio_realtime_price_per_min: null, audio_tts_price_per_million_chars: null, audio_stt_price_per_hour: null,
@@ -4952,7 +4980,7 @@ const devGroupFixtures: AdminGroup[] = [
   {
     id: 1003, name: 'Claude 稳定池', description: 'Anthropic 长文本与复杂分析线路', platform: 'anthropic', rate_multiplier: 0.12,
     is_exclusive: false, status: 'active', subscription_type: 'standard', daily_limit_usd: null, weekly_limit_usd: null, monthly_limit_usd: null,
-    long_context_pricing_enabled: true, allow_image_generation: false, allow_batch_image_generation: false, image_rate_independent: false, image_rate_multiplier: 1,
+    long_context_pricing_enabled: true, allow_image_generation: false, allow_batch_image_generation: false, image_count_billing: false, image_rate_independent: false, image_rate_multiplier: 1,
     batch_image_discount_multiplier: 0.5, batch_image_hold_multiplier: 0.6, image_price_1k: null, image_price_2k: null, image_price_4k: null,
     video_rate_independent: false, video_rate_multiplier: 1, video_price_480p: null, video_price_720p: null, video_price_1080p: null,
     web_search_price_per_call: null, search_price_per_1k: null, audio_realtime_price_per_min: null, audio_tts_price_per_million_chars: null, audio_stt_price_per_hour: null,
@@ -4963,7 +4991,7 @@ const devGroupFixtures: AdminGroup[] = [
   {
     id: 1004, name: 'Gemini 多模态池', description: 'Gemini 文本与图片请求线路', platform: 'gemini', rate_multiplier: 0.08,
     is_exclusive: false, status: 'active', subscription_type: 'standard', daily_limit_usd: null, weekly_limit_usd: null, monthly_limit_usd: null,
-    long_context_pricing_enabled: true, allow_image_generation: true, allow_batch_image_generation: false, image_rate_independent: false, image_rate_multiplier: 1,
+    long_context_pricing_enabled: true, allow_image_generation: true, allow_batch_image_generation: false, image_count_billing: false, image_rate_independent: false, image_rate_multiplier: 1,
     batch_image_discount_multiplier: 0.5, batch_image_hold_multiplier: 0.6, image_price_1k: null, image_price_2k: null, image_price_4k: null,
     video_rate_independent: false, video_rate_multiplier: 1, video_price_480p: null, video_price_720p: null, video_price_1080p: null,
     web_search_price_per_call: null, search_price_per_1k: null, audio_realtime_price_per_min: null, audio_tts_price_per_million_chars: null, audio_stt_price_per_hour: null,
@@ -4974,7 +5002,7 @@ const devGroupFixtures: AdminGroup[] = [
   {
     id: 1005, name: 'DeepSeek 性价比池', description: 'DeepSeek 高性价比代码线路', platform: 'deepseek', rate_multiplier: 0.03,
     is_exclusive: false, status: 'active', subscription_type: 'standard', daily_limit_usd: null, weekly_limit_usd: null, monthly_limit_usd: null,
-    long_context_pricing_enabled: false, allow_image_generation: false, allow_batch_image_generation: false, image_rate_independent: false, image_rate_multiplier: 1,
+    long_context_pricing_enabled: false, allow_image_generation: false, allow_batch_image_generation: false, image_count_billing: false, image_rate_independent: false, image_rate_multiplier: 1,
     batch_image_discount_multiplier: 0.5, batch_image_hold_multiplier: 0.6, image_price_1k: null, image_price_2k: null, image_price_4k: null,
     video_rate_independent: false, video_rate_multiplier: 1, video_price_480p: null, video_price_720p: null, video_price_1080p: null,
     web_search_price_per_call: null, search_price_per_1k: null, audio_realtime_price_per_min: null, audio_tts_price_per_million_chars: null, audio_stt_price_per_hour: null,
@@ -5177,6 +5205,7 @@ const createForm = reactive({
   // 图片生成计费配置
   allow_image_generation: false,
   allow_batch_image_generation: false,
+  image_count_billing: false,
   image_rate_independent: false,
   image_rate_multiplier: 1,
   batch_image_discount_multiplier: 0.5,
@@ -5543,6 +5572,7 @@ const editForm = reactive({
   // 图片生成计费配置
   allow_image_generation: false,
   allow_batch_image_generation: false,
+  image_count_billing: false,
   image_rate_independent: false,
   image_rate_multiplier: 1,
   batch_image_discount_multiplier: 0.5,
@@ -5606,6 +5636,7 @@ type ImagePricingFormState = {
   platform: GroupPlatform;
   allow_image_generation: boolean;
   allow_batch_image_generation: boolean;
+  image_count_billing: boolean;
   rate_multiplier: number;
   image_rate_independent: boolean;
   image_rate_multiplier: number;
@@ -5752,7 +5783,12 @@ const editWebSearchFinalPricePreview = computed(() =>
 const resetDisabledBatchImagePricing = (
   form: Pick<
     ImagePricingFormState,
-    "platform" | "allow_image_generation" | "allow_batch_image_generation" | "batch_image_discount_multiplier" | "batch_image_hold_multiplier"
+    | "platform"
+    | "allow_image_generation"
+    | "allow_batch_image_generation"
+    | "image_count_billing"
+    | "batch_image_discount_multiplier"
+    | "batch_image_hold_multiplier"
   >,
 ) => {
   if (form.platform !== "gemini" || !form.allow_image_generation) {
@@ -5761,6 +5797,12 @@ const resetDisabledBatchImagePricing = (
   if (!form.allow_batch_image_generation) {
     form.batch_image_discount_multiplier = 0.5;
     form.batch_image_hold_multiplier = 0.6;
+  }
+  if (
+    !form.allow_image_generation ||
+    (form.platform !== "composite" && form.platform !== "openai")
+  ) {
+    form.image_count_billing = false;
   }
 };
 
@@ -6143,6 +6185,7 @@ const closeCreateModal = () => {
   createForm.monthly_limit_usd = null;
   createForm.allow_image_generation = false;
   createForm.allow_batch_image_generation = false;
+  createForm.image_count_billing = false;
   createForm.image_rate_independent = false;
   createForm.image_rate_multiplier = 1;
   createForm.batch_image_discount_multiplier = 0.5;
@@ -6438,6 +6481,7 @@ const handleEdit = async (group: AdminGroup) => {
   editForm.allow_image_generation = group.allow_image_generation ?? false;
   editForm.allow_batch_image_generation =
     group.allow_batch_image_generation ?? false;
+  editForm.image_count_billing = group.image_count_billing ?? false;
   editForm.image_rate_independent = group.image_rate_independent ?? false;
   editForm.image_rate_multiplier = group.image_rate_multiplier ?? 1;
   editForm.batch_image_discount_multiplier =
