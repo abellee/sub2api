@@ -132,6 +132,22 @@ func SecurityHeaders(cfg config.CSPConfig, getFrameSrcOrigins func() []string) g
 
 		c.Header("X-Content-Type-Options", "nosniff")
 		c.Header("X-Frame-Options", "DENY")
+		if c.Request.URL.Path == "/creative-docs/index.html" || c.Request.URL.Path == "/creative-docs/" {
+			c.Header("X-Frame-Options", "SAMEORIGIN")
+			directives := strings.Split(finalPolicy, ";")
+			found := false
+			for i, directive := range directives {
+				fields := strings.Fields(directive)
+				if len(fields) > 0 && fields[0] == "frame-ancestors" {
+					directives[i] = " frame-ancestors 'self'"
+					found = true
+				}
+			}
+			if !found {
+				directives = append(directives, " frame-ancestors 'self'")
+			}
+			finalPolicy = strings.Join(directives, ";")
+		}
 		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
 		if isAPIRoutePath(c) {
 			c.Next()

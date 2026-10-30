@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -21,6 +22,33 @@ import (
 
 func init() {
 	gin.SetMode(gin.TestMode)
+}
+
+func TestCreativeDocsEmbeddedIndex(t *testing.T) {
+	want, err := frontendFS.ReadFile("dist/creative-docs/index.html")
+	require.NoError(t, err)
+	server, err := NewFrontendServer(&mockSettingsProvider{settings: map[string]string{}})
+	require.NoError(t, err)
+	for name, handler := range map[string]gin.HandlerFunc{"configured": server.Middleware(), "legacy": ServeEmbeddedFrontend()} {
+		t.Run(name, func(t *testing.T) {
+			router := gin.New()
+			router.Use(middleware.SecurityHeaders(config.CSPConfig{Enabled: true}, nil), handler)
+			for _, path := range []string{"/creative-docs/index.html", "/creative-docs/"} {
+				w := httptest.NewRecorder()
+				router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+				require.Equal(t, http.StatusOK, w.Code)
+				assert.Empty(t, w.Header().Get("Location"))
+				assert.Equal(t, string(want), w.Body.String())
+				assert.Equal(t, "SAMEORIGIN", w.Header().Get("X-Frame-Options"))
+				assert.Contains(t, w.Header().Get("Content-Security-Policy"), "frame-ancestors 'self'")
+				assert.NotContains(t, w.Header().Get("Content-Security-Policy"), "frame-ancestors 'none'")
+			}
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/login", nil))
+			assert.Equal(t, "DENY", w.Header().Get("X-Frame-Options"))
+			assert.Contains(t, w.Header().Get("Content-Security-Policy"), "frame-ancestors 'none'")
+		})
+	}
 }
 
 func TestInjectSiteTitle(t *testing.T) {

@@ -110,6 +110,9 @@ func (s *FrontendServer) Middleware() gin.HandlerFunc {
 		if cleanPath == "" {
 			cleanPath = "index.html"
 		}
+		if strings.HasSuffix(cleanPath, "/") {
+			cleanPath += "index.html"
+		}
 
 		// For index.html or SPA routes, serve with injected settings
 		if cleanPath == "index.html" || !s.fileExists(cleanPath) {
@@ -119,6 +122,9 @@ func (s *FrontendServer) Middleware() gin.HandlerFunc {
 
 		// Try local override first
 		if s.tryServeOverride(c, cleanPath) {
+			return
+		}
+		if serveNestedIndexHTML(c, s.distFS, cleanPath) {
 			return
 		}
 
@@ -146,6 +152,21 @@ func (s *FrontendServer) fileExists(path string) bool {
 		return false
 	}
 	_ = file.Close()
+	return true
+}
+
+// FileServer redirects nested index.html to a directory URL that embedded FS cannot open.
+func serveNestedIndexHTML(c *gin.Context, files fs.FS, path string) bool {
+	if !strings.HasSuffix(path, "/index.html") {
+		return false
+	}
+	body, err := fs.ReadFile(files, path)
+	if err != nil {
+		return false
+	}
+	c.Header("Cache-Control", "no-cache")
+	c.Data(http.StatusOK, "text/html; charset=utf-8", body)
+	c.Abort()
 	return true
 }
 
@@ -347,11 +368,17 @@ func ServeEmbeddedFrontend() gin.HandlerFunc {
 		if cleanPath == "" {
 			cleanPath = "index.html"
 		}
+		if strings.HasSuffix(cleanPath, "/") {
+			cleanPath += "index.html"
+		}
 
 		if file, err := distFS.Open(cleanPath); err == nil {
 			_ = file.Close()
 			// Try local override first
 			if tryServeOverrideFile(c, overrideDir, cleanPath) {
+				return
+			}
+			if serveNestedIndexHTML(c, distFS, cleanPath) {
 				return
 			}
 			applyStaticAssetCacheHeaders(c.Writer.Header(), cleanPath)

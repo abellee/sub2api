@@ -170,6 +170,10 @@ jobs:
           TARGET_OS: ${{ matrix.goos }}
           TARGET_ARCH: ${{ matrix.goarch }}
         run: python "$RUNNER_TEMP/release-tools/release_matrix.py" config build --goos "$TARGET_OS" --goarch "$TARGET_ARCH" --output "$RUNNER_TEMP/goreleaser.matrix.yaml"
+      - name: Verify embedded frontend and security headers
+        if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
+        working-directory: backend
+        run: go test -tags=embed ./internal/web ./internal/server/middleware
       - name: Build and archive without publishing
         uses: goreleaser/goreleaser-action@v7
         with:
