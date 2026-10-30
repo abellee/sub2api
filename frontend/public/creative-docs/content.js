@@ -1120,4 +1120,3 @@ export const pages = [
     ]
   }
 ];
-
