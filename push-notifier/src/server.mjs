@@ -155,13 +155,26 @@ function normalizeChannels(value) {
   return { channels }
 }
 
-function validateSchedule(payload) {
-  const broadcast = validateBroadcast(payload)
+function validateSchedule(payload, requireTargets = false) {
+  const broadcast = validateAdminNotification(payload, requireTargets)
   if (broadcast.error) return broadcast
   const scheduledAt = new Date(String(payload.scheduledAt || ''))
   if (Number.isNaN(scheduledAt.getTime())) return { error: 'scheduledAt must be a valid date' }
   if (scheduledAt.getTime() <= Date.now()) return { error: 'scheduledAt must be in the future' }
   return { ...broadcast, scheduledAt: scheduledAt.toISOString() }
+}
+
+function validateAdminNotification(payload, requireTargets = false) {
+  const notification = validateBroadcast(payload)
+  if (notification.error) return notification
+  if (requireTargets || Object.hasOwn(payload, 'userIDs')) {
+    if (!Array.isArray(payload.userIDs) || !payload.userIDs.length
+      || payload.userIDs.some((id) => !Number.isSafeInteger(id) || id <= 0)) {
+      return { error: 'userIDs must be a non-empty array of positive integers' }
+    }
+    notification.userIDs = [...new Set(payload.userIDs)]
+  }
+  return notification
 }
 
 async function defaultSender(subscription, payload, options) {
@@ -237,12 +250,13 @@ async function deliverToSubscriptions({ store, subscriptions, validation, vapidS
 
 export async function deliverBroadcast({ store, validation, vapidSubject, sender = defaultSender }) {
   const channels = validation.channels?.length ? validation.channels : ['browser']
+  const wanted = validation.userIDs == null ? null : new Set(validation.userIDs)
   const messageID = crypto.randomUUID()
   let sent = { delivered: 0, failed: 0, removed: 0 }
   if (channels.includes('browser')) {
     sent = await deliverToSubscriptions({
       store,
-      subscriptions: store.listDeliverableSubscriptions(),
+      subscriptions: store.listDeliverableSubscriptions().filter((subscription) => !wanted || wanted.has(Number(subscription.user?.id))),
       validation: validation.channelsSpecified
         ? { ...validation, channels: ['browser'], channelsSpecified: true }
         : validation,
@@ -259,6 +273,7 @@ export async function deliverBroadcast({ store, validation, vapidSubject, sender
       body: validation.body,
       url: validation.url,
       image: validation.image || '',
+      userIDs: validation.userIDs,
     })
   }
   return store.addMessage({
@@ -268,6 +283,7 @@ export async function deliverBroadcast({ store, validation, vapidSubject, sender
     url: validation.url,
     image: validation.image || '',
     channels,
+    userIDs: validation.userIDs,
     delivered: sent.delivered,
     failed: sent.failed,
     removed: sent.removed,
@@ -356,7 +372,7 @@ export function createServer({
         if (!user) return sendJSON(response, 401, { message: 'sign in required' })
         const now = new Date().toISOString()
         const since = requestURL.searchParams.get('since') || ''
-        return sendJSON(response, 200, { notices: store.listPageNotices(since, now), now })
+        return sendJSON(response, 200, { notices: store.listPageNotices(since, now, user.id), now })
       }
       if (request.method === 'GET' && requestURL.pathname === `${API_PREFIX}/subscriptions/status`) {
         return sendJSON(response, 200, store.getSubscriptionStatus(requestURL.searchParams.get('clientId')))
@@ -448,14 +464,14 @@ export function createServer({
           const saved = await savePushImage(store, request.headers['content-type'], await readRaw(request, MAX_IMAGE_BYTES))
           return sendJSON(response, 201, saved)
         }
-        if (request.method === 'POST' && requestURL.pathname === `${API_PREFIX}/admin/broadcast`) {
-          const validation = validateBroadcast(await readJSON(request))
+        if (request.method === 'POST' && [ `${API_PREFIX}/admin/broadcast`, `${API_PREFIX}/admin/targeted` ].includes(requestURL.pathname)) {
+          const validation = validateAdminNotification(await readJSON(request), requestURL.pathname.endsWith('/targeted'))
           if (validation.error) return sendJSON(response, 400, { message: validation.error })
           const message = await deliverBroadcast({ store, validation, vapidSubject, sender })
           return sendJSON(response, 201, { message })
         }
-        if (request.method === 'POST' && requestURL.pathname === `${API_PREFIX}/admin/schedules`) {
-          const validation = validateSchedule(await readJSON(request))
+        if (request.method === 'POST' && [ `${API_PREFIX}/admin/schedules`, `${API_PREFIX}/admin/targeted/schedules` ].includes(requestURL.pathname)) {
+          const validation = validateSchedule(await readJSON(request), requestURL.pathname.endsWith('/targeted/schedules'))
           if (validation.error) return sendJSON(response, 400, { message: validation.error })
           const schedule = await store.addSchedule(validation)
           return sendJSON(response, 201, { schedule })

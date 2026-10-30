@@ -4,14 +4,15 @@
       <Icon name="bell" size="sm" class="flex-shrink-0" />
       <span class="min-w-0">
         <span class="block truncate">{{ t('pushNotifications.subscription.title') }}</span>
-        <span class="block truncate text-xs text-gray-500 dark:text-dark-400">{{ statusLabel }}</span>
+        <span class="block truncate text-xs text-gray-500 dark:text-dark-400" role="status">{{ statusLabel }}</span>
       </span>
     </span>
     <Toggle
-      v-if="ready && canToggle"
+      v-if="!ready || canToggle"
       class="flex-shrink-0"
-      :class="loading ? 'pointer-events-none opacity-60' : ''"
       :model-value="state === 'enabled'"
+      :loading="loading"
+      :aria-label="t('pushNotifications.subscription.title')"
       @click.stop
       @update:model-value="onToggle"
     />
@@ -36,8 +37,12 @@ const appStore = useAppStore()
 const loading = ref(true)
 const ready = ref(false)
 const state = ref<PushPermissionState>('disabled')
+const pendingEnabled = ref(false)
 
-const statusLabel = computed(() => t(`pushNotifications.subscription.status.${state.value}`))
+const statusLabel = computed(() => {
+  const status = loading.value ? (!ready.value ? 'checking' : pendingEnabled.value ? 'enabling' : 'disabling') : state.value
+  return t(`pushNotifications.subscription.status.${status}`)
+})
 const canToggle = computed(() => state.value === 'enabled' || state.value === 'disabled')
 
 async function refreshState() {
@@ -54,6 +59,7 @@ async function refreshState() {
 
 async function onToggle(enabled: boolean) {
   if (loading.value || !canToggle.value) return
+  pendingEnabled.value = enabled
   loading.value = true
   try {
     state.value = enabled ? await enablePushNotifications() : await disablePushNotifications()

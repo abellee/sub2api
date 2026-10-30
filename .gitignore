@@ -154,6 +154,8 @@ docs/screenshots/*
 .serena/
 .codex/
 frontend/coverage/
+frontend/public/creative-docs/components/
+frontend/public/creative-docs/assets/fonts/
 aicodex
 output/
 .codegraph/

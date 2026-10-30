@@ -45,6 +45,7 @@ export interface PushSubscriptionSummary {
 export type PushChannel = 'browser' | 'page'
 
 export interface PushSchedule {
+  userIDs?: number[]
   id: string
   title: string
   body: string
@@ -59,6 +60,7 @@ export interface PushSchedule {
 }
 
 export interface PushMessage {
+  userIDs?: number[]
   id: string
   title: string
   body: string
@@ -81,6 +83,7 @@ export interface PageNotice {
 }
 
 export interface BroadcastPushRequest {
+  userIDs?: number[]
   title: string
   body: string
   url: string
@@ -100,7 +103,7 @@ async function request<T>(path: string, options: RequestInit = {}, admin = false
   const response = await fetch(`${PUSH_API_BASE}${path}`, { ...options, headers })
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) {
-    throw new Error(payload.message || `Push service request failed (${response.status})`)
+    throw Object.assign(new Error(payload.message || `Push service request failed (${response.status})`), { status: response.status })
   }
   return payload as T
 }
@@ -140,15 +143,10 @@ export function listPageNotifications(since = ''): Promise<{ notices: PageNotice
   return request(`/page-notifications${query}`, {}, false, true)
 }
 
-export function createPushSchedule(input: {
-  title: string
-  body: string
-  url: string
-  image?: string
-  channels?: PushChannel[]
+export function createPushSchedule(input: BroadcastPushRequest & {
   scheduledAt: string
 }): Promise<PushSchedule> {
-  return request<{ schedule: PushSchedule }>('/admin/schedules', {
+  return request<{ schedule: PushSchedule }>(input.userIDs === undefined ? '/admin/schedules' : '/admin/targeted/schedules', {
     method: 'POST',
     body: JSON.stringify(input),
   }, true).then((response) => response.schedule)
@@ -190,7 +188,7 @@ export async function uploadPushImage(file: Blob): Promise<string> {
 
 export async function broadcastPush(input: BroadcastPushRequest): Promise<PushMessage> {
   const response = await request<{ message: PushMessage }>(
-    '/admin/broadcast',
+    input.userIDs === undefined ? '/admin/broadcast' : '/admin/targeted',
     { method: 'POST', body: JSON.stringify(input) },
     true,
   )

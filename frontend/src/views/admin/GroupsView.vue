@@ -554,6 +554,7 @@
             @change="createForm.copy_accounts_from_group_ids = []"
           />
           <p class="input-hint">{{ t("admin.groups.platformHint") }}</p>
+          <GroupDocumentationField id="create-group-documentation" v-model="createDocumentId" class="mt-4" />
         </div>
         <!-- 从分组复制账号 -->
         <div v-if="!authStore.isSimpleMode && copyAccountsGroupOptions.length > 0">
@@ -2212,6 +2213,7 @@
             data-tour="group-form-platform"
           />
           <p class="input-hint">{{ t("admin.groups.platformNotEditable") }}</p>
+          <GroupDocumentationField id="edit-group-documentation" v-model="editDocumentId" :disabled="!documentationLoaded" class="mt-4" />
         </div>
         <template v-if="!authStore.isSimpleMode">
         <!-- 从分组复制账号（编辑时） -->
@@ -4463,6 +4465,7 @@ import BaseDialog from "@/components/common/BaseDialog.vue";
 import ConfirmDialog from "@/components/common/ConfirmDialog.vue";
 import EmptyState from "@/components/common/EmptyState.vue";
 import Select from "@/components/common/Select.vue";
+import GroupDocumentationField from "@/components/group/GroupDocumentationField.vue";
 import PlatformIcon from "@/components/common/PlatformIcon.vue";
 import { platformLabel } from "@/utils/platformColors";
 import Icon from "@/components/icons/Icon.vue";
@@ -5939,6 +5942,22 @@ const loadRecommendations = async () => {
 
 // 分组上限倍率:与分组分类同库存储(group_categories.json 的 group_caps)。
 const groupCaps = ref<Map<number, number>>(new Map());
+const documentationAssignments = ref<Record<string, string>>({});
+const documentationLoaded = ref(false);
+const createDocumentId = ref("");
+const editDocumentId = ref("");
+
+const saveDocumentation = async (groupID: number, documentID: string) => {
+  if (documentID === (documentationAssignments.value[String(groupID)] ?? "")) return true;
+  try {
+    await adminAPI.groupCategories.setDocumentation(groupID, documentID);
+    documentationAssignments.value[String(groupID)] = documentID;
+    return true;
+  } catch {
+    appStore.showError(t("creativeDocs.bindingFailed"));
+    return false;
+  }
+};
 const capGroup = ref<AdminGroup | null>(null);
 const showCapModal = ref(false);
 const capSaving = ref(false);
@@ -5950,6 +5969,11 @@ const formatCapRate = (value: number): string => String(Math.round(value * 1000)
 const loadGroupCaps = async () => {
   try {
     const snapshot = await adminAPI.groupCategories.list();
+    documentationAssignments.value = snapshot.documentation ?? {};
+    if (!documentationLoaded.value && editingGroup.value) {
+      editDocumentId.value = documentationAssignments.value[String(editingGroup.value.id)] ?? "";
+    }
+    documentationLoaded.value = true;
     groupCaps.value = new Map(
       Object.entries(snapshot.group_caps ?? {}).map(([id, rate]) => [Number(id), rate]),
     );
@@ -6175,6 +6199,7 @@ const closeCreateModal = () => {
   clearAllAccountSearchState();
   createForm.name = "";
   createForm.description = "";
+  createDocumentId.value = "";
   createForm.i18n = {};
   createForm.platform = "anthropic";
   createForm.rate_multiplier = 1.0;
@@ -6436,8 +6461,9 @@ const handleCreateGroup = async () => {
           platform: createForm.platform,
         }
       : requestData;
-    await adminAPI.groups.create(payload);
-    appStore.showSuccess(t("admin.groups.groupCreated"));
+    const created = await adminAPI.groups.create(payload);
+    const documentationSaved = !createDocumentId.value || await saveDocumentation(created.id, createDocumentId.value);
+    if (documentationSaved) appStore.showSuccess(t("admin.groups.groupCreated"));
     closeCreateModal();
     loadGroups();
     // Only advance tour if active, on submit step, and creation succeeded
@@ -6459,6 +6485,7 @@ const handleEdit = async (group: AdminGroup) => {
   editingGroup.value = group;
   editForm.name = group.name;
   editForm.description = group.description || "";
+  editDocumentId.value = documentationAssignments.value[String(group.id)] ?? "";
   editForm.i18n = Object.fromEntries(
     Object.entries(group.i18n ?? {}).map(([locale, text]) => [
       locale,
@@ -6795,7 +6822,8 @@ const handleUpdateGroup = async () => {
         }
       : payload;
     await adminAPI.groups.update(editingGroup.value.id, requestData);
-    appStore.showSuccess(t("admin.groups.groupUpdated"));
+    const documentationSaved = await saveDocumentation(editingGroup.value.id, editDocumentId.value);
+    if (documentationSaved) appStore.showSuccess(t("admin.groups.groupUpdated"));
     closeEditModal();
     loadGroups();
   } catch (error: any) {

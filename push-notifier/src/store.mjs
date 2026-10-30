@@ -300,7 +300,7 @@ export class PushStore {
     })
   }
 
-  listPageNotices(since, until) {
+  listPageNotices(since, until, userID) {
     const start = Date.parse(since)
     const end = Date.parse(until)
     if (!Array.isArray(this.state.pageNotices) || Number.isNaN(start)) return []
@@ -308,9 +308,10 @@ export class PushStore {
       .filter((item) => {
         const time = Date.parse(item.createdAt)
         return time > start && (Number.isNaN(end) || time <= end)
+          && (item.userIDs == null || item.userIDs.includes(Number(userID)))
       })
       .sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt))
-      .map((item) => ({ ...item }))
+      .map(({ userIDs, ...item }) => ({ ...item }))
   }
 
   async publishPageNotice(notice) {
@@ -318,6 +319,7 @@ export class PushStore {
       if (!Array.isArray(this.state.pageNotices)) this.state.pageNotices = []
       const record = {
         id: notice.id,
+        ...(notice.userIDs == null ? {} : { userIDs: [...notice.userIDs] }),
         title: notice.title,
         body: notice.body,
         url: notice.url || '/',
@@ -334,6 +336,7 @@ export class PushStore {
     return this.mutate(() => {
       const record = {
         id: message.id || crypto.randomUUID(),
+        ...(message.userIDs == null ? {} : { userIDs: [...message.userIDs] }),
         title: message.title,
         body: message.body,
         url: message.url,
@@ -371,6 +374,7 @@ export class PushStore {
       const record = {
         id: crypto.randomUUID(),
         title: schedule.title,
+        ...(schedule.userIDs == null ? {} : { userIDs: [...schedule.userIDs] }),
         body: schedule.body,
         url: schedule.url,
         image: schedule.image || '',

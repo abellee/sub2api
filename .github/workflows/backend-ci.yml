@@ -96,6 +96,7 @@ jobs:
           pnpm --dir frontend run lint:check
           pnpm --dir frontend run build
           pnpm --dir frontend run test:run
+          node --test frontend/creative-docs/reference-content.test.mjs
 
   golangci-lint:
     runs-on: ubuntu-latest

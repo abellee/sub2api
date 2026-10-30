@@ -843,6 +843,7 @@ function buildSelfNavItems(withDashboard: boolean): NavItem[] {
     { path: '/affiliate', label: t('nav.affiliate'), icon: UsersIcon, hideInSimpleMode: true, featureFlag: flagAffiliate },
     { path: '/profile', label: t('nav.profile'), icon: UserIcon },
     { path: '/model-plaza', label: t('nav.modelPlaza'), icon: ChannelIcon },
+    { path: '/docs/creative', label: t('nav.creativeDocs'), icon: CreativeDocsIcon },
     { path: '/redeem', label: t('nav.redeem'), icon: GiftIcon, hideInSimpleMode: true },
     ...customMenuItemsForUser.value.map((item): NavItem => ({
       path: `/custom/${item.id}`,
@@ -867,10 +868,12 @@ const userNavItems = computed((): NavItem[] => finalizeNav(buildSelfNavItems(tru
 // Admins access 可用渠道 from this section just like regular users — there is no
 // separate admin entry, since the page is purely a user-facing view.
 const personalNavItems = computed((): NavItem[] => finalizeNav(buildSelfNavItems(false)))
-const userNavSections = computed(() => groupUserMenu(userNavItems.value, userMenuStore.config.sections, t('nav.myAccount')))
-const personalNavSections = computed(() => groupUserMenu(personalNavItems.value, userMenuStore.config.sections, t('nav.myAccount')))
+const userNavSections = computed(() => groupUserMenu(userNavItems.value, userMenuStore.config.sections, t('nav.myAccount'), userMenuStore.config.hidden_items))
+const personalNavSections = computed(() => groupUserMenu(personalNavItems.value, userMenuStore.config.sections, t('nav.myAccount'), userMenuStore.config.hidden_items))
 
 // Custom menu items filtered by visibility
+const CreativeDocsIcon = { render: () => h(Icon, { name: 'book', size: 'md' }) }
+
 const customMenuItemsForUser = computed(() => {
   const items = appStore.cachedPublicSettings?.custom_menu_items ?? []
   return items

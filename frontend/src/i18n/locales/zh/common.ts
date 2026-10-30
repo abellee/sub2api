@@ -190,6 +190,7 @@ export default {
     channels: '渠道管理',
     availableChannels: '可用渠道',
     modelPlaza: '模型广场',
+    creativeDocs: '生图 / 生视频',
     appCenter: '应用中心',
     downgradeRadar: '降智雷达',
     subscriptions: '订阅管理',

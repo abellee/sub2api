@@ -14,6 +14,7 @@ export const USER_MENU_ITEMS = [
   { path: '/affiliate', labelKey: 'nav.affiliate' },
   { path: '/profile', labelKey: 'nav.profile' },
   { path: '/model-plaza', labelKey: 'nav.modelPlaza' },
+  { path: '/docs/creative', labelKey: 'nav.creativeDocs' },
   { path: '/redeem', labelKey: 'nav.redeem' },
 ] as const
 
@@ -25,8 +26,10 @@ export interface UserNavSection<T> {
 
 /** Group only entries already allowed by the sidebar's feature and permission filters. */
 export function groupUserMenu<T extends { path: string }>(
-  items: T[], sections: UserMenuSection[], defaultTitle: string,
+  items: T[], sections: UserMenuSection[], defaultTitle: string, hiddenItems: string[] = [],
 ): UserNavSection<T>[] {
+  const hidden = new Set(hiddenItems)
+  items = items.filter(item => !hidden.has(item.path))
   const available = new Map(items.map(item => [item.path, item]))
   const used = new Set<string>()
   const grouped: UserNavSection<T>[] = []

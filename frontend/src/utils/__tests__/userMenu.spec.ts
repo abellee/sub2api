@@ -11,6 +11,15 @@ const items = [
 ]
 
 describe('groupUserMenu', () => {
+  it('hides assigned and default entries without changing their saved placement', () => {
+    const sections = [{ id: 'services', title: 'Services', items: ['/keys'] }]
+    const hidden = ['/keys', '/custom/docs', '/dashboard']
+    const result = groupUserMenu(items, sections, 'My Account', hidden)
+    expect(result.map(section => section.id)).toEqual(['__unassigned__'])
+    expect(result[0].items.map(item => item.path)).toEqual(['/usage', '/profile'])
+    expect(groupUserMenu(items, sections, 'My Account')[0].items).toEqual([items[1]])
+    expect(groupUserMenu(items, sections, 'My Account', items.map(item => item.path))).toEqual([])
+  })
   it('preserves the original menu order in the default section without configuration', () => {
     expect(groupUserMenu(items, [], 'My Account')).toEqual([
       { id: '__unassigned__', title: 'My Account', items },

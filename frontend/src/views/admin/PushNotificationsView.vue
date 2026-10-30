@@ -28,7 +28,37 @@
             <Icon name="bell" size="lg" class="text-primary-500" />
           </div>
 
-          <div class="mt-5 space-y-4">
+          <fieldset class="mt-5 min-w-0 space-y-4" :disabled="sending">
+            <fieldset>
+              <legend class="input-label">{{ t('admin.pushNotifications.audience.title') }}</legend>
+              <div class="mt-2 flex flex-wrap gap-4">
+                <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-dark-200">
+                  <input v-model="audience" type="radio" value="all" name="push-audience" class="text-primary-600 focus:ring-primary-500" />
+                  {{ t('admin.pushNotifications.audience.all') }}
+                </label>
+                <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-dark-200">
+                  <input v-model="audience" type="radio" value="selected" name="push-audience" class="text-primary-600 focus:ring-primary-500" />
+                  {{ t('admin.pushNotifications.audience.selected') }}
+                </label>
+              </div>
+              <div v-if="audience === 'selected'" class="mt-3 space-y-2">
+                <label class="sr-only" for="push-recipient-search">{{ t('admin.pushNotifications.audience.search') }}</label>
+                <input id="push-recipient-search" v-model.trim="recipientSearch" type="search" class="input" :placeholder="t('admin.pushNotifications.audience.search')" />
+                <div class="max-h-52 overflow-y-auto rounded-lg border border-gray-200 dark:border-dark-700">
+                  <p v-if="loadingSubscribers" class="px-3 py-4 text-sm text-gray-500" role="status">{{ t('common.loading') }}</p>
+                  <p v-else-if="!filteredRecipients.length" class="px-3 py-4 text-sm text-gray-500">{{ t('admin.pushNotifications.audience.empty') }}</p>
+                  <label v-for="recipient in filteredRecipients" :key="recipient.id" class="flex cursor-pointer items-center gap-3 border-b border-gray-100 px-3 py-2 last:border-b-0 dark:border-dark-700">
+                    <input v-model="selectedUserIDs" type="checkbox" :value="recipient.id" class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
+                    <span class="min-w-0 text-sm">
+                      <span class="block truncate text-gray-900 dark:text-white">{{ recipient.username || recipient.email }} <span class="text-gray-400">#{{ recipient.id }}</span></span>
+                      <span class="block truncate text-xs text-gray-500">{{ recipient.email }} · {{ t('admin.pushNotifications.audience.devices', { count: recipient.devices }) }}</span>
+                    </span>
+                  </label>
+                </div>
+                <p class="input-hint" role="status">{{ t('admin.pushNotifications.audience.count', { count: selectedUserIDs.length }) }}</p>
+                <p class="input-hint">{{ t('admin.pushNotifications.audience.hint') }}</p>
+              </div>
+            </fieldset>
             <div>
               <label class="input-label" for="push-title">{{ t('admin.pushNotifications.form.title') }}</label>
               <input id="push-title" v-model.trim="form.title" class="input" maxlength="100" required />
@@ -103,10 +133,10 @@
               />
               <p class="input-hint">{{ t('admin.pushNotifications.form.scheduledAtHint') }}</p>
             </div>
-          </div>
+          </fieldset>
 
           <div class="mt-5 flex justify-end">
-            <button type="submit" class="btn btn-primary" :disabled="sending || !form.title || !form.body || !form.channels.length || !!imageInputError">
+            <button type="submit" class="btn btn-primary" :disabled="sending || !form.title || !form.body || !form.channels.length || !!imageInputError || !validAudience">
               <Icon name="bell" size="sm" class="mr-1.5" />
               {{ sending ? t('admin.pushNotifications.sending') : form.scheduledAt ? t('admin.pushNotifications.schedule') : t('admin.pushNotifications.send') }}
             </button>
@@ -204,6 +234,7 @@
               <div class="min-w-0">
                 <p class="truncate text-sm font-medium text-gray-900 dark:text-white">{{ schedule.title }}</p>
                 <p class="mt-1 truncate text-xs text-gray-500 dark:text-dark-300">{{ formatDateTime(schedule.scheduledAt) }} · {{ scheduleStatusLabel(schedule.status) }} · {{ channelLabel(schedule.channels) }}</p>
+                <p class="mt-1 truncate text-xs text-gray-500 dark:text-dark-300">{{ audienceLabel(schedule.userIDs) }}</p>
               </div>
               <button
                 type="button"
@@ -265,6 +296,7 @@
                   <p class="truncate text-sm font-medium text-gray-900 dark:text-white">{{ message.title }}</p>
                   <p class="mt-1 truncate text-xs text-gray-500 dark:text-dark-300">{{ message.body }}</p>
                   <p class="mt-1 text-xs text-gray-400 dark:text-dark-400">{{ channelLabel(message.channels) }}</p>
+                  <p class="mt-1 text-xs text-gray-400 dark:text-dark-400">{{ audienceLabel(message.userIDs) }}</p>
                 </td>
                 <td class="whitespace-nowrap px-5 py-4 text-sm tabular-nums text-gray-600 dark:text-dark-200">
                   <span class="text-emerald-600 dark:text-emerald-400">{{ message.delivered }}</span>
@@ -296,7 +328,7 @@
 
     <ConfirmDialog
       :show="showConfirm"
-      :title="form.scheduledAt ? t('admin.pushNotifications.scheduleConfirmTitle') : t('admin.pushNotifications.confirmTitle')"
+      :title="form.scheduledAt ? t('admin.pushNotifications.scheduleConfirmTitle') : audience === 'selected' ? t('admin.pushNotifications.audience.confirmTitle') : t('admin.pushNotifications.confirmTitle')"
       :message="confirmMessage"
       :confirm-text="form.scheduledAt ? t('admin.pushNotifications.schedule') : t('admin.pushNotifications.send')"
       @confirm="sendNotification"
@@ -372,6 +404,24 @@ const PUSH_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image
 const overview = reactive<PushOverview>({ activeSubscriptions: 0, messageCount: 0, lastSentAt: null })
 const messages = ref<PushMessage[]>([])
 const subscribers = ref<PushSubscriptionSummary[]>([])
+const audience = ref<'all' | 'selected'>('all')
+const selectedUserIDs = ref<number[]>([])
+const recipientSearch = ref('')
+const validAudience = computed(() => audience.value === 'all' || selectedUserIDs.value.length > 0)
+const recipients = computed(() => {
+  const users = new Map<number, { id: number; username: string; email: string; devices: number }>()
+  for (const subscription of subscribers.value) {
+    if (!subscription.user) continue
+    const user = users.get(subscription.user.id) || { ...subscription.user, devices: 0 }
+    if (subscription.enabled !== false) user.devices += 1
+    users.set(user.id, user)
+  }
+  return [...users.values()]
+})
+const filteredRecipients = computed(() => {
+  const query = recipientSearch.value.toLowerCase()
+  return recipients.value.filter((user) => `${user.id} ${user.username} ${user.email}`.toLowerCase().includes(query))
+})
 const schedules = ref<PushSchedule[]>([])
 const form = reactive({
   title: '',
@@ -390,6 +440,14 @@ const minimumScheduleDateTime = computed(() => {
 
 const showImagePreview = computed(() => !!imagePreviewUrl.value && !imageInputError.value && !imagePreviewFailed.value)
 const confirmMessage = computed(() => {
+  if (audience.value === 'selected') {
+    const count = selectedUserIDs.value.length
+    const channels = channelLabel(form.channels)
+    if (form.scheduledAt) {
+      return t('admin.pushNotifications.audience.scheduleConfirm', { count, channels, time: formatDateTime(new Date(form.scheduledAt).toISOString()) })
+    }
+    return t('admin.pushNotifications.audience.confirm', { count, channels })
+  }
   if (form.scheduledAt) {
     return t('admin.pushNotifications.scheduleConfirmMessage', {
       time: formatDateTime(new Date(form.scheduledAt).toISOString()),
@@ -407,6 +465,10 @@ const confirmMessage = computed(() => {
 function channelLabel(channels?: PushChannel[]) {
   const selected = channels?.length ? channels : ['browser' as PushChannel]
   return selected.map((channel) => t(`admin.pushNotifications.form.${channel}`)).join(' · ')
+}
+
+function audienceLabel(userIDs?: number[]) {
+  return userIDs ? t('admin.pushNotifications.audience.record', { count: userIDs.length, ids: userIDs.join(', ') }) : t('admin.pushNotifications.audience.all')
 }
 
 watch(imagePreviewUrl, () => {
@@ -452,7 +514,7 @@ function onImageSelected(event: Event) {
 onBeforeUnmount(revokeImagePreview)
 
 function openConfirmation() {
-  if (imageInputError.value || !form.channels.length) return
+  if (sending.value || imageInputError.value || !form.channels.length || !validAudience.value) return
   showConfirm.value = true
 }
 
@@ -496,12 +558,15 @@ function scheduleStatusLabel(status: PushSchedule['status']) {
 }
 
 async function sendNotification() {
+  if (sending.value || !validAudience.value) return
   showConfirm.value = false
   sending.value = true
+  const target = audience.value === 'selected' ? { userIDs: [...selectedUserIDs.value] } : {}
   try {
     const image = imageFile.value ? await uploadPushImage(imageFile.value) : ''
     if (form.scheduledAt) {
       const schedule = await createPushSchedule({
+        ...target,
         title: form.title,
         body: form.body,
         url: form.url || '/',
@@ -515,6 +580,7 @@ async function sendNotification() {
     } else {
       const channels = [...form.channels]
       const message = await broadcastPush({
+        ...target,
         title: form.title,
         body: form.body,
         url: form.url || '/',
@@ -524,7 +590,7 @@ async function sendNotification() {
       messages.value.unshift(message)
       overview.messageCount += 1
       overview.lastSentAt = message.createdAt
-      if (channels.includes('page')) {
+      if (channels.includes('page') && !message.userIDs) {
         showPageNotification({
           key: message.id,
           title: message.title,
@@ -544,7 +610,9 @@ async function sendNotification() {
     form.channels = ['browser', 'page']
     clearSelectedImage()
   } catch (error: any) {
-    appStore.showError(error?.message || t('admin.pushNotifications.sendFailed'))
+    appStore.showError(error?.status === 404 && target.userIDs
+      ? t('admin.pushNotifications.audience.unavailable')
+      : error?.message || t('admin.pushNotifications.sendFailed'))
   } finally {
     sending.value = false
   }

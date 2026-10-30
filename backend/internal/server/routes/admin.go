@@ -440,6 +440,7 @@ func registerGroupCategoryRoutes(admin *gin.RouterGroup) {
 		cats.POST("", h.Create)
 		cats.PUT("/assignments/:group_id", h.Assign)
 		cats.PUT("/group-caps/:group_id", h.SetGroupCap)
+		cats.PUT("/documentation/:group_id", h.SetDocumentation)
 		cats.PUT("/sort-order", h.Reorder)
 		cats.PUT("/:id", h.Update)
 		cats.DELETE("/:id", h.Delete)

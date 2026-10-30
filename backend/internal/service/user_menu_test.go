@@ -28,7 +28,7 @@ func TestUserMenuPersistence(t *testing.T) {
 	require.Empty(t, empty.Sections)
 
 	input := UserMenuConfig{Sections: []UserMenuSection{
-		{ID: " models ", Title: " 模型与服务 ", Items: []string{" /model-plaza ", "/keys", "/custom/docs-1"}},
+		{ID: " models ", Title: " 模型与服务 ", Items: []string{" /model-plaza ", "/keys", "/custom/docs-1", "/docs/creative"}},
 		{ID: "account", Title: "账户", Items: []string{"/usage", "/profile"}},
 		{ID: "empty", Title: "暂未分配"},
 	}}
@@ -36,7 +36,7 @@ func TestUserMenuPersistence(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "models", saved.Sections[0].ID)
 	require.Equal(t, "模型与服务", saved.Sections[0].Title)
-	require.Equal(t, []string{"/model-plaza", "/keys", "/custom/docs-1"}, saved.Sections[0].Items)
+	require.Equal(t, []string{"/model-plaza", "/keys", "/custom/docs-1", "/docs/creative"}, saved.Sections[0].Items)
 	require.NotNil(t, saved.Sections[2].Items)
 	svc = NewGroupCategoryStore(path)
 	loaded, err := svc.GetUserMenu(ctx)
@@ -105,6 +105,36 @@ func TestUserMenuStorageErrors(t *testing.T) {
 	raw, err := os.ReadFile(path)
 	require.NoError(t, err)
 	require.Equal(t, "broken database", string(raw))
+}
+
+func TestUserMenuHiddenItems(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "group_categories.db")
+	store := NewGroupCategoryStore(path)
+	input := UserMenuConfig{
+		Sections:    []UserMenuSection{{ID: "api", Title: "API", Items: []string{"/keys", "/usage"}}},
+		HiddenItems: []string{" /keys ", "/custom/docs"},
+	}
+	saved, err := store.SaveUserMenu(ctx, input)
+	require.NoError(t, err)
+	require.Equal(t, []string{"/keys", "/custom/docs"}, saved.HiddenItems)
+	loaded, err := NewGroupCategoryStore(path).GetUserMenu(ctx)
+	require.NoError(t, err)
+	require.Equal(t, saved, loaded)
+	for _, hidden := range [][]string{{"/admin/users"}, {"https://example.com"}, {"/custom/../admin"}, {"/keys", " /keys "}, make([]string, 129)} {
+		_, err = store.SaveUserMenu(ctx, UserMenuConfig{HiddenItems: hidden})
+		require.True(t, infraerrors.IsBadRequest(err))
+		loaded, err = store.GetUserMenu(ctx)
+		require.NoError(t, err)
+		require.Equal(t, saved, loaded)
+	}
+	saved.HiddenItems = nil
+	_, err = store.SaveUserMenu(ctx, *saved)
+	require.NoError(t, err)
+	loaded, err = store.GetUserMenu(ctx)
+	require.NoError(t, err)
+	require.Empty(t, loaded.HiddenItems)
+	require.Equal(t, input.Sections, loaded.Sections)
 }
 
 func TestUserMenuSharesMigratedCategorySQLite(t *testing.T) {

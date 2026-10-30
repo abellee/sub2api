@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
-import { createServer } from '../src/server.mjs'
+import { createServer, deliverBroadcast } from '../src/server.mjs'
 import { PushStore } from '../src/store.mjs'
 
 async function withServer(run, sender = async () => ({ statusCode: 201, resume() {} }), resolveSubscriberUser = async () => null, notifyToken = '') {
@@ -27,6 +27,105 @@ async function withServer(run, sender = async () => ({ statusCode: 201, resume()
     await rm(directory, { recursive: true, force: true })
   }
 }
+
+test('admin targeted notifications isolate browser and page recipients and retain history', async () => {
+  const sent = []
+  await withServer(async (baseURL, store) => {
+    for (const [name, userID, enabled] of [['one', 7, true], ['two', 7, true], ['off', 7, false], ['other', 8, true], ['anonymous', null, true]]) {
+      await store.upsertSubscription({
+        endpoint: `https://push.example.test/${name}`,
+        keys: { p256dh: 'public-key', auth: 'auth-key' }, enabled,
+        user: userID ? { id: userID, username: `user${userID}` } : null,
+      })
+    }
+    const response = await fetch(`${baseURL}/push-api/v1/admin/targeted`, {
+      method: 'POST', headers: { Authorization: 'Bearer admin', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'Private', body: 'For Ada', channels: ['browser', 'page'], userIDs: [7, 7] }),
+    })
+    assert.equal(response.status, 201)
+    const { message } = await response.json()
+    assert.deepEqual(message.userIDs, [7])
+    assert.equal(message.delivered, 2)
+    assert.deepEqual(sent.map(item => item.endpoint).sort(), ['https://push.example.test/one', 'https://push.example.test/two'])
+    assert.deepEqual(sent[0].payload.channels, ['browser'])
+    assert.deepEqual(store.listMessages()[0].userIDs, [7])
+    const since = encodeURIComponent('2000-01-01T00:00:00Z')
+    for (const id of [7, 8]) {
+      const notices = await fetch(`${baseURL}/push-api/v1/page-notifications?since=${since}`, {
+        headers: { Authorization: `Bearer viewer-${id}` },
+      }).then(result => result.json())
+      assert.equal(notices.notices.length, id === 7 ? 1 : 0)
+      if (id === 7) assert.equal(Object.hasOwn(notices.notices[0], 'userIDs'), false)
+    }
+    const anonymous = await fetch(`${baseURL}/push-api/v1/page-notifications?since=${since}`)
+    assert.equal(anonymous.status, 401)
+  }, async (subscription, payload) => {
+    sent.push({ endpoint: subscription.endpoint, payload: JSON.parse(payload) })
+    return { statusCode: 201 }
+  }, async request => {
+    const match = /^Bearer viewer-(\d+)$/.exec(request.headers.authorization || '')
+    return match ? { id: Number(match[1]), username: 'viewer' } : null
+  })
+})
+
+test('admin rejects empty or malformed targets without falling back to everyone', async () => {
+  await withServer(async (baseURL, store) => {
+    for (const route of ['broadcast', 'schedules', 'targeted', 'targeted/schedules']) {
+      for (const userIDs of [[], null, '7', [0], [-1], [1.5], [true], ['7'], [7, null]]) {
+        const response = await fetch(`${baseURL}/push-api/v1/admin/${route}`, {
+          method: 'POST', headers: { Authorization: 'Bearer admin', 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: 'Test', body: 'Message', userIDs, scheduledAt: '2099-01-01T00:00:00Z' }),
+        })
+        assert.equal(response.status, 400)
+      }
+    }
+    for (const route of ['targeted', 'targeted/schedules']) {
+      const response = await fetch(`${baseURL}/push-api/v1/admin/${route}`, {
+        method: 'POST', headers: { Authorization: 'Bearer admin', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: 'Test', body: 'Message', scheduledAt: '2099-01-01T00:00:00Z' }),
+      })
+      assert.equal(response.status, 400)
+    }
+    const forbidden = await fetch(`${baseURL}/push-api/v1/admin/broadcast`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'Test', body: 'Message', userIDs: [7] }),
+    })
+    assert.equal(forbidden.status, 403)
+    assert.equal(store.listMessages().length, 0)
+    assert.equal(store.listSchedules().length, 0)
+  })
+})
+
+test('scheduled targeting survives reload and is applied when the job runs', async () => {
+  const delivered = []
+  await withServer(async (baseURL, store) => {
+    for (const id of [7, 8]) {
+      await store.upsertSubscription({
+        endpoint: `https://push.example.test/${id}`,
+        keys: { p256dh: 'public-key', auth: 'auth-key' }, user: { id, username: `user${id}` },
+      })
+    }
+    const response = await fetch(`${baseURL}/push-api/v1/admin/targeted/schedules`, {
+      method: 'POST', headers: { Authorization: 'Bearer admin', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'Later', body: 'Private', userIDs: [8], channels: ['browser', 'page'], scheduledAt: '2099-01-01T00:00:00Z' }),
+    })
+    assert.equal(response.status, 201)
+    assert.deepEqual((await response.json()).schedule.userIDs, [8])
+    const reloaded = await new PushStore(store.filePath).init()
+    assert.deepEqual(reloaded.listSchedules()[0].userIDs, [8])
+    const [schedule] = await reloaded.claimDueSchedules(new Date('2099-01-02T00:00:00Z'))
+    await deliverBroadcast({
+      store: reloaded, validation: schedule, vapidSubject: 'mailto:test@example.com',
+      sender: async subscription => { delivered.push(subscription.endpoint); return { statusCode: 201 } },
+    })
+    await reloaded.completeSchedule(schedule.id)
+    assert.deepEqual(delivered, ['https://push.example.test/8'])
+    assert.deepEqual(reloaded.listMessages()[0].userIDs, [8])
+    assert.equal(reloaded.listPageNotices('2000-01-01', '2100-01-01', 7).length, 0)
+    assert.equal(reloaded.listPageNotices('2000-01-01', '2100-01-01', 8).length, 1)
+    assert.equal(reloaded.listSchedules().length, 0)
+  })
+})
 
 test('a partial profile cannot replace a stored email', async () => {
   await withServer(async (baseURL) => {

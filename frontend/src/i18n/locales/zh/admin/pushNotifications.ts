@@ -9,7 +9,22 @@ export default {
     },
     compose: {
       title: '编辑通知',
-      description: '内容将广播给所有已开启通知的浏览器设备。',
+      description: '可向全部用户发送，也可选择指定用户。',
+    },
+    audience: {
+      title: '发送对象',
+      all: '全部用户',
+      selected: '指定用户',
+      search: '搜索用户名、邮箱或用户 ID',
+      empty: '没有匹配的通知用户',
+      count: '已选择 {count} 位用户',
+      devices: '{count} 个已开启设备',
+      hint: '可选择开启过通知的用户。同一用户只选一次；浏览器通知仅发给其已开启的设备，页面通知仅该账号可见。',
+      confirmTitle: '确认定向推送',
+      unavailable: '通知服务尚未更新，暂时无法定向推送。',
+      confirm: '将向选中的 {count} 位用户发送：{channels}。是否继续？',
+      scheduleConfirm: '将在 {time} 向选中的 {count} 位用户发送：{channels}。是否继续？',
+      record: '指定 {count} 位用户 · ID：{ids}',
     },
     form: {
       title: '通知标题',

@@ -15,8 +15,8 @@ import tempfile
 
 SDK_PATH = 'backend/audit-sdk'
 MAX_PAYLOAD = 2 * 1024 * 1024
-# Four repository-secret parts, each at most 32 KiB, under GitHub's 48 KiB secret limit.
-MAX_ENCODED = 128 * 1024
+# Four repository-secret parts, each under GitHub's 48 KiB secret limit.
+MAX_ENCODED = 192 * 1024
 
 
 def expected_commit():

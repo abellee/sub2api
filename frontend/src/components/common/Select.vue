@@ -62,16 +62,22 @@
         >
           <!-- Search input -->
           <div v-if="isSearchable" class="select-search">
-            <Icon name="search" size="sm" class="text-gray-400" />
-            <input
-              ref="searchInputRef"
-              v-model="searchQuery"
-              type="text"
+            <slot
+              name="search"
+              :model-value="searchQuery"
+              :update="(value: string) => searchQuery = value"
               :placeholder="searchPlaceholderText"
-              :aria-label="searchPlaceholderText"
-              class="select-search-input"
-              @click.stop
-            />
+            >
+              <Icon name="search" size="sm" class="text-gray-400" />
+              <input
+                v-model="searchQuery"
+                type="text"
+                :placeholder="searchPlaceholderText"
+                :aria-label="searchPlaceholderText"
+                class="select-search-input"
+                @click.stop
+              />
+            </slot>
           </div>
 
           <!-- Options list -->
@@ -187,7 +193,6 @@ const searchQuery = ref('')
 const focusedIndex = ref(-1)
 const containerRef = ref<HTMLElement | null>(null)
 const triggerRef = ref<HTMLButtonElement | null>(null)
-const searchInputRef = ref<HTMLInputElement | null>(null)
 const dropdownRef = ref<HTMLElement | null>(null)
 const optionsListRef = ref<HTMLElement | null>(null)
 const dropdownPosition = ref<'bottom' | 'top'>('bottom')
@@ -394,9 +399,9 @@ watch(isOpen, (open) => {
     }
 
     if (isSearchable.value) {
-      nextTick(() => searchInputRef.value?.focus())
+      nextTick(() => dropdownRef.value?.querySelector<HTMLInputElement>('.select-search input')?.focus({ preventScroll: true }))
     } else {
-      nextTick(() => dropdownRef.value?.focus())
+      nextTick(() => dropdownRef.value?.focus({ preventScroll: true }))
     }
     // Add scroll listener to update position
     window.addEventListener('scroll', updateTriggerRect, { capture: true, passive: true })
@@ -429,7 +434,7 @@ const selectOption = (option: any) => {
   emit('update:modelValue', value)
   emit('change', value, option)
   isOpen.value = false
-  triggerRef.value?.focus()
+  triggerRef.value?.focus({ preventScroll: true })
 }
 
 const clearSelection = () => {
@@ -468,7 +473,7 @@ const onDropdownKeyDown = (e: KeyboardEvent) => {
     case 'Escape':
       e.preventDefault()
       isOpen.value = false
-      triggerRef.value?.focus()
+      triggerRef.value?.focus({ preventScroll: true })
       break
     case 'Tab':
       isOpen.value = false

@@ -9,7 +9,22 @@ export default {
     },
     compose: {
       title: 'Compose Notification',
-      description: 'This message will be broadcast to every browser with notifications enabled.',
+      description: 'Send to everyone or select specific users.',
+    },
+    audience: {
+      title: 'Recipients',
+      all: 'All users',
+      selected: 'Specific users',
+      search: 'Search username, email, or user ID',
+      empty: 'No matching notification users',
+      count: '{count} users selected',
+      devices: '{count} enabled devices',
+      hint: 'Select users who have enabled notifications before. Each user appears once. Browser delivery uses enabled devices; in-page notices are visible only to the selected accounts.',
+      confirmTitle: 'Confirm Targeted Notification',
+      unavailable: 'Update the notification service before sending targeted notifications.',
+      confirm: 'Send to {count} selected users via {channels}?',
+      scheduleConfirm: 'Send to {count} selected users via {channels} at {time}?',
+      record: '{count} specific users · IDs: {ids}',
     },
     form: {
       title: 'Title',

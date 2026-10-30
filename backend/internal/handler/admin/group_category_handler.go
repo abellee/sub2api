@@ -173,3 +173,24 @@ func (h *GroupCategoryHandler) SetGroupCap(c *gin.Context) {
 	}
 	response.Success(c, gin.H{"ok": true})
 }
+
+// SetDocumentation PUT /admin/group-categories/documentation/:group_id
+func (h *GroupCategoryHandler) SetDocumentation(c *gin.Context) {
+	groupID, err := strconv.ParseInt(c.Param("group_id"), 10, 64)
+	if err != nil || groupID <= 0 {
+		response.BadRequest(c, "Invalid group id")
+		return
+	}
+	var req struct {
+		DocumentID *string `json:"document_id"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || req.DocumentID == nil {
+		response.BadRequest(c, "document_id is required; use an empty string to unbind")
+		return
+	}
+	if err := h.store.SetGroupDocumentation(groupID, *req.DocumentID); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"ok": true})
+}

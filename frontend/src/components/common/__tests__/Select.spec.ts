@@ -1,8 +1,9 @@
-import { mount } from '@vue/test-utils'
+import { DOMWrapper, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { nextTick } from 'vue'
+import { h, nextTick } from 'vue'
 
 import Select from '../Select.vue'
+import Input from '../Input.vue'
 
 vi.mock('vue-i18n', async () => {
   const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
@@ -113,6 +114,40 @@ describe('Select dropdown viewport constraints', () => {
     expect(dropdown?.style.minWidth).toBe('0px')
     expect(dropdown?.style.maxWidth).toBe('0px')
   })
+})
+
+it('focuses a component search field and keeps filtering and keyboard selection working', async () => {
+  const focus = vi.spyOn(HTMLElement.prototype, 'focus')
+  const wrapper = mount(Select, {
+    attachTo: document.body,
+    props: { modelValue: null, searchable: true, options: [
+      { value: '720p', label: '720p' }, { value: '1080p', label: '1080p' }
+    ] },
+    slots: { search: ({ modelValue, update }) => h(Input, {
+      id: 'custom-model-search', modelValue, 'onUpdate:modelValue': update
+    }) }
+  })
+  unmountWrapper = () => wrapper.unmount()
+  await wrapper.get('button').trigger('click')
+  await nextTick()
+  const input = document.querySelector<HTMLInputElement>('#custom-model-search')!
+  expect(document.activeElement).toBe(input)
+  expect(focus).toHaveBeenLastCalledWith({ preventScroll: true })
+  await new DOMWrapper(input).setValue('1080')
+  expect(document.querySelectorAll('.select-option')).toHaveLength(1)
+  input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+  await nextTick()
+  expect(wrapper.emitted('update:modelValue')).toEqual([['1080p']])
+  expect(wrapper.get('button').attributes('aria-expanded')).toBe('false')
+  expect(focus).toHaveBeenLastCalledWith({ preventScroll: true })
+})
+
+it('preserves the reading position when opening and closing a dropdown without search', async () => {
+  const focus = vi.spyOn(HTMLElement.prototype, 'focus')
+  const dropdown = await openSelect()
+  expect(focus).toHaveBeenLastCalledWith({ preventScroll: true })
+  await new DOMWrapper(dropdown!).trigger('keydown', { key: 'Escape' })
+  expect(focus).toHaveBeenLastCalledWith({ preventScroll: true })
 })
 
 describe('Select remote search', () => {

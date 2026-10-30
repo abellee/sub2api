@@ -19,7 +19,8 @@ type UserMenuSection struct {
 }
 
 type UserMenuConfig struct {
-	Sections []UserMenuSection `json:"sections"`
+	Sections    []UserMenuSection `json:"sections"`
+	HiddenItems []string          `json:"hidden_items,omitempty"`
 }
 
 var userMenuIDPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
@@ -30,6 +31,7 @@ var userMenuBuiltinPaths = map[string]bool{
 	"/available-channels": true, "/monitor": true, "/subscriptions": true,
 	"/purchase": true, "/orders": true, "/lottery": true, "/tasks": true,
 	"/affiliate": true, "/profile": true, "/model-plaza": true, "/redeem": true,
+	"/docs/creative": true,
 }
 
 func normalizeUserMenu(input UserMenuConfig) (*UserMenuConfig, error) {
@@ -39,7 +41,22 @@ func normalizeUserMenu(input UserMenuConfig) (*UserMenuConfig, error) {
 	if len(input.Sections) > 32 {
 		return invalid("At most 32 menu headings are allowed")
 	}
+	if len(input.HiddenItems) > 128 {
+		return invalid("At most 128 hidden menu items are allowed")
+	}
 	result := &UserMenuConfig{Sections: make([]UserMenuSection, 0, len(input.Sections))}
+	hidden := map[string]bool{}
+	for _, item := range input.HiddenItems {
+		path := strings.TrimSpace(item)
+		if !userMenuBuiltinPaths[path] && !userMenuCustomPathPattern.MatchString(path) {
+			return invalid(fmt.Sprintf("Unsupported hidden user menu item: %s", path))
+		}
+		if hidden[path] {
+			return invalid("Hidden menu items must be unique")
+		}
+		hidden[path] = true
+		result.HiddenItems = append(result.HiddenItems, path)
+	}
 	ids, titles, paths := map[string]bool{}, map[string]bool{}, map[string]bool{}
 	for _, section := range input.Sections {
 		id, title := strings.TrimSpace(section.ID), strings.TrimSpace(section.Title)

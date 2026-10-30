@@ -5,6 +5,9 @@ export default {
       enable: 'Enable',
       disable: 'Disable',
       status: {
+        checking: 'Checking…',
+        enabling: 'Turning on…',
+        disabling: 'Turning off…',
         unsupported: 'Not supported',
         denied: 'Permission blocked',
         disabled: 'Off',

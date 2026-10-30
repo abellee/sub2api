@@ -1,4 +1,14 @@
 export default {
+  creativeDocs: {
+    title: '生图 / 生视频',
+    description: '图片与视频 API 接入指南',
+    bindingLabel: '接入文档',
+    bindingHint: '按固定文档标识关联，分组改名不会影响文档。绑定后会在生图 / 生视频页面显示。',
+    noDocument: '不关联文档',
+    images: '图片',
+    videos: '视频',
+    bindingFailed: '分组已保存，但文档关联失败。请在编辑分组中重试。'
+  },
 
   // Subscription Progress (Header component)
   subscriptionProgress: {

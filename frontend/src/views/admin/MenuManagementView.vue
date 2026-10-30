@@ -57,6 +57,7 @@
               <thead class="bg-gray-50 text-xs text-gray-500 dark:bg-dark-900/50 dark:text-gray-400">
                 <tr>
                   <th class="px-5 py-3 font-medium">{{ t('admin.menuManagement.menuItem') }}</th>
+                  <th class="px-5 py-3 font-medium">{{ t('admin.menuManagement.visible') }}</th>
                   <th class="px-5 py-3 font-medium">{{ t('admin.menuManagement.underHeading') }}</th>
                   <th class="w-24 px-5 py-3 text-right font-medium">{{ t('admin.menuManagement.order') }}</th>
                 </tr>
@@ -66,6 +67,9 @@
                   <td class="px-5 py-3 font-medium text-gray-900 dark:text-white">
                     {{ item.label }}
                     <span v-if="item.custom" class="mt-0.5 block text-xs font-normal text-gray-400">{{ t('admin.menuManagement.customPage') }}</span>
+                  </td>
+                  <td class="px-5 py-3">
+                    <Toggle :model-value="!hiddenItems.includes(item.path)" :disabled="saving" :aria-label="t('admin.menuManagement.visibleLabel', { name: item.label })" :data-testid="`visible-${item.path}`" @update:model-value="setItemVisible(item.path, $event)" />
                   </td>
                   <td class="px-5 py-3">
                     <select class="input min-w-36" :value="sectionFor(item.path)?.id ?? ''" :disabled="saving" :aria-label="t('admin.menuManagement.assignLabel', { name: item.label })" :data-testid="`assign-${item.path}`" @change="assignUserMenuItem(sections, item.path, ($event.target as HTMLSelectElement).value)">
@@ -83,7 +87,7 @@
               </tbody>
             </table>
           </div>
-          <div v-if="sections.length" class="border-t border-gray-200 p-5 dark:border-dark-700">
+          <div class="border-t border-gray-200 p-5 dark:border-dark-700">
             <h4 class="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-400">{{ t('admin.menuManagement.preview') }}</h4>
             <div class="flex flex-wrap gap-3">
               <div v-for="section in preview" :key="section.id" class="min-w-40 rounded-lg bg-gray-50 px-4 py-3 dark:bg-dark-900/50">
@@ -103,6 +107,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
+import Toggle from '@/components/common/Toggle.vue'
 import { getSettings } from '@/api/admin/settings'
 import type { UserMenuSection } from '@/api/userMenu'
 import type { CustomMenuItem } from '@/types'
@@ -115,13 +120,15 @@ const { t } = useI18n()
 const appStore = useAppStore()
 const menuStore = useUserMenuStore()
 const sections = ref<UserMenuSection[]>([])
+const hiddenItems = ref<string[]>([])
 const customItems = ref<CustomMenuItem[]>([])
 const newTitle = ref('')
 const loading = ref(false)
 const loaded = ref(false)
 const saving = ref(false)
-const original = ref('[]')
-const dirty = computed(() => loaded.value && JSON.stringify(sections.value) !== original.value)
+const original = ref('')
+const draft = computed(() => ({ sections: sections.value, hidden_items: hiddenItems.value }))
+const dirty = computed(() => loaded.value && JSON.stringify(draft.value) !== original.value)
 
 const catalog = computed(() => {
   const items: { path: string; label: string; custom: boolean }[] = USER_MENU_ITEMS.map(item => ({
@@ -131,14 +138,17 @@ const catalog = computed(() => {
     items.push({ path: `/custom/${item.id}`, label: item.label, custom: true })
   }
   // Retain removed custom pages in the editor so their stale assignments can be cleared.
-  for (const section of sections.value) {
-    for (const path of section.items) {
-      if (!items.some(item => item.path === path)) items.push({ path, label: path, custom: true })
-    }
+  for (const path of [...sections.value.flatMap(section => section.items), ...hiddenItems.value]) {
+    if (!items.some(item => item.path === path)) items.push({ path, label: path, custom: true })
   }
   return items
 })
-const preview = computed(() => groupUserMenu(catalog.value, sections.value, t('nav.myAccount')))
+const preview = computed(() => groupUserMenu(catalog.value, sections.value, t('nav.myAccount'), hiddenItems.value))
+
+function setItemVisible(path: string, visible: boolean) {
+  hiddenItems.value = hiddenItems.value.filter(item => item !== path)
+  if (!visible) hiddenItems.value.push(path)
+}
 
 async function load() {
   if (loading.value || saving.value) return
@@ -147,8 +157,9 @@ async function load() {
   try {
     const [config, settings] = await Promise.all([menuStore.load(true, true), getSettings()])
     sections.value = config.sections.map(section => ({ ...section, items: [...section.items] }))
+    hiddenItems.value = [...(config.hidden_items ?? [])]
     customItems.value = settings.custom_menu_items ?? []
-    original.value = JSON.stringify(sections.value)
+    original.value = JSON.stringify(draft.value)
     loaded.value = true
   } catch (error) {
     appStore.showError(extractApiErrorMessage(error, t('admin.menuManagement.loadFailed')))
@@ -203,9 +214,10 @@ async function save() {
   }
   saving.value = true
   try {
-    const config = await menuStore.save({ sections: sections.value.map(section => ({ ...section, title: section.title.trim(), items: [...section.items] })) })
+    const config = await menuStore.save({ sections: sections.value.map(section => ({ ...section, title: section.title.trim(), items: [...section.items] })), hidden_items: [...hiddenItems.value] })
     sections.value = config.sections.map(section => ({ ...section, items: [...section.items] }))
-    original.value = JSON.stringify(sections.value)
+    hiddenItems.value = [...(config.hidden_items ?? [])]
+    original.value = JSON.stringify(draft.value)
     appStore.showSuccess(t('admin.menuManagement.saved'))
   } catch (error) {
     appStore.showError(extractApiErrorMessage(error, t('common.error')))

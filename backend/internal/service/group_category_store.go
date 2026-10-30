@@ -32,7 +32,8 @@ type GroupCategorySnapshot struct {
 	Categories  []GroupCategory   `json:"categories"`
 	Assignments map[string]string `json:"assignments"`
 	// GroupCaps 按分组 ID(十进制字符串)记录上限倍率;与分类同文件持久化。
-	GroupCaps map[string]float64 `json:"group_caps,omitempty"`
+	GroupCaps     map[string]float64 `json:"group_caps,omitempty"`
+	Documentation map[string]string  `json:"documentation,omitempty"`
 }
 
 // GroupCategoryStore shares a SQLite database with user menu configuration.
@@ -262,6 +263,35 @@ func (s *GroupCategoryStore) Reorder(ids []string) error {
 		ordered = append(ordered, cat)
 	}
 	snap.Categories = ordered
+	return s.saveLocked(snap)
+}
+
+// SetGroupDocumentation binds a stable document ID, independent of the group name.
+func (s *GroupCategoryStore) SetGroupDocumentation(groupID int64, documentID string) error {
+	if groupID <= 0 {
+		return fmt.Errorf("invalid group id")
+	}
+	documentID = strings.TrimSpace(documentID)
+	switch documentID {
+	case "", "image-1k", "banana", "image-az", "image-adobe", "image-official", "image2", "seedream", "mj-v8.2", "video", "sd-video":
+	default:
+		return fmt.Errorf("unknown documentation id")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	snap, err := s.loadLocked()
+	if err != nil {
+		return err
+	}
+	key := fmt.Sprintf("%d", groupID)
+	if documentID == "" {
+		delete(snap.Documentation, key)
+	} else {
+		if snap.Documentation == nil {
+			snap.Documentation = map[string]string{}
+		}
+		snap.Documentation[key] = documentID
+	}
 	return s.saveLocked(snap)
 }
 

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   broadcastPush,
+  createPushSchedule,
   listPageNotifications,
   clearPushMessages,
   deletePushMessage,
@@ -122,6 +123,21 @@ describe('push notification API', () => {
     )
     const headers = fetchMock.mock.calls[0][1]?.headers as Headers
     expect(headers.get('Authorization')).toBe('Bearer admin-token')
+  })
+
+  it('sends recipient IDs with administrator authorization for immediate and scheduled delivery', async () => {
+    localStorage.setItem('auth_token', 'admin-token')
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({ message: { id: 'targeted', userIDs: [7] } }), { status: 201 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ schedule: { id: 'later', userIDs: [7] } }), { status: 201 }))
+    const input = { title: 'Private', body: 'Only Ada', url: '/', userIDs: [7], channels: ['page'] as const }
+    await expect(broadcastPush({ ...input, channels: [...input.channels] })).resolves.toMatchObject({ userIDs: [7] })
+    await expect(createPushSchedule({ ...input, channels: [...input.channels], scheduledAt: '2099-01-01T00:00:00Z' })).resolves.toMatchObject({ userIDs: [7] })
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['/push-api/v1/admin/targeted', '/push-api/v1/admin/targeted/schedules'])
+    for (const [, options] of fetchMock.mock.calls) {
+      expect(JSON.parse(String(options?.body)).userIDs).toEqual([7])
+      expect((options?.headers as Headers).get('Authorization')).toBe('Bearer admin-token')
+    }
   })
 
   it('clears all recorded notifications with administrator authorization', async () => {

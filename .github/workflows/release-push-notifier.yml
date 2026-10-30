@@ -23,6 +23,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      - name: Test notification delivery
+        working-directory: push-notifier
+        run: |
+          corepack enable
+          corepack prepare pnpm@9.15.9 --activate
+          pnpm install --frozen-lockfile
+          node --test
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
@@ -84,6 +97,8 @@ jobs:
           docker buildx build \
             --platform linux/amd64,linux/arm64 \
             --file push-notifier/Dockerfile \
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --label "org.opencontainers.image.version=${{ steps.meta.outputs.version }}" \
             --push \
             "${tag_args[@]}" \
             push-notifier

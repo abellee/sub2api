@@ -222,6 +222,18 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/docs/creative',
+    name: 'CreativeDocs',
+    component: () => import('@/views/user/CreativeDocsView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'Image & Video API Guide',
+      titleKey: 'creativeDocs.title',
+      descriptionKey: 'creativeDocs.description'
+    }
+  },
+  {
     path: '/batch-image',
     name: 'BatchImageGuide',
     alias: '/docs/batch-image',

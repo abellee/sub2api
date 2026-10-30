@@ -5,6 +5,9 @@ export default {
       enable: '开启通知',
       disable: '关闭通知',
       status: {
+        checking: '正在检查…',
+        enabling: '正在开启…',
+        disabling: '正在关闭…',
         unsupported: '当前浏览器不支持',
         denied: '通知权限已被阻止',
         disabled: '未开启',

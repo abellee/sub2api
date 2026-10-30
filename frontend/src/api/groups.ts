@@ -52,6 +52,7 @@ export interface GroupCategorySnapshot {
   assignments: Record<string, string>
   /** 分组上限倍率:分组 ID(十进制字符串)→ 倍率;与分类同库存储。 */
   group_caps?: Record<string, number>
+  documentation?: Record<string, string>
 }
 
 export async function getCategories(): Promise<GroupCategorySnapshot> {
@@ -59,7 +60,8 @@ export async function getCategories(): Promise<GroupCategorySnapshot> {
   return {
     categories: data?.categories ?? [],
     assignments: data?.assignments ?? {},
-    group_caps: data?.group_caps ?? {}
+    group_caps: data?.group_caps ?? {},
+    documentation: data?.documentation ?? {}
   }
 }
 

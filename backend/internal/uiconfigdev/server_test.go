@@ -50,7 +50,7 @@ func TestMenuDevelopmentProxyAuthenticationAndPersistence(t *testing.T) {
 	w := call(http.MethodGet, "/api/v1/admin/user-menu", "admin", "")
 	require.Equal(t, http.StatusOK, w.Code)
 	require.JSONEq(t, `{"code":0,"message":"success","data":{"sections":[]}}`, w.Body.String())
-	body := `{"sections":[{"id":"models","title":"模型","items":["/keys"]}]}`
+	body := `{"sections":[{"id":"models","title":"模型","items":["/keys"]}],"hidden_items":["/keys","/custom/docs"]}`
 	w = call(http.MethodPut, "/api/v1/admin/user-menu", "admin", body)
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Equal(t, http.StatusBadRequest, call(http.MethodPut, "/api/v1/admin/user-menu", "admin", `{"sections":[{"id":"a","title":"Bad","items":["/admin/users"]}]}`).Code)

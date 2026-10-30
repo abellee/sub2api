@@ -14,6 +14,8 @@ const {
   getUsageSummary,
   getCapacitySummary,
   getLiveCapability,
+  getGroupCategories,
+  setDocumentation,
   showSuccess,
   showError
 } = vi.hoisted(() => ({
@@ -24,6 +26,8 @@ const {
   getUsageSummary: vi.fn(),
   getCapacitySummary: vi.fn(),
   getLiveCapability: vi.fn(),
+  getGroupCategories: vi.fn(),
+  setDocumentation: vi.fn(),
   showSuccess: vi.fn(),
   showError: vi.fn()
 }))
@@ -48,6 +52,10 @@ vi.mock('@/api/admin', () => ({
     accounts: {
       list: vi.fn(),
       getById: vi.fn()
+    },
+    groupCategories: {
+      list: getGroupCategories,
+      setDocumentation,
     }
   }
 }))
@@ -188,6 +196,8 @@ describe('GroupsView duplicate action', () => {
       getUsageSummary,
       getCapacitySummary,
       getLiveCapability,
+      getGroupCategories,
+      setDocumentation,
       showSuccess,
       showError
     ]) {
@@ -211,6 +221,8 @@ describe('GroupsView duplicate action', () => {
     getUsageSummary.mockResolvedValue([])
     getCapacitySummary.mockResolvedValue([])
     getLiveCapability.mockResolvedValue({ supported: false })
+    getGroupCategories.mockResolvedValue({ categories: [], assignments: {}, documentation: { 42: 'banana' } })
+    setDocumentation.mockResolvedValue(undefined)
   })
 
   afterEach(() => {
@@ -228,6 +240,57 @@ describe('GroupsView duplicate action', () => {
     expect(duplicateGroup).toHaveBeenCalledWith(42)
     expect(showSuccess).toHaveBeenCalledWith('admin.groups.duplicateSuccess')
     expect(listGroups).toHaveBeenCalledTimes(2)
+    wrapper.unmount()
+  })
+
+  it('loads and saves the stable documentation ID when editing a group', async () => {
+    updateGroup.mockResolvedValue(sourceGroup)
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.findAll('button').find(button => button.text() === 'common.edit')!.trigger('click')
+    await flushPromises()
+    const field = wrapper.findComponent({ name: 'GroupDocumentationField' })
+    expect(field.props('modelValue')).toBe('banana')
+    field.vm.$emit('update:modelValue', 'sd-video')
+    await wrapper.vm.$nextTick()
+    await wrapper.get('#edit-group-form').trigger('submit')
+    await flushPromises()
+    expect(updateGroup).toHaveBeenCalledWith(42, expect.objectContaining({ name: 'Primary' }))
+    expect(setDocumentation).toHaveBeenCalledWith(42, 'sd-video')
+    expect(showSuccess).toHaveBeenCalledWith('admin.groups.groupUpdated')
+    wrapper.unmount()
+  })
+
+  it('loads the documentation ID when the editor opens before the bindings arrive', async () => {
+    let resolveCategories!: (value: unknown) => void
+    getGroupCategories.mockImplementationOnce(() => new Promise(resolve => { resolveCategories = resolve }))
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.findAll('button').find(button => button.text() === 'common.edit')!.trigger('click')
+    await flushPromises()
+    const field = wrapper.findComponent({ name: 'GroupDocumentationField' })
+    expect(field.props('disabled')).toBe(true)
+    resolveCategories({ documentation: { 42: 'banana' } })
+    await flushPromises()
+    expect(field.props('modelValue')).toBe('banana')
+    expect(field.props('disabled')).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('reports a document-binding failure separately after saving the group', async () => {
+    updateGroup.mockResolvedValue(sourceGroup)
+    setDocumentation.mockRejectedValue(new Error('unavailable'))
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.findAll('button').find(button => button.text() === 'common.edit')!.trigger('click')
+    await flushPromises()
+    wrapper.findComponent({ name: 'GroupDocumentationField' }).vm.$emit('update:modelValue', '')
+    await wrapper.vm.$nextTick()
+    await wrapper.get('#edit-group-form').trigger('submit')
+    await flushPromises()
+    expect(setDocumentation).toHaveBeenCalledWith(42, '')
+    expect(showError).toHaveBeenCalledWith('creativeDocs.bindingFailed')
+    expect(showSuccess).not.toHaveBeenCalledWith('admin.groups.groupUpdated')
     wrapper.unmount()
   })
 

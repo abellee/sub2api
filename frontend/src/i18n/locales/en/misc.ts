@@ -1,4 +1,14 @@
 export default {
+  creativeDocs: {
+    title: 'Image / Video Guide',
+    description: 'Image and video API integration guide',
+    bindingLabel: 'Integration document',
+    bindingHint: 'Bind a stable document ID. Renaming the group preserves its document. Linked groups appear in the Image / Video Guide.',
+    noDocument: 'No document',
+    images: 'Images',
+    videos: 'Videos',
+    bindingFailed: 'The group was saved, but its document link failed. Please retry from Edit Group.'
+  },
 
   // Subscription Progress (Header component)
   subscriptionProgress: {
