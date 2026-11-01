@@ -1,9 +1,17 @@
+@import url('/tokenfree/fonts/noto-sans-sc.css');
+
 @font-face {
   font-family: "TokenFree Console Mono";
   src: url("/tokenfree/fonts/JetBrainsMono-Variable.ttf") format("truetype");
   font-weight: 100 800;
   font-style: normal;
   font-display: swap;
+  unicode-range: U+0000-024F, U+1E00-1EFF;
+}
+
+/* The console family combines JetBrains Mono for Latin and Noto Sans SC for Chinese. */
+html:has(.tokenfree-console) {
+  --tf-console-latin-font: "TokenFree Console Mono";
 }
 
 /* Shared admin and user appearance. Root inheritance also themes teleported dialogs,

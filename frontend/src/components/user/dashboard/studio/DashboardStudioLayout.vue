@@ -211,6 +211,7 @@ main{padding:10px 32px 32px}
 .dashboard-studio-shell :deep(.sidebar-header){transition:none}
 /* Keep text at its final width; only the outer edge reveals it. */
 .dashboard-studio-shell :deep(.sidebar-label){flex:none;width:142px;max-width:142px;transform:none;transition:opacity .15s}
+.dashboard-studio-shell :deep(.sidebar-link-status .sidebar-label){width:96px;max-width:96px}
 .dashboard-studio-shell :deep(.sidebar-section-title-text){flex:none;width:180px;transform:none;transition:opacity .15s}
 .dashboard-studio-shell :deep(.sidebar-home-word){flex:none;transition:opacity .15s}
 .dashboard-studio-shell :deep(.sidebar-link){transition:background-color .15s,color .15s}

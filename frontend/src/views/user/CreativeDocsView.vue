@@ -226,7 +226,7 @@ onBeforeUnmount(() => { disposed = true; disconnectDocument() })
 
 <style scoped>
 @font-face { font-family: 'JetBrains Mono'; src: url('/tokenfree/fonts/JetBrainsMono-Variable.ttf') format('truetype'); font-weight: 100 800; font-display: swap; unicode-range: U+0000-024F,U+1E00-1EFF,U+2000-206F,U+20A0-20CF,U+2190-21FF; }
-.creative-docs { width: 100%; max-width: 1480px; margin-inline: auto; font-family: 'JetBrains Mono', 'Segoe UI', 'Microsoft YaHei', sans-serif; color: rgb(var(--tf-console-neutral-900)); font-size: 12px; }
+.creative-docs { width: 100%; max-width: 1480px; margin-inline: auto; font-family: 'TokenFree Console Mono', 'JetBrains Mono', 'Segoe UI', 'Microsoft YaHei', sans-serif; color: rgb(var(--tf-console-neutral-900)); font-size: 12px; }
 :global(.dark .creative-docs) { color: rgb(var(--tf-console-neutral-50)); }
 .creative-docs-workspace { display: grid; grid-template-columns: 238px minmax(0,1fr); align-items: start; width: 100%; padding-top: 28px; }
 .creative-docs-sidebar { position: sticky; min-width: 0; max-height: calc(100dvh - var(--docs-sidebar-top, 84px) - 20px); overflow-y: auto; overscroll-behavior-y: contain; padding: 4px 20px 30px 0; border-right: 1px solid var(--tf-console-line); }

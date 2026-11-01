@@ -211,7 +211,7 @@ onBeforeUnmount(() => {
 .studio-user-card{position:relative;height:40px;overflow:hidden;background:transparent;border-radius:14px;transition:height var(--studio-motion,240ms) var(--studio-ease,ease),background-color var(--studio-motion,240ms)}
 .studio-wallet{position:absolute;top:14px;left:12px;width:calc(var(--studio-account-width) - 24px);display:flex;justify-content:space-between;gap:8px;font-variant-numeric:tabular-nums}
 .wallet-available{min-width:0;text-align:left}.wallet-frozen{text-align:right}.wallet-label{display:block;margin-bottom:4px;font-size:12px;color:var(--studio-muted);white-space:nowrap}
-.studio-wallet strong{font-size:15px;font-weight:600;letter-spacing:-.4px;white-space:nowrap}
+.studio-wallet strong{display:block;font-size:16px;font-weight:500;line-height:24px;letter-spacing:normal;white-space:nowrap}
 .studio-points{position:absolute;top:66px;left:12px;width:calc(var(--studio-account-width) - 24px);display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--studio-muted)}
 .studio-points>span{display:flex;align-items:center;gap:6px}.studio-points img{width:15px;height:15px}
 .studio-identity{position:absolute;bottom:2px;left:8px;width:calc(var(--studio-account-width) - 24px);display:flex;align-items:center;gap:10px;height:36px;transition:left var(--studio-motion,240ms) var(--studio-ease,ease),bottom var(--studio-motion,240ms) var(--studio-ease,ease)}

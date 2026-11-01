@@ -63,6 +63,7 @@ export default {
       },
       fontFamily: {
         sans: [
+          'var(--tf-console-latin-font, system-ui)',
           'system-ui',
           '-apple-system',
           'BlinkMacSystemFont',
@@ -75,7 +76,7 @@ export default {
           'Microsoft YaHei',
           'sans-serif'
         ],
-        mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace']
+        mono: ['var(--tf-console-latin-font, ui-monospace)', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace']
       },
       boxShadow: {
         glass: '0 8px 32px rgba(0, 0, 0, 0.08)',

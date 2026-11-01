@@ -104,8 +104,8 @@
               v-else
               :to="item.path"
               class="sidebar-link mb-1"
-              :class="{ 'sidebar-link-active': isActive(item.path), 'sidebar-link-collapsed': sidebarCollapsed }"
-              :title="sidebarCollapsed ? item.label : undefined" :aria-label="item.label"
+              :class="{ 'sidebar-link-active': isActive(item.path), 'sidebar-link-collapsed': sidebarCollapsed, 'sidebar-link-status': !!item.badge }"
+              :title="sidebarCollapsed ? [item.label, item.badge?.text].filter(Boolean).join('，') : undefined" :aria-label="[item.label, item.badge?.text].filter(Boolean).join('，')"
               :id="
                 item.path === '/admin/accounts'
                   ? 'sidebar-channel-manage'
@@ -123,10 +123,10 @@
               <!-- 状态角标（如抽奖的进行中/待开始/已开奖） -->
               <span
                 v-if="item.badge"
-                :class="['flex-shrink-0 rounded-full px-1.5 py-0.5 text-xs font-bold leading-none flex items-center gap-1', item.badge.cls]"
+                :class="['sidebar-status-badge', item.badge.cls]"
+                aria-hidden="true"
               >
-                <i v-if="item.badge.dot" :class="['h-1.5 w-1.5 rounded-full', item.badge.dot]"></i>
-                {{ item.badge.text }}
+                <span>{{ item.badge.text }}</span>
               </span>
             </router-link>
           </template>
@@ -142,8 +142,8 @@
           <router-link
             :to="item.path"
             class="sidebar-link mb-1"
-            :class="{ 'sidebar-link-active': isActive(item.path), 'sidebar-link-collapsed': sidebarCollapsed }"
-            :title="sidebarCollapsed ? item.label : undefined" :aria-label="item.label"
+            :class="{ 'sidebar-link-active': isActive(item.path), 'sidebar-link-collapsed': sidebarCollapsed, 'sidebar-link-status': !!item.badge }"
+            :title="sidebarCollapsed ? [item.label, item.badge?.text].filter(Boolean).join('，') : undefined" :aria-label="[item.label, item.badge?.text].filter(Boolean).join('，')"
             :data-tour="item.path === '/keys' ? 'sidebar-my-keys' : undefined"
             @click="handleMenuItemClick(item.path)"
           >
@@ -153,10 +153,10 @@
             <!-- 状态角标（如抽奖的进行中/待开始/已开奖） -->
             <span
               v-if="item.badge"
-              :class="['flex-shrink-0 rounded-full px-1.5 py-0.5 text-xs font-bold leading-none flex items-center gap-1', item.badge.cls]"
+              :class="['sidebar-status-badge', item.badge.cls]"
+              aria-hidden="true"
             >
-              <i v-if="item.badge.dot" :class="['h-1.5 w-1.5 rounded-full', item.badge.dot]"></i>
-              {{ item.badge.text }}
+              <span>{{ item.badge.text }}</span>
             </span>
           </router-link>
         </UserNavSections>
@@ -168,8 +168,8 @@
           <router-link
             :to="item.path"
             class="sidebar-link mb-1"
-            :class="{ 'sidebar-link-active': isActive(item.path), 'sidebar-link-collapsed': sidebarCollapsed }"
-            :title="sidebarCollapsed ? item.label : undefined" :aria-label="item.label"
+            :class="{ 'sidebar-link-active': isActive(item.path), 'sidebar-link-collapsed': sidebarCollapsed, 'sidebar-link-status': !!item.badge }"
+            :title="sidebarCollapsed ? [item.label, item.badge?.text].filter(Boolean).join('，') : undefined" :aria-label="[item.label, item.badge?.text].filter(Boolean).join('，')"
             :data-tour="item.path === '/keys' ? 'sidebar-my-keys' : undefined"
             @click="handleMenuItemClick(item.path)"
           >
@@ -179,10 +179,10 @@
             <!-- 状态角标（如抽奖的进行中/待开始/已开奖） -->
             <span
               v-if="item.badge"
-              :class="['flex-shrink-0 rounded-full px-1.5 py-0.5 text-xs font-bold leading-none flex items-center gap-1', item.badge.cls]"
+              :class="['sidebar-status-badge', item.badge.cls]"
+              aria-hidden="true"
             >
-              <i v-if="item.badge.dot" :class="['h-1.5 w-1.5 rounded-full', item.badge.dot]"></i>
-              {{ item.badge.text }}
+              <span>{{ item.badge.text }}</span>
             </span>
           </router-link>
         </UserNavSections>
@@ -1157,6 +1157,37 @@ onBeforeUnmount(() => {
   gap: 0;
   padding-left: 0.875rem;
   padding-right: 0.875rem;
+}
+
+.sidebar-link-status {
+  position: relative;
+}
+
+.sidebar-status-badge {
+  position: absolute;
+  top: 50%;
+  right: 2px;
+  transform: translateY(-50%);
+  border-radius: 999px;
+  padding: 1px 5px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 14px;
+  pointer-events: none;
+}
+
+.sidebar-link-collapsed .sidebar-status-badge {
+  top: 4px;
+  right: 5px;
+  transform: none;
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  box-shadow: 0 0 0 2px var(--tf-console-surface);
+}
+
+.sidebar-link-collapsed .sidebar-status-badge span {
+  display: none;
 }
 
 .sidebar-label {

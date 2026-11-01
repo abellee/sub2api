@@ -1,5 +1,6 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
+import { defaults as chartDefaults } from 'chart.js'
 import App from './App.vue'
 import router from './router'
 import i18n, { initI18n } from './i18n'
@@ -9,6 +10,9 @@ import { isIOSDevice } from '@/utils/device'
 import { initThemeClass } from '@/composables/useTheme'
 import './style.css'
 import './styles/tokenfree-console.css'
+
+// Canvas text uses Chart.js defaults rather than inherited CSS fonts.
+chartDefaults.font.family = `"TokenFree Console Mono", ${chartDefaults.font.family}`
 
 function initIOSViewportZoomFix() {
   // iOS Safari 在输入框字号小于 16px 时聚焦会自动放大页面，且失焦后不会恢复。

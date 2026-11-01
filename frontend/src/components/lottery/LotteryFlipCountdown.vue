@@ -113,7 +113,7 @@ const active = computed(() => props.dash || remainingMs.value > 0)
 }
 .flip-digit {
   display: block;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--tf-console-latin-font, ui-monospace), ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 26px;
   font-weight: 700;
   line-height: 1;
