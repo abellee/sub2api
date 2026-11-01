@@ -44,6 +44,13 @@ function render() {
 }
 
 describe('MenuManagementView', () => {
+  it('keeps the existing documentation menu without generating category entries', async () => {
+    render(); await flushPromises()
+    expect(wrapper.find('[data-testid="assign-/docs/creative"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="assign-/docs/creative/image"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="assign-/docs/creative/video"]').exists()).toBe(false)
+  })
+
   it('saves hidden builtin and custom menus, reloads them, and restores their placement', async () => {
     render()
     await flushPromises()

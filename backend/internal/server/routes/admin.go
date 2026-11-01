@@ -52,6 +52,10 @@ func RegisterAdminRoutes(
 		// 分组分类（与菜单配置共用 SQLite）
 		registerGroupCategoryRoutes(admin)
 
+		documentation := handler.NewDocumentationHandler(newUIConfigStore())
+		admin.GET("/documentation", documentation.Get)
+		admin.PUT("/documentation", documentation.Update)
+
 		// 账号管理
 		registerAccountRoutes(admin, h, stepUpAuth)
 
@@ -440,7 +444,6 @@ func registerGroupCategoryRoutes(admin *gin.RouterGroup) {
 		cats.POST("", h.Create)
 		cats.PUT("/assignments/:group_id", h.Assign)
 		cats.PUT("/group-caps/:group_id", h.SetGroupCap)
-		cats.PUT("/documentation/:group_id", h.SetDocumentation)
 		cats.PUT("/sort-order", h.Reorder)
 		cats.PUT("/:id", h.Update)
 		cats.DELETE("/:id", h.Delete)

@@ -1,19 +1,46 @@
-import { documentCatalog } from '../../public/creative-docs/catalog.js'
+import { renderMarkdown } from '@/utils/markdown'
+import type { DocumentationAgent, DocumentationArticle } from '@/api/documentation'
+import { agentInstructions } from '../../public/creative-docs/documentation.js'
+import type { ReferencePage } from '../../public/creative-docs/reference-content.js'
 
-export interface DocumentationGroup {
-  id: string
-  name: string
-  description: string
-  documentId: string
-  kind: 'image' | 'video'
+export const documentationLogos = [
+  { value: '', label: '无 Logo' }, { value: 'openai', label: 'OpenAI' },
+  { value: 'gemini', label: 'Gemini' }, { value: 'azure', label: 'Azure' },
+  { value: 'adobe', label: 'Adobe' }, { value: 'bytedance', label: '字节跳动' },
+  { value: 'midjourney', label: 'Midjourney' }, { value: 'alibaba', label: '阿里巴巴' },
+]
+
+export function defaultDocumentationAgent(): DocumentationAgent {
+  return {
+    enabled: true, title: '文档太长不想看', description: '复制提示词，交给 Agent 完成对接。接口、参数、任务查询与示例都已包含。',
+    base_url: 'https://creative.tokenfree.dev/', key_mode: 'all', group_ids: [],
+    template: agentInstructions({ title: '{{article_name}}' } as ReferencePage, '{{article_name}}').replace('https://creative.tokenfree.dev/', '{{base_url}}') + '\n\nAPI Key：{{api_key}}\n\n以下是完整接入说明，请以此为准：\n\n{{document}}',
+  }
 }
 
-export function resolveDocumentationGroups(
-  groups: { id: number; name: string; description?: string | null }[],
-  assignments: Record<string, string>,
-): DocumentationGroup[] {
-  return groups.flatMap(group => {
-    const doc = documentCatalog.find(item => item.id === assignments[String(group.id)])
-    return doc ? [{ id: String(group.id), name: group.name, description: group.description ?? '', documentId: doc.id, kind: doc.kind }] : []
+// Substitute once: Markdown, keys and group names are data, never templates.
+export function renderAgentTemplate(article: DocumentationArticle, apiKey = '<API_KEY>', groupName = '<分组名称>') {
+  const values: Record<string, string> = {
+    article_name: article.name, base_url: article.agent.base_url,
+    api_key: apiKey, document: article.content, group_name: groupName,
+  }
+  return article.agent.template.replace(/\{\{\s*([^{}]+?)\s*\}\}/g, (token, name: string) => values[name.trim()] ?? token)
+}
+
+export function renderDocumentationMarkdown(content: string, copyButtons = false) {
+  const doc = new DOMParser().parseFromString(renderMarkdown(content), 'text/html')
+  doc.body.querySelectorAll('[id]').forEach(element => element.removeAttribute('id'))
+  const sections = Array.from(doc.body.querySelectorAll<HTMLElement>('h1,h2,h3,h4,h5,h6')).map((heading, index) => {
+    const id = `doc-section-${index + 1}`
+    heading.id = id
+    return { id, label: heading.textContent ?? '', level: Number(heading.tagName.slice(1)) }
   })
+  if (copyButtons) doc.body.querySelectorAll('pre').forEach(pre => {
+    const wrapper = doc.createElement('div')
+    wrapper.className = 'docs-code-block'
+    const button = doc.createElement('button')
+    button.type = 'button'; button.dataset.copyCode = ''; button.textContent = '复制代码'
+    pre.before(wrapper); wrapper.append(button, pre)
+  })
+  return { html: doc.body.innerHTML, sections }
 }

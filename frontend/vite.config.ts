@@ -321,6 +321,7 @@ export default defineConfig(({ mode }) => {
   const appCatalogDirect = (process.env.VITE_APP_CATALOG_DIRECT || env.VITE_APP_CATALOG_DIRECT || '').trim()
   const iqDetectDirect = (process.env.VITE_IQ_DETECT_DIRECT || env.VITE_IQ_DETECT_DIRECT || '').trim()
   const uiConfigDirect = (process.env.VITE_UI_CONFIG_DIRECT || env.VITE_UI_CONFIG_DIRECT || '').trim()
+  const documentationDirect = (process.env.VITE_DOCUMENTATION_DIRECT || env.VITE_DOCUMENTATION_DIRECT || uiConfigDirect).trim()
 
   return {
     plugins: [
@@ -417,6 +418,9 @@ export default defineConfig(({ mode }) => {
           ['^/api/v1/admin/user-menu/?(?:\\?.*)?$', '^/api/v1/user/menu/?(?:\\?.*)?$']
             .map((path) => [path, { target: uiConfigDirect, changeOrigin: true }])
         ) : {}),
+        ...(documentationDirect ? {
+          '^/api/v1/(?:admin/)?documentation(?:/categories)?/?(?:\\?.*)?$': { target: documentationDirect, changeOrigin: true }
+        } : {}),
         '/push-api': {
           target: pushNotifierUrl,
           changeOrigin: true

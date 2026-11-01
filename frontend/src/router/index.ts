@@ -560,6 +560,12 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/documentation',
+    name: 'AdminDocumentation',
+    component: () => import('@/views/admin/DocumentationView.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true, title: '文档管理', titleKey: 'nav.documentation' }
+  },
+  {
     path: '/admin/groups',
     name: 'AdminGroups',
     component: () => import('@/views/admin/GroupsView.vue'),

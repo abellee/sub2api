@@ -1,31 +1,28 @@
 <template>
-  <section id="agent" class="creative-agent" aria-labelledby="agent-title">
+  <section v-if="article.agent.enabled" id="agent" class="creative-agent" aria-labelledby="agent-title">
     <div class="agent-eyebrow">LET YOUR AGENT HANDLE IT</div>
-    <h2 id="agent-title">文档太长不想看</h2>
-    <p class="agent-description">复制提示词，交给 Agent 完成对接。接口、参数、任务查询与示例都已包含。</p>
+    <h2 id="agent-title">{{ article.agent.title }}</h2>
+    <p class="agent-description">{{ article.agent.description }}</p>
     <div class="agent-prompt">
-      <p>{{ instructions }}</p>
-      <div class="agent-key-row">
-        <label for="creative-agent-key">API Key：</label>
-        <Select v-if="keys.length > 1" id="creative-agent-key" v-model="selectedKeyId" :options="keyOptions" :placeholder="`${group.name} · 请选择 Key`" aria-label="选择当前分组的 API Key" searchable>
-          <template #search="{ modelValue, update, placeholder }">
-            <Input :model-value="modelValue" :placeholder="placeholder" aria-label="搜索 Key 名称" @update:model-value="update" />
-          </template>
-        </Select>
-        <span v-else class="agent-key-token">{{ selectedKey ? group.name : '<API_KEY>' }}</span>
-      </div>
-      <p v-if="keysLoading" class="agent-key-note" role="status">正在读取当前分组的 Key…</p>
-      <p v-else-if="keysError" class="agent-key-note" role="alert">{{ keysError }} <button type="button" @click="loadKeys">重试</button></p>
-      <p v-else class="agent-key-note">{{ selectedKey ? '页面显示分组名称，复制时自动填入选中的真实 Key。' : keys.length > 1 ? '请选择要使用的 Key，选项显示分组名称与 Key 名称。' : '当前分组没有可用 Key，复制后请替换 <API_KEY>。' }}</p>
-      <details :key="group.id" class="agent-details">
-        <summary>查看提示词中的完整接入说明 <span>{{ documentSize }} 字 · 已包含全部章节</span></summary>
-        <pre>{{ reference }}</pre>
+      <p>{{ preview }}</p>
+      <template v-if="usesKey">
+        <div class="agent-key-row">
+          <label for="creative-agent-key">API Key：</label>
+          <Select v-if="keys.length > 1" id="creative-agent-key" v-model="selectedKeyId" :options="keyOptions" placeholder="请选择 Key" aria-label="选择自己的 API Key" searchable>
+            <template #search="{ modelValue, update, placeholder }"><Input :model-value="modelValue" :placeholder="placeholder" aria-label="搜索 Key 名称" @update:model-value="update" /></template>
+          </Select>
+          <span v-else class="agent-key-token">{{ selectedKey ? keyLabel(selectedKey) : '<API_KEY>' }}</span>
+        </div>
+        <p v-if="keysLoading" class="agent-key-note" role="status">正在读取你的 Key…</p>
+        <p v-else-if="keysError" class="agent-key-note" role="alert">{{ keysError }} <button type="button" @click="loadKeys">重试</button></p>
+        <p v-else class="agent-key-note">{{ selectedKey ? '页面隐藏真实 Key，复制时才填入。' : article.agent.key_mode === 'manual' ? '复制后请自行替换 <API_KEY>。' : keys.length > 1 ? '请选择要使用的 Key。' : '没有符合条件的可用 Key，复制后请替换 <API_KEY>。' }}</p>
+      </template>
+      <details v-if="includesDocument" :key="article.id" class="agent-details">
+        <summary>查看提示词中的完整接入说明 <span>{{ article.content.length.toLocaleString() }} 字 · 已包含全部章节</span></summary>
+        <pre>{{ article.content }}</pre>
       </details>
     </div>
-    <div class="agent-actions">
-      <button type="button" class="agent-copy" :disabled="keysLoading || !!keysError || (keys.length > 1 && !selectedKey)" @click="copyPrompt">复制完整提示词 ↗</button>
-      <span>直接发给 Agent，无需再附文档。</span>
-    </div>
+    <div class="agent-actions"><button type="button" class="agent-copy" :disabled="keysLoading || !!keysError || (keys.length > 1 && !selectedKey)" @click="copyPrompt">复制提示词 ↗</button><span>{{ includesDocument ? '直接发给 Agent，无需再附文档。' : '按管理员配置复制提示词。' }}</span></div>
     <p v-if="copyStatus" class="agent-status" role="status" aria-live="polite">{{ copyStatus }}</p>
   </section>
 </template>
@@ -36,23 +33,23 @@ import Select from '@/components/common/Select.vue'
 import Input from '@/components/common/Input.vue'
 import { list } from '@/api/keys'
 import type { ApiKey } from '@/types'
-import type { DocumentationGroup } from '@/utils/creativeDocumentation'
-import { referencePages } from '../../../public/creative-docs/reference-content.js'
-import { agentInstructions, agentPrompt, documentMarkdown } from '../../../public/creative-docs/documentation.js'
+import type { DocumentationArticle } from '@/api/documentation'
+import { renderAgentTemplate } from '@/utils/creativeDocumentation'
 
-const props = defineProps<{ group: DocumentationGroup }>()
-const page = computed(() => referencePages.find(page => page.id === props.group.documentId)!)
-const instructions = computed(() => agentInstructions(page.value, props.group.name))
-const reference = computed(() => documentMarkdown(page.value))
-const documentSize = computed(() => reference.value.length.toLocaleString())
+const props = defineProps<{ article: DocumentationArticle }>()
+const usesKey = computed(() => props.article.agent.key_mode !== 'none' && /\{\{\s*(api_key|group_name)\s*\}\}/.test(props.article.agent.template))
+const includesDocument = computed(() => /\{\{\s*document\s*\}\}/.test(props.article.agent.template))
+const preview = computed(() => renderAgentTemplate({ ...props.article, content: '（复制时自动附上以下完整文档）' }))
 const keys = ref<ApiKey[]>([])
 const selectedKeyId = ref<string | number | boolean | null>(null)
 const selectedKey = computed(() => keys.value.find(key => key.id === selectedKeyId.value))
-const keyOptions = computed(() => keys.value.map(key => ({ value: key.id, label: `${props.group.name} · ${key.name}` })))
+const keyLabel = (key: ApiKey) => (key.group?.name ? key.group.name + ' · ' : '') + key.name
+const keyOptions = computed(() => keys.value.map(key => ({ value: key.id, label: keyLabel(key) })))
 const keysLoading = ref(false)
 const keysError = ref('')
 const copyStatus = ref('')
 let request: AbortController | null = null
+let copyAttempt = 0
 
 async function loadKeys() {
   request?.abort()
@@ -63,15 +60,16 @@ async function loadKeys() {
   keysError.value = ''
   copyStatus.value = ''
   keysLoading.value = false
-  const groupId = Number(props.group.id)
-  if (!Number.isSafeInteger(groupId) || groupId <= 0) return
+  if (!props.article.agent.enabled || !usesKey.value || !['all', 'groups'].includes(props.article.agent.key_mode)) return
+  const mode = props.article.agent.key_mode
+  const groups = [...props.article.agent.group_ids]
   keysLoading.value = true
   try {
     const available: ApiKey[] = []
     for (let page = 1; ; page++) {
-      const response = await list(page, 100, { group_id: groupId, status: 'active' }, { signal: current.signal })
+      const response = await list(page, 100, { status: 'active' }, { signal: current.signal })
       if (current.signal.aborted) return
-      available.push(...response.items.filter(key => key.group_id === groupId && key.status === 'active' && key.key && (!key.expires_at || Date.parse(key.expires_at) > Date.now()) && (!key.quota || key.quota_used < key.quota)))
+      available.push(...response.items.filter(key => key.status === 'active' && key.key && (!key.expires_at || Date.parse(key.expires_at) > Date.now()) && (!key.quota || key.quota_used < key.quota) && (mode === 'all' || (key.group_id != null && groups.includes(key.group_id)))))
       if (page >= response.pages || !response.items.length) break
     }
     keys.value = available
@@ -85,19 +83,17 @@ async function loadKeys() {
 
 async function copyPrompt() {
   if (keysLoading.value || keysError.value || (keys.value.length > 1 && !selectedKey.value)) return
-  const groupId = props.group.id
-  const keyId = selectedKeyId.value
+  const attempt = ++copyAttempt
   try {
-    await navigator.clipboard.writeText(agentPrompt(page.value, props.group.name, selectedKey.value?.key))
-    if (props.group.id === groupId && selectedKeyId.value === keyId) copyStatus.value = selectedKey.value ? '已复制完整提示词与选中的 Key。' : '已复制完整提示词，请将 <API_KEY> 替换为当前分组的 Key。'
+    await navigator.clipboard.writeText(renderAgentTemplate(props.article, selectedKey.value?.key, selectedKey.value?.group?.name))
+    if (attempt === copyAttempt) copyStatus.value = selectedKey.value ? '已复制提示词与选中的 Key。' : usesKey.value ? '已复制提示词，请替换 <API_KEY>。' : '已复制提示词。'
   } catch {
-    if (props.group.id === groupId && selectedKeyId.value === keyId) copyStatus.value = '复制失败，请允许浏览器访问剪贴板后重试。'
+    if (attempt === copyAttempt) copyStatus.value = '复制失败，请允许浏览器访问剪贴板后重试。'
   }
 }
-
-watch(() => props.group.id, loadKeys, { immediate: true })
-watch(selectedKeyId, () => { copyStatus.value = '' })
-onBeforeUnmount(() => { request?.abort(); keys.value = [] })
+watch(() => [props.article.id, props.article.agent.enabled, props.article.agent.key_mode, JSON.stringify(props.article.agent.group_ids), usesKey.value], () => { copyAttempt++; void loadKeys() }, { immediate: true })
+watch(selectedKeyId, () => { copyAttempt++; copyStatus.value = '' })
+onBeforeUnmount(() => { request?.abort(); copyAttempt++; keys.value = [] })
 </script>
 
 <style scoped>

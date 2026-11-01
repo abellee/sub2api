@@ -73,6 +73,7 @@ func TestUserMenuRejectsInvalidConfiguration(t *testing.T) {
 		{"duplicate path", []UserMenuSection{{ID: "a", Title: "One", Items: []string{"/keys", "/keys"}}}},
 		{"multiple assignments", []UserMenuSection{{ID: "a", Title: "One", Items: []string{"/keys"}}, {ID: "b", Title: "Two", Items: []string{"/keys"}}}},
 		{"admin route", []UserMenuSection{{ID: "a", Title: "One", Items: []string{"/admin/users"}}}},
+		{"document category route", []UserMenuSection{{ID: "a", Title: "One", Items: []string{"/docs/creative/image"}}}},
 		{"external url", []UserMenuSection{{ID: "a", Title: "One", Items: []string{"https://example.com"}}}},
 		{"custom traversal", []UserMenuSection{{ID: "a", Title: "One", Items: []string{"/custom/../admin"}}}},
 		{"too many headings", make([]UserMenuSection, 33)},
@@ -121,7 +122,7 @@ func TestUserMenuHiddenItems(t *testing.T) {
 	loaded, err := NewGroupCategoryStore(path).GetUserMenu(ctx)
 	require.NoError(t, err)
 	require.Equal(t, saved, loaded)
-	for _, hidden := range [][]string{{"/admin/users"}, {"https://example.com"}, {"/custom/../admin"}, {"/keys", " /keys "}, make([]string, 129)} {
+	for _, hidden := range [][]string{{"/docs/creative/video"}, {"/admin/users"}, {"https://example.com"}, {"/custom/../admin"}, {"/keys", " /keys "}, make([]string, 129)} {
 		_, err = store.SaveUserMenu(ctx, UserMenuConfig{HiddenItems: hidden})
 		require.True(t, infraerrors.IsBadRequest(err))
 		loaded, err = store.GetUserMenu(ctx)

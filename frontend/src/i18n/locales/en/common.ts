@@ -191,6 +191,7 @@ export default {
     availableChannels: 'Available Channels',
     modelPlaza: 'Model Plaza',
     creativeDocs: 'Image / Video Guide',
+    documentation: 'Documentation',
     appCenter: 'App Center',
     downgradeRadar: 'Downgrade Radar',
     subscriptions: 'Subscriptions',
