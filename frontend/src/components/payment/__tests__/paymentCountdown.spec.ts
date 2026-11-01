@@ -8,7 +8,7 @@ vi.mock('vue-i18n', async (importOriginal) => ({
   ...await importOriginal<typeof import('vue-i18n')>(),
   useI18n: () => ({ t: (key: string) => key }),
 }))
-vi.mock('@/components/layout/AppLayout.vue', () => ({
+vi.mock('@/components/user/dashboard/studio/DashboardStudioLayout.vue', () => ({
   default: { template: '<div><slot /></div>' },
 }))
 vi.mock('@/stores/payment', () => ({
@@ -33,7 +33,7 @@ async function open(kind: 'dialog' | 'panel' | 'page') {
   const props = { orderId: 42, qrCode: '', expiresAt: new Date(Date.now() + 120_000).toISOString(), paymentType: 'custom' }
   const global = { stubs: {
     Icon: true,
-    AppLayout: { template: '<div><slot /></div>' },
+    StudioLayout: { template: '<div><slot /></div>' },
     BaseDialog: { props: ['show'], template: '<div v-if="show"><slot /><slot name="footer" /></div>' },
   } }
   if (kind === 'page') return mount(PaymentQRCodeView, { global })

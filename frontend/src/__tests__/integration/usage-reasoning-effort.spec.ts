@@ -200,6 +200,7 @@ const adminMappedLog = {
 
 const sharedPageStubs = {
   AppLayout: layoutStub,
+  StudioLayout: layoutStub,
   Pagination: true,
   Select: true,
   DateRangePicker: true,
