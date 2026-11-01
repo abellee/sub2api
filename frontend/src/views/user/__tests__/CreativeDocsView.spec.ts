@@ -7,7 +7,7 @@ import { referencePages } from '../../../../public/creative-docs/reference-conte
 
 const { getAvailable, getCategories } = vi.hoisted(() => ({ getAvailable: vi.fn(), getCategories: vi.fn() }))
 const theme = ref(true)
-vi.mock('@/components/layout/AppLayout.vue', () => ({ default: { template: '<main style="padding:32px"><slot /></main>' } }))
+vi.mock('@/components/user/dashboard/studio/DashboardStudioLayout.vue', () => ({ default: { template: '<main style="padding:32px"><slot /></main>' } }))
 vi.mock('@/api/groups', () => ({ getAvailable, getCategories }))
 vi.mock('@/components/group/CreativeAgentPrompt.vue', () => ({ default: { props: ['group'], template: '<section id="agent">文档太长不想看</section>' } }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))

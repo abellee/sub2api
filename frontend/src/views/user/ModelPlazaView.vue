@@ -1,12 +1,12 @@
 <template>
-  <AppLayout>
+  <StudioLayout>
     <div class="w-full min-w-0">
       <ModelPlazaContent variant="console" />
     </div>
-  </AppLayout>
+  </StudioLayout>
 </template>
 
 <script setup lang="ts">
-import AppLayout from '@/components/layout/AppLayout.vue'
+import StudioLayout from '@/components/user/dashboard/studio/DashboardStudioLayout.vue'
 import ModelPlazaContent from '@/components/model-plaza/ModelPlazaContent.vue'
 </script>

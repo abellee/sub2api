@@ -153,7 +153,7 @@ function mountUsageView() {
   return mount(UsageView, {
     global: {
       stubs: {
-        AppLayout: simpleStub,
+        StudioLayout: simpleStub,
         Pagination: true,
         Select: true,
         DateRangePicker: true,

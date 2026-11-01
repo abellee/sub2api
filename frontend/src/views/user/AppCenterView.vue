@@ -1,5 +1,5 @@
 <template>
-  <AppLayout>
+  <StudioLayout>
     <div class="space-y-6" data-testid="app-center-page">
       <section class="border-b border-gray-200 pb-5 dark:border-dark-700">
         <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
@@ -43,14 +43,14 @@
     </div>
 
     <CatalogAppDetailsDialog :app="detailApp" show-download-action @close="closeDetail" />
-  </AppLayout>
+  </StudioLayout>
 </template>
 
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { listCatalogApps, type CatalogApp } from '@/api/appCatalog'
-import AppLayout from '@/components/layout/AppLayout.vue'
+import StudioLayout from '@/components/user/dashboard/studio/DashboardStudioLayout.vue'
 import CatalogAppCard from '@/components/app-center/CatalogAppCard.vue'
 import CatalogAppDetailsDialog from '@/components/app-center/CatalogAppDetailsDialog.vue'
 import Icon from '@/components/icons/Icon.vue'

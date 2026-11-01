@@ -30,7 +30,7 @@ function mountView() {
   return mount(AppCenterView, {
     global: {
       stubs: {
-        AppLayout: { template: '<div><slot /></div>' },
+        StudioLayout: { template: '<div><slot /></div>' },
         Icon: true,
         Teleport: { template: '<div><slot /></div>' },
         BaseDialog: dialogStub,

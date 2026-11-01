@@ -1,5 +1,5 @@
 <template>
-  <AppLayout>
+  <StudioLayout>
     <div class="creative-docs" :style="{ '--docs-group-top': `${groupBarTop}px` }">
       <CreativeOverview @start="scrollToSection('agent')" />
       <div v-if="loading" class="creative-docs-empty" role="status">正在加载分组文档…</div>
@@ -30,13 +30,13 @@
       </div>
       </template>
     </div>
-  </AppLayout>
+  </StudioLayout>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import AppLayout from '@/components/layout/AppLayout.vue'
+import StudioLayout from '@/components/user/dashboard/studio/DashboardStudioLayout.vue'
 import CreativeOverview from '@/components/group/CreativeOverview.vue'
 import CreativeAgentPrompt from '@/components/group/CreativeAgentPrompt.vue'
 import { useTheme } from '@/composables/useTheme'

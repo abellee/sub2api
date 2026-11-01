@@ -64,7 +64,7 @@ function mountView() {
   return shallowMount(AirwallexPaymentView, {
     global: {
       stubs: {
-        AppLayout: { template: '<div><slot /></div>' },
+        StudioLayout: { template: '<div><slot /></div>' },
         Icon: true,
       },
     },

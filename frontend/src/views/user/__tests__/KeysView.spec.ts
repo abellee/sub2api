@@ -145,7 +145,7 @@ const createApiKey = (): ApiKey => ({
   reset_7d_at: null,
 })
 
-const AppLayoutStub = {
+const StudioLayoutStub = {
   template: '<div><slot /></div>',
 }
 
@@ -230,7 +230,7 @@ const mountView = async () => {
   const wrapper = mount(KeysView, {
     global: {
       stubs: {
-        AppLayout: AppLayoutStub,
+        StudioLayout: StudioLayoutStub,
         TablePageLayout: TablePageLayoutStub,
         DataTable: DataTableStub,
         Pagination: PaginationStub,

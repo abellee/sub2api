@@ -1,5 +1,5 @@
 <template>
-  <AppLayout>
+  <StudioLayout>
     <div class="tokenfree-monitor space-y-6 pb-12">
       <section
         class="card monitor-summary sticky top-0 z-20 p-0 backdrop-blur-sm"
@@ -208,14 +208,14 @@
         </div>
       </div>
     </div>
-  </AppLayout>
+  </StudioLayout>
 </template>
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import AppLayout from '@/components/layout/AppLayout.vue'
+import StudioLayout from '@/components/user/dashboard/studio/DashboardStudioLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import StudioBrandIcon from '@/features/channel-monitor-v2-studio/StudioBrandIcon.vue'

@@ -1,5 +1,5 @@
 <template>
-  <AppLayout>
+  <StudioLayout>
     <TablePageLayout>
       <template #filters>
         <div class="flex flex-col gap-3">
@@ -1320,7 +1320,7 @@
       </template>
     </BaseDialog>
 
-  </AppLayout>
+  </StudioLayout>
 </template>
 
 <script setup lang="ts">
@@ -1334,7 +1334,7 @@ import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 const { t } = useI18n()
 import { keysAPI, authAPI, usageAPI, userGroupsAPI } from '@/api'
 import type { GroupCategory, GroupRecommendation } from '@/api/groups'
-import AppLayout from '@/components/layout/AppLayout.vue'
+import StudioLayout from '@/components/user/dashboard/studio/DashboardStudioLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import BulkEditKeysModal from '@/components/keys/BulkEditKeysModal.vue'
 	import DataTable from '@/components/common/DataTable.vue'

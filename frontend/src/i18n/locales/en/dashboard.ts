@@ -1,6 +1,27 @@
 export default {
   dashboard: {
     title: 'Dashboard',
+    studio: {
+      lastSevenDays: 'Last 7 days (including today)',
+      previewData: 'Test preview · Sample data in dashboard only',
+      backToLive: 'View live data',
+      rangeRequests: 'Request trend',
+      overview: 'Usage overview',
+      todayOnly: 'Requests today',
+      selectedRange: 'Selected date range',
+      lastFiveMinutes: '5-minute average',
+      sceneLabel: '3D model Token distribution. Left-drag to rotate, scroll to zoom. Arrow keys rotate, plus and minus zoom, Home resets.',
+      sceneHint: 'Left-drag to rotate · Scroll to zoom',
+      resetView: 'Reset view',
+      noWebgl: '3D unavailable. Model usage is listed alongside.',
+      modelsEmpty: 'No model usage in this date range',
+      modelHint: 'Hover or select a model to see usage and cost',
+      statsError: 'Could not load the overview. Please retry.',
+      chartError: 'Could not load the chart. Please retry.',
+      cacheCreation: 'Cache creation',
+      cacheRead: 'Cache read',
+      cacheHitRate: 'Cache hit rate'
+    },
     welcomeMessage: "Welcome back! Here's an overview of your account.",
     balance: 'Balance',
     apiKeys: 'API Keys',

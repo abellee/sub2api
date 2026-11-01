@@ -1,6 +1,27 @@
 export default {
   dashboard: {
     title: '仪表盘',
+    studio: {
+      lastSevenDays: '近 7 天（含今天）',
+      previewData: '测试数据预览 · 仅仪表盘使用测试数据',
+      backToLive: '查看真实数据',
+      rangeRequests: '请求趋势',
+      overview: '用量概览',
+      todayOnly: '今日累计请求',
+      selectedRange: '所选时间范围',
+      lastFiveMinutes: '近 5 分钟均值',
+      sceneLabel: '模型 Token 分布 3D 饼图。左键拖动旋转，滚轮缩放，也可用方向键旋转、加减键缩放、Home 重置。',
+      sceneHint: '左键拖动旋转 · 滚轮缩放',
+      resetView: '重置视角',
+      noWebgl: '3D 暂不可用，请在右侧查看模型用量',
+      modelsEmpty: '此时间范围内暂无模型用量',
+      modelHint: '悬停或选择模型，查看用量与消费',
+      statsError: '概览加载失败，请重试',
+      chartError: '图表加载失败，请重试',
+      cacheCreation: '缓存创建',
+      cacheRead: '缓存读取',
+      cacheHitRate: '缓存命中率'
+    },
     welcomeMessage: '欢迎回来！这是您账户的概览。',
     balance: '余额',
     apiKeys: 'API 密钥',

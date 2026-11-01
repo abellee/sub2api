@@ -1,5 +1,5 @@
 <template>
-  <AppLayout>
+  <StudioLayout>
     <div class="space-y-6">
       <UsageStatsCards :stats="usageStats" :show-account-cost="false" :strike-standard-cost="true" />
 
@@ -214,7 +214,7 @@
         @ipGeoBatchFailed="handleIpGeoBatchFailed"
       />
     </div>
-  </AppLayout>
+  </StudioLayout>
 
 </template>
 
@@ -224,7 +224,7 @@ import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { FeatureFlags, resolveFeatureFlag } from '@/utils/featureFlags'
 import { keysAPI, usageAPI, userGroupsAPI } from '@/api'
-import AppLayout from '@/components/layout/AppLayout.vue'
+import StudioLayout from '@/components/user/dashboard/studio/DashboardStudioLayout.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import Select, { type SelectOption } from '@/components/common/Select.vue'
 import DateRangePicker from '@/components/common/DateRangePicker.vue'

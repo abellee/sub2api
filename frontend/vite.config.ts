@@ -377,6 +377,11 @@ export default defineConfig(({ mode }) => {
               return 'vendor-ui'
             }
 
+            // Three.js 仅在 3D 仪表盘中加载，避免进入公共依赖。
+            if (id.includes('/three/')) {
+              return 'vendor-three'
+            }
+
             // 图表库
             if (id.includes('/chart.js/') || id.includes('/vue-chartjs/')) {
               return 'vendor-chart'

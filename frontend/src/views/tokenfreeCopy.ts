@@ -1,7 +1,5 @@
 // Copy for the TokenFree landing page; locale comes from the shared app i18n state.
 export const tokenFreeEnglish: Record<string, string> = {
-  更名公告: "Name change",
-  "LLM Free 现已更名为 TokenFree。": "LLM Free is now TokenFree.",
   模型广场: "Models",
   "加入 QQ 群": "Join the QQ group",
   QQ群: "QQ Group",

@@ -121,7 +121,7 @@ function mountView() {
   return shallowMount(StripePaymentView, {
     global: {
       stubs: {
-        AppLayout: { template: '<div><slot /></div>' },
+        StudioLayout: { template: '<div><slot /></div>' },
         Icon: true,
       },
     },
