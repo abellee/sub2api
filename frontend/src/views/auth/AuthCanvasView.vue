@@ -59,12 +59,12 @@
           <div class="ac-brand-name">{{ brandText }}</div>
         </div>
 
-        <div class="ac-tabs" :class="{ reg: isRegister }">
+        <div class="ac-tabs" :class="{ reg: isRegister && showRegisterEntry, single: !showRegisterEntry }">
           <div class="ink" aria-hidden="true"></div>
           <button type="button" :class="{ on: isLogin }" @click="goLogin">
             {{ t('auth.signIn') }}
           </button>
-          <button type="button" :class="{ on: isRegister }" @click="goRegister">
+          <button v-if="showRegisterEntry" type="button" :class="{ on: isRegister }" @click="goRegister">
             {{ t('auth.signUp') }}
           </button>
         </div>
@@ -186,7 +186,7 @@ const brandText = computed(() =>
     : t('auth.signInToSite', { siteName: siteName.value })
 )
 
-// 登录 Tab 下「立即注册」入口：与原 LoginView 页脚条件一致
+// 顶部与页脚注册入口均遵守系统开关。
 const showRegisterEntry = computed(() => {
   const settings = appStore.cachedPublicSettings
   return settingsLoaded.value && settings?.backend_mode_enabled !== true && settings?.registration_enabled === true
@@ -787,6 +787,12 @@ onUnmounted(() => {
 }
 .ac-tabs.reg .ink {
   transform: translateX(100%);
+}
+.ac-tabs.single {
+  grid-template-columns: 1fr;
+}
+.ac-tabs.single .ink {
+  width: calc(100% - 8px);
 }
 .ac-tabs button {
   position: relative;

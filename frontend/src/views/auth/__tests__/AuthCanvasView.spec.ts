@@ -113,6 +113,8 @@ function mountCanvas() {
 describe('AuthCanvasView', () => {
   beforeEach(() => {
     currentRoute.path = '/login'
+    cachedSettings.registration_enabled = true
+    cachedSettings.backend_mode_enabled = false
     getPublicSettingsMock.mockReset()
     pushMock.mockReset()
     getPublicSettingsMock.mockResolvedValue(publicSettings)
@@ -157,7 +159,18 @@ describe('AuthCanvasView', () => {
     const wrapper2 = mountCanvas()
     await flushPromises()
     expect(wrapper2.find('.ac-below').text()).not.toContain('auth.signUp')
+    expect(wrapper2.findAll('.ac-tabs button')).toHaveLength(1)
+    expect(wrapper2.find('.ac-tabs').classes()).toContain('single')
     cachedSettings.registration_enabled = true
+  })
+
+  it('hides both registration entries in backend mode', async () => {
+    cachedSettings.backend_mode_enabled = true
+    const wrapper = mountCanvas()
+    await flushPromises()
+
+    expect(wrapper.findAll('.ac-tabs button')).toHaveLength(1)
+    expect(wrapper.find('.ac-below').text()).not.toContain('auth.signUp')
   })
 })
 
