@@ -52,7 +52,7 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/login',
     name: 'Login',
-    component: () => import('@/views/auth/LoginView.vue'),
+    component: () => import('@/views/auth/AuthCanvasView.vue'),
     meta: {
       requiresAuth: false,
       title: 'Login',
@@ -62,7 +62,7 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/register',
     name: 'Register',
-    component: () => import('@/views/auth/RegisterView.vue'),
+    component: () => import('@/views/auth/AuthCanvasView.vue'),
     meta: {
       requiresAuth: false,
       title: 'Register',

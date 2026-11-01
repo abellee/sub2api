@@ -237,6 +237,7 @@ export default {
   auth: {
     welcomeBack: '欢迎回来',
     signInToAccount: '登录您的账户以继续',
+    signInToSite: '登录 {siteName}',
     signIn: '登录',
     signingIn: '登录中...',
     passkeySignIn: '使用 Passkey 登录',

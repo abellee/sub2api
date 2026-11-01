@@ -37,19 +37,20 @@
 
   <div
     v-else-if="!accepted && documents.length > 0"
-    class="rounded-lg border border-primary-100 bg-primary-50/70 p-3 text-sm text-primary-900 dark:border-primary-500/20 dark:bg-primary-500/10 dark:text-primary-100"
+    class="agreement-notice rounded-lg border border-primary-100 bg-primary-50/70 p-3 text-sm text-primary-900 dark:border-primary-500/20 dark:bg-primary-500/10 dark:text-primary-100"
+    :class="{ 'agreement-canvas': props.theme === 'canvas' }"
   >
     <div class="flex items-start gap-3">
-      <Icon name="shield" size="sm" class="mt-0.5 flex-shrink-0 text-primary-600 dark:text-primary-300" />
+      <Icon name="shield" size="sm" class="agreement-notice-icon mt-0.5 flex-shrink-0 text-primary-600 dark:text-primary-300" />
       <div class="min-w-0 flex-1">
         <p class="font-medium">{{ t('legal.loginAgreementPrompt.noticeTitle') }}</p>
-        <p class="mt-1 text-primary-700 dark:text-primary-200/80">
+        <p class="agreement-description mt-1 text-primary-700 dark:text-primary-200/80">
           {{ t('legal.loginAgreementPrompt.noticeDescription') }}
         </p>
       </div>
       <button
         type="button"
-        class="flex-shrink-0 rounded-md bg-primary-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-primary-700"
+        class="agreement-accept flex-shrink-0 rounded-md bg-primary-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-primary-700"
         @click="emit('open')"
       >
         {{ t('legal.loginAgreementPrompt.viewTerms') }}
@@ -62,26 +63,27 @@
       <div
         v-if="dialogVisible"
         class="fixed inset-0 z-[140] flex items-center justify-center overflow-y-auto bg-gray-950/60 p-4 backdrop-blur-sm"
+        :class="{ 'agreement-canvas': props.theme === 'canvas' }"
       >
-        <div class="w-full max-w-[600px] overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-black/10 dark:bg-dark-900 dark:ring-white/10">
-          <div class="border-b border-gray-100 bg-white px-6 py-6 dark:border-dark-800 dark:bg-dark-900">
+        <div class="agreement-dialog w-full max-w-[600px] overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-black/10 dark:bg-dark-900 dark:ring-white/10">
+          <div class="agreement-header border-b border-gray-100 bg-white px-6 py-6 dark:border-dark-800 dark:bg-dark-900">
             <div class="flex items-start gap-4">
-              <span class="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-primary-50 text-primary-700 ring-1 ring-primary-100 dark:bg-primary-500/10 dark:text-primary-300 dark:ring-primary-500/20">
+              <span class="agreement-icon flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-primary-50 text-primary-700 ring-1 ring-primary-100 dark:bg-primary-500/10 dark:text-primary-300 dark:ring-primary-500/20">
                 <Icon name="shield" size="md" />
               </span>
               <div class="min-w-0 flex-1">
                 <div class="flex flex-wrap items-center gap-2">
-                  <h2 class="text-xl font-bold tracking-normal text-gray-950 dark:text-white">
+                  <h2 class="agreement-title text-xl font-bold tracking-normal text-gray-950 dark:text-white">
                     {{ t('legal.loginAgreementPrompt.dialogTitle') }}
                   </h2>
                   <span
                     v-if="updatedAt"
-                    class="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600 dark:bg-dark-800 dark:text-dark-300"
+                    class="agreement-date rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600 dark:bg-dark-800 dark:text-dark-300"
                   >
                     {{ updatedAt }}
                   </span>
                 </div>
-                <p class="mt-2 text-sm leading-6 text-gray-600 dark:text-dark-300">
+                <p class="agreement-description mt-2 text-sm leading-6 text-gray-600 dark:text-dark-300">
                   {{
                     t('legal.loginAgreementPrompt.dialogDescription', {
                       date: updatedAt || t('legal.loginAgreementPrompt.recently'),
@@ -94,7 +96,7 @@
 
           <div class="max-h-[58vh] overflow-y-auto px-6 py-5">
             <div class="mb-3 flex items-center justify-between gap-3">
-              <p class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('legal.loginAgreementPrompt.relatedDocuments') }}</p>
+              <p class="agreement-title text-sm font-semibold text-gray-900 dark:text-white">{{ t('legal.loginAgreementPrompt.relatedDocuments') }}</p>
             </div>
             <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <RouterLink
@@ -103,33 +105,33 @@
                 :to="documentRoute(doc)"
                 target="_blank"
                 rel="noopener noreferrer"
-                class="group flex min-h-[72px] w-full items-center gap-3 rounded-xl border border-gray-200 bg-gray-50/70 px-4 py-3 text-left transition hover:-translate-y-0.5 hover:border-primary-200 hover:bg-white hover:shadow-sm dark:border-dark-700 dark:bg-dark-800/70 dark:hover:border-primary-500/30 dark:hover:bg-dark-800"
+                class="agreement-document group flex min-h-[72px] w-full items-center gap-3 rounded-xl border border-gray-200 bg-gray-50/70 px-4 py-3 text-left transition hover:-translate-y-0.5 hover:border-primary-200 hover:bg-white hover:shadow-sm dark:border-dark-700 dark:bg-dark-800/70 dark:hover:border-primary-500/30 dark:hover:bg-dark-800"
               >
-                <span class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-white text-gray-700 ring-1 ring-gray-200 transition group-hover:bg-primary-50 group-hover:text-primary-700 group-hover:ring-primary-100 dark:bg-dark-900 dark:text-dark-200 dark:ring-dark-700 dark:group-hover:bg-primary-500/10 dark:group-hover:text-primary-200 dark:group-hover:ring-primary-500/20">
+                <span class="agreement-icon flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-white text-gray-700 ring-1 ring-gray-200 transition group-hover:bg-primary-50 group-hover:text-primary-700 group-hover:ring-primary-100 dark:bg-dark-900 dark:text-dark-200 dark:ring-dark-700 dark:group-hover:bg-primary-500/10 dark:group-hover:text-primary-200 dark:group-hover:ring-primary-500/20">
                   <Icon :name="documentIcon(index, doc.title)" size="sm" />
                 </span>
                 <span class="min-w-0 flex-1">
-                  <span class="block truncate text-sm font-semibold text-gray-950 dark:text-white">{{ doc.title }}</span>
+                  <span class="agreement-title block truncate text-sm font-semibold text-gray-950 dark:text-white">{{ doc.title }}</span>
                 </span>
-                <span class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-gray-400 transition group-hover:bg-primary-50 group-hover:text-primary-600 dark:group-hover:bg-primary-500/10 dark:group-hover:text-primary-300">
+                <span class="agreement-arrow flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-gray-400 transition group-hover:bg-primary-50 group-hover:text-primary-600 dark:group-hover:bg-primary-500/10 dark:group-hover:text-primary-300">
                   <Icon name="externalLink" size="sm" />
                 </span>
               </RouterLink>
             </div>
           </div>
 
-          <div class="border-t border-gray-100 bg-gray-50/80 px-6 py-4 dark:border-dark-800 dark:bg-dark-950/60">
+          <div class="agreement-footer border-t border-gray-100 bg-gray-50/80 px-6 py-4 dark:border-dark-800 dark:bg-dark-950/60">
             <div class="grid grid-cols-2 gap-3">
               <button
                 type="button"
-                class="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-700 transition hover:bg-gray-100 dark:border-dark-700 dark:bg-dark-800 dark:text-dark-200 dark:hover:bg-dark-700"
+                class="agreement-reject rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-700 transition hover:bg-gray-100 dark:border-dark-700 dark:bg-dark-800 dark:text-dark-200 dark:hover:bg-dark-700"
                 @click="emit('reject')"
               >
                 {{ t('legal.loginAgreementPrompt.reject') }}
               </button>
               <button
                 type="button"
-                class="rounded-xl bg-primary-600 px-4 py-3 text-sm font-semibold text-white shadow-sm shadow-primary-600/20 transition hover:bg-primary-700"
+                class="agreement-accept rounded-xl bg-primary-600 px-4 py-3 text-sm font-semibold text-white shadow-sm shadow-primary-600/20 transition hover:bg-primary-700"
                 @click="emit('accept')"
               >
                 {{ t('legal.loginAgreementPrompt.accept') }}
@@ -156,6 +158,7 @@ const props = withDefaults(defineProps<{
   mode: 'modal' | 'checkbox' | string
   updatedAt?: string
   visible: boolean
+  theme?: 'canvas'
 }>(), {
   updatedAt: ''
 })
@@ -216,6 +219,101 @@ function documentIcon(index: number, title: string): 'document' | 'shield' | 'gl
 </script>
 
 <style scoped>
+/* Teleport places the dialog outside the canvas, so its theme must travel with it. */
+.agreement-canvas {
+  --agreement-line: rgba(137, 155, 255, 0.16);
+  --agreement-accent: #abb9ff;
+  --agreement-text: #eef1fc;
+  --agreement-dim: #99a3b9;
+  font-family: -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+}
+
+.agreement-canvas.agreement-notice {
+  color: var(--agreement-text);
+  border-color: var(--agreement-line);
+  background: rgba(83, 110, 255, 0.08);
+}
+
+.agreement-canvas .agreement-dialog {
+  border: 1px solid var(--agreement-line);
+  border-radius: 20px;
+  background: rgba(15, 20, 34, 0.92);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 40px 90px rgba(0, 0, 0, 0.5);
+}
+
+.agreement-canvas .agreement-header {
+  border-color: var(--agreement-line);
+  background: transparent;
+}
+
+.agreement-canvas .agreement-title {
+  color: var(--agreement-text);
+}
+
+.agreement-canvas .agreement-description,
+.agreement-canvas .agreement-arrow {
+  color: var(--agreement-dim);
+}
+
+.agreement-canvas .agreement-icon,
+.agreement-canvas .agreement-document:hover .agreement-icon {
+  color: var(--agreement-accent);
+  background: rgba(83, 110, 255, 0.12);
+  --tw-ring-color: var(--agreement-line);
+}
+
+.agreement-canvas .agreement-notice-icon {
+  color: var(--agreement-accent);
+}
+
+.agreement-canvas .agreement-date {
+  color: var(--agreement-accent);
+  background: rgba(83, 110, 255, 0.12);
+}
+
+.agreement-canvas .agreement-document,
+.agreement-canvas .agreement-reject {
+  border-color: var(--agreement-line);
+  background: rgba(11, 14, 25, 0.65);
+}
+
+.agreement-canvas .agreement-reject {
+  color: var(--agreement-dim);
+}
+
+.agreement-canvas .agreement-document:hover,
+.agreement-canvas .agreement-reject:hover {
+  border-color: rgba(137, 155, 255, 0.4);
+  background: rgba(83, 110, 255, 0.12);
+}
+
+.agreement-canvas .agreement-document:hover .agreement-arrow,
+.agreement-canvas .agreement-reject:hover {
+  color: var(--agreement-accent);
+}
+
+.agreement-canvas .agreement-footer {
+  border-color: var(--agreement-line);
+  background: rgba(11, 14, 25, 0.65);
+}
+
+.agreement-canvas .agreement-accept {
+  color: #fff;
+  background: linear-gradient(115deg, #486aff, #7755f3);
+  box-shadow: 0 12px 30px rgba(83, 110, 255, 0.35);
+}
+
+.agreement-canvas .agreement-accept:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 16px 34px rgba(83, 110, 255, 0.45);
+}
+
+.agreement-canvas :is(button, a):focus-visible {
+  outline: 2px solid #899bff;
+  outline-offset: 3px;
+}
+
 .agreement-fade-enter-active,
 .agreement-fade-leave-active {
   transition: opacity 0.18s ease;

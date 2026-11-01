@@ -2,13 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { ref } from 'vue'
 import StudioSidebar from '../StudioSidebar.vue'
+import AppSidebar from '@/components/layout/AppSidebar.vue'
 const versionMocks = vi.hoisted(() => ({ isAdmin: false, fetchVersion: vi.fn(), versions: vi.fn(), rollback: vi.fn() }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
 vi.mock('vue-router', () => ({ useRoute: () => ({ path: '/dashboard' }), useRouter: () => ({ push: vi.fn() }) }))
 vi.mock('@vueuse/core', () => ({ useMediaQuery: () => ref(true) }))
 vi.mock('pinia', () => ({ storeToRefs: (store: unknown) => store }))
 vi.mock('@/stores', () => ({
-  useAppStore: () => ({ siteName: 'TokenFree', siteVersion: '0.2.19', currentVersion: '0.2.19', buildType: 'release', hasUpdate: false, versionLoading: false, fetchVersion: versionMocks.fetchVersion, publicSettingsLoaded: true, sidebarScrollTop: 0, cachedPublicSettings: {}, setMobileOpen: vi.fn() }),
+  useAppStore: () => ({ siteName: 'TokenFree', siteVersion: '0.2.19', currentVersion: '0.2.19', buildType: 'release', hasUpdate: false, versionLoading: false, fetchVersion: versionMocks.fetchVersion, publicSettingsLoaded: true, sidebarCollapsed: false, sidebarScrollTop: 0, cachedPublicSettings: {}, setMobileOpen: vi.fn() }),
   useAuthStore: () => ({ isAdmin: versionMocks.isAdmin }),
   useAdminSettingsStore: () => ({ fetch: vi.fn(), customMenuItems: [] }), useOnboardingStore: () => ({ isCurrentStep: () => false }),
   useRemoteWidgetsStore: () => ({ sideVisible: ref(false), sideHasIcon: ref(false) })
@@ -24,6 +25,23 @@ beforeEach(() => { versionMocks.isAdmin = false; vi.clearAllMocks() })
 const wrappers: ReturnType<typeof mount>[] = []
 afterEach(() => { wrappers.forEach(wrapper => wrapper.unmount()); wrappers.length = 0; vi.useRealTimers() })
 describe('StudioSidebar', () => {
+  it.each([['management', AppSidebar], ['studio', StudioSidebar]] as const)(
+    'shows the admin personal dashboard alongside the management dashboard in the %s sidebar',
+    async (_, component) => {
+      versionMocks.isAdmin = true
+      const wrapper = mount(component, { global: { stubs: {
+        VersionBadge: true,
+        RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' },
+      } } })
+      wrappers.push(wrapper)
+      await flushPromises()
+      expect(wrapper.findAll('.sidebar-nav a[href="/admin/dashboard"]')).toHaveLength(1)
+      expect(wrapper.findAll('.sidebar-nav a[href="/dashboard"]')).toHaveLength(1)
+      const personalSection = wrapper.findAll('.sidebar-section').find(section => section.find('a[href="/dashboard"]').exists())
+      expect(personalSection?.find('.sidebar-section-title').text()).toBe('账户')
+      expect(personalSection?.find('a[href="/dashboard"]').exists()).toBe(true)
+    },
+  )
   it('keeps the original admin version panel and its rollback version list', async () => {
     versionMocks.isAdmin = true
     versionMocks.versions.mockResolvedValue({ versions: [{ version: '0.2.18', published_at: '2026-10-30' }] })
