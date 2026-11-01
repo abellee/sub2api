@@ -99,12 +99,12 @@ func ValidateDocumentation(snap *DocumentationSnapshot) error {
 		}
 		agent := &article.Agent
 		if len(agent.Template) > 64000 || len([]rune(agent.Title)) > 160 || len(agent.Description) > 4000 {
-			return fmt.Errorf("Agent 提示词或说明过长")
+			return fmt.Errorf("提示词或说明过长")
 		}
 		switch agent.KeyMode {
 		case "all", "groups", "manual", "none":
 		default:
-			return fmt.Errorf("Key 读取方式无效")
+			return fmt.Errorf("密钥读取方式无效")
 		}
 		if agent.Enabled && (strings.TrimSpace(agent.Title) == "" || strings.TrimSpace(agent.Template) == "") {
 			return fmt.Errorf("请填写 Agent 标题和提示词")
@@ -115,7 +115,7 @@ func ValidateDocumentation(snap *DocumentationSnapshot) error {
 		seen := map[int64]bool{}
 		for _, id := range agent.GroupIDs {
 			if id <= 0 || seen[id] {
-				return fmt.Errorf("Key 分组无效或重复")
+				return fmt.Errorf("密钥分组无效或重复")
 			}
 			seen[id] = true
 		}
@@ -151,7 +151,7 @@ func (s *GroupCategoryStore) SaveDocumentation(ctx context.Context, snap *Docume
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	var result sql.Result
 	if previous == 0 {
 		result, err = db.ExecContext(ctx, `INSERT OR IGNORE INTO ui_configuration(key, value) VALUES ('documentation', ?)`, string(raw))

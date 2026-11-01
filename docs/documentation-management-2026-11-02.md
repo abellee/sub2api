@@ -54,7 +54,7 @@ Markdown 渲染沿用现有 `marked` 和 `DOMPurify`，过滤脚本和危险属�
 - 所有正式接口沿用对应的登录、管理员校验和管理操作审计。
 - 本地 `uiconfigdev` 已支持这些接口，仍通过远端 `/api/v1/auth/me` 验证身份，用户读、管理员写；设置 Vite 的 `VITE_DOCUMENTATION_DIRECT` 可仅把文档请求转发到本地数据库。也可复用 `VITE_UI_CONFIG_DIRECT`，同时转发文档和菜单配置，仅用于预览。
 
-发布版本：`v0.2.19-tokenfree.dev.11`。发布及滚动部署结果另见部署记录。
+发布版本：`v0.2.19-tokenfree.dev.12`。发布及滚动部署结果另见部署记录。
 
 ## 页面端接入
 
