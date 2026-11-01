@@ -32,7 +32,7 @@ it('renders every selected document and provides all integration information to 
     expect(prompt).not.toContain('文档标识')
     expect(prompt).toContain('API Key：synthetic-key')
     expect(prompt).toContain('自定义分组')
-    expect(prompt).toContain('https://please.dontblockme.men/')
+    expect(prompt).toContain('https://creative.tokenfree.dev/')
     expect(prompt).toContain(code)
     expect(prompt).toContain('先确认再使用')
     expect(prompt).toContain('需要真实生成或产生费用时先征得我的同意')

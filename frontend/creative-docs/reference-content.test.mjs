@@ -24,7 +24,7 @@ test('imported API examples consistently use the configured origin and local tok
   const content = JSON.stringify(referencePages)
   assert.doesNotMatch(content, /api\.zzlye\.xyz|WENYUN_/)
   for (const page of referencePages) {
-    assert.match(JSON.stringify(page.blocks), /https:\/\/please\.dontblockme\.men/)
+    assert.match(JSON.stringify(page.blocks), /https:\/\/creative\.tokenfree\.dev/)
   }
 })
 
@@ -35,7 +35,7 @@ test('Base URL uses the origin while endpoint paths include the version once', (
       for (const [label, value] of block.rows) {
         if (!/base\s*url/i.test(label)) continue
         bases++
-        assert.equal(value.replaceAll('`', ''), 'https://please.dontblockme.men', page.id)
+        assert.equal(value.replaceAll('`', ''), 'https://creative.tokenfree.dev', page.id)
         assert.ok(agentPrompt(page, '示例分组').includes(value), page.id)
       }
     }
