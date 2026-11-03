@@ -1117,6 +1117,12 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 				parsed = terminal
 			}
 		}
+		// Responses SSE 不携带 type，使用本地标记保留预检分类和自定义状态码。
+		if streamErr, ok := service.GetOpsStreamError(c); ok && parsed.StreamFailure && streamErr.ErrType == costGuardErrorType {
+			parsed.ErrorType = streamErr.ErrType
+			parsed.Code = streamErr.Code
+			parsed.StatusCode = streamErr.IntendedStatus
+		}
 		// Google 错误体没有 type，先补齐本地类型，避免自定义预检文案被文本过滤。
 		if errType, code := service.OpsLocalErrorType(c); errType != "" && !parsed.StreamFailure &&
 			(parsed.ErrorType == "" || parsed.ErrorType == "api_error") {
