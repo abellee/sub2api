@@ -134,8 +134,9 @@ func TestCostGuardCustomIntervalsAreNotMultipliedTwice(t *testing.T) {
 	billing := costGuardGPT61Billing()
 	p, err := billing.GetModelPricing("gpt-6.1-sol")
 	require.NoError(t, err)
+	inputPrice, outputPrice := 6e-6, 20e-6
 	resolved := &ResolvedPricing{BasePricing: p, longContextPricingEnabled: true, Intervals: []PricingInterval{
-		{MinTokens: 272000, InputPrice: testPtrFloat64(6e-6), OutputPrice: testPtrFloat64(20e-6)},
+		{MinTokens: 272000, InputPrice: &inputPrice, OutputPrice: &outputPrice},
 	}}
 	resolver := NewModelPricingResolver(nil, billing)
 	interval := resolver.GetIntervalPricing(resolved, 400000)
