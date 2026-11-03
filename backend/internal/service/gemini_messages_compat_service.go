@@ -1863,18 +1863,23 @@ func (s *GeminiMessagesCompatService) writeGeminiCustomCodeSkippedError(c *gin.C
 	return fmt.Errorf("gemini upstream error: %d (not in custom error codes) message=%s", upstreamStatus, upstreamMsg)
 }
 
-// writeGeminiNativeUpstreamError 将不可 failover 的上游错误按原始状态码与响应体透传给客户端，
-// 并记录 ops 错误事件。状态码保真：下游据此区分请求级错误与可重试的链路故障。
+// writeGeminiNativeUpstreamError 先记录上游原始错误，再按错误规则写出；未命中时保留原始状态码和响应体。
 func (s *GeminiMessagesCompatService) writeGeminiNativeUpstreamError(c *gin.Context, account *Account, resp *http.Response, respBody []byte, requestID string, isOAuth bool) error {
 	respBody = unwrapIfNeeded(isOAuth, respBody)
 	upstreamMsg := s.recordGeminiNativeUpstreamError(c, account, resp.StatusCode, respBody, requestID)
 
-	contentType := resp.Header.Get("Content-Type")
-	if contentType == "" {
-		contentType = "application/json"
+	if status, _, message, matched := applyErrorPassthroughRule(
+		c, PlatformGemini, resp.StatusCode, respBody, resp.StatusCode, "upstream_error", upstreamMsg,
+	); matched {
+		_ = s.writeGoogleError(c, status, message)
+	} else {
+		contentType := resp.Header.Get("Content-Type")
+		if contentType == "" {
+			contentType = "application/json"
+		}
+		MarkResponseCommitted(c)
+		c.Data(resp.StatusCode, contentType, respBody)
 	}
-	MarkResponseCommitted(c)
-	c.Data(resp.StatusCode, contentType, respBody)
 	if upstreamMsg == "" {
 		return fmt.Errorf("gemini upstream error: %d", resp.StatusCode)
 	}
