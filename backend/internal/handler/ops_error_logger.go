@@ -1117,6 +1117,14 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 				parsed = terminal
 			}
 		}
+		// Google 错误体没有 type，先补齐本地类型，避免自定义预检文案被文本过滤。
+		if errType, code := service.OpsLocalErrorType(c); errType != "" && !parsed.StreamFailure &&
+			(parsed.ErrorType == "" || parsed.ErrorType == "api_error") {
+			parsed.ErrorType = errType
+			if code != "" {
+				parsed.Code = code
+			}
+		}
 		if status < 400 {
 			if parsed.StreamFailure {
 				status = inferStreamFailureStatus(c, parsed)
@@ -1143,10 +1151,10 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 		}
 
 		// Skip logging if the error should be filtered based on settings
-		if shouldSkipOpsErrorLog(c.Request.Context(), ops, parsed.Message, string(body), c.Request.URL.Path) {
+		if parsed.ErrorType != costGuardErrorType && shouldSkipOpsErrorLog(c.Request.Context(), ops, parsed.Message, string(body), c.Request.URL.Path) {
 			return
 		}
-		if shouldSkipOpsClientClosed(c, ops, status) {
+		if parsed.ErrorType != costGuardErrorType && shouldSkipOpsClientClosed(c, ops, status) {
 			return
 		}
 
@@ -1183,14 +1191,6 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 			}
 		}
 
-		// Google 格式错误体没有 type 字段：按网关回写时登记的错误类型补齐。
-		if errType, code := service.OpsLocalErrorType(c); errType != "" && !parsed.StreamFailure &&
-			(parsed.ErrorType == "" || parsed.ErrorType == "api_error") {
-			parsed.ErrorType = errType
-			if code != "" {
-				parsed.Code = code
-			}
-		}
 		normalizedType := normalizeOpsErrorType(parsed.ErrorType, parsed.Code)
 
 		phase, isBusinessLimited, errorOwner, errorSource := classifyOpsErrorLog(c, normalizedType, parsed.Message, parsed.Code, status)
@@ -1251,7 +1251,7 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 		}
 		applyOpsLatencyFieldsFromContext(c, entry)
 		applyOpsUpstreamFieldsFromContext(c, entry)
-		if parsed.StreamFailure {
+		if parsed.StreamFailure && normalizedType != costGuardErrorType {
 			if message := strings.TrimSpace(parsed.Message); message != "" {
 				entry.UpstreamErrorMessage = &message
 			}
@@ -1449,7 +1449,7 @@ func logOpsStreamErrorValue(c *gin.Context, ops *service.OpsService, wireStatus 
 	}
 
 	// 复用与 status>=400 分支相同的设置过滤（context canceled / 无可用账号等）。
-	if shouldSkipOpsErrorLog(c.Request.Context(), ops, streamErr.Message, streamErr.Message, c.Request.URL.Path) {
+	if streamErr.ErrType != costGuardErrorType && shouldSkipOpsErrorLog(c.Request.Context(), ops, streamErr.Message, streamErr.Message, c.Request.URL.Path) {
 		return
 	}
 
@@ -2060,6 +2060,11 @@ func inferStreamFailureStatus(_ *gin.Context, parsed parsedOpsError) int {
 	if parsed.StatusCode >= 400 && parsed.StatusCode <= 599 {
 		return parsed.StatusCode
 	}
+	if parsed.ErrorType == costGuardErrorType {
+		if status, err := strconv.Atoi(parsed.Code); err == nil && status >= 400 && status <= 599 {
+			return status
+		}
+	}
 	switch strings.TrimSpace(parsed.Code) {
 	case "rate_limit_exceeded":
 		return http.StatusTooManyRequests
@@ -2142,6 +2147,7 @@ func isKnownOpsErrorType(t string) bool {
 		"service_unavailable",
 		"rate_limit_error",
 		"billing_error",
+		costGuardErrorType,
 		"subscription_error",
 		"upstream_error",
 		"overloaded_error",
@@ -2159,6 +2165,8 @@ func normalizeOpsErrorType(errType string, code string) string {
 		return errType
 	}
 	switch strings.TrimSpace(code) {
+	case costGuardErrorType:
+		return costGuardErrorType
 	case opsCodeInsufficientBalance:
 		return "billing_error"
 	case opsCodeUsageLimitExceeded, opsCodeSubscriptionNotFound, opsCodeSubscriptionInvalid:
@@ -2182,7 +2190,7 @@ func classifyOpsPhase(errType, message, code string) string {
 	switch errType {
 	case "authentication_error":
 		return "auth"
-	case "billing_error", "subscription_error":
+	case "billing_error", "subscription_error", costGuardErrorType:
 		return "request"
 	case "rate_limit_error":
 		if strings.Contains(msg, "concurrency") || strings.Contains(msg, "pending") || strings.Contains(msg, "queue") {
@@ -2205,7 +2213,7 @@ func classifyOpsPhase(errType, message, code string) string {
 
 func classifyOpsSeverity(errType string, status int) string {
 	switch errType {
-	case "invalid_request_error", "authentication_error", "permission_error", "forbidden_error", "not_found_error", "model_not_found", "billing_error", "subscription_error":
+	case "invalid_request_error", "authentication_error", "permission_error", "forbidden_error", "not_found_error", "model_not_found", "billing_error", "subscription_error", costGuardErrorType:
 		return "P3"
 	}
 	if status >= 500 {
@@ -2264,6 +2272,9 @@ func classifyOpsErrorLog(c *gin.Context, errType, message, code string, status i
 }
 
 func classifyOpsIsBusinessLimited(errType, phase, code string, status int, message string, localClientAuthError ...bool) bool {
+	if errType == costGuardErrorType {
+		return true
+	}
 	if len(localClientAuthError) > 0 && localClientAuthError[0] {
 		return true
 	}

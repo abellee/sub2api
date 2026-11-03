@@ -2683,6 +2683,10 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		reqLog.Info("openai.websocket_inflight_reservation_rejected", zap.Error(inflightErr))
 		var costGuardErr *service.CostGuardRejectedError
 		if errors.As(inflightErr, &costGuardErr) {
+			service.MarkOpsStreamErrorValue(c, service.OpsStreamError{
+				ErrType: costGuardErrorType, Code: strconv.Itoa(costGuardErr.StatusCode),
+				Message: costGuardErr.Message, IntendedStatus: costGuardErr.StatusCode, RequestScoped: true,
+			})
 			writeCostGuardWSError(ctx, wsConn, costGuardErr)
 		}
 		closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, "billing check failed")
