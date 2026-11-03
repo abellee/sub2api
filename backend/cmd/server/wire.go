@@ -28,6 +28,7 @@ type Application struct {
 	Server        *http.Server
 	PromptAudit   *securityaudit.PromptService
 	PluginManager *service.PluginManager
+	CostGuard     *service.CostGuardService
 	Cleanup       func()
 }
 
@@ -50,6 +51,9 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 		// Privacy client factory for OpenAI training opt-out
 		providePrivacyClientFactory,
 
+		// fork(cost-guard): 费用预检服务（请求历史与设置同步）
+		provideCostGuard,
+
 		// BuildInfo provider
 		provideServiceBuildInfo,
 		providePluginHostInfo,
@@ -58,9 +62,14 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 		provideCleanup,
 
 		// Application struct
-		wire.Struct(new(Application), "Server", "PromptAudit", "PluginManager", "Cleanup"),
+		wire.Struct(new(Application), "Server", "PromptAudit", "PluginManager", "CostGuard", "Cleanup"),
 	)
 	return nil, nil
+}
+
+// provideCostGuard 构造费用预检的内存历史与开关同步服务。
+func provideCostGuard(settings *service.SettingService) *service.CostGuardService {
+	return service.NewCostGuardService(settings)
 }
 
 func providePrivacyClientFactory() service.PrivacyClientFactory {
@@ -132,6 +141,7 @@ func provideCleanup(
 	promptAudit *securityaudit.PromptService,
 	contentSafetyBilling *service.ContentSafetyBillingService,
 	pluginManager *service.PluginManager,
+	costGuard *service.CostGuardService,
 ) func() {
 	return func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -154,6 +164,12 @@ func provideCleanup(
 			{"PluginManager", func() error {
 				if pluginManager != nil {
 					pluginManager.Stop()
+				}
+				return nil
+			}},
+			{"CostGuard", func() error {
+				if costGuard != nil {
+					costGuard.Stop()
 				}
 				return nil
 			}},

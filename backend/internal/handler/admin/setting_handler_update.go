@@ -22,6 +22,9 @@ import (
 
 // UpdateSettingsRequest 更新设置请求
 type UpdateSettingsRequest struct {
+	CostGuardEnabled         *bool   `json:"cost_guard_enabled"`
+	CostGuardErrorStatusCode *int    `json:"cost_guard_error_status_code" binding:"omitempty,gte=400,lte=599"`
+	CostGuardErrorMessage    *string `json:"cost_guard_error_message" binding:"omitempty,max=2000"`
 	// 注册设置
 	RegistrationEnabled                 bool                         `json:"registration_enabled"`
 	EmailVerifyEnabled                  bool                         `json:"email_verify_enabled"`
@@ -2048,6 +2051,24 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.RiskControlEnabled
 		}(),
+		CostGuardEnabled: func() bool {
+			if req.CostGuardEnabled != nil {
+				return *req.CostGuardEnabled
+			}
+			return previousSettings.CostGuardEnabled
+		}(),
+		CostGuardErrorStatusCode: func() int {
+			if req.CostGuardErrorStatusCode != nil {
+				return *req.CostGuardErrorStatusCode
+			}
+			return previousSettings.CostGuardErrorStatusCode
+		}(),
+		CostGuardErrorMessage: func() string {
+			if req.CostGuardErrorMessage != nil {
+				return *req.CostGuardErrorMessage
+			}
+			return previousSettings.CostGuardErrorMessage
+		}(),
 		CyberPolicyUserAllowlist: func() string {
 			if req.CyberPolicyUserAllowlist != nil {
 				return *req.CyberPolicyUserAllowlist
@@ -2484,6 +2505,9 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		AffiliateEnabled: updatedSettings.AffiliateEnabled,
 
 		RiskControlEnabled:          updatedSettings.RiskControlEnabled,
+		CostGuardEnabled:            updatedSettings.CostGuardEnabled,
+		CostGuardErrorStatusCode:    updatedSettings.CostGuardErrorStatusCode,
+		CostGuardErrorMessage:       updatedSettings.CostGuardErrorMessage,
 		CyberSessionBlockEnabled:    updatedSettings.CyberSessionBlockEnabled,
 		CyberPolicyUserAllowlist:    updatedSettings.CyberPolicyUserAllowlist,
 		CyberSessionBlockTTLSeconds: updatedSettings.CyberSessionBlockTTLSeconds,

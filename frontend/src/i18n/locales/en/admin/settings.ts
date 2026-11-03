@@ -80,6 +80,12 @@ export default {
           enabledHint: 'Turning this off only hides the sidebar entry; loaded or running plugins are not stopped.',
         },
         riskControl: {
+          costGuardTitle: 'Cost precheck',
+          costGuardHint: 'Estimate this request using its input, maximum output and group pricing; reject if the balance is insufficient. Cache estimates use only the previous request for the same API key and model. This reduces large overdrafts but allows estimation error.',
+          costGuardEnabled: 'Enable cost precheck',
+          costGuardErrorStatusCode: 'Rejection HTTP status code (400–599)',
+          costGuardErrorMessage: 'Rejection message',
+          costGuardErrorHint: 'Use this status and message when a request or concurrent reservations exceed the available balance. Leave the message empty to use the default.',
           title: 'Risk Control',
           description: 'Enable the content moderation menu and gateway audit entry point. Disabled by default.',
           configureLink: 'Configure content moderation in Risk Control',

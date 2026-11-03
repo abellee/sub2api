@@ -54,6 +54,9 @@ jobs:
         run: |
           go test ./...
           go vet ./...
+      - name: Cost precheck cache history tests
+        working-directory: backend/cost-guard-sdk
+        run: go test -race ./...
       - name: Unit tests
         working-directory: backend
         run: |

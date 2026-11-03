@@ -215,7 +215,7 @@ func (s *BillingCacheService) inflightReservationConfig() (config.InflightReserv
 		return config.InflightReservationConfig{}, false
 	}
 	cfg := s.cfg.Billing.InflightReservation
-	if !cfg.Enabled || s.cfg.RunMode == config.RunModeSimple {
+	if (!cfg.Enabled && !CostGuardEnabled()) || s.cfg.RunMode == config.RunModeSimple {
 		return cfg, false
 	}
 	return cfg, true
@@ -305,6 +305,7 @@ func (s *BillingCacheService) reserveInflight(ctx context.Context, user *User, g
 	if group != nil && group.IsSubscriptionType() && subscription != nil {
 		return nil, nil
 	}
+	costGuardEstimate := estimate
 	if capped && cfg.MaxReservationUSD > 0 && estimate > cfg.MaxReservationUSD {
 		estimate = cfg.MaxReservationUSD
 	}
@@ -321,6 +322,10 @@ func (s *BillingCacheService) reserveInflight(ctx context.Context, user *User, g
 		logger.LegacyPrintf("service.billing_cache", "Warning: inflight reservation balance read failed for user %d (fail-open): %v", user.ID, err)
 		return nil, nil
 	}
+	// fork(cost-guard): reuse the balance already loaded for this request.
+	if costGuardRejects(balance, costGuardEstimate) {
+		return nil, CostGuardRejection()
+	}
 
 	ttl := defaultInflightReservationTTL
 	if cfg.TTLSeconds > 0 {
@@ -336,7 +341,7 @@ func (s *BillingCacheService) reserveInflight(ctx context.Context, user *User, g
 	}
 	if !allowed {
 		logger.LegacyPrintf("service.billing_cache", "inflight reservation rejected: user=%d balance=%.6f inflight=%.6f estimate=%.6f", user.ID, balance, inflight, estimate)
-		return nil, ErrInsufficientBalance
+		return nil, CostGuardRejection()
 	}
 
 	r := &InflightReservation{cache: rc, userID: user.ID, requestID: requestID, amount: estimate, ttl: ttl}
@@ -555,11 +560,15 @@ func (d inflightEstimateDeps) estimateOne(ctx context.Context, apiKey *APIKey, m
 		resolved = d.resolver.Resolve(ctx, in)
 	}
 
-	inputTokens, outputTokens := tokenCounts(cfg, req.BodyBytes, req.MaxTokens)
+	inputTokens, outputTokens := costGuardTokenCounts(d.billing, cfg, model, req.BodyBytes, req.MaxTokens)
 	tokenCost := func() float64 {
 		var pricing *ModelPricing
 		if resolved != nil && (resolved.Mode == BillingModeToken || resolved.Mode == "") && d.resolver != nil {
-			pricing = d.resolver.GetIntervalPricing(resolved, inputTokens)
+			pricingContext := inputTokens
+			if CostGuardEnabled() && !resolved.longContextPricingEnabled {
+				pricingContext = 1
+			}
+			pricing = d.resolver.GetIntervalPricing(resolved, pricingContext)
 		}
 		if pricing == nil && d.billing != nil {
 			pricing, _ = d.billing.GetModelPricing(model)
@@ -567,7 +576,10 @@ func (d inflightEstimateDeps) estimateOne(ctx context.Context, apiKey *APIKey, m
 		if pricing == nil {
 			return 0
 		}
-		return (float64(inputTokens)*pricing.InputPricePerToken + float64(outputTokens)*pricing.OutputPricePerToken) * textRate
+		// fork(cost-guard): only reuse this API key/model's previous cache usage.
+		pricing = costGuardLongContextPricing(d.billing, resolved, pricing, apiKey, inputTokens)
+		inputPrice := costGuardInputPrice(pricing, apiKey, req.Model)
+		return (float64(inputTokens)*inputPrice + float64(outputTokens)*pricing.OutputPricePerToken) * textRate
 	}
 
 	var cost float64

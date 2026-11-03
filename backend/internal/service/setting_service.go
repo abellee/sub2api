@@ -117,6 +117,9 @@ type WebSearchManagerBuilder func(cfg *WebSearchEmulationConfig, proxyURLs map[i
 
 // SettingService 系统设置服务
 type SettingService struct {
+	costGuardEnabled            atomic.Bool
+	costGuardErrorResponse      atomic.Pointer[costGuardErrorResponse]
+	costGuardMu                 sync.Mutex
 	scopedAdminKeyRepo          ScopedAdminKeyRepository
 	settingRepo                 SettingRepository
 	defaultSubGroupReader       DefaultSubscriptionGroupReader

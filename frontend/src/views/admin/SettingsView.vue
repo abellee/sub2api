@@ -7406,6 +7406,40 @@
           </div>
         </div>
 
+        <div class="card" data-testid="cost-guard-settings">
+          <div class="space-y-3 p-6">
+            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+              {{ t('admin.settings.features.riskControl.costGuardTitle') }}
+            </h2>
+            <p class="text-sm text-gray-500 dark:text-gray-400">
+              {{ t('admin.settings.features.riskControl.costGuardHint') }}
+            </p>
+            <div class="flex items-center justify-between gap-4">
+              <label for="cost-guard-enabled" class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                {{ t('admin.settings.features.riskControl.costGuardEnabled') }}
+              </label>
+              <Toggle id="cost-guard-enabled" v-model="form.cost_guard_enabled" data-testid="cost-guard-enabled" />
+            </div>
+            <div>
+              <label for="cost-guard-error-status-code" class="input-label">
+                {{ t('admin.settings.features.riskControl.costGuardErrorStatusCode') }}
+              </label>
+              <input id="cost-guard-error-status-code" v-model.number="form.cost_guard_error_status_code"
+                data-testid="cost-guard-error-status-code" type="number" min="400" max="599" step="1" required class="input" />
+            </div>
+            <div>
+              <label for="cost-guard-error-message" class="input-label">
+                {{ t('admin.settings.features.riskControl.costGuardErrorMessage') }}
+              </label>
+              <textarea id="cost-guard-error-message" v-model="form.cost_guard_error_message"
+                data-testid="cost-guard-error-message" rows="3" maxlength="2000" class="input" />
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {{ t('admin.settings.features.riskControl.costGuardErrorHint') }}
+              </p>
+            </div>
+          </div>
+        </div>
+
         <div class="card">
           <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
             <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
@@ -9795,6 +9829,9 @@ const form = reactive<SettingsForm>({
   hide_ccs_import_button: false,
   payment_enabled: false,
   risk_control_enabled: false,
+  cost_guard_enabled: false,
+  cost_guard_error_status_code: 403,
+  cost_guard_error_message: "Insufficient balance for the estimated request cost.",
   cyber_policy_user_allowlist: "",
   cyber_session_block_enabled: false,
   cyber_session_block_ttl_seconds: 3600,
@@ -11680,6 +11717,9 @@ async function saveSettings() {
       // Payment configuration
       payment_enabled: form.payment_enabled,
       risk_control_enabled: form.risk_control_enabled,
+      cost_guard_enabled: form.cost_guard_enabled,
+      cost_guard_error_status_code: Number(form.cost_guard_error_status_code),
+      cost_guard_error_message: form.cost_guard_error_message,
       cyber_policy_user_allowlist: form.cyber_policy_user_allowlist,
       cyber_session_block_enabled: form.cyber_session_block_enabled,
       cyber_session_block_ttl_seconds:

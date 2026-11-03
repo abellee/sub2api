@@ -28,6 +28,9 @@ type CustomEndpoint struct {
 
 // SystemSettings represents the admin settings API response payload.
 type SystemSettings struct {
+	CostGuardEnabled                    bool                     `json:"cost_guard_enabled"`
+	CostGuardErrorStatusCode            int                      `json:"cost_guard_error_status_code"`
+	CostGuardErrorMessage               string                   `json:"cost_guard_error_message"`
 	RegistrationEnabled                 bool                     `json:"registration_enabled"`
 	EmailVerifyEnabled                  bool                     `json:"email_verify_enabled"`
 	RegistrationEmailSuffixWhitelist    []string                 `json:"registration_email_suffix_whitelist"`

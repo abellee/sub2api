@@ -4,10 +4,13 @@ go 1.27.3
 
 replace github.com/Wei-Shaw/sub2api/audit-sdk => ./audit-sdk
 
+replace github.com/Wei-Shaw/sub2api/cost-guard-sdk => ./cost-guard-sdk
+
 require (
 	entgo.io/ent v0.14.5
 	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/Wei-Shaw/sub2api/audit-sdk v0.0.0
+	github.com/Wei-Shaw/sub2api/cost-guard-sdk v0.0.0
 	github.com/alibabacloud-go/captcha-20230305 v1.1.3
 	github.com/alibabacloud-go/darabonba-openapi/v2 v2.1.13
 	github.com/alibabacloud-go/tea v1.3.13

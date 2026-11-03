@@ -659,6 +659,9 @@ export interface SystemSettings {
   // Payment configuration
   payment_enabled: boolean;
   risk_control_enabled: boolean;
+  cost_guard_enabled: boolean;
+  cost_guard_error_status_code: number;
+  cost_guard_error_message: string;
 
   // Cyber session block
   cyber_policy_user_allowlist: string;
@@ -987,6 +990,9 @@ export interface UpdateSettingsRequest {
   // Payment configuration
   payment_enabled?: boolean;
   risk_control_enabled?: boolean;
+  cost_guard_enabled?: boolean;
+  cost_guard_error_status_code?: number;
+  cost_guard_error_message?: string;
 
   // Cyber session block
   cyber_policy_user_allowlist?: string;

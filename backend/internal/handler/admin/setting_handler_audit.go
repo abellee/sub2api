@@ -617,6 +617,15 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	if before.RiskControlEnabled != after.RiskControlEnabled {
 		changed = append(changed, "risk_control_enabled")
 	}
+	if before.CostGuardEnabled != after.CostGuardEnabled {
+		changed = append(changed, service.SettingKeyCostGuardEnabled)
+	}
+	if before.CostGuardErrorStatusCode != after.CostGuardErrorStatusCode {
+		changed = append(changed, service.SettingKeyCostGuardErrorStatusCode)
+	}
+	if before.CostGuardErrorMessage != after.CostGuardErrorMessage {
+		changed = append(changed, service.SettingKeyCostGuardErrorMessage)
+	}
 	if before.CyberPolicyUserAllowlist != after.CyberPolicyUserAllowlist {
 		changed = append(changed, "cyber_policy_user_allowlist")
 	}

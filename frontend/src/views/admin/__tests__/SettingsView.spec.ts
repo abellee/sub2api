@@ -1182,6 +1182,32 @@ describe("admin SettingsView payment visible method controls", () => {
     }
   });
 
+  it("loads and saves the cost precheck switch in both directions", async () => {
+    getSettings.mockResolvedValueOnce({ ...baseSettingsResponse, cost_guard_enabled: true,
+      cost_guard_error_status_code: 402, cost_guard_error_message: "请充值后重试" });
+    const wrapper = mountView();
+    await flushPromises();
+    const control = wrapper.get('[data-testid="cost-guard-enabled"]');
+    expect((control.element as HTMLInputElement).checked).toBe(true);
+    const status = wrapper.get('[data-testid="cost-guard-error-status-code"]');
+    const message = wrapper.get('[data-testid="cost-guard-error-message"]');
+    expect((status.element as HTMLInputElement).value).toBe("402");
+    expect((message.element as HTMLTextAreaElement).value).toBe("请充值后重试");
+    await status.setValue(429);
+    await message.setValue("预估费用超出可用余额");
+    await control.setValue(false);
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+    expect(updateSettings).toHaveBeenLastCalledWith(expect.objectContaining({ cost_guard_enabled: false,
+      cost_guard_error_status_code: 429, cost_guard_error_message: "预估费用超出可用余额" }));
+    await control.setValue(true);
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+    expect(updateSettings).toHaveBeenLastCalledWith(expect.objectContaining({ cost_guard_enabled: true,
+      cost_guard_error_status_code: 429, cost_guard_error_message: "预估费用超出可用余额" }));
+    wrapper.unmount();
+  });
+
   it("does not submit legacy visible payment method settings", async () => {
     const wrapper = mountView();
 

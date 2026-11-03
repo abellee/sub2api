@@ -357,6 +357,10 @@ func applyUsageBilling(ctx context.Context, requestID string, usageLog *UsageLog
 	if p == nil || deps == nil {
 		return false, nil
 	}
+	// fork(cost-guard): reuse normalized usage on the existing billing worker.
+	if !p.SimpleModeKeyRateLimitOnly {
+		costGuardObserveUsage(p.APIKey, usageLog)
+	}
 
 	cmd := buildUsageBillingCommand(requestID, usageLog, p)
 	if cmd == nil || cmd.RequestID == "" || repo == nil {

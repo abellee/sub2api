@@ -80,6 +80,12 @@ export default {
           enabledHint: '关闭后仅隐藏侧边栏菜单；已加载或正在运行的插件不会因此停止。',
         },
         riskControl: {
+          costGuardTitle: '费用预检',
+          costGuardHint: '按本次输入、最大输出和分组价格预估费用，余额不足时拒绝。仅参考同一 API Key、同模型上一笔的缓存数据，用于减少大额透支，估算可能存在误差。',
+          costGuardEnabled: '开启费用预检',
+          costGuardErrorStatusCode: '拒绝时的 HTTP 错误码（400–599）',
+          costGuardErrorMessage: '拒绝时的错误信息',
+          costGuardErrorHint: '单次费用或并发预留导致余额不足时，统一返回以上错误码和信息。信息留空则使用默认提示。',
           title: '风控中心',
           description: '启用内容审计菜单和全端点请求审核入口。默认关闭。',
           configureLink: '前往 风控中心 配置内容审计',

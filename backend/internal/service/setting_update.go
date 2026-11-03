@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
@@ -450,6 +451,16 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 
 	// 风控中心功能开关
 	updates[SettingKeyRiskControlEnabled] = strconv.FormatBool(settings.RiskControlEnabled)
+	updates[SettingKeyCostGuardEnabled] = strconv.FormatBool(settings.CostGuardEnabled)
+	if settings.CostGuardErrorStatusCode != 0 && (settings.CostGuardErrorStatusCode < 400 || settings.CostGuardErrorStatusCode > 599) {
+		return nil, infraerrors.BadRequest("INVALID_COST_GUARD_STATUS", "cost precheck HTTP status code must be between 400 and 599")
+	}
+	if utf8.RuneCountInString(settings.CostGuardErrorMessage) > 2000 {
+		return nil, infraerrors.BadRequest("INVALID_COST_GUARD_MESSAGE", "cost precheck error message must not exceed 2000 characters")
+	}
+	costGuardResponse := normalizedCostGuardErrorResponse(settings.CostGuardErrorStatusCode, settings.CostGuardErrorMessage)
+	updates[SettingKeyCostGuardErrorStatusCode] = strconv.Itoa(costGuardResponse.statusCode)
+	updates[SettingKeyCostGuardErrorMessage] = costGuardResponse.message
 
 	// cyber 会话屏蔽开关 + TTL
 	updates[SettingKeyCyberSessionBlockEnabled] = strconv.FormatBool(settings.CyberSessionBlockEnabled)
@@ -706,6 +717,10 @@ func (s *SettingService) refreshCachedSettings(settings *SystemSettings) {
 	if settings == nil {
 		return
 	}
+	s.costGuardMu.Lock()
+	s.costGuardErrorResponse.Store(normalizedCostGuardErrorResponse(settings.CostGuardErrorStatusCode, settings.CostGuardErrorMessage))
+	s.costGuardEnabled.Store(settings.CostGuardEnabled)
+	s.costGuardMu.Unlock()
 
 	// 先使 inflight singleflight 失效，再刷新缓存，缩小旧值覆盖新值的竞态窗口
 	versionBoundsSF.Forget("version_bounds")

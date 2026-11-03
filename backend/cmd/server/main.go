@@ -167,6 +167,12 @@ func runMainServer() {
 			log.Printf("Prompt Audit started in degraded state: %v", err)
 		}
 	}
+	// fork(cost-guard): 同步费用预检设置；请求只读取内存。
+	if app.CostGuard != nil {
+		if err := app.CostGuard.Start(context.Background()); err != nil {
+			log.Printf("Cost guard started in degraded state: %v", err)
+		}
+	}
 
 	// 启动服务器
 	go func() {

@@ -2,8 +2,11 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	coderws "github.com/coder/websocket"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 )
@@ -12,6 +15,8 @@ import (
 type inflightReservationEstimator interface {
 	EstimateInflightReservation(ctx context.Context, apiKey *service.APIKey, req service.InflightEstimateRequest) (float64, bool)
 }
+
+const costGuardErrorType = "cost_precheck_failed"
 
 // requestMaxOutputTokens 从请求体中提取输出 token 上限（兼容 Anthropic / OpenAI Chat / Responses / Gemini）。
 func requestMaxOutputTokens(body []byte) int {
@@ -79,7 +84,7 @@ func reserveInflightBalanceCtx(
 	}
 	estimate, priced := estimator.EstimateInflightReservation(ctx, apiKey, req)
 	if !priced && billing.InflightReservationFailClosedOnUnpriced() {
-		return ctx, inflightNoop, service.ErrInsufficientBalance
+		return ctx, inflightNoop, service.CostGuardRejection()
 	}
 	if estimate <= 0 {
 		return ctx, inflightNoop, nil
@@ -92,6 +97,23 @@ func reserveInflightBalanceCtx(
 		return ctx, inflightNoop, nil
 	}
 	return service.WithInflightReservation(ctx, res), res.HandlerDone, nil
+}
+
+// An upgraded WebSocket carries the configured HTTP code in its error event.
+func writeCostGuardWSError(ctx context.Context, conn *coderws.Conn, rejection *service.CostGuardRejectedError) {
+	if conn == nil || rejection == nil {
+		return
+	}
+	payload, err := json.Marshal(gin.H{
+		"type": "error", "status_code": rejection.StatusCode,
+		"error": gin.H{"type": costGuardErrorType, "code": rejection.StatusCode, "message": rejection.Message},
+	})
+	if err != nil {
+		return
+	}
+	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+	defer cancel()
+	_ = conn.Write(writeCtx, coderws.MessageText, payload)
 }
 
 // grokMediaInflightEstimate 媒体生成请求的估算输入；状态/内容查询返回空模型（不预留：

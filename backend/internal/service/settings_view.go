@@ -12,6 +12,9 @@ func firstNonEmpty(values ...string) string {
 }
 
 type SystemSettings struct {
+	CostGuardEnabled                    bool
+	CostGuardErrorStatusCode            int
+	CostGuardErrorMessage               string
 	RegistrationEnabled                 bool
 	EmailVerifyEnabled                  bool
 	RegistrationEmailSuffixWhitelist    []string

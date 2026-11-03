@@ -77,6 +77,7 @@ COPY lotteryd/go.mod lotteryd/go.sum /app/lotteryd/
 # Copy go mod files first (better caching)
 COPY backend/go.mod backend/go.sum ./
 COPY backend/audit-sdk/ ./audit-sdk/
+COPY backend/cost-guard-sdk/ ./cost-guard-sdk/
 # Cache mount keeps the module cache across builds so a transient CDN blip on
 # retry resumes instead of re-fetching every zip from scratch.
 RUN --mount=type=cache,id=sub2api-gomod,target=/go/pkg/mod \
