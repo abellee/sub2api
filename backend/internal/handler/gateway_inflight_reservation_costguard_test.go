@@ -100,7 +100,7 @@ func TestCostGuardWebSocketSendsConfiguredRejection(t *testing.T) {
 		if err != nil {
 			return
 		}
-		defer conn.CloseNow()
+		defer func() { _ = conn.CloseNow() }()
 		writeCostGuardWSError(r.Context(), conn, &service.CostGuardRejectedError{StatusCode: 429, Message: message})
 	}))
 	t.Cleanup(srv.Close)
@@ -108,7 +108,7 @@ func TestCostGuardWebSocketSendsConfiguredRejection(t *testing.T) {
 	defer cancel()
 	conn, _, err := coderws.Dial(ctx, "ws"+strings.TrimPrefix(srv.URL, "http"), nil)
 	require.NoError(t, err)
-	defer conn.CloseNow()
+	defer func() { _ = conn.CloseNow() }()
 	_, data, err := conn.Read(ctx)
 	require.NoError(t, err)
 	var event struct {
