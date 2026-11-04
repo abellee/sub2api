@@ -37,6 +37,41 @@ func TestHistoryLatestUsageAndIsolation(t *testing.T) {
 	}
 }
 
+func TestHistoryEstimateIncludesThePricingSnapshot(t *testing.T) {
+	h := NewHistory()
+	k := HistoryKey{APIKeyID: 1, Model: "m"}
+	p := TokenPrices{Input: 10, CacheRead: 1, CacheCreation: 20}
+	if got := h.EstimateInputPrice(k, p); got.Price != 10 || got.HistoryUsed {
+		t.Fatal("missing history must use full price", got)
+	}
+	h.Observe(k, 20, 70, 10)
+	got := h.EstimateInputPrice(k, p)
+	if !got.HistoryUsed || got.CacheReadFraction != 0.7 || got.CacheCreationFraction != 0.1 || got.Price < 4.699999 || got.Price > 4.700001 {
+		t.Fatal("snapshot must explain the actual price", got)
+	}
+	h.Observe(k, 100, 0, 0)
+	if got.CacheReadFraction != 0.7 || h.EstimateInputPrice(k, p).CacheReadFraction != 0 {
+		t.Fatal("returned snapshot must not change with history updates")
+	}
+	s := &h.shards[1]
+	s.mu.Lock()
+	busy := h.EstimateInputPrice(k, p)
+	s.mu.Unlock()
+	if busy != (InputEstimate{Price: 10}) {
+		t.Fatal("contention must return a fallback snapshot", busy)
+	}
+	u := s.entries[k]
+	u.expires = time.Now().Add(-time.Second)
+	s.entries[k] = u
+	if expired := h.EstimateInputPrice(k, p); expired != (InputEstimate{Price: 10}) {
+		t.Fatal("expired history must return a fallback snapshot", expired)
+	}
+	var empty *History
+	if nilEstimate := empty.EstimateInputPrice(k, p); nilEstimate != (InputEstimate{Price: 10}) {
+		t.Fatal("nil receiver must return a fallback snapshot", nilEstimate)
+	}
+}
+
 func TestHistoryExpiryContentionAndNil(t *testing.T) {
 	h := NewHistory()
 	k := HistoryKey{APIKeyID: 1, Model: "m"}

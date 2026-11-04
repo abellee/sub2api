@@ -25,6 +25,14 @@ func TestRequestMaxOutputTokens(t *testing.T) {
 	require.Equal(t, 0, requestMaxOutputTokens([]byte(`{}`)))
 }
 
+func TestTokenInflightEstimatePreservesInputBody(t *testing.T) {
+	body := []byte(`{"input":"hello","max_output_tokens":100}`)
+	req := tokenInflightEstimate("gpt-6-astra", body)
+	require.Equal(t, body, req.Body)
+	require.Equal(t, len(body), req.BodyBytes)
+	require.Equal(t, 100, req.MaxTokens)
+}
+
 type countingEstimator struct {
 	calls  int
 	cost   float64

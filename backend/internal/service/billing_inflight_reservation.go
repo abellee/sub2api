@@ -298,6 +298,7 @@ func (s *BillingCacheService) reserveInflightScope(ctx context.Context, res *Inf
 }
 
 func (s *BillingCacheService) reserveInflight(ctx context.Context, user *User, group *Group, subscription *UserSubscription, estimate float64, renew, capped bool) (*InflightReservation, error) {
+	check := costGuardCheckFromContext(ctx)
 	cfg, ok := s.inflightReservationConfig()
 	if !ok || user == nil {
 		return nil, nil
@@ -314,16 +315,22 @@ func (s *BillingCacheService) reserveInflight(ctx context.Context, user *User, g
 	}
 	rc, ok := s.cache.(InflightBalanceReservationCache)
 	if !ok || rc == nil {
+		check.skip("reservation_cache_unavailable")
 		return nil, nil
 	}
 
 	balance, err := s.GetUserBalance(ctx, user.ID)
 	if err != nil {
+		check.skip("balance_read_failed")
 		logger.LegacyPrintf("service.billing_cache", "Warning: inflight reservation balance read failed for user %d (fail-open): %v", user.ID, err)
 		return nil, nil
 	}
+	if check != nil {
+		check.balance, check.balanceKnown, check.reservation = balance, true, estimate
+	}
 	// fork(cost-guard): reuse the balance already loaded for this request.
 	if costGuardRejects(balance, costGuardEstimate) {
+		check.setReason("single_request_cost_exceeds_balance")
 		return nil, CostGuardRejection()
 	}
 
@@ -335,14 +342,20 @@ func (s *BillingCacheService) reserveInflight(ctx context.Context, user *User, g
 	reserveCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), inflightReservationReserveTimeout)
 	allowed, inflight, err := rc.ReserveInflightBalance(reserveCtx, user.ID, requestID, estimate, balance, ttl)
 	cancel()
+	if check != nil && err == nil {
+		check.inflight, check.inflightKnown = inflight, true
+	}
 	if err != nil {
+		check.skip("reservation_cache_failed")
 		logger.LegacyPrintf("service.billing_cache", "Warning: inflight reservation failed for user %d (fail-open): %v", user.ID, err)
 		return nil, nil
 	}
 	if !allowed {
+		check.setReason("inflight_balance_insufficient")
 		logger.LegacyPrintf("service.billing_cache", "inflight reservation rejected: user=%d balance=%.6f inflight=%.6f estimate=%.6f", user.ID, balance, inflight, estimate)
 		return nil, CostGuardRejection()
 	}
+	check.setReason("sufficient_balance")
 
 	r := &InflightReservation{cache: rc, userID: user.ID, requestID: requestID, amount: estimate, ttl: ttl}
 	r.refs.Store(1)
@@ -376,8 +389,13 @@ const (
 type InflightEstimateRequest struct {
 	Model     string
 	BodyBytes int
-	MaxTokens int
-	Kind      InflightEstimateKind
+	// Body is only inspected when cost precheck is enabled; BodyBytes keeps the legacy estimate.
+	Body        []byte
+	inputTokens *int
+	// CostGuardCheck collects the exact estimate used for this admission decision.
+	CostGuardCheck *CostGuardCheck
+	MaxTokens      int
+	Kind           InflightEstimateKind
 	// Units 按次/按张数量（<=0 视为 1）。
 	Units int
 	// SearchCalls 叠加的搜索次数（按分组 search_price_per_1k 计）。
@@ -561,6 +579,10 @@ func (d inflightEstimateDeps) estimateOne(ctx context.Context, apiKey *APIKey, m
 	}
 
 	inputTokens, outputTokens := costGuardTokenCounts(d.billing, cfg, model, req.BodyBytes, req.MaxTokens)
+	if CostGuardEnabled() && req.inputTokens != nil {
+		inputTokens = *req.inputTokens
+	}
+	details := costGuardEstimateDetails{model: model, textRate: textRate, imageRate: imageRate}
 	tokenCost := func() float64 {
 		var pricing *ModelPricing
 		if resolved != nil && (resolved.Mode == BillingModeToken || resolved.Mode == "") && d.resolver != nil {
@@ -577,9 +599,25 @@ func (d inflightEstimateDeps) estimateOne(ctx context.Context, apiKey *APIKey, m
 			return 0
 		}
 		// fork(cost-guard): only reuse this API key/model's previous cache usage.
+		basePricing := pricing
 		pricing = costGuardLongContextPricing(d.billing, resolved, pricing, apiKey, inputTokens)
-		inputPrice := costGuardInputPrice(pricing, apiKey, req.Model)
-		return (float64(inputTokens)*inputPrice + float64(outputTokens)*pricing.OutputPricePerToken) * textRate
+		cache := costGuardInputEstimate(pricing, apiKey, req.Model)
+		if req.CostGuardCheck != nil {
+			details.input, details.output, details.tokensKnown = inputTokens, outputTokens, true
+			details.cacheRead = float64(inputTokens) * cache.CacheReadFraction
+			details.cacheCreation = float64(inputTokens) * cache.CacheCreationFraction
+			details.historyUsed = cache.HistoryUsed
+			details.inputPrice, details.outputPrice = cache.Price, pricing.OutputPricePerToken
+			details.longContext = basePricing != pricing
+			details.inputCost = float64(inputTokens) * cache.Price * textRate
+			details.outputCost = float64(outputTokens) * pricing.OutputPricePerToken * textRate
+			if req.MaxTokens > 0 {
+				details.outputSource = "request_limit"
+			} else {
+				details.outputSource = "model_or_default_limit"
+			}
+		}
+		return (float64(inputTokens)*cache.Price + float64(outputTokens)*pricing.OutputPricePerToken) * textRate
 	}
 
 	var cost float64
@@ -643,6 +681,8 @@ func (d inflightEstimateDeps) estimateOne(ctx context.Context, apiKey *APIKey, m
 	if !validCost(cost) {
 		return 0
 	}
+	details.cost = cost
+	req.CostGuardCheck.recordCandidate(details)
 	return cost
 }
 
@@ -652,13 +692,27 @@ func (d inflightEstimateDeps) estimate(ctx context.Context, apiKey *APIKey, req 
 		return 0, false
 	}
 	if req.Model == "" || (req.Kind == InflightEstimateAudio && req.AudioUnits <= 0) {
+		req.CostGuardCheck.skip("not_metered")
 		// 非计量请求（媒体状态查询、custom-voices 等）：无需预留，也不算「无法定价」。
 		return 0, true
 	}
 	textRate, imageRate := d.rates(ctx, apiKey)
 	if textRate <= 0 && imageRate <= 0 {
+		req.CostGuardCheck.skip("free_group")
 		// 免费分组：不计费，也无需预留。
 		return 0, true
+	}
+	if CostGuardEnabled() && req.Kind == InflightEstimateToken && req.Body != nil {
+		input, err := estimateCostGuardInputTokens(req.Model, req.Body)
+		if err != nil {
+			req.CostGuardCheck.skip("input_estimate_unavailable")
+			// An unknown input shape is not evidence of insufficient balance.
+			return 0, true
+		}
+		req.inputTokens = &input
+		if req.CostGuardCheck != nil {
+			req.CostGuardCheck.inputSource = "request_content"
+		}
 	}
 	primary, fallbacks, upstreamInput := inflightBillingModelCandidates(ctx, d, apiKey, req.Model)
 	bestOf := func(models []string) float64 {

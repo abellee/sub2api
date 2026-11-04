@@ -72,18 +72,32 @@ func (h *History) Observe(k HistoryKey, input, read, create int) {
 // InputPrice uses the previous request, or the full input price when history is
 // missing, expired or busy. No history means no discount.
 func (h *History) InputPrice(k HistoryKey, p TokenPrices) float64 {
+	return h.EstimateInputPrice(k, p).Price
+}
+
+// InputEstimate reports the same history snapshot used to calculate Price.
+type InputEstimate struct {
+	Price                 float64
+	CacheReadFraction     float64
+	CacheCreationFraction float64
+	HistoryUsed           bool
+}
+
+// EstimateInputPrice is safe on a nil receiver and never waits for history locks.
+func (h *History) EstimateInputPrice(k HistoryKey, p TokenPrices) InputEstimate {
+	fallback := InputEstimate{Price: p.Input}
 	if h == nil || !validPrice(p.Input) {
-		return p.Input
+		return fallback
 	}
 	k = historyKey(k)
 	s := &h.shards[uint64(k.APIKeyID)%uint64(len(h.shards))]
 	if !s.mu.TryRLock() {
-		return p.Input
+		return fallback
 	}
 	u, ok := s.entries[k]
 	s.mu.RUnlock()
 	if !ok || !time.Now().Before(u.expires) {
-		return p.Input
+		return fallback
 	}
 	readPrice, createPrice := p.CacheRead, p.CacheCreation
 	if !validPrice(readPrice) {
@@ -94,7 +108,7 @@ func (h *History) InputPrice(k HistoryKey, p TokenPrices) float64 {
 	}
 	price := p.Input*(1-u.read-u.create) + readPrice*u.read + createPrice*u.create
 	if !validPrice(price) {
-		return p.Input
+		return fallback
 	}
-	return price
+	return InputEstimate{Price: price, CacheReadFraction: u.read, CacheCreationFraction: u.create, HistoryUsed: true}
 }

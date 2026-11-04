@@ -139,14 +139,18 @@ func costGuardHistoryKey(apiKey *APIKey, model string) costguard.HistoryKey {
 }
 
 func costGuardInputPrice(pricing *ModelPricing, apiKey *APIKey, model string) float64 {
+	return costGuardInputEstimate(pricing, apiKey, model).Price
+}
+
+func costGuardInputEstimate(pricing *ModelPricing, apiKey *APIKey, model string) costguard.InputEstimate {
 	if pricing == nil {
-		return 0
+		return costguard.InputEstimate{}
 	}
 	s := costGuardDefault.Load()
 	if !CostGuardEnabled() || s == nil || apiKey == nil {
-		return pricing.InputPricePerToken
+		return costguard.InputEstimate{Price: pricing.InputPricePerToken}
 	}
-	return s.history.InputPrice(costGuardHistoryKey(apiKey, model), costguard.TokenPrices{
+	return s.history.EstimateInputPrice(costGuardHistoryKey(apiKey, model), costguard.TokenPrices{
 		Input: pricing.InputPricePerToken, CacheRead: pricing.CacheReadPricePerToken, CacheCreation: pricing.CacheCreationPricePerToken,
 	})
 }

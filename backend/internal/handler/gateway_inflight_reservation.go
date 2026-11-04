@@ -33,6 +33,7 @@ func tokenInflightEstimate(model string, body []byte) service.InflightEstimateRe
 	return service.InflightEstimateRequest{
 		Model:     model,
 		BodyBytes: len(body),
+		Body:      body,
 		MaxTokens: requestMaxOutputTokens(body),
 		Kind:      service.InflightEstimateToken,
 	}
@@ -75,14 +76,19 @@ func reserveInflightBalanceCtx(
 	apiKey *service.APIKey,
 	subscription *service.UserSubscription,
 	req service.InflightEstimateRequest,
-) (context.Context, func(), error) {
+) (resultCtx context.Context, done func(), resultErr error) {
 	if billing == nil || estimator == nil || apiKey == nil || apiKey.User == nil || !billing.InflightReservationEnabled() {
 		return ctx, inflightNoop, nil
 	}
 	if apiKey.Group != nil && apiKey.Group.IsSubscriptionType() && subscription != nil {
 		return ctx, inflightNoop, nil
 	}
-	estimate, priced := estimator.EstimateInflightReservation(ctx, apiKey, req)
+	ctx, check := service.BeginCostGuardCheck(ctx, apiKey, req.Model)
+	req.CostGuardCheck = check
+	var estimate float64
+	var priced bool
+	defer func() { check.Finish(ctx, estimate, priced, resultErr) }()
+	estimate, priced = estimator.EstimateInflightReservation(ctx, apiKey, req)
 	if !priced && billing.InflightReservationFailClosedOnUnpriced() {
 		return ctx, inflightNoop, service.CostGuardRejection()
 	}

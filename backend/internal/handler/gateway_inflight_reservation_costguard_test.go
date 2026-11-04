@@ -13,11 +13,44 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 type costGuardSettingRepo struct{ service.SettingRepository }
+
+func TestCostGuardHandlerLogsEachFinalDecision(t *testing.T) {
+	settings := service.NewSettingService(costGuardSettingRepo{}, nil)
+	guard := service.NewCostGuardService(settings)
+	t.Cleanup(guard.Stop)
+	require.NoError(t, guard.Start(context.Background()))
+	core, logs := observer.New(zap.InfoLevel)
+	ctx := logger.IntoContext(context.Background(), zap.New(core).With(zap.String("request_id", "handler-check")))
+	cache := newHandlerInflightCache(1)
+	billing := service.NewBillingCacheService(cache, nil, nil, nil, nil, nil, &config.Config{}, nil)
+	t.Cleanup(billing.Stop)
+	key := &service.APIKey{ID: 739, User: &service.User{ID: 553}}
+	for _, tc := range []struct {
+		cost     float64
+		decision string
+	}{{0.1, "allow"}, {5, "reject"}} {
+		_, done, err := reserveInflightBalanceCtx(ctx, billing, &countingEstimator{cost: tc.cost, priced: true}, key, nil, tokenInflightEstimate("model", nil))
+		if tc.decision == "reject" {
+			require.Error(t, err)
+		} else {
+			require.NoError(t, err)
+		}
+		done()
+		entries := logs.FilterMessage("cost_guard.precheck").All()
+		require.Len(t, entries, 1)
+		require.Equal(t, tc.decision, entries[0].ContextMap()["decision"])
+		require.Equal(t, tc.cost, entries[0].ContextMap()["estimated_cost_usd"])
+		logs.TakeAll()
+	}
+}
 
 func (costGuardSettingRepo) GetMultiple(context.Context, []string) (map[string]string, error) {
 	return map[string]string{
