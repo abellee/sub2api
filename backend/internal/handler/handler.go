@@ -2,6 +2,7 @@ package handler
 
 import (
 	"github.com/Wei-Shaw/sub2api/internal/handler/admin"
+	"github.com/Wei-Shaw/sub2api/internal/mediahub"
 	"github.com/Wei-Shaw/sub2api/internal/securityaudit"
 )
 
@@ -50,6 +51,8 @@ type AdminHandlers struct {
 
 // Handlers contains all HTTP handlers
 type Handlers struct {
+	MediaHub         *MediaHubController
+	MediaLinks       *mediahub.ResultLinkStore
 	Auth             *AuthHandler
 	User             *UserHandler
 	MCPOAuth         *MCPOAuthHandler

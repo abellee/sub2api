@@ -119,6 +119,9 @@ func registerRoutes(
 	cfg *config.Config,
 	redisClient *redis.Client,
 ) {
+	if err := handler.InitMediaHub(h); err != nil {
+		log.Printf("[mediahub] configuration unavailable: %v", err)
+	}
 	// 通用路由（健康检查、状态等）
 	routes.RegisterCommonRoutes(r)
 
@@ -139,6 +142,8 @@ func registerRoutes(
 	routes.RegisterMCPRoutes(v1, h, auditLog, stepUpAuth, settingService, panelRateLimiter, cfg.CORS.AllowedOrigins, redisClient)
 	routes.RegisterMCPOAuthRoutes(r, v1, h, redisClient)
 	routes.RegisterGatewayRoutes(r, h, apiKeyAuth, apiKeyService, subscriptionService, opsService, settingService, compositeResolver, cfg)
+	// mediahub:媒体生图中转(mediad);未配置时内部自动跳过。
+	routes.RegisterMediaHubRoutes(r, h, apiKeyAuth)
 	routes.RegisterPaymentRoutes(v1, h.Payment, h.PaymentWebhook, h.Admin.Payment, jwtAuth, adminAuth, auditLog, settingService, panelRateLimiter, redisClient)
 
 	handler.RegisterPageRoutes(v1, cfg.Pricing.DataDir, gin.HandlerFunc(jwtAuth), gin.HandlerFunc(adminAuth), settingService)

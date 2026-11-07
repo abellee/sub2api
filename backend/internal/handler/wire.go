@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"database/sql"
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler/admin"
+	"github.com/Wei-Shaw/sub2api/internal/mediahub"
 	"github.com/Wei-Shaw/sub2api/internal/securityaudit"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
@@ -203,6 +205,7 @@ func ProvideAdminSettingHandler(settingService *service.SettingService, emailSer
 
 // ProvideHandlers creates the Handlers struct
 func ProvideHandlers(
+	mediaDB *sql.DB,
 	authHandler *AuthHandler,
 	userHandler *UserHandler,
 	mcpOAuthHandler *MCPOAuthHandler,
@@ -232,6 +235,7 @@ func ProvideHandlers(
 	_ *service.OpenAIQuotaAutoResetService,
 ) *Handlers {
 	return &Handlers{
+		MediaLinks:       mediahub.NewResultLinkStore(mediaDB),
 		Auth:             authHandler,
 		User:             userHandler,
 		MCPOAuth:         mcpOAuthHandler,

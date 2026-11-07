@@ -9,8 +9,10 @@ import admin from './admin'
 import misc from './misc'
 import pushNotifications from './pushNotifications'
 import publicTransit from './publicTransit'
+import mediaService from './mediaService'
 
 export default {
+  ...mediaService,
   adminAccessKeys,
   mcp,
   ...landing,

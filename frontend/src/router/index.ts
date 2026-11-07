@@ -713,6 +713,18 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/media-service',
+    name: 'AdminMediaService',
+    component: () => import('@/views/admin/MediaServiceView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Image & Video Service',
+      titleKey: 'mediaService.title',
+      descriptionKey: 'mediaService.description'
+    }
+  },
+  {
     path: '/admin/iq-detection',
     name: 'AdminIQDetection',
     component: () => import('@/views/admin/IqDetectionView.vue'),
