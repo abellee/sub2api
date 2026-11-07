@@ -32,13 +32,14 @@ type CostGuardCheck struct {
 	decision                       string
 	balance, inflight, reservation float64
 	balanceKnown, inflightKnown    bool
+	enforce                        bool
 }
 
 type costGuardCheckCtxKey struct{}
 
-// BeginCostGuardCheck does no work when precheck is disabled.
+// BeginCostGuardCheck estimates in both logging-only and enforcement modes.
 func BeginCostGuardCheck(ctx context.Context, key *APIKey, model string) (context.Context, *CostGuardCheck) {
-	if !CostGuardEnabled() || key == nil || key.User == nil {
+	if !costGuardLoggingEnabled() || key == nil || key.User == nil {
 		return ctx, nil
 	}
 	now := timezone.Now()
@@ -46,7 +47,7 @@ func BeginCostGuardCheck(ctx context.Context, key *APIKey, model string) (contex
 	if requestTime.IsZero() {
 		requestTime = now
 	}
-	check := &CostGuardCheck{userID: key.User.ID, apiKeyID: key.ID, model: model, requestTime: requestTime, checkedAt: now, inputSource: "legacy_body_bytes"}
+	check := &CostGuardCheck{userID: key.User.ID, apiKeyID: key.ID, model: model, requestTime: requestTime, checkedAt: now, inputSource: "legacy_body_bytes", enforce: CostGuardEnabled()}
 	if key.GroupID != nil {
 		check.groupID = *key.GroupID
 	}
@@ -56,6 +57,39 @@ func BeginCostGuardCheck(ctx context.Context, key *APIKey, model string) (contex
 func costGuardCheckFromContext(ctx context.Context) *CostGuardCheck {
 	check, _ := ctx.Value(costGuardCheckCtxKey{}).(*CostGuardCheck)
 	return check
+}
+
+// LogOnly never promotes a request that began with enforcement disabled.
+func (c *CostGuardCheck) LogOnly() bool {
+	if c == nil {
+		return false
+	}
+	c.enforce = c.enforce && CostGuardEnabled()
+	return !c.enforce
+}
+
+// ObserveBalance only reads the balance; it does not reserve funds or reject.
+func (c *CostGuardCheck) ObserveBalance(ctx context.Context, billing *BillingCacheService, estimate float64) {
+	if c == nil || billing == nil || !validCost(estimate) {
+		return
+	}
+	if billing.cache == nil {
+		c.skip("balance_read_failed")
+		return
+	}
+	// Logging must not add database queries or wait on a slow balance cache.
+	readCtx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+	balance, err := billing.cache.GetUserBalance(readCtx, c.userID)
+	cancel()
+	if err != nil {
+		c.skip("balance_read_failed")
+		return
+	}
+	c.balance, c.balanceKnown = balance, true
+	c.decision, c.reason = "allow", "sufficient_balance"
+	if estimate > balance {
+		c.decision, c.reason = "reject", "single_request_cost_exceeds_balance"
+	}
 }
 
 func (c *CostGuardCheck) skip(reason string) {
@@ -95,6 +129,11 @@ func (c *CostGuardCheck) Finish(ctx context.Context, estimate float64, priced bo
 			decision, reason = "skip", "no_reservation_required"
 		}
 	}
+	estimatedDecision, estimatedReason := decision, reason
+	mode := "enforce"
+	if !c.enforce {
+		mode, decision, reason = "log_only", "allow", "log_only"
+	}
 	d := c.estimate
 	cacheSource := "no_history"
 	if d.historyUsed {
@@ -129,5 +168,7 @@ func (c *CostGuardCheck) Finish(ctx context.Context, estimate float64, priced bo
 		zap.Float64("estimated_cost_usd", estimate), zap.Float64("reservation_usd", c.reservation),
 		zap.Any("balance_usd", balance), zap.Any("inflight_usd", inflight), zap.Any("available_balance_usd", available),
 		zap.String("decision", decision), zap.String("reason", reason),
+		zap.String("mode", mode),
+		zap.String("estimated_decision", estimatedDecision), zap.String("estimated_reason", estimatedReason),
 	)
 }

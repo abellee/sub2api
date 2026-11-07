@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/cost-guard-sdk/costguard"
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
@@ -227,6 +228,11 @@ func (s *BillingCacheService) InflightReservationEnabled() bool {
 	return ok
 }
 
+// CostGuardLoggingEnabled keeps estimates observable while enforcement is off.
+func (s *BillingCacheService) CostGuardLoggingEnabled() bool {
+	return s != nil && s.cfg != nil && s.cfg.RunMode != config.RunModeSimple && costGuardLoggingEnabled()
+}
+
 // InflightReservationFailClosedOnUnpriced 无法估算费用时是否拒绝请求（默认 false = fail-open）。
 func (s *BillingCacheService) InflightReservationFailClosedOnUnpriced() bool {
 	cfg, ok := s.inflightReservationConfig()
@@ -389,7 +395,7 @@ const (
 type InflightEstimateRequest struct {
 	Model     string
 	BodyBytes int
-	// Body is only inspected when cost precheck is enabled; BodyBytes keeps the legacy estimate.
+	// Body is inspected in both cost precheck modes; BodyBytes keeps the legacy estimate.
 	Body        []byte
 	inputTokens *int
 	// CostGuardCheck collects the exact estimate used for this admission decision.
@@ -579,7 +585,7 @@ func (d inflightEstimateDeps) estimateOne(ctx context.Context, apiKey *APIKey, m
 	}
 
 	inputTokens, outputTokens := costGuardTokenCounts(d.billing, cfg, model, req.BodyBytes, req.MaxTokens)
-	if CostGuardEnabled() && req.inputTokens != nil {
+	if costGuardLoggingEnabled() && req.inputTokens != nil {
 		inputTokens = *req.inputTokens
 	}
 	details := costGuardEstimateDetails{model: model, textRate: textRate, imageRate: imageRate}
@@ -587,7 +593,7 @@ func (d inflightEstimateDeps) estimateOne(ctx context.Context, apiKey *APIKey, m
 		var pricing *ModelPricing
 		if resolved != nil && (resolved.Mode == BillingModeToken || resolved.Mode == "") && d.resolver != nil {
 			pricingContext := inputTokens
-			if CostGuardEnabled() && !resolved.longContextPricingEnabled {
+			if costGuardLoggingEnabled() && !resolved.longContextPricingEnabled {
 				pricingContext = 1
 			}
 			pricing = d.resolver.GetIntervalPricing(resolved, pricingContext)
@@ -600,8 +606,11 @@ func (d inflightEstimateDeps) estimateOne(ctx context.Context, apiKey *APIKey, m
 		}
 		// fork(cost-guard): only reuse this API key/model's previous cache usage.
 		basePricing := pricing
-		pricing = costGuardLongContextPricing(d.billing, resolved, pricing, apiKey, inputTokens)
-		cache := costGuardInputEstimate(pricing, apiKey, req.Model)
+		cache := costguard.InputEstimate{Price: pricing.InputPricePerToken}
+		if costGuardLoggingEnabled() {
+			pricing = costGuardLongContextPricing(d.billing, resolved, pricing, apiKey, inputTokens)
+			cache = costGuardInputEstimate(pricing, apiKey, req.Model)
+		}
 		if req.CostGuardCheck != nil {
 			details.input, details.output, details.tokensKnown = inputTokens, outputTokens, true
 			details.cacheRead = float64(inputTokens) * cache.CacheReadFraction
@@ -702,7 +711,7 @@ func (d inflightEstimateDeps) estimate(ctx context.Context, apiKey *APIKey, req 
 		// 免费分组：不计费，也无需预留。
 		return 0, true
 	}
-	if CostGuardEnabled() && req.Kind == InflightEstimateToken && req.Body != nil {
+	if costGuardLoggingEnabled() && req.Kind == InflightEstimateToken && req.Body != nil {
 		input, err := estimateCostGuardInputTokens(req.Model, req.Body)
 		if err != nil {
 			req.CostGuardCheck.skip("input_estimate_unavailable")

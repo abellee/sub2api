@@ -118,7 +118,7 @@ func TestCostGuardLargeBodyDoesNotTriggerLongContextPrice(t *testing.T) {
 	require.InDelta(t, (float64(longTokens)*20e-6+128000*75e-6)*0.039, cost, 1e-12)
 }
 
-func TestCostGuardInputFailureSkipsEstimateAndDisabledKeepsLegacy(t *testing.T) {
+func TestCostGuardInputFailureSkipsEstimateInBothModes(t *testing.T) {
 	settings := withCostGuard(t, true)
 	d := inflightEstimateDeps{billing: costGuardGPT61Billing()}
 	key := &APIKey{ID: 1, User: &User{ID: 1}, Group: &Group{RateMultiplier: 0.039}}
@@ -128,9 +128,9 @@ func TestCostGuardInputFailureSkipsEstimateAndDisabledKeepsLegacy(t *testing.T) 
 		require.True(t, priced, "unknown input must not become a fail-closed pricing error")
 		require.Zero(t, cost)
 		settings.costGuardEnabled.Store(false)
-		legacy, priced := d.estimate(context.Background(), key, req)
+		logged, priced := d.estimate(context.Background(), key, req)
 		require.True(t, priced)
-		require.Positive(t, legacy, "disabled guard must not parse the body")
+		require.Zero(t, logged, "logging-only mode must not fall back to whole-body size")
 		settings.costGuardEnabled.Store(true)
 	}
 }

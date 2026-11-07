@@ -46,7 +46,8 @@ func inflightNoop() {}
 // 成功时把预留句柄挂到 c.Request 的 context 上：之后通过 submit*UsageRecordTask 提交的
 // 计费任务会接管一个引用，直到余额缓存实际扣减后才释放。返回的 done 必须 defer 调用
 // （停止续期并归还 handler 引用；没有提交计费任务时即刻释放）。
-// 开关关闭、订阅模式、Redis 故障时返回 no-op（fail-open）；无法定价时默认 fail-open，
+// 费用预检关闭时只估算并记日志，不预留或拦截；订阅模式、Redis 故障时返回 no-op。
+// 启用拦截时，无法定价默认 fail-open，
 // 配置 fail_closed_on_unpriced=true 时返回 ErrInsufficientBalance。
 func reserveInflightBalance(
 	c *gin.Context,
@@ -77,7 +78,7 @@ func reserveInflightBalanceCtx(
 	subscription *service.UserSubscription,
 	req service.InflightEstimateRequest,
 ) (resultCtx context.Context, done func(), resultErr error) {
-	if billing == nil || estimator == nil || apiKey == nil || apiKey.User == nil || !billing.InflightReservationEnabled() {
+	if billing == nil || estimator == nil || apiKey == nil || apiKey.User == nil || (!billing.InflightReservationEnabled() && !billing.CostGuardLoggingEnabled()) {
 		return ctx, inflightNoop, nil
 	}
 	if apiKey.Group != nil && apiKey.Group.IsSubscriptionType() && subscription != nil {
@@ -89,6 +90,10 @@ func reserveInflightBalanceCtx(
 	var priced bool
 	defer func() { check.Finish(ctx, estimate, priced, resultErr) }()
 	estimate, priced = estimator.EstimateInflightReservation(ctx, apiKey, req)
+	if check.LogOnly() {
+		check.ObserveBalance(ctx, billing, estimate)
+		return ctx, inflightNoop, nil
+	}
 	if !priced && billing.InflightReservationFailClosedOnUnpriced() {
 		return ctx, inflightNoop, service.CostGuardRejection()
 	}

@@ -130,6 +130,11 @@ func CostGuardEnabled() bool {
 	return s != nil && s.settings != nil && s.settings.costGuardEnabled.Load()
 }
 
+func costGuardLoggingEnabled() bool {
+	s := costGuardDefault.Load()
+	return s != nil && s.settings != nil
+}
+
 func costGuardHistoryKey(apiKey *APIKey, model string) costguard.HistoryKey {
 	k := costguard.HistoryKey{APIKeyID: apiKey.ID, Model: model}
 	if apiKey.GroupID != nil {
@@ -147,7 +152,7 @@ func costGuardInputEstimate(pricing *ModelPricing, apiKey *APIKey, model string)
 		return costguard.InputEstimate{}
 	}
 	s := costGuardDefault.Load()
-	if !CostGuardEnabled() || s == nil || apiKey == nil {
+	if s == nil || apiKey == nil {
 		return costguard.InputEstimate{Price: pricing.InputPricePerToken}
 	}
 	return s.history.EstimateInputPrice(costGuardHistoryKey(apiKey, model), costguard.TokenPrices{
@@ -157,7 +162,7 @@ func costGuardInputEstimate(pricing *ModelPricing, apiKey *APIKey, model string)
 
 func costGuardObserveUsage(apiKey *APIKey, usage *UsageLog) {
 	s := costGuardDefault.Load()
-	if !CostGuardEnabled() || s == nil || apiKey == nil || usage == nil {
+	if s == nil || apiKey == nil || usage == nil {
 		return
 	}
 	model := usage.RequestedModel
@@ -176,7 +181,7 @@ func costGuardRejects(balance, estimate float64) bool {
 
 // Mirror billing's long-context rules without changing the shared price card.
 func costGuardLongContextPricing(billing *BillingService, resolved *ResolvedPricing, pricing *ModelPricing, apiKey *APIKey, inputTokens int) *ModelPricing {
-	if !CostGuardEnabled() || billing == nil || pricing == nil {
+	if billing == nil || pricing == nil {
 		return pricing
 	}
 	enabled := apiKey == nil || apiKey.Group == nil || apiKey.Group.LongContextPricingEnabled
@@ -196,7 +201,7 @@ func costGuardLongContextPricing(billing *BillingService, resolved *ResolvedPric
 }
 
 func costGuardTokenCounts(billing *BillingService, cfg config.InflightReservationConfig, model string, bodyBytes, maxTokens int) (int, int) {
-	if !CostGuardEnabled() {
+	if !costGuardLoggingEnabled() {
 		return tokenCounts(cfg, bodyBytes, maxTokens)
 	}
 	// Use this request's input without truncating its estimate to the old cap.

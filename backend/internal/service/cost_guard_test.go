@@ -42,8 +42,8 @@ func TestCostGuardUsesCurrentRequestAndPreviousUsage(t *testing.T) {
 	require.Equal(t, full, d.estimateOne(context.Background(), key, model, req, 2, 2))
 	settings.costGuardEnabled.Store(false)
 	input, output := costGuardTokenCounts(billing, cfg.Billing.InflightReservation, model, 4000, 100)
-	require.Equal(t, 1, input)
-	require.Equal(t, 1, output)
+	require.Equal(t, 1000, input, "logging-only estimates use the same token rules")
+	require.Equal(t, 100, output)
 	require.False(t, costGuardRejects(0.01, 5))
 }
 

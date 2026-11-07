@@ -22,6 +22,90 @@ import (
 
 type costGuardSettingRepo struct{ service.SettingRepository }
 
+type costGuardLogOnlySettingRepo struct{ costGuardSettingRepo }
+
+func (costGuardLogOnlySettingRepo) GetMultiple(ctx context.Context, keys []string) (map[string]string, error) {
+	values, err := (costGuardSettingRepo{}).GetMultiple(ctx, keys)
+	values[service.SettingKeyCostGuardEnabled] = "false"
+	return values, err
+}
+
+type costGuardLogOnlyCache struct{ *handlerInflightCache }
+
+func (*costGuardLogOnlyCache) ReserveInflightBalance(context.Context, int64, string, float64, float64, time.Duration) (bool, float64, error) {
+	panic("logging-only requests must never reserve a balance")
+}
+
+func TestCostGuardHandlerLogOnlyNeverReservesOrRejects(t *testing.T) {
+	settings := service.NewSettingService(costGuardLogOnlySettingRepo{}, nil)
+	guard := service.NewCostGuardService(settings)
+	t.Cleanup(guard.Stop)
+	require.NoError(t, guard.Start(context.Background()))
+	key := &service.APIKey{ID: 739, User: &service.User{ID: 553}}
+	for _, legacyEnabled := range []bool{false, true} {
+		for _, tc := range []struct {
+			name      string
+			cost      float64
+			priced    bool
+			estimated string
+		}{
+			{"enough", 0.1, true, "allow"},
+			{"over balance", 5, true, "reject"},
+			{"unknown price", 0, false, "skip"},
+		} {
+			t.Run(fmt.Sprintf("legacy=%t/%s", legacyEnabled, tc.name), func(t *testing.T) {
+				core, logs := observer.New(zap.InfoLevel)
+				ctx := logger.IntoContext(context.Background(), zap.New(core))
+				cache := &costGuardLogOnlyCache{newHandlerInflightCache(1)}
+				cfg := &config.Config{}
+				cfg.Billing.InflightReservation = config.InflightReservationConfig{Enabled: legacyEnabled, FailClosedOnUnpriced: true}
+				billing := service.NewBillingCacheService(cache, nil, nil, nil, nil, nil, cfg, nil)
+				t.Cleanup(billing.Stop)
+				estimator := &countingEstimator{cost: tc.cost, priced: tc.priced}
+				resultCtx, done, err := reserveInflightBalanceCtx(ctx, billing, estimator, key, nil, tokenInflightEstimate("model", nil))
+				require.NoError(t, err)
+				done()
+				require.Equal(t, 1, estimator.calls)
+				require.Nil(t, service.InflightReservationFromContext(resultCtx))
+				require.Zero(t, cache.count())
+				entries := logs.FilterMessage("cost_guard.precheck").All()
+				require.Len(t, entries, 1)
+				fields := entries[0].ContextMap()
+				require.Equal(t, "log_only", fields["mode"])
+				require.Equal(t, "allow", fields["decision"])
+				require.Equal(t, "log_only", fields["reason"])
+				require.Equal(t, tc.estimated, fields["estimated_decision"])
+				require.Equal(t, tc.cost, fields["estimated_cost_usd"])
+				require.Zero(t, fields["reservation_usd"])
+			})
+		}
+	}
+}
+
+func TestCostGuardHandlerLogOnlySkipsSimpleAndSubscription(t *testing.T) {
+	guard := service.NewCostGuardService(service.NewSettingService(costGuardLogOnlySettingRepo{}, nil))
+	t.Cleanup(guard.Stop)
+	require.NoError(t, guard.Start(context.Background()))
+	for _, simple := range []bool{false, true} {
+		cfg := &config.Config{}
+		key := &service.APIKey{User: &service.User{ID: 553}, Group: &service.Group{SubscriptionType: service.SubscriptionTypeSubscription}}
+		if simple {
+			cfg.RunMode = config.RunModeSimple
+			key.Group = nil
+		}
+		billing := service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil)
+		t.Cleanup(billing.Stop)
+		estimator := &countingEstimator{cost: 5, priced: true}
+		core, logs := observer.New(zap.InfoLevel)
+		ctx := logger.IntoContext(context.Background(), zap.New(core))
+		_, done, err := reserveInflightBalanceCtx(ctx, billing, estimator, key, &service.UserSubscription{}, tokenInflightEstimate("model", nil))
+		require.NoError(t, err)
+		done()
+		require.Zero(t, estimator.calls)
+		require.Zero(t, logs.Len())
+	}
+}
+
 func TestCostGuardHandlerLogsEachFinalDecision(t *testing.T) {
 	settings := service.NewSettingService(costGuardSettingRepo{}, nil)
 	guard := service.NewCostGuardService(settings)
