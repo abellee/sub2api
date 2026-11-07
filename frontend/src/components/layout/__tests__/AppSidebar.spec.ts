@@ -86,3 +86,13 @@ describe('AppSidebar batch image navigation', () => {
     expect(componentSource).not.toContain("path: '/batch-image'")
   })
 })
+
+describe('AppSidebar MCP entry', () => {
+  it('uses the MCP logo and shows the entry only when the deployment enables MCP', () => {
+    expect(componentSource).toContain("render: () => h(Icon, { name: 'mcp' })")
+    expect(componentSource).toContain('const flagMCP = makeSidebarFlag(FeatureFlags.mcp)')
+    expect(componentSource).toMatch(/path: '\/settings\/mcp'[^\n]*icon: MCPIcon, featureFlag: flagMCP/)
+    expect(componentSource).toMatch(/if \(flagMCP\(\)\) filtered\.push\(\{ path: '\/settings\/mcp'[^\n]*icon: MCPIcon/)
+    expect(componentSource).not.toMatch(/path: '\/settings\/mcp'[^\n]*PluginIcon/)
+  })
+})
