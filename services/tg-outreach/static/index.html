@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Telegram 推广助手</title>
+  <link rel="stylesheet" href="/assets/style.css">
+  <script src="/assets/app.js" defer></script>
+</head>
+<body>
+  <div id="notice" role="status" aria-live="polite" hidden></div>
+  <main id="loginPage" class="login-page">
+    <form id="loginForm" class="login-card">
+      <span class="brand-mark">TG</span>
+      <p class="eyebrow">TELEGRAM OUTREACH</p>
+      <h1>推广助手</h1>
+      <p class="muted">登录后台，管理你的群聊与推广计划。</p>
+      <label for="adminKey">管理密钥</label>
+      <input id="adminKey" type="password" autocomplete="current-password" required placeholder="输入 ADMIN_KEY">
+      <button type="submit" class="primary full">进入管理后台</button>
+      <p class="hint">密钥由服务管理员在环境配置中设置。</p>
+    </form>
+  </main>
+  <main id="workspace" class="workspace" hidden>
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark small">TG</span><div><h1>Telegram 推广助手</h1><p class="muted">让搜索、筛选与发送有序进行</p></div></div>
+      <div class="header-actions"><span id="accountBadge" class="badge">未登录 Telegram</span><button id="adminLogout" type="button">退出后台</button></div>
+    </header>
+    <section class="stats" aria-label="运行概况">
+      <article><p>当前所在群聊</p><strong id="groupCount">—</strong><span id="groupUpdated" class="hint">登录后加载</span></article>
+      <article><p>定时发送</p><strong id="sendState">已停止</strong><span id="nextSend" class="hint">每次发送一个群，循环进行</span></article>
+      <article><p>搜索与自动入群</p><strong id="searchState">已停止</strong><span id="nextSearch" class="hint">按关键词轮流搜索</span></article>
+      <article><p>Telegram 状态</p><strong id="telegramState">待登录</strong><span id="cooldownState" class="hint">等待账号连接</span></article>
+    </section>
+    <div class="savebar"><p id="saveHint">修改配置后，请点击保存。启动任务前会自动保存。</p><button id="saveSettings" type="button" class="primary">保存所有配置</button></div>
+    <div class="grid">
+      <section class="card">
+        <div class="section-heading"><span class="step">01</span><div><h2>连接 Telegram</h2><p>使用你自己的 Telegram 账号</p></div></div>
+        <div class="fields two">
+          <label>API ID<input id="telegram_api_id" type="number" min="1" step="1" placeholder="从 my.telegram.org 获取"></label>
+          <label>API Hash<input id="telegram_api_hash" type="password" autocomplete="off" placeholder="32 位 API Hash"><span id="hashHint" class="hint"></span></label>
+        </div>
+        <p class="hint">API ID 和 API Hash 可在 <a href="https://my.telegram.org/apps" target="_blank" rel="noopener noreferrer">my.telegram.org/apps</a> 获取，先保存再登录。</p>
+        <div id="telegramLogin">
+          <label>手机号<input id="phone" type="tel" autocomplete="tel" placeholder="+8613800000000"></label>
+          <button id="sendCode" type="button">获取验证码</button>
+          <div class="fields two login-fields">
+            <label>验证码<input id="code" type="text" autocomplete="one-time-code" placeholder="Telegram 或短信中的验证码"></label>
+            <label>两步验证密码<input id="password" type="password" autocomplete="off" placeholder="开启两步验证时填写"></label>
+          </div>
+          <p id="passwordHint" class="hint" hidden>此账号已开启两步验证，请填写密码并再次点击登录。</p>
+          <button id="telegramSignIn" type="button" class="primary">登录 Telegram</button>
+        </div>
+        <div id="telegramConnected" hidden><p id="connectedName"></p><div class="row"><button id="refreshGroups" type="button">刷新群聊</button><button id="telegramLogout" type="button" class="danger">退出 Telegram</button></div></div>
+      </section>
+      <section class="card">
+        <div class="section-heading"><span class="step">02</span><div><h2>定时发送</h2><p>只向群聊列表中勾选的群轮流发送</p></div></div>
+        <label>消息内容<textarea id="message" rows="7" maxlength="4096" placeholder="输入要发送的推广消息，最多 4096 个字符"></textarea></label>
+        <label>发送间隔（秒）<input id="send_interval" type="number" min="10" max="604800" required></label>
+        <p class="hint">先在下方群聊列表中勾选发送目标。每次向一个选中的群发送，发完一轮继续循环。仅发送纯文本。</p>
+        <div class="row"><button id="startSend" type="button" class="primary">开始发送</button><button id="stopSend" type="button">停止发送</button></div>
+      </section>
+      <section class="card">
+        <div class="section-heading"><span class="step">03</span><div><h2>搜索与自动入群</h2><p>搜索公开群，再交给模型挑选</p></div></div>
+        <label>搜索关键词<textarea id="keywords" rows="3" placeholder="每行一个关键词，也可用逗号分隔"></textarea></label>
+        <div class="fields two">
+          <label>搜索间隔（秒）<input id="search_interval" type="number" min="30" max="604800" required></label>
+          <label>入群间隔（秒）<input id="join_interval" type="number" min="10" max="86400" required></label>
+        </div>
+        <label>每次搜索最多获取<input id="search_limit" type="number" min="1" max="100" required></label>
+        <p class="hint">每轮使用一个关键词。Telegram 搜索结果可能较少，仅筛选可找到的公开超级群；已加入的群会排除。申请制群聊会等待批准。</p>
+        <div class="row"><button id="startSearch" type="button" class="primary">开始搜索并自动入群</button><button id="stopSearch" type="button">停止搜索</button></div>
+      </section>
+      <section class="card">
+        <div class="section-heading"><span class="step">04</span><div><h2>大模型连接</h2><p>支持 OpenAI 兼容的 API</p></div></div>
+        <label>API 地址<input id="api_base" type="url" placeholder="https://api.example.com/v1"></label>
+        <label>API Key<input id="api_key" type="password" autocomplete="off" placeholder="输入 API 密钥"><span id="apiKeyHint" class="hint"></span></label>
+        <div class="model-row"><label>使用模型<select id="model"><option value="">请先加载模型列表</option></select></label><button id="loadModels" type="button">加载模型列表</button></div>
+        <p class="hint">从 API 的 /models 获取模型列表，并通过 /chat/completions 完成筛选。密钥保存后不再回显，留空表示保留。</p>
+      </section>
+      <section class="card wide">
+        <div class="section-heading"><span class="step">05</span><div><h2>筛选提示词</h2><p>把搜索结果替换到提示词中，再交给模型选择</p></div></div>
+        <div class="placeholder-help"><code>{{keyword}}</code><span>本轮关键词</span><code>{{results}}</code><span>候选群列表，JSON 格式</span></div>
+        <label class="sr-only" for="prompt">筛选提示词</label><textarea id="prompt" rows="8" maxlength="30000" class="mono"></textarea>
+        <p class="hint">模型须返回 <code>{"join":["群 id"],"reason":"选择理由"}</code>。只接受本轮候选群的 ID。未选中时返回空数组。</p>
+        <div class="row"><button id="previewPrompt" type="button">预览占位符替换</button><button id="showLastPrompt" type="button">查看最近实际提示词</button></div>
+        <pre id="promptPreview" hidden></pre>
+      </section>
+      <section class="card wide">
+        <div class="list-heading"><div><h2>选择发送群聊</h2><p class="hint">仅向已勾选并保存的群发送。新加入的群默认不勾选。</p></div><input id="groupFilter" type="search" aria-label="筛选当前群聊" placeholder="筛选群名称"></div>
+        <div class="row group-actions"><button id="selectVisible" type="button">全选当前显示的群</button><button id="clearSelection" type="button">取消全部选择</button><span id="selectionCount" class="hint">已选 0 个群</span></div>
+        <div class="table-wrap"><table><thead><tr><th>发送</th><th>群名称</th><th>公开用户名</th><th>群 ID</th></tr></thead><tbody id="groupsTable"></tbody></table></div>
+      </section>
+      <section class="card wide">
+        <h2>最近搜索结果</h2><p class="hint">显示最近 100 条结果与模型选择理由。</p>
+        <div class="table-wrap"><table><thead><tr><th>群名称</th><th>关键词</th><th>状态</th><th>理由 / 结果</th></tr></thead><tbody id="candidatesTable"></tbody></table></div>
+      </section>
+      <section class="card wide">
+        <div class="list-heading"><h2>运行记录</h2><span class="hint">每 5 秒更新 · 最近 100 条</span></div>
+        <ul id="events" class="events"></ul>
+      </section>
+    </div>
+    <footer>TG Outreach · v1.0.0 · 单账号服务 · 登录状态、配置与运行记录保存在本服务的数据目录。</footer>
+  </main>
+</body>
+</html>

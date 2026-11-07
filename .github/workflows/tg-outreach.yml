@@ -1,0 +1,33 @@
+name: TG Outreach
+
+on:
+  push:
+    branches: [codex/tg-outreach]
+    paths: [services/tg-outreach/**, .github/workflows/tg-outreach.yml]
+  pull_request:
+    paths: [services/tg-outreach/**, .github/workflows/tg-outreach.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  service:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/tg-outreach
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: services/tg-outreach/requirements*.txt
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - run: pip install -r requirements-dev.txt
+      - run: pytest -q
+      - run: node --check static/app.js
+      - run: docker build -t tg-outreach:test .
