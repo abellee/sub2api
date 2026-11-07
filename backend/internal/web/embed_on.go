@@ -412,6 +412,8 @@ func shouldBypassEmbeddedFrontend(path string, acceptHeaders ...string) bool {
 		return len(acceptHeaders) == 0 || !strings.Contains(strings.ToLower(acceptHeaders[0]), "text/html")
 	}
 	return strings.HasPrefix(trimmed, "/api/") ||
+		strings.HasPrefix(trimmed, "/media/") ||
+		strings.HasPrefix(trimmed, "/internal/media/") ||
 		strings.HasPrefix(trimmed, "/.well-known/") ||
 		strings.HasPrefix(trimmed, "/v1/") ||
 		strings.HasPrefix(trimmed, "/v1beta/") ||

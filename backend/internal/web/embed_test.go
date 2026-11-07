@@ -24,6 +24,32 @@ func init() {
 	gin.SetMode(gin.TestMode)
 }
 
+func TestMediaRoutesReachHandlersWithEmbeddedFrontend(t *testing.T) {
+	server, err := NewFrontendServer(&mockSettingsProvider{settings: map[string]string{}})
+	require.NoError(t, err)
+	for name, frontend := range map[string]gin.HandlerFunc{"configured": server.Middleware(), "legacy": ServeEmbeddedFrontend()} {
+		t.Run(name, func(t *testing.T) {
+			router := gin.New()
+			router.Use(frontend)
+			for _, route := range []struct{ method, path string }{
+				{http.MethodPost, "/media/images/generations"},
+				{http.MethodGet, "/media/tasks/task-123"},
+				{http.MethodPost, "/internal/media/result"},
+				{http.MethodPost, "/internal/media/settle"},
+			} {
+				router.Handle(route.method, route.path, func(c *gin.Context) {
+					c.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
+				})
+				w := httptest.NewRecorder()
+				router.ServeHTTP(w, httptest.NewRequest(route.method, route.path, strings.NewReader(`{}`)))
+				require.Equal(t, http.StatusUnauthorized, w.Code, route.path)
+				require.Contains(t, w.Header().Get("Content-Type"), "application/json")
+				require.JSONEq(t, `{"error":"authentication required"}`, w.Body.String())
+			}
+		})
+	}
+}
+
 func TestCreativeDocsEmbeddedIndex(t *testing.T) {
 	want, err := frontendFS.ReadFile("dist/creative-docs/index.html")
 	require.NoError(t, err)
@@ -557,6 +583,10 @@ func TestFrontendServer_Middleware(t *testing.T) {
 
 		apiPaths := []string{
 			"/api/v1/users",
+			"/media/images/generations",
+			"/media/tasks/task-123",
+			"/internal/media/result",
+			"/internal/media/settle",
 			"/models",
 			"/v1/models",
 			"/v1beta/chat",
@@ -866,6 +896,10 @@ func TestServeEmbeddedFrontend(t *testing.T) {
 
 		apiPaths := []string{
 			"/api/users",
+			"/media/images/generations",
+			"/media/tasks/task-123",
+			"/internal/media/result",
+			"/internal/media/settle",
 			"/models",
 			"/v1/models",
 			"/v1beta/chat",
