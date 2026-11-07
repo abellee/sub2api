@@ -42,7 +42,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	db.SetMaxOpenConns(1)
 	ddl, err := migrations.FS.ReadFile("250_media_generation_files.sql")
 	if err != nil {

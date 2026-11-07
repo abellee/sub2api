@@ -49,7 +49,7 @@ func (s *ResultLinkStore) Prepare(ctx context.Context, req SettleRequest, base s
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	for _, file := range req.Files {
 		sum, err := hex.DecodeString(file.SHA256)
 		if err != nil || len(sum) != sha256.Size || file.Size <= 0 || !safeResultID.MatchString(file.ID) {
@@ -99,7 +99,7 @@ func (s *ResultLinkStore) List(ctx context.Context, userID int64, taskID string)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := []ResultLink{}
 	for rows.Next() {
 		var v ResultLink

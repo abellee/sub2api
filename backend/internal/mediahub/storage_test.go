@@ -266,7 +266,9 @@ func multipartFileHeader(t *testing.T, filename, contentType string, data []byte
 	h["Content-Type"] = []string{contentType}
 	fw, _ := mw.CreatePart(h)
 	_, _ = fw.Write(data)
-	mw.Close()
+	if err := mw.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	req := httptest.NewRequest("POST", "/upload", bytes.NewReader(buf.Bytes()))
 	req.Header.Set("Content-Type", mw.FormDataContentType())

@@ -483,14 +483,3 @@ func mediaHubUsageResult(req mediahub.SettleRequest) (*service.OpenAIForwardResu
 	}
 	return result, nil
 }
-
-// mediaHubAdminView 是管理接口的配置视图(脱敏)。
-func (h *MediaHubRelayHandler) mediaHubAdminView() map[string]any {
-	return map[string]any{
-		"mediad_base_url":     h.cfg.MediadBaseURL,
-		"store_path":          h.cfg.StorePath,
-		"forward_timeout":     h.cfg.ForwardTimeout.String(),
-		"relay_configured":    h.cfg.RelaySecret != "",
-		"callback_configured": h.cfg.CallbackSecret != "",
-	}
-}

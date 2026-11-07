@@ -99,7 +99,7 @@ func (s *SettingsStore) Update(next Settings) error {
 	if err != nil {
 		return err
 	}
-	defer os.Remove(f.Name())
+	defer func() { _ = os.Remove(f.Name()) }()
 	if _, err = f.Write(b); err == nil {
 		err = f.Sync()
 	}

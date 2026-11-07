@@ -94,7 +94,7 @@ func Forward(ctx context.Context, client *http.Client, in ForwardInput) (*Forwar
 	if err != nil {
 		return nil, fmt.Errorf("mediahub: mediad unreachable: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
 	if err != nil {
 		return nil, fmt.Errorf("mediahub: read mediad response: %w", err)
@@ -145,7 +145,7 @@ func ForwardTaskStatus(ctx context.Context, client *http.Client, in ForwardInput
 	if err != nil {
 		return nil, fmt.Errorf("mediahub: mediad unreachable: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	if err != nil {
 		return nil, fmt.Errorf("mediahub: read mediad response: %w", err)

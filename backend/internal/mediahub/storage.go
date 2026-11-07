@@ -286,12 +286,12 @@ func (s *FileStorage) persistOne(ctx context.Context, userID int64, model, taskI
 	}
 
 	var data []byte
-	switch {
-	case ref.kind == refData:
+	switch ref.kind {
+	case refData:
 		data = ref.data
 		meta.ContentType = ref.contentType
 		meta.Filename = ref.filename
-	case ref.kind == refURL:
+	case refURL:
 		meta.SourceURL = ref.url
 		file, ct, err2 := s.download(ctx, ref.url)
 		if err2 != nil {

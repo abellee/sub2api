@@ -30,21 +30,13 @@ var (
 
 // Canonical 组装规范串。
 func Canonical(timestamp, method, path string, body []byte) string {
-	var b strings.Builder
-	b.WriteString(timestamp)
-	b.WriteByte('\n')
-	b.WriteString(strings.ToUpper(method))
-	b.WriteByte('\n')
-	b.WriteString(path)
-	b.WriteByte('\n')
-	b.Write(body)
-	return b.String()
+	return timestamp + "\n" + strings.ToUpper(method) + "\n" + path + "\n" + string(body)
 }
 
 // Sign 计算签名值(含前缀)。
 func Sign(secret, timestamp, method, path string, body []byte) string {
 	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(Canonical(timestamp, method, path, body)))
+	_, _ = mac.Write([]byte(Canonical(timestamp, method, path, body)))
 	return Prefix + hex.EncodeToString(mac.Sum(nil))
 }
 
@@ -72,7 +64,7 @@ func Verify(secret, timestamp, method, path string, body []byte, sig string, now
 		return fmt.Errorf("%w: bad hex", ErrBadFormat)
 	}
 	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(Canonical(timestamp, method, path, body)))
+	_, _ = mac.Write([]byte(Canonical(timestamp, method, path, body)))
 	if !hmac.Equal(got, mac.Sum(nil)) {
 		return ErrMismatch
 	}

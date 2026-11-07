@@ -26,7 +26,7 @@ func mediaLinkFixture(t *testing.T) (*mediahub.ResultLinkStore, *sql.DB) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 	db.SetMaxOpenConns(1)
 	if _, err = db.Exec(`PRAGMA foreign_keys=ON; CREATE TABLE users(id BIGINT PRIMARY KEY); INSERT INTO users(id) VALUES(42),(43);`); err != nil {
 		t.Fatal(err)
