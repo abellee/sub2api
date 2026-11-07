@@ -367,7 +367,7 @@ func (s *FileStorage) download(ctx context.Context, url string) ([]byte, string,
 	if err != nil {
 		return nil, "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, "", fmt.Errorf("download status %d", resp.StatusCode)
 	}
@@ -476,7 +476,7 @@ func (s *FileStorage) SaveUpload(userID int64, fh *multipart.FileHeader) (*FileM
 	if err != nil {
 		return nil, err
 	}
-	defer src.Close()
+	defer func() { _ = src.Close() }()
 	data, err := io.ReadAll(io.LimitReader(src, s.cfg.MaxUploadBytes+1))
 	if err != nil {
 		return nil, err
