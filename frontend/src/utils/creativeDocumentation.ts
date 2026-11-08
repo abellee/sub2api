@@ -1,4 +1,5 @@
 import { renderMarkdown } from '@/utils/markdown'
+import '@/styles/documentation-markdown.css'
 import type { DocumentationAgent, DocumentationArticle } from '@/api/documentation'
 import { agentInstructions } from '../../public/creative-docs/documentation.js'
 import type { ReferencePage } from '../../public/creative-docs/reference-content.js'
@@ -35,12 +36,28 @@ export function renderDocumentationMarkdown(content: string, copyButtons = false
     heading.id = id
     return { id, label: heading.textContent ?? '', level: Number(heading.tagName.slice(1)) }
   })
-  if (copyButtons) doc.body.querySelectorAll('pre').forEach(pre => {
+  doc.body.querySelectorAll('table').forEach(table => {
+    const wrapper = doc.createElement('div')
+    wrapper.className = 'docs-table-scroll'
+    wrapper.tabIndex = 0
+    wrapper.setAttribute('role', 'region')
+    wrapper.setAttribute('aria-label', '文档表格，可横向滚动')
+    table.before(wrapper); wrapper.append(table)
+  })
+  doc.body.querySelectorAll('pre').forEach(pre => {
     const wrapper = doc.createElement('div')
     wrapper.className = 'docs-code-block'
-    const button = doc.createElement('button')
-    button.type = 'button'; button.dataset.copyCode = ''; button.textContent = '复制代码'
-    pre.before(wrapper); wrapper.append(button, pre)
+    const toolbar = doc.createElement('div')
+    toolbar.className = 'docs-code-toolbar'
+    const language = doc.createElement('span')
+    language.textContent = pre.querySelector('code')?.className.match(/\blanguage-([\w+-]+)/)?.[1] || 'text'
+    toolbar.append(language)
+    if (copyButtons) {
+      const button = doc.createElement('button')
+      button.type = 'button'; button.dataset.copyCode = ''; button.textContent = '复制代码'
+      toolbar.append(button)
+    }
+    pre.before(wrapper); wrapper.append(toolbar, pre)
   })
   return { html: doc.body.innerHTML, sections }
 }

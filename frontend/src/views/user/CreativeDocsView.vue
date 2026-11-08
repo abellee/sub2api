@@ -111,7 +111,7 @@ function navigateDocument(event: MouseEvent) {
   if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return
   const button = (event.target as Element | null)?.closest<HTMLButtonElement>('button[data-copy-code]')
   if (button) {
-    const code = button.parentElement?.querySelector('pre code')?.textContent ?? ''
+    const code = button.closest('.docs-code-block')?.querySelector('pre code')?.textContent ?? ''
     void navigator.clipboard.writeText(code).then(() => { button.textContent = '已复制' }).catch(() => { button.textContent = '复制失败，请重试' })
     return
   }
@@ -185,11 +185,6 @@ onBeforeUnmount(() => {
 .creative-docs-index a[aria-current] { border-left-color: var(--tf-console-active-ink); }
 .creative-docs-content { min-width: 0; padding-left: 30px; }
 .creative-docs-markdown { margin-top: 32px; overflow-wrap: anywhere; }
-.creative-docs-markdown :deep(pre),.creative-docs-markdown :deep(table) { max-width: 100%; overflow-x: auto; }
-.creative-docs-markdown :deep(table) { display: block; }
-.creative-docs-markdown :deep(.docs-code-block) { position: relative; }
-.creative-docs-markdown :deep(.docs-code-block pre) { padding-top: 42px; }
-.creative-docs-markdown :deep(button[data-copy-code]) { position: absolute; top: 10px; right: 12px; font-size: 12px; color: var(--tf-console-active-ink); }
 .creative-docs-empty { padding: 64px 24px; text-align: center; }
 .creative-docs-empty button { text-decoration: underline; padding-left: 10px; }
 .creative-docs a:focus-visible,.creative-docs button:focus-visible { outline: 2px solid var(--tf-console-active-ink); outline-offset: 3px; }

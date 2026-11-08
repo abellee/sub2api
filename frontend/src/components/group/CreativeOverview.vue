@@ -91,12 +91,12 @@ h2 > span { background: var(--tf-console-action-gradient); color: transparent; b
 .overview-tags { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 26px; font-size: 12px; opacity: .6; }
 .overview-index { display: flex; justify-content: space-between; max-width: 360px; margin-top: 44px; font-size: 12px; opacity: .5; }
 .creative-flow { grid-area: flow; position: relative; min-width: 0; min-height: 520px; border: 1px solid var(--tf-console-line); border-radius: 14px; overflow: hidden; background: radial-gradient(rgb(var(--tf-console-primary-500) / .18) .7px,transparent .7px) 0 0 / 13px 13px,linear-gradient(135deg,rgb(var(--tf-console-primary-500) / .04),transparent); }
-.creative-flow { transform-origin: 50% 50%; animation: creative-flow-sway 10s ease-in-out infinite; will-change: transform; }
+.creative-flow { transform-origin: 50% 50%; animation: creative-flow-sway 32s ease-in-out infinite; will-change: transform; }
 .creative-flow.is-measuring { transform: none !important; }
 @keyframes creative-flow-sway {
-  0%,100% { transform: perspective(1200px) rotateX(3deg) rotateY(-8deg) rotateZ(-.7deg); }
-  33% { transform: perspective(1200px) rotateX(-4deg) rotateY(2deg) rotateZ(.5deg); }
-  66% { transform: perspective(1200px) rotateX(2deg) rotateY(8deg) rotateZ(.7deg); }
+  0%,100% { transform: perspective(1200px) rotateX(.4deg) rotateY(-1deg) rotateZ(-.1deg); }
+  33% { transform: perspective(1200px) rotateX(-.5deg) rotateY(.25deg) rotateZ(.08deg); }
+  66% { transform: perspective(1200px) rotateX(.3deg) rotateY(1deg) rotateZ(.1deg); }
 }
 .flow-caption,.flow-bottom { position: absolute; left: 20px; right: 20px; display: flex; justify-content: space-between; gap: 12px; font-size: 12px; opacity: .6; }
 .flow-caption { top: 18px; align-items: center; letter-spacing: 1.2px; }
