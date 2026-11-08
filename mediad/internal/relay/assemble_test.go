@@ -97,6 +97,19 @@ func TestAssembleMappedBody(t *testing.T) {
 	}
 }
 
+func TestAssembleImageEdits(t *testing.T) {
+	schema := &Schema{ID: "test", Version: 1, Mode: "sync", Upstream: UpstreamSpec{Create: CallSpec{Method: "POST", Path: "/v1/images/generations"}}, Request: RequestSpec{BodyMode: "passthrough", StaticFields: map[string]any{"stream": false, "response_format": "url"}}}
+	up, err := Assemble(AssembleInput{Schema: schema, UpstreamURL: "https://upstream.example", ClientPath: "/v1/images/edits", Body: []byte(`{"model":"gpt-image-2.6","images":[{"image_url":"data:image/png;base64,aW1hZ2U="}],"mask":{"image_url":"https://example.com/mask.png"},"stream":true}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body map[string]any
+	_ = json.Unmarshal(up.Body, &body)
+	if up.URL != "https://upstream.example/v1/images/edits" || body["stream"] != false || body["mask"] == nil || len(body["images"].([]any)) != 1 {
+		t.Fatal("edit request not preserved", up.URL)
+	}
+}
+
 func TestAssemblePassthroughPreservesBody(t *testing.T) {
 	schema := testSchema()
 	schema.Request.BodyMode = "passthrough"

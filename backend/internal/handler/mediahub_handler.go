@@ -174,16 +174,37 @@ func (h *MediaHubRelayHandler) Relay(c *gin.Context) {
 		return
 	}
 
-	body, err := io.ReadAll(io.LimitReader(c.Request.Body, 128<<20))
+	body, err := io.ReadAll(io.LimitReader(c.Request.Body, (128<<20)+1))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{"type": "invalid_request_error", "message": "read body failed"}})
 		return
+	}
+	if len(body) > 128<<20 {
+		c.JSON(413, gin.H{"error": gin.H{"message": "media request is too large"}})
+		return
+	}
+	contentType := c.GetHeader("Content-Type")
+	clientPath := c.Param("path")
+	if c.GetString(mediaProtocolKey) != "" {
+		clientPath = strings.TrimSuffix(c.Request.URL.Path, "/async")
+		if strings.HasPrefix(strings.ToLower(contentType), "multipart/") {
+			body, err = mediaImageMultipart(body, contentType)
+			if err != nil {
+				mediaStandardError(c, 400, err.Error())
+				return
+			}
+			contentType = "application/json"
+		}
 	}
 	model := gjson.GetBytes(body, "model").String()
 	if c.GetString(mediaProtocolKey) != "" {
 		if c.GetString(mediaProtocolKey) == "gemini" {
 			model = c.GetString(mediaModelKey)
 		} else {
+			if c.GetString(mediaProtocolKey) == "openai_async" && gjson.GetBytes(body, "stream").Bool() {
+				mediaStandardError(c, 400, "async image requests do not support stream=true")
+				return
+			}
 			format := gjson.GetBytes(body, "response_format").String()
 			if format != "" && format != "url" && format != "b64_json" {
 				mediaStandardError(c, 400, "response_format must be url or b64_json")
@@ -227,9 +248,9 @@ func (h *MediaHubRelayHandler) Relay(c *gin.Context) {
 		SchemaID:       binding.SchemaID,
 		UpstreamURL:    upstreamURL,
 		Credential:     credential,
-		ClientPath:     c.Param("path"),
+		ClientPath:     clientPath,
 		Body:           body,
-		ContentType:    c.GetHeader("Content-Type"),
+		ContentType:    contentType,
 		UpstreamModel:  model,
 		UserID:         subject.UserID,
 		KeyID:          apiKey.ID,
@@ -269,7 +290,7 @@ func (h *MediaHubRelayHandler) Relay(c *gin.Context) {
 		}
 	}
 
-	contentType := resp.Header.Get("Content-Type")
+	contentType = resp.Header.Get("Content-Type")
 	if c.GetString(mediaProtocolKey) != "" {
 		h.finishStandard(c, resp, body, subject.UserID, apiKey.ID, gid)
 		return

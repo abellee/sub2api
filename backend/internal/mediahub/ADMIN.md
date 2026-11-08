@@ -2,7 +2,9 @@
 
 主站管理员菜单：`/admin/media-service`。所有配置标题右侧提供 info 说明，鼠标经过或键盘聚焦可查看用途、示例、配置方法和生效方式。
 
-已绑定的 OpenAI 图片分组使用标准 `POST /v1/images/generations`（同步返回 Images JSON）、`POST /v1/images/generations/async` 和 `GET /v1/images/tasks/{task_id}`。Gemini 图片分组使用 `POST /v1beta/models/{model}:generateContent`，同步返回原生 `candidates[].content.parts[].inlineData`。未绑定分组保持原处理流程；GPT 图生图和流式请求不在本次媒体适配范围。
+已绑定的 OpenAI 图片分组使用标准 `POST /v1/images/generations` 和 `POST /v1/images/edits`（JSON 或 multipart 图片及蒙版）。两者支持 `stream=true`，生成期间发送保活心跳，完成后每张图一个 `image_generation.completed` 或 `image_edit.completed` 事件，失败发送 `error` 事件；与供应商文档一致，不提供中间预览图。
+
+两条接口都可追加 `/async` 异步提交，再用 `GET /v1/images/tasks/{task_id}` 查询。异步接口不接受 `stream=true`。Gemini 图片分组使用 `POST /v1beta/models/{model}:generateContent`，同步返回原生 `candidates[].content.parts[].inlineData`，也原样支持 contents 中的参考图。未绑定分组保持原处理流程。
 
 标准结果在主站确认扣费后开放。OpenAI 默认返回 `b64_json`，传 `response_format=url` 返回媒体服务器下载链接；Gemini 额外提供 `download_urls`。生成和文件存储在媒体服务器执行，主站仅在返回标准同步响应时转发结果字节，不保存文件副本。
 

@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -57,6 +58,10 @@ func (h *MediaHubController) TryStandardGemini(c *gin.Context) bool {
 }
 
 func mediaStandardError(c *gin.Context, status int, message string) {
+	if c.Writer.Written() && strings.HasPrefix(c.Writer.Header().Get("Content-Type"), "text/event-stream") {
+		_ = mediaStreamEvent(c, "error", gin.H{"type": "error", "error": gin.H{"type": "api_error", "message": message}})
+		return
+	}
 	if c.GetString(mediaProtocolKey) == "gemini" {
 		code := "INTERNAL"
 		if status == 400 {
@@ -67,6 +72,65 @@ func mediaStandardError(c *gin.Context, status int, message string) {
 		c.JSON(status, gin.H{"error": gin.H{"code": status, "message": message, "status": code}})
 	} else {
 		c.JSON(status, gin.H{"error": gin.H{"type": "api_error", "message": message}})
+	}
+}
+
+func mediaStreamEvent(c *gin.Context, event string, payload any) error {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	controller := http.NewResponseController(c.Writer)
+	_ = controller.SetWriteDeadline(time.Now().Add(120 * time.Second))
+	defer controller.SetWriteDeadline(time.Time{})
+	if _, err = fmt.Fprintf(c.Writer, "event: %s\ndata: %s\n\n", event, data); err != nil {
+		return err
+	}
+	c.Writer.Flush()
+	return nil
+}
+
+func mediaStreamResult(c *gin.Context, result *mediahub.ForwardResponse) {
+	if result.StatusCode >= 400 {
+		var payload map[string]any
+		if json.Unmarshal(result.Body, &payload) != nil {
+			payload = gin.H{"error": gin.H{"message": "image generation failed"}}
+		}
+		payload["type"] = "error"
+		_ = mediaStreamEvent(c, "error", payload)
+		return
+	}
+	var payload map[string]any
+	if json.Unmarshal(result.Body, &payload) != nil {
+		mediaStandardError(c, 502, "invalid image result")
+		return
+	}
+	items, _ := payload["data"].([]any)
+	if len(items) == 0 {
+		mediaStandardError(c, 502, "upstream returned no images")
+		return
+	}
+	event := "image_generation.completed"
+	if strings.HasSuffix(c.Request.URL.Path, "/images/edits") {
+		event = "image_edit.completed"
+	}
+	delete(payload, "data")
+	payload["type"] = event
+	payload["created_at"] = payload["created"]
+	delete(payload, "created")
+	for _, item := range items {
+		out := make(map[string]any, len(payload)+3)
+		for k, v := range payload {
+			out[k] = v
+		}
+		if fields, ok := item.(map[string]any); ok {
+			for k, v := range fields {
+				out[k] = v
+			}
+		}
+		if err := mediaStreamEvent(c, event, out); err != nil {
+			return
+		}
 	}
 }
 
@@ -98,11 +162,22 @@ func (h *MediaHubRelayHandler) finishStandard(c *gin.Context, accepted *mediahub
 	if c.GetString(mediaProtocolKey) == "gemini" {
 		format = "gemini"
 	}
+	stream := c.GetString(mediaProtocolKey) == "openai" && gjson.GetBytes(body, "stream").Bool()
+	if stream {
+		format = "openai_b64_json"
+		c.Header("Content-Type", "text/event-stream")
+		c.Header("Cache-Control", "no-cache")
+		c.Header("X-Accel-Buffering", "no")
+		c.Header("X-Task-Id", id)
+		_, _ = c.Writer.WriteString(": keep-alive\n\n")
+		c.Writer.Flush()
+	}
 	in := mediahub.ForwardInput{MediadBaseURL: h.cfg.MediadBaseURL, RelaySecret: h.cfg.RelaySecret, UserID: userID, KeyID: keyID, GroupID: groupID}
 	ctx, cancel := context.WithTimeout(c.Request.Context(), h.cfg.ForwardTimeout)
 	defer cancel()
 	ticker := time.NewTicker(300 * time.Millisecond)
 	defer ticker.Stop()
+	lastHeartbeat := time.Now()
 	for {
 		state, err := h.standardFetch(ctx, in, id, "state")
 		if err != nil {
@@ -110,7 +185,11 @@ func (h *MediaHubRelayHandler) finishStandard(c *gin.Context, accepted *mediahub
 			return
 		}
 		if state.StatusCode != 200 {
-			c.Data(state.StatusCode, "application/json", state.Body)
+			if stream {
+				mediaStreamResult(c, state)
+			} else {
+				c.Data(state.StatusCode, "application/json", state.Body)
+			}
 			return
 		}
 		status := gjson.GetBytes(state.Body, "status").String()
@@ -121,14 +200,19 @@ func (h *MediaHubRelayHandler) finishStandard(c *gin.Context, accepted *mediahub
 				return
 			}
 			c.Header("X-Task-Id", id)
-			if gjson.GetBytes(body, "stream").Bool() {
-				c.Header("Content-Type", "text/event-stream")
-				c.Status(result.StatusCode)
-				_, _ = c.Writer.Write([]byte("data: " + string(result.Body) + "\n\ndata: [DONE]\n\n"))
+			if stream {
+				mediaStreamResult(c, result)
 				return
 			}
 			c.Data(result.StatusCode, "application/json", result.Body)
 			return
+		}
+		if stream && time.Since(lastHeartbeat) >= 10*time.Second {
+			if _, err := c.Writer.WriteString(": keep-alive\n\n"); err != nil {
+				return
+			}
+			c.Writer.Flush()
+			lastHeartbeat = time.Now()
 		}
 		select {
 		case <-ctx.Done():

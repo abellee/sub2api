@@ -1,7 +1,11 @@
 package handler
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/json"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -102,5 +106,92 @@ func TestMediaStandardEndpoints(t *testing.T) {
 				t.Fatal("standard images response lost", w.Body.String())
 			}
 		})
+	}
+}
+
+func TestMediaImageMultipart(t *testing.T) {
+	var body bytes.Buffer
+	w := multipart.NewWriter(&body)
+	for k, v := range map[string]string{"model": "gpt-image-2.6", "stream": "true", "n": "2", "prompt": "keep this subject"} {
+		_ = w.WriteField(k, v)
+	}
+	for _, field := range []string{"image[]", "image[]", "mask"} {
+		part, err := w.CreateFormFile(field, "input.png")
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = part.Write([]byte("\x89PNG\r\n\x1a\nimage"))
+	}
+	_ = w.Close()
+	out, err := mediaImageMultipart(body.Bytes(), w.FormDataContentType())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !gjson.GetBytes(out, "stream").Bool() || gjson.GetBytes(out, "n").Int() != 2 || len(gjson.GetBytes(out, "images").Array()) != 2 || !strings.HasPrefix(gjson.GetBytes(out, "mask.image_url").String(), "data:image/png;base64,") {
+		t.Fatal("multipart options or files lost")
+	}
+	if _, err = mediaImageMultipart(body.Bytes(), "multipart/form-data"); err == nil {
+		t.Fatal("missing boundary accepted")
+	}
+}
+
+func TestMediaImageStreamFlushesBeforeCompletion(t *testing.T) {
+	for _, endpoint := range []string{"generations", "edits"} {
+		t.Run(endpoint, func(t *testing.T) {
+			release := make(chan struct{})
+			media := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Query().Get("response_format") == "state" {
+					<-release
+					_, _ = w.Write([]byte(`{"status":"succeeded","callback_state":"confirmed"}`))
+					return
+				}
+				if r.URL.Query().Get("response_format") != "openai_b64_json" {
+					t.Error("stream must contain base64")
+				}
+				_, _ = w.Write([]byte(`{"created":123,"output_format":"png","data":[{"b64_json":"aW1hZ2Ux","download_url":"https://d.tokenfree.dev/1"},{"b64_json":"aW1hZ2Uy","download_url":"https://d.tokenfree.dev/2"}]}`))
+			}))
+			defer media.Close()
+			h := &MediaHubRelayHandler{cfg: MediaHubConfig{MediadBaseURL: media.URL, RelaySecret: "test", ForwardTimeout: 5 * time.Second}, client: media.Client()}
+			router := gin.New()
+			router.POST("/v1/images/"+endpoint, func(c *gin.Context) {
+				c.Set(mediaProtocolKey, "openai")
+				h.finishStandard(c, &mediahub.ForwardResponse{StatusCode: 202, Body: []byte(`{"task_id":"mtask_stream"}`)}, []byte(`{"stream":true,"response_format":"url"}`), 42, 7, 3)
+			})
+			server := httptest.NewServer(router)
+			defer server.Close()
+			resp, err := server.Client().Post(server.URL+"/v1/images/"+endpoint, "application/json", strings.NewReader(`{}`))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+			reader := bufio.NewReader(resp.Body)
+			line, err := reader.ReadString('\n')
+			if err != nil || line != ": keep-alive\n" {
+				t.Fatal("heartbeat not flushed before completion", line, err)
+			}
+			close(release)
+			rest, err := io.ReadAll(reader)
+			if err != nil {
+				t.Fatal(err)
+			}
+			event := "image_generation.completed"
+			if endpoint == "edits" {
+				event = "image_edit.completed"
+			}
+			if strings.Count(string(rest), "event: "+event) != 2 || !strings.Contains(string(rest), `"b64_json":"aW1hZ2Uy"`) || !strings.Contains(string(rest), `"created_at":123`) {
+				t.Fatal("invalid stream result", string(rest))
+			}
+		})
+	}
+}
+
+func TestMediaStandardStreamFailure(t *testing.T) {
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Header("Content-Type", "text/event-stream")
+	c.Writer.Flush()
+	mediaStreamResult(c, &mediahub.ForwardResponse{StatusCode: 400, Body: []byte(`{"error":{"code":"content_policy_violation","message":"blocked"}}`)})
+	if !strings.Contains(w.Body.String(), "event: error") || !strings.Contains(w.Body.String(), "content_policy_violation") {
+		t.Fatal(w.Body.String())
 	}
 }
