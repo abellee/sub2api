@@ -4,7 +4,7 @@
 
 - 客户端图片/视频生成：`POST /media/...`，持久受理后返回 202 与任务号。
 - 查询：`GET /media/tasks/{task_id}`，仅允许任务所有者；扣费和链接记录完成后返回下载链接。
-- 用户下载记录：`GET /media/files`，最多返回当前用户最近 200 条已完成记录。
+- 用户下载记录：`GET /media/files`，最多返回当前用户最近 200 条已完成且未删除的记录；后台下载列表使用相同规则。
 - 单条记录：`GET /media/files/{record_id}`，检查用户归属。
 - 下载入口：`GET /media/files/{record_id}/content`，检查用户归属后 307 跳转到中转服务，不传输或保存文件字节。
 - 上传和删除不再由主站文件接口提供。
@@ -23,7 +23,7 @@
 媒体站删除过期文件后，通过现有签名回调发送独立的 `files.deleted` 事件。主站只更新
 `media_generation_files.deleted_at` 和 `delete_reason`，保留生成与账单记录，不进入扣费逻辑。
 主站明确返回 `files_deleted: true` 和相同 `event_id` 后，媒体站才移除落盘的通知。
-媒体站任务记录清理不影响通知重试；主站列表保留删除标记，下载返回 410，不再返回可用链接。
+媒体站任务记录清理不影响通知重试；下载列表隐藏已删除文件，按任务或记录查询仍保留删除标记，下载返回 410，不再返回可用链接。
 
 历史核对使用媒体站鉴权接口 `POST /management/files/reconcile`，请求为
 `{"records":[{"task_id":"mtask_...","user_id":"42","key_id":"7","file_ids":["f0000"]}]}`。

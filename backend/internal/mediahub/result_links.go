@@ -94,7 +94,8 @@ func (s *ResultLinkStore) List(ctx context.Context, userID int64, taskID string)
 	if s == nil || s.db == nil {
 		return nil, errors.New("media result database is not configured")
 	}
-	query := `SELECT id,user_id,task_id,file_id,model,download_url,content_type,size_bytes,sha256,created_at,deleted_at,delete_reason FROM media_generation_files WHERE user_id=$1 AND ready=true AND ($2='' OR task_id=$2) ORDER BY created_at DESC,id`
+	// Download lists exclude deleted files; task lookups retain their deletion status.
+	query := `SELECT id,user_id,task_id,file_id,model,download_url,content_type,size_bytes,sha256,created_at,deleted_at,delete_reason FROM media_generation_files WHERE user_id=$1 AND ready=true AND ($2='' OR task_id=$2) AND (deleted_at IS NULL OR $2<>'') ORDER BY created_at DESC,id`
 	if taskID == "" {
 		query += " LIMIT 200"
 	}

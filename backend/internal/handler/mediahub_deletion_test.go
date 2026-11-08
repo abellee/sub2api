@@ -98,3 +98,59 @@ func TestMediaDeletionCallbackKeepsBillingAndOwnershipSeparate(t *testing.T) {
 		}
 	}
 }
+
+func TestMediaDownloadListsExcludeDeletedFilesBeforeLimit(t *testing.T) {
+	links, db := mediaLinkFixture(t)
+	ctx := context.Background()
+	req := mediahub.SettleRequest{UserID: 42, APIKeyID: 7, TaskID: "mtask_available", Files: []mediahub.ResultFile{{ID: "f0000", DownloadURL: "https://d.tokenfree.dev/downloads/mtask_available/f0000", Size: 5, SHA256: strings.Repeat("a", 64), ContentType: "image/png"}}}
+	if err := links.Prepare(ctx, req, "https://d.tokenfree.dev"); err != nil {
+		t.Fatal(err)
+	}
+	if err := links.MarkReady(ctx, 42, req.TaskID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE media_generation_files SET created_at='2020-01-01 00:00:00';
+		WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<201)
+		INSERT INTO media_generation_files(id,user_id,api_key_id,task_id,file_id,download_url,size_bytes,sha256,ready,created_at,deleted_at,delete_reason)
+		SELECT 'deleted_'||i,42,7,'mtask_deleted_'||i,'f0000','https://d.tokenfree.dev/expired',5,'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',true,'2025-01-01 00:00:00','2025-01-02 00:00:00','retention_expired' FROM n;`); err != nil {
+		t.Fatal(err)
+	}
+	router := gin.New()
+	(&MediaHubController{links: links}).RegisterAdmin(router.Group("/admin"))
+	h := &MediaHubRelayHandler{links: links}
+	router.GET("/media/files", func(c *gin.Context) { h.serveFiles(c, 42, "/files") })
+	for _, path := range []string{"/admin/media-service/records?user_id=42", "/media/files"} {
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, httptest.NewRequest("GET", path, nil))
+		var body struct {
+			Data json.RawMessage `json:"data"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil || w.Code != 200 {
+			t.Fatal(path, w.Code, w.Body.String(), err)
+		}
+		raw := body.Data
+		if strings.HasPrefix(path, "/admin/") {
+			var data struct {
+				Records json.RawMessage `json:"records"`
+			}
+			if err := json.Unmarshal(body.Data, &data); err != nil {
+				t.Fatal(err)
+			}
+			raw = data.Records
+		}
+		var records []mediahub.ResultLink
+		if err := json.Unmarshal(raw, &records); err != nil || len(records) != 1 || records[0].TaskID != req.TaskID || records[0].DownloadURL == "" {
+			t.Fatal("deleted records crowded out available download", path, records, err)
+		}
+	}
+	if records, err := links.List(ctx, 43, ""); err != nil || len(records) != 0 {
+		t.Fatal("other user sees download records", records, err)
+	}
+	if records, err := links.List(ctx, 42, "mtask_deleted_1"); err != nil || len(records) != 1 || records[0].Status != "deleted" || records[0].DownloadURL != "" {
+		t.Fatal("task deletion history lost", records, err)
+	}
+	var count int
+	if err := db.QueryRow(`SELECT count(*) FROM media_generation_files`).Scan(&count); err != nil || count != 202 {
+		t.Fatal("download filtering removed history", count, err)
+	}
+}
