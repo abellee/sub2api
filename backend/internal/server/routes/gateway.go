@@ -74,7 +74,7 @@ func RegisterGatewayRoutes(
 		return getGroupPlatform(c) == service.PlatformOpenAI
 	}
 	imagesHandler := func(c *gin.Context) {
-		if getGroupPlatform(c) == service.PlatformOpenAI && strings.HasSuffix(c.Request.URL.Path, "/images/generations") && h.MediaHub.TryStandardImage(c, false) {
+		if getGroupPlatform(c) == service.PlatformOpenAI && (strings.HasSuffix(c.Request.URL.Path, "/images/generations") || strings.HasSuffix(c.Request.URL.Path, "/images/edits")) && h.MediaHub.TryStandardImage(c, false) {
 			return
 		}
 		switch getGroupPlatform(c) {
@@ -93,7 +93,7 @@ func RegisterGatewayRoutes(
 		}
 	}
 	asyncImageHandler := func(c *gin.Context) {
-		if getGroupPlatform(c) == service.PlatformOpenAI && strings.HasSuffix(c.Request.URL.Path, "/images/generations/async") && h.MediaHub.TryStandardImage(c, true) {
+		if getGroupPlatform(c) == service.PlatformOpenAI && (strings.HasSuffix(c.Request.URL.Path, "/images/generations/async") || strings.HasSuffix(c.Request.URL.Path, "/images/edits/async")) && h.MediaHub.TryStandardImage(c, true) {
 			return
 		}
 		h.AsyncImage.Submit(c)
@@ -268,7 +268,7 @@ func RegisterGatewayRoutes(
 		gateway.POST("/images/generations", imagesHandler)
 		gateway.POST("/images/edits", imagesHandler)
 		gateway.POST("/images/generations/async", asyncImageHandler)
-		gateway.POST("/images/edits/async", h.AsyncImage.Submit)
+		gateway.POST("/images/edits/async", asyncImageHandler)
 		gateway.GET("/images/tasks/:task_id", imageTaskHandler)
 		gateway.POST("/images/batches", h.BatchImage.Submit)
 		gateway.GET("/images/batches", h.BatchImage.List)
@@ -441,7 +441,7 @@ func RegisterGatewayRoutes(
 	rootRoute(http.MethodPost, "/images/generations", bodyLimit, imagesHandler)
 	rootRoute(http.MethodPost, "/images/edits", bodyLimit, imagesHandler)
 	rootRoute(http.MethodPost, "/images/generations/async", bodyLimit, asyncImageHandler)
-	rootRoute(http.MethodPost, "/images/edits/async", bodyLimit, h.AsyncImage.Submit)
+	rootRoute(http.MethodPost, "/images/edits/async", bodyLimit, asyncImageHandler)
 	rootRoute(http.MethodGet, "/images/tasks/:task_id", bodyLimit, imageTaskHandler)
 	rootRoute(http.MethodPost, "/videos", bodyLimit, videoGenerationHandler)
 	rootRoute(http.MethodPost, "/videos/generations", bodyLimit, videoGenerationHandler)

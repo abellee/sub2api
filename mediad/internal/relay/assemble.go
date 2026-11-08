@@ -68,6 +68,9 @@ func Assemble(in AssembleInput) (*UpstreamRequest, error) {
 	}
 
 	path := strings.ReplaceAll(create.Path, "{model}", url.PathEscape(in.Model))
+	if in.Schema.ID == "klinkw-gpt-image" && strings.HasSuffix(in.ClientPath, "/images/edits") {
+		path = "/v1/images/edits"
+	}
 	if strings.Contains(create.Path, "{model}") && (in.Model == "" || strings.ContainsAny(in.Model, "/\\?#")) {
 		return nil, fmt.Errorf("valid model is required for upstream path")
 	}

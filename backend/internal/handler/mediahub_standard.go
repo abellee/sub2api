@@ -121,6 +121,12 @@ func (h *MediaHubRelayHandler) finishStandard(c *gin.Context, accepted *mediahub
 				return
 			}
 			c.Header("X-Task-Id", id)
+			if gjson.GetBytes(body, "stream").Bool() {
+				c.Header("Content-Type", "text/event-stream")
+				c.Status(result.StatusCode)
+				_, _ = c.Writer.Write([]byte("data: " + string(result.Body) + "\n\ndata: [DONE]\n\n"))
+				return
+			}
 			c.Data(result.StatusCode, "application/json", result.Body)
 			return
 		}

@@ -184,10 +184,6 @@ func (h *MediaHubRelayHandler) Relay(c *gin.Context) {
 		if c.GetString(mediaProtocolKey) == "gemini" {
 			model = c.GetString(mediaModelKey)
 		} else {
-			if gjson.GetBytes(body, "stream").Bool() {
-				mediaStandardError(c, 400, "streaming is not enabled for this media group")
-				return
-			}
 			format := gjson.GetBytes(body, "response_format").String()
 			if format != "" && format != "url" && format != "b64_json" {
 				mediaStandardError(c, 400, "response_format must be url or b64_json")
