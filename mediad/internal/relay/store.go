@@ -204,6 +204,39 @@ func (s *MemoryStore) Delete(id string) error {
 	return nil
 }
 
+// GCFiles expires only terminal results already accepted by the main site.
+func (s *MemoryStore) GCFiles(ttl time.Duration, root string) (int, error) {
+	if ttl <= 0 {
+		return 0, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	removed := 0
+	for id, prev := range s.tasks {
+		if prev.CallbackState != CallbackConfirmed || prev.FilesAcknowledged || prev.Status != StatusSucceeded || prev.CompletedAt == nil || time.Since(*prev.CompletedAt) < ttl {
+			continue
+		}
+		// Never let a malformed persisted task turn cleanup into deletion outside the media directory.
+		if root == "" || id == "" || id == "." || id == ".." || filepath.Base(id) != id {
+			return removed, fmt.Errorf("invalid media cleanup path for task %q", id)
+		}
+		if err := os.RemoveAll(filepath.Join(root, id)); err != nil {
+			return removed, err
+		}
+		task := cloneTask(prev)
+		task.FilesAcknowledged = true
+		// Raw upstream responses can also contain the expired image as base64.
+		task.Response = nil
+		task.Result = nil
+		if err := s.persist(task); err != nil {
+			return removed, err
+		}
+		s.tasks[id] = task
+		removed++
+	}
+	return removed, nil
+}
+
 // GC 清理完成时间超过 ttl 的任务。由服务层定时调用。
 func (s *MemoryStore) GC(ttl time.Duration) int {
 	s.mu.Lock()

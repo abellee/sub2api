@@ -8,7 +8,7 @@ export default {
     tabsLabel: 'Configuration sections', tabs: { main: 'Main site & records', runtime: 'Service settings', rules: 'Generation rules', bindings: 'Group bindings', callback: 'Result notifications', tasks: 'Pending tasks', records: 'Download records' },
     checkConnection: 'Check connection', configured: 'Set', keepSecret: 'Leave blank to keep current value',
     mainHint: 'The main site stores links, owners and metadata. No media bytes are stored on the main site. Management connections apply immediately; restart for relay and signing settings.',
-    runtimeHint: 'Files remain in the service storage directory indefinitely. Set a public download URL for production. Stop and migrate existing media before changing directories. Restart to apply runtime settings.',
+    runtimeHint: 'Files are deleted after the configured retention period. Set a public download URL for production. Retention changes apply immediately; restart for other settings. Stop and migrate existing media before changing directories.',
     mainRestart: 'Main-site restart required:', agentRestart: 'Service restart required:', activeSettings: 'Show active settings (secrets hidden)',
     saveMain: 'Save main-site settings', saveRuntime: 'Save service settings', saved: 'Saved and applied', mainSavedRestart: 'Saved. Management calls use the new connection now. Restart the main site to apply relay and signing settings.', runtimeSavedRestart: 'Saved. Restart the service to apply.',
     failed: 'Operation failed. Please retry.', connected: 'Management connection and authentication succeeded.',
@@ -27,7 +27,7 @@ export default {
     fields: {
       enabled: 'Enable media relay', mediad_base_url: 'Service URL', management_token: 'Management token', relay_secret: 'Relay signing key', callback_secret: 'Notification signing key', bindings_path: 'Group bindings file',
       forward_timeout_seconds: 'Relay request timeout (seconds)', management_timeout_seconds: 'Management request timeout (seconds)',
-      listen: 'Service listen address', data_dir: 'Task state directory', result_dir: 'Service media storage directory', download_base_url: 'Public download base URL', max_file_mib: 'Result file limit (MiB)', max_sync_seconds: 'Default generation timeout (seconds)', max_concurrent: 'Concurrent tasks', poll_interval_seconds: 'Default query interval (seconds)', max_poll_seconds: 'Default query timeout (seconds)', download_timeout_seconds: 'File download timeout (seconds)', download_attempts: 'File download attempts', task_retention_hours: 'Eligible task record retention (hours)', gc_minutes: 'Task cleanup interval (minutes)', persist_credentials: 'Save credentials for restart recovery', log_level: 'Log level'
+      listen: 'Service listen address', data_dir: 'Task state directory', result_dir: 'Service media storage directory', download_base_url: 'Public download base URL', max_file_mib: 'Result file limit (MiB)', max_sync_seconds: 'Default generation timeout (seconds)', max_concurrent: 'Concurrent tasks', poll_interval_seconds: 'Default query interval (seconds)', max_poll_seconds: 'Default query timeout (seconds)', download_timeout_seconds: 'File download timeout (seconds)', download_attempts: 'File download attempts', file_retention_hours: 'File retention (hours; 0 keeps forever)', task_retention_hours: 'Eligible task record retention (hours)', gc_minutes: 'Task cleanup interval (minutes)', persist_credentials: 'Save credentials for restart recovery', log_level: 'Log level'
     }
   }
 }

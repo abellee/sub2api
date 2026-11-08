@@ -18,6 +18,10 @@ func (h *RelayHandler) handleStandardResult(w http.ResponseWriter, r *http.Reque
 		writeError(w, 400, "invalid_format", "unsupported result format")
 		return
 	}
+	if task.Status == StatusSucceeded && task.FilesAcknowledged {
+		writeError(w, http.StatusGone, "result_expired", "media files have expired")
+		return
+	}
 	if task.Status == StatusFailed {
 		if (task.ResponseStatus >= 400 || (format == "gemini" && task.ResponseStatus == 200)) && json.Valid(task.Response) {
 			w.Header().Set("Content-Type", "application/json")

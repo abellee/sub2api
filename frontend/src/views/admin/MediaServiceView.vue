@@ -21,7 +21,7 @@
             <label v-for="f in mainFields" :key="f.key" class="flex flex-col gap-2 text-sm" :class="f.type === 'checkbox' ? 'justify-center' : ''">
               <span>{{ fieldLabel(f.key) }}<MediaSettingInfo :title="fieldLabel(f.key)" :content="fieldHelp(f.key)" /> <span v-if="main[f.key + '_configured']" class="text-green-600">{{ t('mediaService.configured') }}</span></span>
               <input v-if="f.type === 'checkbox'" v-model="main[f.key]" type="checkbox" class="h-5 w-5" :data-testid="`main-${f.key}`" />
-              <input v-else-if="f.type === 'number'" v-model.number="main[f.key]" type="number" :min="f.min || 1" :max="f.max" class="input w-full" required :data-testid="`main-${f.key}`" />
+              <input v-else-if="f.type === 'number'" v-model.number="main[f.key]" type="number" :min="f.min ?? 1" :max="f.max" class="input w-full" required :data-testid="`main-${f.key}`" />
               <input v-else v-model="main[f.key]" :type="f.type || 'text'" :autocomplete="f.type === 'password' ? 'new-password' : 'off'" :placeholder="f.type === 'password' ? t('mediaService.keepSecret') : ''" class="input w-full" :data-testid="`main-${f.key}`" />
             </label>
           </div>
@@ -38,7 +38,7 @@
             <label v-for="f in runtimeFields" :key="f.key" class="flex flex-col gap-2 text-sm">
               <span>{{ fieldLabel(f.key) }}<MediaSettingInfo :title="fieldLabel(f.key)" :content="fieldHelp(f.key)" /> <span v-if="runtime[f.key + '_configured']" class="text-green-600">{{ t('mediaService.configured') }}</span></span>
               <input v-if="f.type === 'checkbox'" v-model="runtime[f.key]" type="checkbox" class="h-5 w-5" :disabled="f.key === 'persist_credentials'" />
-              <input v-else-if="f.type === 'number'" v-model.number="runtime[f.key]" type="number" :min="f.min || 1" :max="f.max" required class="input w-full" />
+              <input v-else-if="f.type === 'number'" v-model.number="runtime[f.key]" type="number" :min="f.min ?? 1" :max="f.max" required class="input w-full" />
               <select v-else-if="f.key === 'log_level'" v-model="runtime[f.key]" class="input"><option v-for="level in ['debug', 'info', 'warn', 'error']" :key="level">{{ level }}</option></select>
               <input v-else v-model="runtime[f.key]" :type="f.type || 'text'" :autocomplete="f.type === 'password' ? 'new-password' : 'off'" :placeholder="f.type === 'password' ? t('mediaService.keepSecret') : ''" class="input w-full" />
             </label>
@@ -129,7 +129,7 @@ const mainFields: Field[] = [
 ]
 const runtimeFields: Field[] = [
   { key: 'listen' }, { key: 'data_dir' }, { key: 'result_dir' }, { key: 'download_base_url', type: 'url' }, numeric('max_file_mib', 10240), numeric('max_sync_seconds', 86400), numeric('max_concurrent', 128),
-  numeric('poll_interval_seconds', 3600), numeric('max_poll_seconds', 604800), numeric('download_timeout_seconds', 86400), numeric('download_attempts', 100), numeric('task_retention_hours', 87600), numeric('gc_minutes', 1440),
+  numeric('poll_interval_seconds', 3600), numeric('max_poll_seconds', 604800), numeric('download_timeout_seconds', 86400), numeric('download_attempts', 100), { key: 'file_retention_hours', type: 'number', min: 0, max: 87600 }, numeric('task_retention_hours', 87600), numeric('gc_minutes', 1440),
   { key: 'persist_credentials', type: 'checkbox' }, { key: 'log_level' }, secret('relay_secret'), secret('management_token')
 ]
 const fieldLabel = (key: string) => t(`mediaService.fields.${key}`)

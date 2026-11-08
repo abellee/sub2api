@@ -146,6 +146,7 @@ func (h *MediaHubRelayHandler) Config() MediaHubConfig { return h.cfg }
 // Relay 是客户端媒体请求入口:ANY /media/*path(apiKey 鉴权后到达)。
 // /media/files/* 返回用户的下载记录或跳转到中转服务，其余转发 mediad。
 func (h *MediaHubRelayHandler) Relay(c *gin.Context) {
+	started := time.Now()
 	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
 	if !ok || apiKey == nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": gin.H{"type": "authentication_error", "message": "invalid api key"}})
@@ -282,6 +283,7 @@ func (h *MediaHubRelayHandler) Relay(c *gin.Context) {
 			Model:     model,
 			Usage:     resp.Usage,
 			Status:    "succeeded",
+			Duration:  time.Since(started),
 			Ctx:       c.Request.Context(),
 		}
 		if err := h.billingSink.Settle(req); err != nil {
@@ -511,7 +513,7 @@ func (s *mediaHubBillingSink) Settle(req mediahub.SettleRequest) error {
 }
 
 func mediaHubUsageResult(req mediahub.SettleRequest) (*service.OpenAIForwardResult, error) {
-	result := &service.OpenAIForwardResult{RequestID: req.RequestID, Model: req.Model, BillingModel: req.Model}
+	result := &service.OpenAIForwardResult{RequestID: req.RequestID, Model: req.Model, BillingModel: req.Model, Duration: req.Duration}
 	if req.Usage == nil {
 		return result, nil
 	}

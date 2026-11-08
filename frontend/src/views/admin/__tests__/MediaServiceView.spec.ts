@@ -64,6 +64,18 @@ describe('Media service administration', () => {
     expect(wrapper.get('[role="alert"]').text()).toBe('service offline')
     expect(wrapper.get('form button').attributes('disabled')).toBeDefined()
   })
+  it('saves zero file retention and shows changes as immediately applied', async () => {
+    const runtime = { settings: { file_retention_hours: 72 }, active: { file_retention_hours: 72 }, restart_required: false, pending_fields: [] }
+    api.agent.mockResolvedValue(runtime)
+    const wrapper = mountView(); await flushPromises()
+    await wrapper.get('[data-testid="tab-runtime"]').trigger('click'); await flushPromises()
+    const input = wrapper.findAll('input[type="number"]').find(input => input.attributes('min') === '0')!
+    expect(input.exists()).toBe(true)
+    await input.setValue(0)
+    await wrapper.get('form').trigger('submit'); await flushPromises()
+    expect(api.agent).toHaveBeenCalledWith('PUT', '/config', expect.objectContaining({ file_retention_hours: 0 }))
+    expect(wrapper.get('[role="status"]').text()).toBe('mediaService.saved')
+  })
   it('saves a group binding with the selected rule', async () => {
     const wrapper = mountView(); await flushPromises()
     await wrapper.get('[data-testid="tab-bindings"]').trigger('click'); await flushPromises()

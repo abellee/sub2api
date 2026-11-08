@@ -483,10 +483,10 @@ func BuildCallbackPayload(task *Task) ([]byte, error) {
 		"parameters":       task.Parameters,
 		"result":           result,
 		"error_message":    task.ErrorMessage,
-		"created_at":       task.CreatedAt.UTC().Format(time.RFC3339),
+		"created_at":       task.CreatedAt.UTC().Format(time.RFC3339Nano),
 	}
 	if task.CompletedAt != nil {
-		payload["completed_at"] = task.CompletedAt.UTC().Format(time.RFC3339)
+		payload["completed_at"] = task.CompletedAt.UTC().Format(time.RFC3339Nano)
 	}
 	if task.Usage != nil {
 		payload["usage"] = map[string]any{"quantity": task.Usage.Quantity, "unit": task.Usage.Unit}

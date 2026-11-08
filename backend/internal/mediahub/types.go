@@ -8,7 +8,10 @@
 // 签名算法与受信请求头在本包 signature.go 中镜像实现。
 package mediahub
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // 契约头名称,与 mediad/internal/relay/handler.go 保持一致。
 const (
@@ -69,7 +72,8 @@ type SettleRequest struct {
 	// Usage 为 nil 表示失败/不计费(仅用于触发冻结释放)。
 	Usage *Usage
 	// Status 是任务终态(succeeded|failed);同步结算为 "succeeded"。
-	Status string
+	Status   string
+	Duration time.Duration
 	// Result 是 mediad 回调带回的结果提取(如 image_urls),
 	// 文件字节始终保存在微服务，主站不下载副本。
 	Result     map[string]any

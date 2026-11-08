@@ -26,6 +26,7 @@ type Settings struct {
 	DownloadTimeoutSeconds int    `json:"download_timeout_seconds"`
 	DownloadAttempts       int    `json:"download_attempts"`
 	TaskRetentionHours     int    `json:"task_retention_hours"`
+	FileRetentionHours     int    `json:"file_retention_hours"`
 	GCMinutes              int    `json:"gc_minutes"`
 	PersistCredentials     bool   `json:"persist_credentials"`
 	LogLevel               string `json:"log_level"`
@@ -78,7 +79,7 @@ func (s Settings) Validate() error {
 		{"max_file_mib", s.MaxFileMiB, 1, 10240}, {"max_sync_seconds", s.MaxSyncSeconds, 1, 86400},
 		{"max_concurrent", s.MaxConcurrent, 1, 128}, {"poll_interval_seconds", s.PollIntervalSeconds, 1, 3600},
 		{"max_poll_seconds", s.MaxPollSeconds, 1, 604800}, {"download_timeout_seconds", s.DownloadTimeoutSeconds, 1, 86400},
-		{"download_attempts", s.DownloadAttempts, 1, 100}, {"task_retention_hours", s.TaskRetentionHours, 1, 87600}, {"gc_minutes", s.GCMinutes, 1, 1440},
+		{"download_attempts", s.DownloadAttempts, 1, 100}, {"task_retention_hours", s.TaskRetentionHours, 1, 87600}, {"file_retention_hours", s.FileRetentionHours, 0, 87600}, {"gc_minutes", s.GCMinutes, 1, 1440},
 	}
 	for _, x := range limits {
 		if x.value < x.min || x.value > x.max {
@@ -161,7 +162,15 @@ func (s *SettingsStore) Update(next Settings) error {
 		return err
 	}
 	s.desired = next
+	// Retention only affects completed tasks and can safely change without restarting workers.
+	s.active.FileRetentionHours = next.FileRetentionHours
 	return nil
+}
+
+func (s *SettingsStore) FileRetentionHours() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.active.FileRetentionHours
 }
 
 func (s *SettingsStore) View() map[string]any {

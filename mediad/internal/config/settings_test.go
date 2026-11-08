@@ -16,6 +16,7 @@ func TestSettingsPersistRedactAndRestart(t *testing.T) {
 	}
 	next := store.Active()
 	next.MaxConcurrent = 3
+	next.FileRetentionHours = 72
 	next.ManagementToken = ""
 	next.RelaySecret = ""
 	if err = store.Update(next); err != nil {
@@ -23,6 +24,9 @@ func TestSettingsPersistRedactAndRestart(t *testing.T) {
 	}
 	if store.Active().MaxConcurrent != 8 {
 		t.Fatal("active workers changed before restart")
+	}
+	if store.FileRetentionHours() != 72 {
+		t.Fatal("file retention did not apply immediately")
 	}
 	b, _ := json.Marshal(store.View())
 	if strings.Contains(string(b), "private-") {

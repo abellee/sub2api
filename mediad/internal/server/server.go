@@ -98,7 +98,11 @@ func (s *Server) Run(ctx context.Context) error {
 			defer cancel()
 			return s.httpServer.Shutdown(shutdown)
 		case <-gc.C:
-			// 只回收主站已确认取走且通知成功的任务，未交接文件永久保留。
+			if n, err := s.store.GCFiles(time.Duration(s.settings.FileRetentionHours())*time.Hour, s.settings.Active().ResultDir); err != nil {
+				s.logger.Printf("[mediad] file cleanup: %v", err)
+			} else if n > 0 {
+				s.logger.Printf("[mediad] expired media cleaned: %d tasks", n)
+			}
 			s.store.GC(time.Duration(s.settings.Active().TaskRetentionHours) * time.Hour)
 		case err := <-errCh:
 			if errors.Is(err, http.ErrServerClosed) {

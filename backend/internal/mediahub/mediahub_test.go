@@ -76,7 +76,7 @@ func TestSettleServerVerifiesAndDedups(t *testing.T) {
 	})
 	srv := NewSettleServer(func() string { return "cb-secret" }, sink, time.Minute)
 
-	callbackBody := []byte(`{"event":"task.completed","task_id":"mtask_1","user_id":"42","key_id":"7","group_id":"3","model":"mj-v8.2","status":"succeeded","usage":{"quantity":4,"unit":"image"}}`)
+	callbackBody := []byte(`{"event":"task.completed","task_id":"mtask_1","user_id":"42","key_id":"7","group_id":"3","model":"mj-v8.2","status":"succeeded","created_at":"2026-11-08T10:00:00.125Z","completed_at":"2026-11-08T10:00:12.875Z","usage":{"quantity":4,"unit":"image"}}`)
 	post := func(sig string) *httptest.ResponseRecorder {
 		ts := fmt.Sprintf("%d", time.Now().Unix())
 		req := httptest.NewRequest("POST", "/internal/media/settle", strings.NewReader(string(callbackBody)))
@@ -94,6 +94,9 @@ func TestSettleServerVerifiesAndDedups(t *testing.T) {
 	}
 	if len(settled) != 1 || settled[0].RequestID != "media_task_settle:mtask_1" || settled[0].UserID != 42 {
 		t.Fatalf("settled = %+v", settled)
+	}
+	if settled[0].Duration != 12750*time.Millisecond {
+		t.Fatalf("callback duration = %v", settled[0].Duration)
 	}
 
 	// 重复回调:不重复结算,返回 already_settled。

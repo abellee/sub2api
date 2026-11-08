@@ -51,7 +51,8 @@
 | max_concurrent | 8；任务超出后持久排队 |
 | poll_interval_seconds / max_poll_seconds | 5 / 1800；默认查询间隔及总等待，规则可覆盖 |
 | download_timeout_seconds / download_attempts | 120 / 3；单文件下载等待及总尝试次数 |
-| task_retention_hours / gc_minutes | 24 / 30；仅清理符合条件的任务记录，保留文件的成功任务不清理 |
+| file_retention_hours | 0（永久）；按生成完成时间保留指定小时数，保存立即生效，只删除主站已确认成功的结果；旧配置继续永久保留 |
+| task_retention_hours / gc_minutes | 24 / 30；每 30 分钟清理过期文件及符合条件的任务记录；未完成、待恢复和未确认结果保留 |
 | log_level | info；兼容字段，当前统一运行日志不按此值过滤 |
 
 已有任务时禁止在线更改状态目录，存在保留文件时禁止在线更改媒体目录。迁移必须停机同步迁移状态、文件及配置；已保存目录变更后暂停新生成，直到重启。更换对外域名须保留旧域名代理，否则主站已记录的旧链接会失效。

@@ -146,6 +146,11 @@ func (s *SettleServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Parameters: ev.Parameters,
 		Ctx:        r.Context(),
 	}
+	created, createdErr := time.Parse(time.RFC3339Nano, ev.CreatedAt)
+	completed, completedErr := time.Parse(time.RFC3339Nano, ev.CompletedAt)
+	if createdErr == nil && completedErr == nil && completed.After(created) {
+		req.Duration = completed.Sub(created)
+	}
 	if err := s.sink.Settle(req); err != nil {
 		s.logf("[mediahub] settle failed task=%s: %v", ev.TaskID, err)
 		// 5xx 触发 mediad 重试;已幂等,重试安全。
