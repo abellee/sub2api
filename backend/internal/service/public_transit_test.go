@@ -381,14 +381,14 @@ func TestAdjustPublicTransitPassiveResultsCoversExportedFields(t *testing.T) {
 	require.Zero(t, empty.Window.SuccessRate)
 }
 
-func TestAdjustPublicTransitPassiveResultsSkipsInsufficientSamples(t *testing.T) {
+func TestAdjustPublicTransitPassiveResultsIncludesInsufficientSamples(t *testing.T) {
 	for _, tt := range []struct {
 		name          string
 		requests      int64
 		minimumSample int64
 		withHealth    bool
 	}{
-		{"no samples", 0, 50, false},
+		{"redacted counts", 0, 50, false},
 		{"below default threshold", 49, 50, false},
 		{"redacted below default threshold", 49, 50, true},
 		{"custom threshold", 99, 100, true},
@@ -420,12 +420,65 @@ func TestAdjustPublicTransitPassiveResultsSkipsInsufficientSamples(t *testing.T)
 			passive.Matrix = &PublicTransitPassiveMatrix{Items: []ChannelMonitorV2MatrixRow{{Metrics: metric, Health: matrixHealth,
 				Buckets: []ChannelMonitorV2TrendPoint{{Metrics: metric, Health: matrixHealth}},
 			}}}
-			before, err := json.Marshal(passive)
-			require.NoError(t, err)
 			adjustPublicTransitPassiveResults(&passive)
-			after, err := json.Marshal(passive)
-			require.NoError(t, err)
-			require.JSONEq(t, string(before), string(after))
+			for _, row := range []struct {
+				rate     float64
+				ttft     *int
+				duration *int
+			}{
+				{passive.Window.SuccessRate, passive.Window.AvgTTFTMs, passive.Window.AvgLatencyMs},
+				{passive.Models[0].SuccessRate, passive.Models[0].AvgTTFTMs, passive.Models[0].AvgLatencyMs},
+				{passive.Groups[0].SuccessRate, passive.Groups[0].AvgTTFTMs, passive.Groups[0].AvgLatencyMs},
+				{passive.Groups[0].Buckets[0].SuccessRate, passive.Groups[0].Buckets[0].AvgTTFTMs, passive.Groups[0].Buckets[0].AvgLatencyMs},
+			} {
+				require.Contains(t, []float64{0.91, 0.92, 0.93, 0.94, 0.95}, row.rate)
+				require.GreaterOrEqual(t, *row.ttft, 3000)
+				require.LessOrEqual(t, *row.ttft, 4000)
+				require.GreaterOrEqual(t, *row.duration, 6000)
+				require.LessOrEqual(t, *row.duration, 8000)
+			}
+			for _, metrics := range []*ChannelMonitorV2Metric{passive.Window.Metrics, passive.Models[0].Metrics, passive.Groups[0].Metrics, passive.Groups[0].Buckets[0].Metrics, &passive.Matrix.Items[0].Metrics, &passive.Matrix.Items[0].Buckets[0].Metrics} {
+				require.Contains(t, []float64{0.91, 0.92, 0.93, 0.94, 0.95}, metrics.SuccessRate)
+				require.GreaterOrEqual(t, *metrics.TTFT.AvgMs, 3000.0)
+				require.LessOrEqual(t, *metrics.TTFT.AvgMs, 4000.0)
+				require.GreaterOrEqual(t, *metrics.Duration.AvgMs, 6000.0)
+				require.LessOrEqual(t, *metrics.Duration.AvgMs, 8000.0)
+			}
+			require.Equal(t, tt.requests, passive.Window.RequestCount)
+			require.Equal(t, matrixHealth, passive.Matrix.Items[0].Health)
+		})
+	}
+}
+
+func TestAdjustPublicTransitPassiveResultsWithoutLatency(t *testing.T) {
+	for _, tt := range []struct {
+		name      string
+		requests  int64
+		errorRate float64
+		adjusted  bool
+	}{
+		{"no samples", 0, 0, false},
+		{"only failed requests", 1, 1, true},
+		{"redacted failed requests", 0, 1, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			passive := PublicTransitPassiveDisclosure{
+				Window: PublicTransitPassiveWindow{RequestCount: tt.requests, Metrics: &ChannelMonitorV2Metric{ErrorRate: tt.errorRate}},
+				Matrix: &PublicTransitPassiveMatrix{Items: []ChannelMonitorV2MatrixRow{{Metrics: ChannelMonitorV2Metric{ErrorRate: tt.errorRate}}}},
+			}
+			adjustPublicTransitPassiveResults(&passive)
+			for _, rate := range []float64{passive.Window.SuccessRate, passive.Window.Metrics.SuccessRate, passive.Matrix.Items[0].Metrics.SuccessRate} {
+				if tt.adjusted {
+					require.Contains(t, []float64{0.91, 0.92, 0.93, 0.94, 0.95}, rate)
+				} else {
+					require.Zero(t, rate)
+				}
+			}
+			require.Nil(t, passive.Window.AvgTTFTMs)
+			require.Nil(t, passive.Window.AvgLatencyMs)
+			require.Nil(t, passive.Window.Metrics.TTFT.AvgMs)
+			require.Nil(t, passive.Window.Metrics.Duration.AvgMs)
+			require.Equal(t, tt.errorRate, passive.Window.Metrics.ErrorRate)
 		})
 	}
 }
