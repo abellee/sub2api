@@ -3,6 +3,7 @@
 package service
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -219,4 +220,265 @@ func TestBuildPublicTransitPassiveDisclosureAggregatesModelsAndGroups(t *testing
 	require.Len(t, out.Groups[0].Buckets, 2)
 	require.Equal(t, bucketA.Format(time.RFC3339), out.Groups[0].Buckets[0].Start)
 	require.InDelta(t, 50.0/150.0, out.Groups[0].Buckets[0].CacheHitRate, 1e-12)
+}
+
+func TestPublicTransitLatencyResult(t *testing.T) {
+	for _, tt := range []struct {
+		name       string
+		firstToken bool
+		input      float64
+		want       float64 // Negative means a random value in the target range.
+	}{
+		{"ttft zero", true, 0, -1},
+		{"ttft below range", true, 2999, -1},
+		{"ttft lower bound", true, 3000, 3000},
+		{"ttft within range", true, 3500, 3500},
+		{"ttft upper bound", true, 4000, 4000},
+		{"ttft above range", true, 4001, -1},
+		{"ttft divided below range", true, 8999, -1},
+		{"ttft divided lower bound", true, 9000, 3000},
+		{"ttft divided within range", true, 10500, 3500},
+		{"ttft divided upper bound", true, 12000, 4000},
+		{"ttft divided above range", true, 12001, -1},
+		{"duration zero", false, 0, -1},
+		{"duration below range", false, 5999, -1},
+		{"duration lower bound", false, 6000, 6000},
+		{"duration within range", false, 7000, 7000},
+		{"duration upper bound", false, 8000, 8000},
+		{"duration below division threshold", false, 9999, -1},
+		{"duration division threshold", false, 10000, -1},
+		{"duration divided lower bound", false, 12000, 6000},
+		{"duration divided within range", false, 14000, 7000},
+		{"duration divided upper bound", false, 16000, 8000},
+		{"duration divided above range", false, 16001, -1},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			minMs, maxMs := 6000.0, 8000.0
+			if tt.firstToken {
+				minMs, maxMs = 3000, 4000
+			}
+			for range 32 {
+				input := tt.input
+				got := publicTransitLatencyResult(&input, tt.firstToken)
+				require.Equal(t, tt.input, input, "must not alter source measurements")
+				require.GreaterOrEqual(t, *got, minMs)
+				require.LessOrEqual(t, *got, maxMs)
+				if tt.want >= 0 {
+					require.Equal(t, tt.want, *got)
+				}
+				intInput := int(tt.input)
+				intResult := publicTransitLatencyResult(&intInput, tt.firstToken)
+				require.GreaterOrEqual(t, *intResult, int(minMs))
+				require.LessOrEqual(t, *intResult, int(maxMs))
+				if tt.want >= 0 {
+					require.Equal(t, int(tt.want), *intResult)
+				}
+			}
+		})
+	}
+	require.Nil(t, publicTransitLatencyResult[int](nil, true))
+	require.Nil(t, publicTransitLatencyResult[float64](nil, false))
+	fraction := 3500.75
+	require.Equal(t, fraction, *publicTransitLatencyResult(&fraction, true))
+}
+
+func TestPublicTransitSuccessRateResult(t *testing.T) {
+	for _, input := range []float64{0, 0.5, 0.899999, 0.9, 0.95, 1} {
+		for range 32 {
+			got := publicTransitSuccessRateResult(input)
+			if input < 0.9 {
+				require.Contains(t, []float64{0.91, 0.92, 0.93, 0.94, 0.95}, got)
+			} else {
+				require.Equal(t, input, got)
+			}
+		}
+	}
+}
+
+func TestAdjustPublicTransitPassiveResultsCoversExportedFields(t *testing.T) {
+	now := time.Now().UTC()
+	passive := buildPublicTransitPassiveDisclosure([]PublicTransitPassiveAggregate{{
+		BucketStart: &now, Platform: "openai", GroupName: "gpt", Model: "gpt-5",
+		RequestCount: 50, SuccessCount: 40, ErrorCount: 10,
+		TotalLatencyMs: 700000, LatencySamples: 50, TotalTTFTMs: 525000, TTFTSamples: 50,
+	}}, PublicTransitPassiveWindow{Period: "last_24h"})
+	metric := ChannelMonitorV2Metric{
+		RequestCount: 50, SuccessRequests: 40, ErrorRequests: 10, SuccessRate: 0.8, CacheRate: 0.5,
+		TTFT:     ChannelMonitorV2Latency{AvgMs: publicTransitPtr(10500.0), P50Ms: publicTransitPtr(int64(5000)), SampleCount: 50},
+		Duration: ChannelMonitorV2Latency{AvgMs: publicTransitPtr(14000.0), P50Ms: publicTransitPtr(int64(9000)), SampleCount: 50},
+	}
+	health := ChannelMonitorV2HealthFor(metric)
+	snapshot := &ChannelMonitorV2Snapshot{Metrics: metric, Health: health}
+	matrix := &ChannelMonitorV2Matrix{Items: []ChannelMonitorV2MatrixRow{{
+		Platform: "openai", GroupName: "gpt", Metrics: metric, Health: health,
+		Buckets: []ChannelMonitorV2TrendPoint{{BucketStart: now, Metrics: metric, Health: health}},
+	}}}
+	modelMatrix := &ChannelMonitorV2Matrix{Items: []ChannelMonitorV2MatrixRow{{
+		Platform: "openai", GroupName: "gpt", Model: "gpt-5", Metrics: metric, Health: health,
+	}}}
+	augmentPublicTransitPassiveDisclosure(&passive, snapshot, matrix, modelMatrix)
+	adjustPublicTransitPassiveResults(&passive)
+
+	encoded, err := json.Marshal(passive)
+	require.NoError(t, err)
+	var response any
+	require.NoError(t, json.Unmarshal(encoded, &response))
+	flatAverages, nestedAverages, successRates := 0, 0, 0
+	var check func(any)
+	check = func(value any) {
+		switch value := value.(type) {
+		case map[string]any:
+			for name, child := range value {
+				switch name {
+				case "success_rate":
+					require.Contains(t, []float64{0.91, 0.92, 0.93, 0.94, 0.95}, child)
+					successRates++
+				case "avg_ttft_ms":
+					require.Equal(t, 3500.0, child)
+					flatAverages++
+				case "avg_latency_ms":
+					require.Equal(t, 7000.0, child)
+					flatAverages++
+				case "ttft", "duration":
+					latency, ok := child.(map[string]any)
+					if !ok {
+						continue
+					}
+					wantAvg, wantP50 := 3500.0, 5000.0
+					if name == "duration" {
+						wantAvg, wantP50 = 7000, 9000
+					}
+					require.Equal(t, wantAvg, latency["avg_ms"])
+					require.Equal(t, wantP50, latency["p50_ms"])
+					nestedAverages++
+				}
+				check(child)
+			}
+		case []any:
+			for _, child := range value {
+				check(child)
+			}
+		}
+	}
+	check(response)
+	require.Equal(t, 8, flatAverages)
+	require.Equal(t, 12, nestedAverages)
+	require.Equal(t, 10, successRates)
+	require.Equal(t, int64(50), passive.Window.RequestCount)
+	require.Equal(t, int64(40), passive.Window.SuccessCount)
+	require.Equal(t, int64(10), passive.Window.ErrorCount)
+	require.Equal(t, 0.5, passive.Matrix.Items[0].Metrics.CacheRate)
+	require.Equal(t, 10500.0, *snapshot.Metrics.TTFT.AvgMs)
+	require.Equal(t, 14000.0, *snapshot.Metrics.Duration.AvgMs)
+	require.Equal(t, 0.8, snapshot.Metrics.SuccessRate)
+
+	empty := PublicTransitPassiveDisclosure{}
+	adjustPublicTransitPassiveResults(&empty)
+	require.Nil(t, empty.Window.AvgTTFTMs)
+	require.Nil(t, empty.Window.AvgLatencyMs)
+	require.Nil(t, empty.Window.Metrics)
+	require.Nil(t, empty.Matrix)
+	require.Zero(t, empty.Window.SuccessRate)
+}
+
+func TestAdjustPublicTransitPassiveResultsIncludesInsufficientSamples(t *testing.T) {
+	for _, tt := range []struct {
+		name          string
+		requests      int64
+		minimumSample int64
+		withHealth    bool
+	}{
+		{"redacted counts", 0, 50, false},
+		{"below default threshold", 49, 50, false},
+		{"redacted below default threshold", 49, 50, true},
+		{"custom threshold", 99, 100, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			metric := ChannelMonitorV2Metric{
+				RequestCount: tt.requests, SuccessRate: 0.8,
+				TTFT:     ChannelMonitorV2Latency{AvgMs: publicTransitPtr(15000.0)},
+				Duration: ChannelMonitorV2Latency{AvgMs: publicTransitPtr(20000.0)},
+			}
+			var health *ChannelMonitorV2Health
+			if tt.withHealth {
+				thresholds := DefaultChannelMonitorV2HealthThresholds()
+				thresholds.MinimumSample = tt.minimumSample
+				health = publicTransitPtr(ChannelMonitorV2HealthForWithThresholds(metric, thresholds))
+			}
+			metric = publicTransitMetric(metric)
+			passive := PublicTransitPassiveDisclosure{
+				Window: PublicTransitPassiveWindow{RequestCount: tt.requests, SuccessRate: 0.8, AvgTTFTMs: publicTransitPtr(15000), AvgLatencyMs: publicTransitPtr(20000), Metrics: &metric, Health: health},
+				Models: []PublicTransitPassiveModel{{RequestCount: tt.requests, SuccessRate: 0.8, AvgTTFTMs: publicTransitPtr(15000), AvgLatencyMs: publicTransitPtr(20000), Metrics: &metric, Health: health}},
+				Groups: []PublicTransitPassiveGroup{{RequestCount: tt.requests, SuccessRate: 0.8, AvgTTFTMs: publicTransitPtr(15000), AvgLatencyMs: publicTransitPtr(20000), Metrics: &metric, Health: health,
+					Buckets: []PublicTransitPassiveBucket{{RequestCount: tt.requests, SuccessRate: 0.8, AvgTTFTMs: publicTransitPtr(15000), AvgLatencyMs: publicTransitPtr(20000), Metrics: &metric, Health: health}},
+				}},
+			}
+			matrixHealth := ChannelMonitorV2Health{}
+			if health != nil {
+				matrixHealth = *health
+			}
+			passive.Matrix = &PublicTransitPassiveMatrix{Items: []ChannelMonitorV2MatrixRow{{Metrics: metric, Health: matrixHealth,
+				Buckets: []ChannelMonitorV2TrendPoint{{Metrics: metric, Health: matrixHealth}},
+			}}}
+			adjustPublicTransitPassiveResults(&passive)
+			for _, row := range []struct {
+				rate     float64
+				ttft     *int
+				duration *int
+			}{
+				{passive.Window.SuccessRate, passive.Window.AvgTTFTMs, passive.Window.AvgLatencyMs},
+				{passive.Models[0].SuccessRate, passive.Models[0].AvgTTFTMs, passive.Models[0].AvgLatencyMs},
+				{passive.Groups[0].SuccessRate, passive.Groups[0].AvgTTFTMs, passive.Groups[0].AvgLatencyMs},
+				{passive.Groups[0].Buckets[0].SuccessRate, passive.Groups[0].Buckets[0].AvgTTFTMs, passive.Groups[0].Buckets[0].AvgLatencyMs},
+			} {
+				require.Contains(t, []float64{0.91, 0.92, 0.93, 0.94, 0.95}, row.rate)
+				require.GreaterOrEqual(t, *row.ttft, 3000)
+				require.LessOrEqual(t, *row.ttft, 4000)
+				require.GreaterOrEqual(t, *row.duration, 6000)
+				require.LessOrEqual(t, *row.duration, 8000)
+			}
+			for _, metrics := range []*ChannelMonitorV2Metric{passive.Window.Metrics, passive.Models[0].Metrics, passive.Groups[0].Metrics, passive.Groups[0].Buckets[0].Metrics, &passive.Matrix.Items[0].Metrics, &passive.Matrix.Items[0].Buckets[0].Metrics} {
+				require.Contains(t, []float64{0.91, 0.92, 0.93, 0.94, 0.95}, metrics.SuccessRate)
+				require.GreaterOrEqual(t, *metrics.TTFT.AvgMs, 3000.0)
+				require.LessOrEqual(t, *metrics.TTFT.AvgMs, 4000.0)
+				require.GreaterOrEqual(t, *metrics.Duration.AvgMs, 6000.0)
+				require.LessOrEqual(t, *metrics.Duration.AvgMs, 8000.0)
+			}
+			require.Equal(t, tt.requests, passive.Window.RequestCount)
+			require.Equal(t, matrixHealth, passive.Matrix.Items[0].Health)
+		})
+	}
+}
+
+func TestAdjustPublicTransitPassiveResultsWithoutLatency(t *testing.T) {
+	for _, tt := range []struct {
+		name      string
+		requests  int64
+		errorRate float64
+		adjusted  bool
+	}{
+		{"no samples", 0, 0, false},
+		{"only failed requests", 1, 1, true},
+		{"redacted failed requests", 0, 1, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			passive := PublicTransitPassiveDisclosure{
+				Window: PublicTransitPassiveWindow{RequestCount: tt.requests, Metrics: &ChannelMonitorV2Metric{ErrorRate: tt.errorRate}},
+				Matrix: &PublicTransitPassiveMatrix{Items: []ChannelMonitorV2MatrixRow{{Metrics: ChannelMonitorV2Metric{ErrorRate: tt.errorRate}}}},
+			}
+			adjustPublicTransitPassiveResults(&passive)
+			for _, rate := range []float64{passive.Window.SuccessRate, passive.Window.Metrics.SuccessRate, passive.Matrix.Items[0].Metrics.SuccessRate} {
+				if tt.adjusted {
+					require.Contains(t, []float64{0.91, 0.92, 0.93, 0.94, 0.95}, rate)
+				} else {
+					require.Zero(t, rate)
+				}
+			}
+			require.Nil(t, passive.Window.AvgTTFTMs)
+			require.Nil(t, passive.Window.AvgLatencyMs)
+			require.Nil(t, passive.Window.Metrics.TTFT.AvgMs)
+			require.Nil(t, passive.Window.Metrics.Duration.AvgMs)
+			require.Equal(t, tt.errorRate, passive.Window.Metrics.ErrorRate)
+		})
+	}
 }
