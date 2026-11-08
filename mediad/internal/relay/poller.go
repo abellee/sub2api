@@ -207,11 +207,12 @@ func (t *Tracker) trackLoop(taskID string) {
 		if err == nil {
 			switch ClassifyStatus(schema, status) {
 			case "succeeded":
-				usage, _, uerr := ExtractUsage(schema, body)
+				usage, _, uerr := extractTaskUsage(schema, task, body)
 				var usageOut *Usage
 				if uerr == nil {
 					usageOut = &Usage{Quantity: usage, Unit: usageUnit(schema)}
 				}
+				task.Response = append([]byte(nil), body...)
 				t.complete(task, StatusSucceeded, usageOut, ExtractResult(schema, body), "")
 				return
 			case "failed":
@@ -317,6 +318,17 @@ func (t *Tracker) complete(task *Task, status string, usage *Usage, result map[s
 // deliver 按 CallbackConfig 投递回调,指数退避重试直到确认或耗尽。
 // 任何 2xx 均视为 sub2api 已确认(含 already_settled)。
 func (t *Tracker) deliver(task *Task) {
+	// Older completed jobs can be repaired without submitting generation again.
+	if task.Status == StatusSucceeded && task.Usage == nil {
+		if schema, ok := t.taskSchema(task); ok {
+			if quantity, unit, err := extractTaskUsage(schema, task, task.Response); err == nil && quantity > 0 {
+				task.Usage = &Usage{Quantity: quantity, Unit: unit}
+				if !t.saveResult(task) {
+					return
+				}
+			}
+		}
+	}
 	if task.Status == StatusSucceeded && len(task.Files) > 0 {
 		if err := t.prepareDownloadLinks(task); err != nil {
 			t.logger.Printf("prepare result download links: %v", err)

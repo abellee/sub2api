@@ -1,5 +1,5 @@
 {
-  "id": "grok-video", "version": 1, "mode": "async",
+  "id": "grok-video", "version": 2, "mode": "async",
   "description": "Grok 视频生成、编辑和延长，后台查询并保存视频后返回下载链接",
   "upstream": {
     "create": {"method": "POST", "path": "/v1/videos/generations", "timeout_seconds": 120},
@@ -12,6 +12,6 @@
       "image": {"transform": "url_object"}, "images": {"transform": "url_object"}
     }
   },
-  "response": {"task_id": "request_id", "status": "status", "usage": {"quantity": "video.duration", "unit": "second"}, "result": {"files": "video.url", "resolution": "video.resolution"}, "error_message": "error.message"},
+  "response": {"task_id": "request_id", "status": "status", "usage": {"quantity": "video.duration", "unit": "second", "fallback_parameter": "duration"}, "result": {"files": "video.url", "resolution": "video.resolution"}, "error_message": "error.message"},
   "task_states": {"success": ["done", "completed", "succeeded"], "failure": ["failed", "expired", "error"]}
 }

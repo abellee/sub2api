@@ -106,6 +106,8 @@ type ResponseSpec struct {
 type UsageSpec struct {
 	Quantity any    `json:"quantity"`
 	Unit     string `json:"unit"`
+	// Used only when the configured response field is absent.
+	FallbackParameter string `json:"fallback_parameter,omitempty"`
 }
 
 // TaskStatesSpec 定义异步状态机的归类枚举。

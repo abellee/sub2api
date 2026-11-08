@@ -48,7 +48,7 @@ func TestGrokVideoSchemaEndToEnd(t *testing.T) {
 		case "/v1/videos/extensions":
 			io.WriteString(w, `{"request_id":"up-video"}`)
 		case "/v1/videos/up-video":
-			io.WriteString(w, `{"status":"done","video":{"url":"data:video/mp4;base64,AAAAHGZ0eXBpc29tAAAAAGlzb21pc28y","duration":6,"resolution":"720p"}}`)
+			io.WriteString(w, `{"status":"done","video":{"url":"data:video/mp4;base64,AAAAHGZ0eXBpc29tAAAAAGlzb21pc28y","resolution":"720p"}}`)
 		default:
 			t.Error("unexpected upstream path", r.URL.Path)
 			w.WriteHeader(404)
@@ -107,5 +107,70 @@ func TestGrokVideoSchemaEndToEnd(t *testing.T) {
 	mux.ServeHTTP(w, signedRequest(t, "GET", target, nil, map[string]string{HeaderUserID: "43"}))
 	if w.Code != 404 {
 		t.Fatal("ownership bypass", w.Code)
+	}
+}
+
+func TestGrokVideoDurationFallback(t *testing.T) {
+	schema := grokSchema(t, "video")
+	task := &Task{Parameters: map[string]any{"duration": float64(6)}}
+	for _, tc := range []struct {
+		body string
+		want float64
+		fail bool
+	}{
+		{`{"video":{"url":"https://example.com/v.mp4"}}`, 6, false},
+		{`{"video":{"duration":8}}`, 8, false},
+		{`{"video":{"duration":"bad"}}`, 0, true},
+		{`{"video":{"duration":null}}`, 0, true},
+	} {
+		quantity, unit, err := extractTaskUsage(schema, task, []byte(tc.body))
+		if (err != nil) != tc.fail || (!tc.fail && (quantity != tc.want || unit != UnitSecond)) {
+			t.Fatal(tc.body, quantity, unit, err)
+		}
+	}
+	task.Parameters = nil
+	if _, _, err := extractTaskUsage(schema, task, []byte(`{"video":{}}`)); err == nil {
+		t.Fatal("missing duration guessed")
+	}
+}
+
+func TestRecoverGrokVideoNotificationWithoutRegeneration(t *testing.T) {
+	schema := grokSchema(t, "video")
+	store := NewMemoryStore(nil)
+	task := &Task{ID: "mtask_recover", SchemaID: schema.ID, Schema: schema, Status: StatusSucceeded, CallbackState: CallbackExhausted, CallbackAttempts: 10, Parameters: map[string]any{"duration": float64(6)}, Response: []byte(`{"request_id":"existing-video"}`)}
+	if err := store.Create(task); err != nil {
+		t.Fatal(err)
+	}
+	callback := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		if body["usage"].(map[string]any)["quantity"] != float64(6) {
+			t.Error("recovered usage lost")
+		}
+		w.WriteHeader(200)
+	}))
+	defer callback.Close()
+	tracker := NewTracker(store, func(string) (*Schema, bool) { return schema, true }, nil, nil)
+	defer tracker.Stop()
+	tracker.SetCallback(CallbackConfig{Enabled: true, URL: callback.URL, Secret: "cb"})
+	mux := http.NewServeMux()
+	NewManagementHandler(NewSchemaRegistry(nil), store, tracker, "token").Register(mux)
+	r := httptest.NewRequest("POST", "/management/tasks/mtask_recover/recover", strings.NewReader(`{}`))
+	r.Header.Set("Authorization", "Bearer token")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, r)
+	if w.Code != 202 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		got, _ := store.Get(task.ID)
+		if got.CallbackState == CallbackConfirmed && got.Usage != nil && got.Usage.Quantity == 6 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("not recovered", got)
+		}
+		time.Sleep(time.Millisecond)
 	}
 }

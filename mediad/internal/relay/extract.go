@@ -3,9 +3,33 @@ package relay
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 )
+
+func extractTaskUsage(schema *Schema, task *Task, body []byte) (float64, string, error) {
+	quantity, unit, err := ExtractUsage(schema, body)
+	if err == nil || schema.Response.Usage.FallbackParameter == "" {
+		return quantity, unit, err
+	}
+	path, ok := schema.Response.Usage.Quantity.(string)
+	if !ok {
+		return quantity, unit, err
+	}
+	var response any
+	if json.Unmarshal(body, &response) != nil {
+		return quantity, unit, err
+	}
+	if _, exists := ResolvePath(response, path); exists {
+		return quantity, unit, err
+	}
+	value, ok := task.Parameters[schema.Response.Usage.FallbackParameter].(float64)
+	if !ok || value <= 0 || math.IsNaN(value) || math.IsInf(value, 0) {
+		return quantity, unit, err
+	}
+	return value, unit, nil
+}
 
 // ResolvePath 按点路径取值,支持数组下标:"data.result.data.image_urls"、"items.0.url"。
 func ResolvePath(data any, path string) (any, bool) {
