@@ -14,7 +14,7 @@ func (h *RelayHandler) handleStandardResult(w http.ResponseWriter, r *http.Reque
 		writeJSON(w, 200, publicTaskView(task))
 		return
 	}
-	if format != "openai_url" && format != "openai_b64_json" && format != "gemini" {
+	if format != "openai_url" && format != "openai_b64_json" && format != "gemini" && format != "grok_video" {
 		writeError(w, 400, "invalid_format", "unsupported result format")
 		return
 	}
@@ -40,6 +40,14 @@ func (h *RelayHandler) handleStandardResult(w http.ResponseWriter, r *http.Reque
 	_ = json.Unmarshal(task.Response, &out)
 	if out == nil {
 		out = map[string]any{}
+	}
+	if format == "grok_video" {
+		video := map[string]any{"url": formattedDownloadURL(task.Files[0])}
+		if task.Usage != nil {
+			video["duration"] = task.Usage.Quantity
+		}
+		writeJSON(w, 200, map[string]any{"request_id": task.ID, "status": "done", "model": task.Model, "video": video})
+		return
 	}
 	if format == "gemini" {
 		if _, ok := out["candidates"]; !ok {

@@ -3,7 +3,7 @@ export default {
   mediaService: {
     help,
     userId: '用户 ID', queryRecords: '查询下载记录', recordsHint: '主站只保存下载链接、用户归属和文件信息。输入用户 ID 查看最近 200 条已完成记录；文件由中转服务直接提供。', fileInfo: '文件信息', downloadLink: '下载链接', openDownload: '打开下载', noRecords: '该用户暂无已完成下载记录。',
-    title: '图片与视频服务', description: '文件由中转服务保存，主站只记录用户下载链接并处理扣费。',
+    title: '媒体服务', description: '文件由中转服务保存，主站只记录用户下载链接并处理扣费。',
     preview: '本地测试环境：配置保存到本地，连接与通知检查会真实请求本地微服务。此环境不处理真实用户扣费。',
     tabsLabel: '配置分类', tabs: { main: '主站连接与记录', runtime: '微服务运行参数', rules: '生成规则', bindings: '分组绑定', callback: '结果通知', tasks: '待处理任务', records: '下载记录' },
     checkConnection: '检查连接', configured: '已设置', keepSecret: '留空保持原值',
@@ -18,6 +18,7 @@ export default {
     saveRule: '保存规则', deleteRule: '删除规则', advancedRule: '完整规则配置（JSON）', advancedHint: '包含请求头、字段转换、固定参数、文件上传转换、用量提取、成功/失败状态、查询间隔和去重请求头等全部设置。这里保存会采用下方 JSON 的完整内容。', saveAdvanced: '保存完整 JSON',
     dryRunHint: '预演请求及响应示例（填写已保存的规则名称，不会请求上游）', dryRun: '运行预演', invalidRuleId: '规则名称仅支持字母、数字、点、下划线和短横线。',
     bindingsHint: '绑定现有分组和已保存规则。上游地址与凭证从该分组账号读取；视频沿用主站现有扣费，目前时长支持 1–15 秒。修改即时生效。',
+    videoRule: '视频规则（可选）', noVideoRule: '沿用原视频服务',
     groupId: '分组 ID', selectRule: '选择规则', estimateKind: '费用估算方式', image: '图片', video: '视频', enabled: '启用', saveBinding: '保存绑定', noBindings: '还没有分组绑定。',
     yes: '是', no: '否', actions: '操作', edit: '编辑', delete: '删除', confirmDelete: '确定删除这项配置？', deleted: '已删除',
     callbackHint: '微服务文件保存成功后通知主站，由主站写入用户下载链接并扣费。通知确认后开放下载，文件继续保存在微服务。通知密钥使用主站连接页保存的值；更换密钥时需同步重启主站。请先保存，再测试。',

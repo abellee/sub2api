@@ -253,6 +253,12 @@ func (s *OpenAIGatewayService) SelectAccountForModel(ctx context.Context, groupI
 	return s.SelectAccountForModelWithExclusions(ctx, groupID, sessionHash, requestedModel, nil)
 }
 
+// SelectGrokMediaAccount uses the same platform and media eligibility checks as the native media handler.
+func (s *OpenAIGatewayService) SelectGrokMediaAccount(ctx context.Context, groupID *int64, model string) (*Account, error) {
+	ctx = WithOpenAIProfitControlSuppressed(s.withOpenAIQuotaAutoPauseContext(ctx))
+	return s.selectAccountForModelWithExclusions(ctx, groupID, PlatformGrok, "", model, nil, false, 0, OpenAIEndpointCapabilityGrokMediaGeneration, false)
+}
+
 // SelectAccountForModelWithExclusions selects an account supporting the requested model while excluding specified accounts.
 // SelectAccountForModelWithExclusions 选择支持指定模型的账号，同时排除指定的账号。
 func (s *OpenAIGatewayService) SelectAccountForModelWithExclusions(ctx context.Context, groupID *int64, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}) (*Account, error) {

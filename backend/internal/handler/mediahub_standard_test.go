@@ -21,7 +21,7 @@ import (
 )
 
 func TestMediaStandardEndpoints(t *testing.T) {
-	for _, protocol := range []string{"openai", "openai_async", "gemini"} {
+	for _, protocol := range []string{"openai", "openai_async", "gemini", "grok_image"} {
 		t.Run(protocol, func(t *testing.T) {
 			stateQueries := 0
 			media := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -32,6 +32,9 @@ func TestMediaStandardEndpoints(t *testing.T) {
 					want := "gpt-image-2.6"
 					if protocol == "gemini" {
 						want = "gemini-3-pro-image"
+					}
+					if protocol == "grok_image" {
+						want = "grok-imagine-image-quality"
 					}
 					if r.Header.Get(mediahub.HeaderModel) != want {
 						t.Error("model missing from relay", r.Header.Get(mediahub.HeaderModel))
@@ -70,7 +73,11 @@ func TestMediaStandardEndpoints(t *testing.T) {
 			router := gin.New()
 			router.Use(func(c *gin.Context) {
 				gid := int64(3)
-				c.Set(string(middleware.ContextKeyAPIKey), &service.APIKey{ID: 7, GroupID: &gid})
+				group := &service.Group{}
+				if protocol == "grok_image" {
+					group.Platform = service.PlatformGrok
+				}
+				c.Set(string(middleware.ContextKeyAPIKey), &service.APIKey{ID: 7, GroupID: &gid, Group: group})
 				c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 42})
 			})
 			router.POST("/v1/images/generations", func(c *gin.Context) { controller.TryStandardImage(c, false) })
@@ -84,6 +91,9 @@ func TestMediaStandardEndpoints(t *testing.T) {
 			}
 			if protocol == "openai_async" {
 				path += "/async"
+			}
+			if protocol == "grok_image" {
+				body = `{"model":"grok-imagine","prompt":"test"}`
 			}
 			w := httptest.NewRecorder()
 			r := httptest.NewRequest("POST", path, strings.NewReader(body))
@@ -102,7 +112,7 @@ func TestMediaStandardEndpoints(t *testing.T) {
 				t.Fatal(w.Code, w.Body.String())
 			} else if protocol == "gemini" && !gjson.Get(w.Body.String(), "candidates.0.content.parts.0.inlineData.data").Exists() {
 				t.Fatal("native response lost", w.Body.String())
-			} else if protocol == "openai" && !gjson.Get(w.Body.String(), "data.0.url").Exists() {
+			} else if protocol != "gemini" && !gjson.Get(w.Body.String(), "data.0.url").Exists() {
 				t.Fatal("standard images response lost", w.Body.String())
 			}
 		})

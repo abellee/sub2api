@@ -1,0 +1,17 @@
+{
+  "id": "grok-video", "version": 1, "mode": "async",
+  "description": "Grok 视频生成、编辑和延长，后台查询并保存视频后返回下载链接",
+  "upstream": {
+    "create": {"method": "POST", "path": "/v1/videos/generations", "timeout_seconds": 120},
+    "query": {"method": "GET", "path": "/v1/videos/{task_id}", "poll_interval_seconds": 5, "max_poll_seconds": 1800}
+  },
+  "request": {
+    "credential": {"Authorization": "Bearer {credential}"}, "body_mode": "mapped",
+    "field_map": {
+      "model": {}, "prompt": {}, "duration": {}, "aspect_ratio": {}, "resolution": {}, "video": {},
+      "image": {"transform": "url_object"}, "images": {"transform": "url_object"}
+    }
+  },
+  "response": {"task_id": "request_id", "status": "status", "usage": {"quantity": "video.duration", "unit": "second"}, "result": {"files": "video.url", "resolution": "video.resolution"}, "error_message": "error.message"},
+  "task_states": {"success": ["done", "completed", "succeeded"], "failure": ["failed", "expired", "error"]}
+}

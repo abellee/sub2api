@@ -34,11 +34,80 @@ func (h *MediaHubController) TryStandardImage(c *gin.Context, async bool) bool {
 		return false
 	}
 	protocol := "openai"
+	if key, _ := middleware.GetAPIKeyFromContext(c); key != nil && key.Group != nil && key.Group.Platform == "grok" {
+		protocol = "grok_image"
+	}
 	if async {
-		protocol = "openai_async"
+		protocol += "_async"
 	}
 	c.Set(mediaProtocolKey, protocol)
 	h.relay.Relay(c)
+	return true
+}
+
+func (h *MediaHubController) TryStandardVideo(c *gin.Context) bool {
+	if !h.standardEnabled(c) {
+		return false
+	}
+	key, _ := middleware.GetAPIKeyFromContext(c)
+	b, _ := h.bindings.Get(*key.GroupID)
+	if b.VideoSchemaID == "" {
+		return false
+	}
+	c.Set(mediaProtocolKey, "grok_video")
+	h.relay.Relay(c)
+	return true
+}
+
+// Old upstream task IDs keep their native handler during migration.
+func (h *MediaHubController) TryStandardVideoTask(c *gin.Context, content bool) bool {
+	id := c.Param("request_id")
+	if h == nil || h.relay == nil || !strings.HasPrefix(id, "mtask_") {
+		return false
+	}
+	key, ok := middleware.GetAPIKeyFromContext(c)
+	subject, ownerOK := middleware.GetAuthSubjectFromContext(c)
+	if !ok || key == nil || !ownerOK {
+		c.Status(401)
+		return true
+	}
+	gid := int64(0)
+	if key.GroupID != nil {
+		gid = *key.GroupID
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
+	defer cancel()
+	in := mediahub.ForwardInput{MediadBaseURL: h.relay.cfg.MediadBaseURL, RelaySecret: h.relay.cfg.RelaySecret, UserID: subject.UserID, KeyID: key.ID, GroupID: gid}
+	state, err := h.relay.standardFetch(ctx, in, id, "state")
+	if err != nil {
+		mediaStandardError(c, 502, "media task query unavailable")
+		return true
+	}
+	if state.StatusCode != 200 {
+		c.Data(state.StatusCode, "application/json", state.Body)
+		return true
+	}
+	status := gjson.GetBytes(state.Body, "status").String()
+	if status == "failed" || (status == "succeeded" && gjson.GetBytes(state.Body, "callback_state").String() == "confirmed") {
+		result, err := h.relay.standardFetch(ctx, in, id, "grok_video")
+		if err != nil {
+			mediaStandardError(c, 502, "media result unavailable")
+			return true
+		}
+		if content && result.StatusCode == 200 {
+			url := gjson.GetBytes(result.Body, "video.url").String()
+			if url == "" {
+				mediaStandardError(c, 502, "media download link unavailable")
+				return true
+			}
+			c.Header("Cache-Control", "private, no-store")
+			c.Redirect(http.StatusTemporaryRedirect, url)
+		} else {
+			c.Data(result.StatusCode, "application/json", result.Body)
+		}
+		return true
+	}
+	c.JSON(200, gin.H{"request_id": id, "status": "pending"})
 	return true
 }
 
@@ -149,14 +218,18 @@ func (h *MediaHubRelayHandler) finishStandard(c *gin.Context, accepted *mediahub
 		mediaStandardError(c, 502, "media service did not return a task ID")
 		return
 	}
-	if c.GetString(mediaProtocolKey) == "openai_async" {
+	if strings.HasSuffix(c.GetString(mediaProtocolKey), "_async") {
 		c.Header("Location", "/v1/images/tasks/"+id)
 		c.Header("Retry-After", "3")
 		c.JSON(202, gin.H{"id": id, "task_id": id, "object": "image.generation.task", "status": "processing", "poll_url": "/v1/images/tasks/" + id})
 		return
 	}
+	if c.GetString(mediaProtocolKey) == "grok_video" {
+		c.JSON(200, gin.H{"request_id": id})
+		return
+	}
 	format := "openai_b64_json"
-	if gjson.GetBytes(body, "response_format").String() == "url" {
+	if gjson.GetBytes(body, "response_format").String() == "url" || (c.GetString(mediaProtocolKey) == "grok_image" && !gjson.GetBytes(body, "response_format").Exists()) {
 		format = "openai_url"
 	}
 	if c.GetString(mediaProtocolKey) == "gemini" {

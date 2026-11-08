@@ -11,9 +11,10 @@ import (
 // 上游账号(地址/凭证)沿用 sub2api 既有的 OpenAI 平台账号体系;
 // 绑定只回答"这个分组的媒体请求走哪套组装规则"。
 type Binding struct {
-	GroupID  int64  `json:"group_id"`
-	SchemaID string `json:"schema_id"`
-	Enabled  bool   `json:"enabled"`
+	GroupID       int64  `json:"group_id"`
+	SchemaID      string `json:"schema_id"`
+	VideoSchemaID string `json:"video_schema_id,omitempty"`
+	Enabled       bool   `json:"enabled"`
 	// EstimateKind 是冻结估算口径:"image"(默认,按张)| "video"(按秒,
 	// 从请求 body 的 duration 字段取时长)| "token"。
 	EstimateKind string `json:"estimate_kind,omitempty"`

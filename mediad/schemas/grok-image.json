@@ -1,0 +1,15 @@
+{
+  "id": "grok-image", "version": 1, "mode": "sync",
+  "description": "Grok 图片生成和编辑，返回媒体服务器下载链接",
+  "upstream": {"create": {"method": "POST", "path": "/v1/images/generations", "timeout_seconds": 600}},
+  "request": {
+    "credential": {"Authorization": "Bearer {credential}"}, "body_mode": "mapped",
+    "field_map": {
+      "model": {}, "prompt": {}, "n": {}, "size": {}, "aspect_ratio": {}, "resolution": {},
+      "quality": {}, "output_format": {}, "background": {}, "moderation": {}, "user": {},
+      "image": {"transform": "url_object"}, "images": {"transform": "url_object"}, "mask": {"transform": "url_object"}
+    },
+    "static_fields": {"response_format": "url", "stream": false}
+  },
+  "response": {"usage": {"quantity": "$result_files", "unit": "image"}, "result": {"files": "data"}, "error_message": "error.message"}
+}

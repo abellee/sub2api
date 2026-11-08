@@ -859,6 +859,7 @@ const adminNavItems = computed((): NavItem[] => {
     { path: '/admin/accounts', label: t('nav.accounts'), icon: GlobeIcon },
     { path: '/admin/plugins', label: t('nav.plugins'), icon: PluginIcon, featureFlag: flagPluginManagement },
     { path: '/admin/app-catalog', label: t('nav.appCatalog'), icon: AppsIcon },
+	{ path: '/admin/media-service', label: t('mediaService.title'), icon: ServerIcon },
     { path: '/admin/iq-detection', label: t('nav.iqDetection'), icon: IQDetectIcon },
     { path: '/admin/menu-management', label: t('nav.menuManagement'), icon: FolderIcon },
     { path: '/admin/documentation', label: t('nav.documentation'), icon: FolderIcon },

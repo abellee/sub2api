@@ -37,6 +37,7 @@ describe('StudioSidebar', () => {
       await flushPromises()
       expect(wrapper.findAll('.sidebar-nav a[href="/admin/dashboard"]')).toHaveLength(1)
       expect(wrapper.findAll('.sidebar-nav a[href="/dashboard"]')).toHaveLength(1)
+      expect(wrapper.findAll('.sidebar-nav a[href="/admin/media-service"]')).toHaveLength(1)
       const personalSection = wrapper.findAll('.sidebar-section').find(section => section.find('a[href="/dashboard"]').exists())
       expect(personalSection?.find('.sidebar-section-title').text()).toBe('账户')
       expect(personalSection?.find('a[href="/dashboard"]').exists()).toBe(true)
@@ -64,6 +65,7 @@ describe('StudioSidebar', () => {
     expect(wrapper.find('.sidebar-version').exists()).toBe(false)
     expect(wrapper.find('.version-info-trigger').exists()).toBe(false)
     expect(versionMocks.fetchVersion).not.toHaveBeenCalled()
+    expect(wrapper.find('a[href="/admin/media-service"]').exists()).toBe(false)
   })
   it('expands through navigation, keeps utility focus stable and preserves configured sections', async () => {
     vi.useFakeTimers()

@@ -9,6 +9,7 @@ export interface ConfigView {
 }
 export interface Binding {
   group_id: number
+  video_schema_id?: string
   schema_id: string
   estimate_kind: string
   enabled: boolean

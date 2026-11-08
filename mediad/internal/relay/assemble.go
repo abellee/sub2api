@@ -71,6 +71,13 @@ func Assemble(in AssembleInput) (*UpstreamRequest, error) {
 	if create.Path == "/v1/images/generations" && strings.HasSuffix(in.ClientPath, "/images/edits") {
 		path = "/v1/images/edits"
 	}
+	if create.Path == "/v1/videos/generations" {
+		for _, suffix := range []string{"/videos/edits", "/videos/extensions"} {
+			if strings.HasSuffix(in.ClientPath, suffix) {
+				path = "/v1" + suffix
+			}
+		}
+	}
 	if strings.Contains(create.Path, "{model}") && (in.Model == "" || strings.ContainsAny(in.Model, "/\\?#")) {
 		return nil, fmt.Errorf("valid model is required for upstream path")
 	}

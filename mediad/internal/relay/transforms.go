@@ -29,6 +29,37 @@ var builtinTransforms = map[string]TransformFunc{
 	"string":         transformString,
 	"default":        transformDefault,
 	"bool_strict":    transformBoolStrict,
+	"url_object":     transformURLObject,
+}
+
+// URL references may arrive as strings, image_url objects, or arrays of either.
+func transformURLObject(ctx TransformContext) (any, error) {
+	if values, ok := ctx.Raw.([]any); ok {
+		out := make([]any, 0, len(values))
+		for _, value := range values {
+			item, err := transformURLObject(TransformContext{Raw: value})
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, item)
+		}
+		return out, nil
+	}
+	value := ctx.Raw
+	if fields, ok := value.(map[string]any); ok {
+		value = fields["url"]
+		if value == nil {
+			value = fields["image_url"]
+		}
+		if nested, ok := value.(map[string]any); ok {
+			value = nested["url"]
+		}
+	}
+	url, ok := value.(string)
+	if !ok || strings.TrimSpace(url) == "" {
+		return nil, fmt.Errorf("url_object requires a URL")
+	}
+	return map[string]any{"url": url}, nil
 }
 
 // TransformIDs 返回全部内置转换 id(按字母序),供 dry-run/管理界面提示。

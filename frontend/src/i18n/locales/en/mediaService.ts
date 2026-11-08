@@ -3,7 +3,7 @@ export default {
   mediaService: {
     help,
     userId: 'User ID', queryRecords: 'Query download records', recordsHint: 'The main site stores links, owners and metadata only. Enter a user ID to view up to 200 completed records. Downloads come directly from the media service.', fileInfo: 'File information', downloadLink: 'Download link', openDownload: 'Open download', noRecords: 'No completed download records for this user.',
-    title: 'Image & Video Service', description: 'The media service stores files. The main site records user download links and handles billing.',
+    title: 'Media Service', description: 'The media service stores files. The main site records user download links and handles billing.',
     preview: 'Local preview: settings are saved locally. Connection and callback checks call the local service. Real user billing is unavailable here.',
     tabsLabel: 'Configuration sections', tabs: { main: 'Main site & records', runtime: 'Service settings', rules: 'Generation rules', bindings: 'Group bindings', callback: 'Result notifications', tasks: 'Pending tasks', records: 'Download records' },
     checkConnection: 'Check connection', configured: 'Set', keepSecret: 'Leave blank to keep current value',
@@ -18,6 +18,7 @@ export default {
     saveRule: 'Save rule', deleteRule: 'Delete rule', advancedRule: 'Full rule configuration (JSON)', advancedHint: 'All settings: request headers, field transformations, constants, upload conversion, usage extraction, success/failure states, query timing and idempotency headers. Saving here uses the full JSON below.', saveAdvanced: 'Save full JSON',
     dryRunHint: 'Request and response samples for a saved rule (does not call the provider)', dryRun: 'Run preview', invalidRuleId: 'Use letters, numbers, dots, underscores and hyphens for rule names.',
     bindingsHint: 'Bind an existing group to a saved rule. Provider URL and credentials come from group accounts. Videos use existing main-site billing; supported duration is currently 1–15 seconds. Changes apply immediately.',
+    videoRule: 'Video rule (optional)', noVideoRule: 'Use the existing video service',
     groupId: 'Group ID', selectRule: 'Select a rule', estimateKind: 'Cost estimate type', image: 'Image', video: 'Video', enabled: 'Enabled', saveBinding: 'Save binding', noBindings: 'No group bindings yet.',
     yes: 'Yes', no: 'No', actions: 'Actions', edit: 'Edit', delete: 'Delete', confirmDelete: 'Delete this configuration?', deleted: 'Deleted',
     callbackHint: 'After saving files, the service notifies the main site to record user download links and bill. Confirmation enables downloads; files remain on the service. The signing key comes from main-site connection settings. Restart the main site when rotating this key. Save before testing.',

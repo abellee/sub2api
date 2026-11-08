@@ -174,6 +174,10 @@ func (h *MediaHubRelayHandler) Relay(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"type": "not_found_error", "message": "media relay is not enabled for this group"}})
 		return
 	}
+	if c.GetString(mediaProtocolKey) == "grok_video" {
+		binding.SchemaID = binding.VideoSchemaID
+		binding.EstimateKind = "video"
+	}
 
 	body, err := io.ReadAll(io.LimitReader(c.Request.Body, (128<<20)+1))
 	if err != nil {
@@ -201,8 +205,8 @@ func (h *MediaHubRelayHandler) Relay(c *gin.Context) {
 	if c.GetString(mediaProtocolKey) != "" {
 		if c.GetString(mediaProtocolKey) == "gemini" {
 			model = c.GetString(mediaModelKey)
-		} else {
-			if c.GetString(mediaProtocolKey) == "openai_async" && gjson.GetBytes(body, "stream").Bool() {
+		} else if c.GetString(mediaProtocolKey) != "grok_video" {
+			if strings.HasSuffix(c.GetString(mediaProtocolKey), "_async") && gjson.GetBytes(body, "stream").Bool() {
 				mediaStandardError(c, 400, "async image requests do not support stream=true")
 				return
 			}
@@ -213,9 +217,20 @@ func (h *MediaHubRelayHandler) Relay(c *gin.Context) {
 			}
 			if model == "" {
 				model = "gpt-image-2"
+				if strings.HasPrefix(c.GetString(mediaProtocolKey), "grok_image") {
+					model = "grok-imagine-image"
+				}
 				body, _ = sjson.SetBytes(body, "model", model)
 			}
 		}
+	}
+	if strings.HasPrefix(c.GetString(mediaProtocolKey), "grok_image") && model == "grok-imagine" {
+		model = "grok-imagine-image-quality"
+		body, _ = sjson.SetBytes(body, "model", model)
+	}
+	if c.GetString(mediaProtocolKey) == "grok_video" && model == "" {
+		model = "grok-imagine-video"
+		body, _ = sjson.SetBytes(body, "model", model)
 	}
 
 	// 冻结:媒体生成为完成后计费,按绑定声明的估算口径在途预留,
@@ -438,6 +453,9 @@ func (h *MediaHubRelayHandler) resolveUpstream(groupID int64, model string) (str
 			zap.Int64("group_id", groupID), zap.String("model", model), zap.Error(err))
 		return "", ""
 	}
+	if account.Platform == service.PlatformGrok {
+		return strings.TrimSuffix(strings.TrimRight(account.GetGrokMediaBaseURL(), "/"), "/v1"), account.GetCredential("api_key")
+	}
 	return account.GetBaseURL(), account.GetCredential("api_key")
 }
 
@@ -449,6 +467,9 @@ func (h *MediaHubRelayHandler) selectAccount(ctx context.Context, groupID *int64
 		}
 		if group != nil && group.Platform == service.PlatformGemini {
 			return h.accounts.SelectAccountForModel(ctx, groupID, "", model)
+		}
+		if group != nil && group.Platform == service.PlatformGrok {
+			return h.oai.gatewayService.SelectGrokMediaAccount(ctx, groupID, model)
 		}
 	}
 	return h.oai.gatewayService.SelectAccountForModel(ctx, groupID, "", model)
@@ -497,6 +518,9 @@ func (s *mediaHubBillingSink) Settle(req mediahub.SettleRequest) error {
 	}
 
 	endpoint := "/v1/images/generations"
+	if req.Usage.Unit == mediahub.UnitSecond {
+		endpoint = "/v1/videos/generations"
+	}
 	if account.Platform == service.PlatformGemini {
 		endpoint = "/v1beta/models/" + req.Model + ":generateContent"
 	}

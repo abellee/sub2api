@@ -29,10 +29,18 @@ func TestIsForcedUsageBillingRequestID(t *testing.T) {
 	t.Parallel()
 	require.True(t, isForcedUsageBillingRequestID("web_search:x"))
 	require.True(t, isForcedUsageBillingRequestID("grok-video:task-1"))
+	require.True(t, isForcedUsageBillingRequestID("media_task_settle:mtask_1"))
 	require.True(t, isForcedUsageBillingRequestID("grok_audio:up-1"))
 	require.True(t, isForcedUsageBillingRequestID("grok_realtime:sess-1"))
 	require.True(t, isForcedUsageBillingRequestID(GeminiCachedContentCreateUsageRequestID("abc")))
 	require.False(t, isForcedUsageBillingRequestID("resp_abc"))
+}
+
+func TestMediaSettlementRequestIDSurvivesCallbackRetries(t *testing.T) {
+	for _, client := range []string{"callback-1", "callback-2"} {
+		ctx := context.WithValue(context.Background(), ctxkey.ClientRequestID, client)
+		require.Equal(t, "media_task_settle:mtask_1", resolveUsageBillingRequestID(ctx, "media_task_settle:mtask_1"))
+	}
 }
 
 func TestGeminiCachedContentUsageRequestIDs(t *testing.T) {

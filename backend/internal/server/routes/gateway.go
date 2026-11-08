@@ -74,7 +74,7 @@ func RegisterGatewayRoutes(
 		return getGroupPlatform(c) == service.PlatformOpenAI
 	}
 	imagesHandler := func(c *gin.Context) {
-		if getGroupPlatform(c) == service.PlatformOpenAI && (strings.HasSuffix(c.Request.URL.Path, "/images/generations") || strings.HasSuffix(c.Request.URL.Path, "/images/edits")) && h.MediaHub.TryStandardImage(c, false) {
+		if (getGroupPlatform(c) == service.PlatformOpenAI || getGroupPlatform(c) == service.PlatformGrok) && (strings.HasSuffix(c.Request.URL.Path, "/images/generations") || strings.HasSuffix(c.Request.URL.Path, "/images/edits")) && h.MediaHub.TryStandardImage(c, false) {
 			return
 		}
 		switch getGroupPlatform(c) {
@@ -93,7 +93,7 @@ func RegisterGatewayRoutes(
 		}
 	}
 	asyncImageHandler := func(c *gin.Context) {
-		if getGroupPlatform(c) == service.PlatformOpenAI && (strings.HasSuffix(c.Request.URL.Path, "/images/generations/async") || strings.HasSuffix(c.Request.URL.Path, "/images/edits/async")) && h.MediaHub.TryStandardImage(c, true) {
+		if (getGroupPlatform(c) == service.PlatformOpenAI || getGroupPlatform(c) == service.PlatformGrok) && (strings.HasSuffix(c.Request.URL.Path, "/images/generations/async") || strings.HasSuffix(c.Request.URL.Path, "/images/edits/async")) && h.MediaHub.TryStandardImage(c, true) {
 			return
 		}
 		h.AsyncImage.Submit(c)
@@ -105,6 +105,9 @@ func RegisterGatewayRoutes(
 		h.AsyncImage.Get(c)
 	}
 	videoGenerationHandler := func(c *gin.Context) {
+		if h.MediaHub.TryStandardVideo(c) {
+			return
+		}
 		// Video status/content lookups below already allow Composite groups; keep
 		// task creation aligned so composite keys that route to Grok accounts can
 		// submit video generation jobs.
@@ -121,6 +124,9 @@ func RegisterGatewayRoutes(
 		})
 	}
 	videoStatusHandler := func(c *gin.Context) {
+		if h.MediaHub.TryStandardVideoTask(c, false) {
+			return
+		}
 		// Video status requests do not carry a model, so composite groups cannot
 		// be resolved by compositeTargetPlatformMiddleware. Route them through
 		// the Grok handler and let scheduler/account selection enforce capacity.
@@ -137,6 +143,9 @@ func RegisterGatewayRoutes(
 		})
 	}
 	videoContentHandler := func(c *gin.Context) {
+		if h.MediaHub.TryStandardVideoTask(c, true) {
+			return
+		}
 		// Video content requests do not carry a model, so composite groups cannot
 		// be resolved by compositeTargetPlatformMiddleware. Route them through
 		// the Grok handler just like video status lookups.
@@ -153,6 +162,9 @@ func RegisterGatewayRoutes(
 		})
 	}
 	videoEditHandler := func(c *gin.Context) {
+		if h.MediaHub.TryStandardVideo(c) {
+			return
+		}
 		if getGroupPlatform(c) == service.PlatformGrok {
 			h.OpenAIGateway.GrokVideoEdit(c)
 			return
@@ -161,6 +173,9 @@ func RegisterGatewayRoutes(
 		c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"type": "not_found_error", "message": "Videos API is not supported for this platform"}})
 	}
 	videoExtensionHandler := func(c *gin.Context) {
+		if h.MediaHub.TryStandardVideo(c) {
+			return
+		}
 		if getGroupPlatform(c) == service.PlatformGrok {
 			h.OpenAIGateway.GrokVideoExtension(c)
 			return

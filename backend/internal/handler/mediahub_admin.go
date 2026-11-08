@@ -140,14 +140,19 @@ func (h *MediaHubController) putBinding(c *gin.Context) {
 		return
 	}
 	b.GroupID = id
-	if !mediaID.MatchString(b.SchemaID) || (b.EstimateKind != "image" && b.EstimateKind != "video" && b.EstimateKind != "token") {
+	if !mediaID.MatchString(b.SchemaID) || (b.VideoSchemaID != "" && !mediaID.MatchString(b.VideoSchemaID)) || (b.EstimateKind != "image" && b.EstimateKind != "video" && b.EstimateKind != "token") {
 		response.Error(c, 400, "请选择有效规则和图片、视频或 Token 估算方式")
 		return
 	}
 	if b.Enabled {
-		if _, err = h.client().Request(c.Request.Context(), "GET", "/management/schemas/"+url.PathEscape(b.SchemaID), nil); err != nil {
-			response.Error(c, 400, "启用前请先保存对应规则并确认微服务可用")
-			return
+		for _, schema := range []string{b.SchemaID, b.VideoSchemaID} {
+			if schema == "" {
+				continue
+			}
+			if _, err = h.client().Request(c.Request.Context(), "GET", "/management/schemas/"+url.PathEscape(schema), nil); err != nil {
+				response.Error(c, 400, "启用前请先保存对应规则并确认微服务可用")
+				return
+			}
 		}
 	}
 	if err = h.bindings.Put(b); err != nil {
@@ -199,7 +204,7 @@ func (h *MediaHubController) agent(c *gin.Context) {
 	}
 	if method == "DELETE" && strings.HasPrefix(path, "/schemas/") {
 		for _, b := range h.bindings.List() {
-			if b.Enabled && b.SchemaID == strings.TrimPrefix(path, "/schemas/") {
+			if b.Enabled && (b.SchemaID == strings.TrimPrefix(path, "/schemas/") || b.VideoSchemaID == strings.TrimPrefix(path, "/schemas/")) {
 				response.Error(c, 409, "请先停用引用该规则的分组绑定")
 				return
 			}
