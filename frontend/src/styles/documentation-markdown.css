@@ -23,8 +23,11 @@
 .markdown-body .docs-table-scroll :is(th, td) {
   vertical-align: top;
   white-space: normal;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
+
+.markdown-body .docs-table-scroll th { white-space: nowrap; }
 
 .markdown-body .docs-table-scroll code {
   padding: 2px 4px;
