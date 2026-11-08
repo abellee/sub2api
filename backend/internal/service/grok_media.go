@@ -547,7 +547,7 @@ func StableGrokVideoBillingRequestID(taskRequestID string) string {
 	if taskRequestID == "" {
 		return ""
 	}
-	if strings.HasPrefix(taskRequestID, "grok-video:") {
+	if strings.HasPrefix(taskRequestID, "grok-video:") || strings.HasPrefix(taskRequestID, "media_task_settle:") {
 		return taskRequestID
 	}
 	return "grok-video:" + taskRequestID
