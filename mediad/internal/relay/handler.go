@@ -182,6 +182,9 @@ func (h *RelayHandler) handleTaskStatus(w http.ResponseWriter, r *http.Request) 
 	}
 	out["files"] = task.Files
 	out["files_acknowledged"] = task.FilesAcknowledged
+	if task.FilesDeletedAt != nil {
+		out["files_deleted_at"] = task.FilesDeletedAt
+	}
 	writeJSON(w, 200, out)
 }
 

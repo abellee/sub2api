@@ -49,6 +49,7 @@ func (h *ManagementHandler) Register(mux *http.ServeMux) {
 	mux.Handle("GET /management/settlements/pending", h.auth(h.handlePending))
 	mux.Handle("GET /management/tasks/pending", h.auth(h.handlePending))
 	mux.Handle("POST /management/tasks/{taskID}/recover", h.auth(h.handleRecover))
+	mux.Handle("POST /management/files/reconcile", h.auth(h.handleReconcileFiles))
 }
 
 func (h *ManagementHandler) handleConfig(w http.ResponseWriter, r *http.Request) {
@@ -425,17 +426,21 @@ func PublicTaskView(t *Task) map[string]any { return publicTaskView(t) }
 
 func publicTaskView(t *Task) map[string]any {
 	out := map[string]any{
-		"task_id":           t.ID,
-		"upstream_task_id":  t.UpstreamTaskID,
-		"schema_id":         t.SchemaID,
-		"model":             t.Model,
-		"user_id":           t.UserID,
-		"key_id":            t.KeyID,
-		"group_id":          t.GroupID,
-		"status":            t.Status,
-		"callback_state":    t.CallbackState,
-		"callback_attempts": t.CallbackAttempts,
-		"created_at":        t.CreatedAt.UTC().Format(time.RFC3339),
+		"task_id":            t.ID,
+		"upstream_task_id":   t.UpstreamTaskID,
+		"schema_id":          t.SchemaID,
+		"model":              t.Model,
+		"user_id":            t.UserID,
+		"key_id":             t.KeyID,
+		"group_id":           t.GroupID,
+		"status":             t.Status,
+		"callback_state":     t.CallbackState,
+		"callback_attempts":  t.CallbackAttempts,
+		"created_at":         t.CreatedAt.UTC().Format(time.RFC3339),
+		"files_acknowledged": t.FilesAcknowledged,
+	}
+	if t.FilesDeletedAt != nil {
+		out["files_deleted_at"] = t.FilesDeletedAt
 	}
 	if t.Usage != nil {
 		out["usage"] = map[string]any{"quantity": t.Usage.Quantity, "unit": t.Usage.Unit}

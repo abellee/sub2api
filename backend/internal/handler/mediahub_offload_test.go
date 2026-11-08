@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"image"
@@ -79,6 +80,7 @@ func TestMediaOffloadWithRealAgent(t *testing.T) {
 	var bills atomic.Int32
 	h := &MediaHubRelayHandler{links: links, bindings: bindings, cfg: MediaHubConfig{MediadBaseURL: mediaURL, RelaySecret: "fixture-relay", ForwardTimeout: 5 * time.Second}, client: &http.Client{}, upstreamResolver: func(int64, string) (string, string) { return upstream.URL, "fixture-upstream" }, billingSink: mediaResultSinkFunc(func(mediahub.SettleRequest) error { bills.Add(1); return nil })}
 	h.settle = mediahub.NewSettleServer(func() string { return "fixture-callback" }, &mediaHubSettleChain{h: h}, time.Hour)
+	h.settle.SetFileDeletionSink(links)
 	controller := &MediaHubController{bindings: bindings, relay: h}
 	router := gin.New()
 	var mainRequests atomic.Int32
@@ -106,6 +108,23 @@ func TestMediaOffloadWithRealAgent(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "callback.json"), callback, 0600); err != nil {
 		t.Fatal(err)
 	}
+	// A saved deletion is delivered by the real media process on startup, without billing again.
+	expired := mediahub.SettleRequest{TaskID: "mtask_expiryfixture", UserID: 42, APIKeyID: 7, Status: "succeeded", Files: []mediahub.ResultFile{{ID: "f0000", Size: 5, SHA256: strings.Repeat("a", 64), ContentType: "image/png", DownloadURL: mediaURL + "/downloads/mtask_expiryfixture/f0000"}}}
+	if err := links.Prepare(context.Background(), expired, mediaURL); err != nil {
+		t.Fatal(err)
+	}
+	if err := links.MarkReady(context.Background(), 42, expired.TaskID); err != nil {
+		t.Fatal(err)
+	}
+	deletion := mediahub.FileDeletionEvent{Event: "files.deleted", EventID: "mfd_integration", TaskID: expired.TaskID, UserID: "42", KeyID: "7", FileIDs: []string{"f0000"}, DeletedAt: time.Now().UTC(), Reason: "retention_expired"}
+	notice, _ := json.Marshal(map[string]any{"event": deletion, "ready": true})
+	outbox := filepath.Join(dir, "tasks", "file-deletions")
+	if err := os.MkdirAll(outbox, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(outbox, deletion.EventID+".json"), notice, 0600); err != nil {
+		t.Fatal(err)
+	}
 	cmd := exec.Command(binary)
 	cmd.Env = append(os.Environ(), "MEDIAD_LISTEN="+addr, "MEDIAD_DATA_DIR="+dir, "MEDIAD_RESULT_DIR="+filepath.Join(dir, "media"), "MEDIAD_DOWNLOAD_BASE_URL="+mediaURL, "MEDIAD_RELAY_SECRET=fixture-relay", "MEDIAD_MANAGEMENT_TOKEN=fixture-admin", "MEDIAD_CONFIG_PATH="+filepath.Join(dir, "settings.json"))
 	logFile, err := os.Create(filepath.Join(dir, "agent.log"))
@@ -130,6 +149,22 @@ func TestMediaOffloadWithRealAgent(t *testing.T) {
 			t.Fatal("media startup failed", string(logs))
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+	for {
+		records, err := links.List(context.Background(), 42, expired.TaskID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(records) == 1 && records[0].Status == "deleted" && records[0].DownloadURL == "" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("real media process did not deliver persisted deletion")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if bills.Load() != 0 {
+		t.Fatal("deletion notification invoked billing")
 	}
 	response, err := http.Post(main.URL+"/v1/images/generations?async=true", "application/json", strings.NewReader(`{"model":"gpt-image-2.6","prompt":"fixture","n":2}`))
 	if err != nil {

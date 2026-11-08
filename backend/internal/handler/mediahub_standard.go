@@ -83,6 +83,9 @@ func (h *MediaHubController) TryStandardVideoTask(c *gin.Context, content bool) 
 		mediaStandardError(c, 502, "media task query unavailable")
 		return true
 	}
+	if result.StatusCode == http.StatusNotFound && h.relay.deletedTaskResponse(c, subject.UserID, id) {
+		return true
+	}
 	if content && result.StatusCode == 200 {
 		if url := gjson.GetBytes(result.Body, "video.url").String(); url != "" {
 			c.Header("Cache-Control", "private, no-store")
@@ -225,10 +228,17 @@ func (h *MediaHubController) TryStandardImageTask(c *gin.Context) bool {
 		return true
 	}
 	if state.StatusCode != 200 {
+		if state.StatusCode == http.StatusNotFound && h.relay.deletedTaskResponse(c, subject.UserID, id) {
+			return true
+		}
 		c.Data(state.StatusCode, "application/json", state.Body)
 		return true
 	}
 	out := gin.H{"id": id, "task_id": id, "status": "processing"}
+	if gjson.GetBytes(state.Body, "files_acknowledged").Bool() {
+		c.JSON(http.StatusGone, gin.H{"id": id, "task_id": id, "status": "deleted", "error": gin.H{"message": "media files have expired"}})
+		return true
+	}
 	status := gjson.GetBytes(state.Body, "status").String()
 	if status == "failed" || (status == "succeeded" && gjson.GetBytes(state.Body, "callback_state").String() == "confirmed") {
 		result, err := h.relay.standardFetch(ctx, in, id, "openai_url")

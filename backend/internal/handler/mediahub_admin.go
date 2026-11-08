@@ -52,6 +52,7 @@ func NewMediaHubController(path string, defaults mediahub.Settings, oai *OpenAIG
 		h.relay.bindings = bindings
 		if len(links) > 0 {
 			h.relay.links = links[0]
+			h.relay.settle.SetFileDeletionSink(links[0])
 		}
 	}
 	return h, nil

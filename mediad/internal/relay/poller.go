@@ -364,6 +364,9 @@ func (t *Tracker) deliver(task *Task) {
 		t.logger.Printf("[mediad] bad callback url: %v", err)
 		return
 	}
+	if u.Path == "" {
+		u.Path = "/"
+	}
 
 	var lastErr string
 	for attempt := task.CallbackAttempts + 1; attempt <= maxAttempts; attempt++ {
@@ -434,20 +437,28 @@ func (t *Tracker) deliver(task *Task) {
 // DeliverRaw 向当前注册的回调地址投递一条签名 payload(测试回调用)。
 // 返回上游 HTTP 状态码与错误;任何错误都不重试(测试语义)。
 func (t *Tracker) DeliverRaw(event string, payload []byte) (int, error) {
+	status, _, err := t.deliverRaw(t.ctx, event, payload)
+	return status, err
+}
+
+func (t *Tracker) deliverRaw(ctx context.Context, event string, payload []byte) (int, []byte, error) {
 	t.cbMu.RLock()
 	cfg := t.cb
 	t.cbMu.RUnlock()
 	if !cfg.Enabled || cfg.URL == "" {
-		return 0, fmt.Errorf("callback not configured or disabled")
+		return 0, nil, fmt.Errorf("callback not configured or disabled")
 	}
 	u, err := url.Parse(cfg.URL)
 	if err != nil {
-		return 0, fmt.Errorf("bad callback url: %w", err)
+		return 0, nil, fmt.Errorf("bad callback url: %w", err)
+	}
+	if u.Path == "" {
+		u.Path = "/"
 	}
 	ts := fmt.Sprintf("%d", t.now().Unix())
-	req, err := http.NewRequestWithContext(t.ctx, http.MethodPost, cfg.URL, bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, cfg.URL, bytes.NewReader(payload))
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Media-Timestamp", ts)
@@ -456,14 +467,17 @@ func (t *Tracker) DeliverRaw(event string, payload []byte) (int, error) {
 
 	resp, err := t.client.Do(req)
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 	defer resp.Body.Close()
-	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return resp.StatusCode, fmt.Errorf("callback status %d", resp.StatusCode)
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+	if err != nil {
+		return resp.StatusCode, nil, err
 	}
-	return resp.StatusCode, nil
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return resp.StatusCode, raw, fmt.Errorf("callback status %d", resp.StatusCode)
+	}
+	return resp.StatusCode, raw, nil
 }
 
 // CallbackEventTaskCompleted 是回调事件名。

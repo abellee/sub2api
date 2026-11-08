@@ -335,7 +335,14 @@ func (h *MediaHubRelayHandler) taskStatus(c *gin.Context, userID, keyID, groupID
 		return
 	}
 	var state map[string]any
+	if resp.StatusCode == http.StatusNotFound && h.deletedTaskResponse(c, userID, taskID) {
+		return
+	}
 	if json.Unmarshal(resp.Body, &state) == nil {
+		if state["files_acknowledged"] == true {
+			c.JSON(http.StatusGone, gin.H{"task_id": taskID, "status": "deleted", "error": gin.H{"message": "media files have expired"}})
+			return
+		}
 		if files, ok := state["files"].([]any); ok && len(files) > 0 {
 			delete(state, "files")
 			delete(state, "result")
@@ -357,6 +364,24 @@ func (h *MediaHubRelayHandler) taskStatus(c *gin.Context, userID, keyID, groupID
 		contentType = "application/json"
 	}
 	c.Data(resp.StatusCode, contentType, resp.Body)
+}
+
+// Main-site tombstones remain readable after media task GC.
+func (h *MediaHubRelayHandler) deletedTaskResponse(c *gin.Context, userID int64, taskID string) bool {
+	if h.links == nil {
+		return false
+	}
+	links, err := h.links.List(c.Request.Context(), userID, taskID)
+	if err != nil || len(links) == 0 {
+		return false
+	}
+	for _, link := range links {
+		if link.DeletedAt == nil {
+			return false
+		}
+	}
+	c.JSON(http.StatusGone, gin.H{"id": taskID, "task_id": taskID, "status": "deleted", "error": gin.H{"message": "media files have expired or been deleted"}})
+	return true
 }
 
 // inflightEstimate 按绑定声明的口径构造冻结估算:
@@ -426,6 +451,10 @@ func (h *MediaHubRelayHandler) serveFiles(c *gin.Context, userID int64, path str
 	}
 	if len(seg) == 3 {
 		c.Header("Cache-Control", "private, no-store")
+		if record.DeletedAt != nil {
+			c.JSON(http.StatusGone, gin.H{"error": gin.H{"message": "media file has expired or been deleted"}, "status": "deleted", "deleted_at": record.DeletedAt, "delete_reason": record.DeleteReason})
+			return
+		}
 		c.Redirect(http.StatusTemporaryRedirect, record.DownloadURL)
 		return
 	}

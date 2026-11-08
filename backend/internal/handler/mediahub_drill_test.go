@@ -39,6 +39,13 @@ func mediaLinkFixture(t *testing.T) (*mediahub.ResultLinkStore, *sql.DB) {
 	if _, err = db.Exec(ddl); err != nil {
 		t.Fatal(err)
 	}
+	raw, err = migrations.FS.ReadFile("251_media_file_deletion.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.Exec(strings.ReplaceAll(strings.ReplaceAll(string(raw), " IF NOT EXISTS", ""), "TIMESTAMPTZ", "TIMESTAMP")); err != nil {
+		t.Fatal(err)
+	}
 	return mediahub.NewResultLinkStore(db), db
 }
 

@@ -17,16 +17,19 @@ var safeTaskID = regexp.MustCompile(`^mtask_[a-zA-Z0-9_-]+$`)
 var safeResultID = regexp.MustCompile(`^f[0-9]{4,8}$`)
 
 type ResultLink struct {
-	ID          string    `json:"id"`
-	UserID      int64     `json:"user_id"`
-	TaskID      string    `json:"task_id"`
-	FileID      string    `json:"file_id"`
-	Model       string    `json:"model"`
-	DownloadURL string    `json:"download_url"`
-	ContentType string    `json:"content_type"`
-	SizeBytes   int64     `json:"size_bytes"`
-	SHA256      string    `json:"sha256"`
-	CreatedAt   time.Time `json:"created_at"`
+	ID           string     `json:"id"`
+	UserID       int64      `json:"user_id"`
+	TaskID       string     `json:"task_id"`
+	FileID       string     `json:"file_id"`
+	Model        string     `json:"model"`
+	DownloadURL  string     `json:"download_url"`
+	ContentType  string     `json:"content_type"`
+	SizeBytes    int64      `json:"size_bytes"`
+	SHA256       string     `json:"sha256"`
+	CreatedAt    time.Time  `json:"created_at"`
+	Status       string     `json:"status"`
+	DeletedAt    *time.Time `json:"deleted_at,omitempty"`
+	DeleteReason string     `json:"delete_reason,omitempty"`
 }
 
 // ResultLinkStore stores metadata only. Bytes remain on the media service.
@@ -84,14 +87,14 @@ func (s *ResultLinkStore) MarkReady(ctx context.Context, userID int64, taskID st
 	if s == nil || s.db == nil {
 		return errors.New("media result database is not configured")
 	}
-	_, err := s.db.ExecContext(ctx, `UPDATE media_generation_files SET ready=true WHERE user_id=$1 AND task_id=$2`, userID, taskID)
+	_, err := s.db.ExecContext(ctx, `UPDATE media_generation_files SET ready=true WHERE user_id=$1 AND task_id=$2 AND deleted_at IS NULL`, userID, taskID)
 	return err
 }
 func (s *ResultLinkStore) List(ctx context.Context, userID int64, taskID string) ([]ResultLink, error) {
 	if s == nil || s.db == nil {
 		return nil, errors.New("media result database is not configured")
 	}
-	query := `SELECT id,user_id,task_id,file_id,model,download_url,content_type,size_bytes,sha256,created_at FROM media_generation_files WHERE user_id=$1 AND ready=true AND ($2='' OR task_id=$2) ORDER BY created_at DESC,id`
+	query := `SELECT id,user_id,task_id,file_id,model,download_url,content_type,size_bytes,sha256,created_at,deleted_at,delete_reason FROM media_generation_files WHERE user_id=$1 AND ready=true AND ($2='' OR task_id=$2) ORDER BY created_at DESC,id`
 	if taskID == "" {
 		query += " LIMIT 200"
 	}
@@ -103,9 +106,10 @@ func (s *ResultLinkStore) List(ctx context.Context, userID int64, taskID string)
 	out := []ResultLink{}
 	for rows.Next() {
 		var v ResultLink
-		if err = rows.Scan(&v.ID, &v.UserID, &v.TaskID, &v.FileID, &v.Model, &v.DownloadURL, &v.ContentType, &v.SizeBytes, &v.SHA256, &v.CreatedAt); err != nil {
+		if err = rows.Scan(&v.ID, &v.UserID, &v.TaskID, &v.FileID, &v.Model, &v.DownloadURL, &v.ContentType, &v.SizeBytes, &v.SHA256, &v.CreatedAt, &v.DeletedAt, &v.DeleteReason); err != nil {
 			return nil, err
 		}
+		v.applyDeletion()
 		out = append(out, v)
 	}
 	return out, rows.Err()
@@ -115,6 +119,15 @@ func (s *ResultLinkStore) Get(ctx context.Context, userID int64, id string) (*Re
 		return nil, errors.New("media result database is not configured")
 	}
 	var v ResultLink
-	err := s.db.QueryRowContext(ctx, `SELECT id,user_id,task_id,file_id,model,download_url,content_type,size_bytes,sha256,created_at FROM media_generation_files WHERE user_id=$1 AND id=$2 AND ready=true`, userID, id).Scan(&v.ID, &v.UserID, &v.TaskID, &v.FileID, &v.Model, &v.DownloadURL, &v.ContentType, &v.SizeBytes, &v.SHA256, &v.CreatedAt)
+	err := s.db.QueryRowContext(ctx, `SELECT id,user_id,task_id,file_id,model,download_url,content_type,size_bytes,sha256,created_at,deleted_at,delete_reason FROM media_generation_files WHERE user_id=$1 AND id=$2 AND ready=true`, userID, id).Scan(&v.ID, &v.UserID, &v.TaskID, &v.FileID, &v.Model, &v.DownloadURL, &v.ContentType, &v.SizeBytes, &v.SHA256, &v.CreatedAt, &v.DeletedAt, &v.DeleteReason)
+	v.applyDeletion()
 	return &v, err
+}
+
+func (v *ResultLink) applyDeletion() {
+	v.Status = "ready"
+	if v.DeletedAt != nil {
+		v.Status = "deleted"
+		v.DownloadURL = ""
+	}
 }
