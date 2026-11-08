@@ -8,6 +8,10 @@
 
 ## 下载
 
+上游生成路径支持 `{model}`，使用主站签名传入的模型名替换。Gemini 规则可将 `response.result.candidates` 设为 `candidates`，`response.usage.quantity` 设为 `$result_files`：读取所有候选中的 `inlineData` 图片，忽略文字，以真实保存的图片数结算。
+
+签名任务查询接受 `response_format=state|openai_url|openai_b64_json|gemini`。标准结果仅在生成成功且主站确认结算后返回；`state` 只返回任务元数据。Gemini 保留原生响应并增加下载链接，OpenAI URL 替换为本服务长期保留的签名链接。
+
 `GET /downloads/{task_id}/{file_id}?token=...` 由主站记录的链接访问。每个文件有独立令牌，服务重启后链接保持有效；主站未确认通知前不能下载。链接持有人可下载，禁止日志记录或公开分享令牌。没有目录索引。旧 `POST /relay/tasks/{task_id}/files/ack` 返回 410，不再删除文件。
 
 ## 接口

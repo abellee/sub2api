@@ -2,6 +2,10 @@
 
 主站管理员菜单：`/admin/media-service`。所有配置标题右侧提供 info 说明，鼠标经过或键盘聚焦可查看用途、示例、配置方法和生效方式。
 
+已绑定的 OpenAI 图片分组使用标准 `POST /v1/images/generations`（同步返回 Images JSON）、`POST /v1/images/generations/async` 和 `GET /v1/images/tasks/{task_id}`。Gemini 图片分组使用 `POST /v1beta/models/{model}:generateContent`，同步返回原生 `candidates[].content.parts[].inlineData`。未绑定分组保持原处理流程；GPT 图生图和流式请求不在本次媒体适配范围。
+
+标准结果在主站确认扣费后开放。OpenAI 默认返回 `b64_json`，传 `response_format=url` 返回媒体服务器下载链接；Gemini 额外提供 `download_urls`。生成和文件存储在媒体服务器执行，主站仅在返回标准同步响应时转发结果字节，不保存文件副本。
+
 主站配置保存在 `MEDIAHUB_CONFIG_PATH`，默认 `data/mediahub_settings.json`。不存在时从原有连接环境变量初始化。此文件包含密钥，应只允许运行用户访问。主站不再提供媒体文件存储目录和清理参数。
 
 | 主站接口（前缀 `/api/v1/admin/media-service`） | 用途 |

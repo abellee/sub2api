@@ -101,6 +101,11 @@ func (h *RelayHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 			task.Parameters[k] = v
 		}
 	}
+	if generation, ok := params["generationConfig"].(map[string]any); ok {
+		if image, ok := generation["imageConfig"].(map[string]any); ok {
+			task.Parameters["size"] = image["imageSize"]
+		}
+	}
 	fingerprint := sha256.Sum256(append([]byte(schema.ID+"\x00"+in.Model+"\x00"+in.UpstreamURL+"\x00"), body...))
 	task.Fingerprint = hex.EncodeToString(fingerprint[:])
 	if key := r.Header.Get(HeaderIdempotencyKey); key != "" {
@@ -154,6 +159,10 @@ func (h *RelayHandler) handleTaskStatus(w http.ResponseWriter, r *http.Request) 
 	task, ok := h.ownedTask(r)
 	if !ok {
 		writeError(w, 404, "task_not_found", "task not found")
+		return
+	}
+	if format := r.URL.Query().Get("response_format"); format != "" {
+		h.handleStandardResult(w, r, task, format)
 		return
 	}
 	out := publicTaskView(task)

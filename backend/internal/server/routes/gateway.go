@@ -74,6 +74,9 @@ func RegisterGatewayRoutes(
 		return getGroupPlatform(c) == service.PlatformOpenAI
 	}
 	imagesHandler := func(c *gin.Context) {
+		if getGroupPlatform(c) == service.PlatformOpenAI && strings.HasSuffix(c.Request.URL.Path, "/images/generations") && h.MediaHub.TryStandardImage(c, false) {
+			return
+		}
 		switch getGroupPlatform(c) {
 		case service.PlatformOpenAI:
 			h.OpenAIGateway.Images(c)
@@ -88,6 +91,18 @@ func RegisterGatewayRoutes(
 				},
 			})
 		}
+	}
+	asyncImageHandler := func(c *gin.Context) {
+		if getGroupPlatform(c) == service.PlatformOpenAI && strings.HasSuffix(c.Request.URL.Path, "/images/generations/async") && h.MediaHub.TryStandardImage(c, true) {
+			return
+		}
+		h.AsyncImage.Submit(c)
+	}
+	imageTaskHandler := func(c *gin.Context) {
+		if h.MediaHub.TryStandardImageTask(c) {
+			return
+		}
+		h.AsyncImage.Get(c)
 	}
 	videoGenerationHandler := func(c *gin.Context) {
 		// Video status/content lookups below already allow Composite groups; keep
@@ -252,9 +267,9 @@ func RegisterGatewayRoutes(
 		})
 		gateway.POST("/images/generations", imagesHandler)
 		gateway.POST("/images/edits", imagesHandler)
-		gateway.POST("/images/generations/async", h.AsyncImage.Submit)
+		gateway.POST("/images/generations/async", asyncImageHandler)
 		gateway.POST("/images/edits/async", h.AsyncImage.Submit)
-		gateway.GET("/images/tasks/:task_id", h.AsyncImage.Get)
+		gateway.GET("/images/tasks/:task_id", imageTaskHandler)
 		gateway.POST("/images/batches", h.BatchImage.Submit)
 		gateway.GET("/images/batches", h.BatchImage.List)
 		gateway.GET("/images/batches/models", h.BatchImage.Models)
@@ -348,7 +363,12 @@ func RegisterGatewayRoutes(
 		gemini.GET("/models", h.Gateway.GeminiV1BetaListModels)
 		gemini.GET("/models/:model", h.Gateway.GeminiV1BetaGetModel)
 		// Gin treats ":" as a param marker, but Gemini uses "{model}:{action}" in the same segment.
-		gemini.POST("/models/*modelAction", h.Gateway.GeminiV1BetaModels)
+		gemini.POST("/models/*modelAction", func(c *gin.Context) {
+			if getGroupPlatform(c) == service.PlatformGemini && h.MediaHub.TryStandardGemini(c) {
+				return
+			}
+			h.Gateway.GeminiV1BetaModels(c)
+		})
 		// 显式上下文缓存：网关自管资源 ID 与账号绑定，list/get 只读本地记录。
 		gemini.POST("/cachedContents", h.Gateway.GeminiCachedContentsCreate)
 		gemini.GET("/cachedContents", h.Gateway.GeminiCachedContentsList)
@@ -420,9 +440,9 @@ func RegisterGatewayRoutes(
 	})
 	rootRoute(http.MethodPost, "/images/generations", bodyLimit, imagesHandler)
 	rootRoute(http.MethodPost, "/images/edits", bodyLimit, imagesHandler)
-	rootRoute(http.MethodPost, "/images/generations/async", bodyLimit, h.AsyncImage.Submit)
+	rootRoute(http.MethodPost, "/images/generations/async", bodyLimit, asyncImageHandler)
 	rootRoute(http.MethodPost, "/images/edits/async", bodyLimit, h.AsyncImage.Submit)
-	rootRoute(http.MethodGet, "/images/tasks/:task_id", bodyLimit, h.AsyncImage.Get)
+	rootRoute(http.MethodGet, "/images/tasks/:task_id", bodyLimit, imageTaskHandler)
 	rootRoute(http.MethodPost, "/videos", bodyLimit, videoGenerationHandler)
 	rootRoute(http.MethodPost, "/videos/generations", bodyLimit, videoGenerationHandler)
 	rootRoute(http.MethodPost, "/videos/edits", bodyLimit, videoEditHandler)

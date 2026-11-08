@@ -67,7 +67,11 @@ func Assemble(in AssembleInput) (*UpstreamRequest, error) {
 		header.Set("Content-Type", ct)
 	}
 
-	fullURL := joinURL(in.UpstreamURL, create.Path)
+	path := strings.ReplaceAll(create.Path, "{model}", url.PathEscape(in.Model))
+	if strings.Contains(create.Path, "{model}") && (in.Model == "" || strings.ContainsAny(in.Model, "/\\?#")) {
+		return nil, fmt.Errorf("valid model is required for upstream path")
+	}
+	fullURL := joinURL(in.UpstreamURL, path)
 	return &UpstreamRequest{
 		Method:      method,
 		URL:         fullURL,

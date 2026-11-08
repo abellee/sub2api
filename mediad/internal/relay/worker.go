@@ -121,6 +121,8 @@ func (t *Tracker) submit(task *Task, schema *Schema) {
 		return
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		task.ResponseStatus = resp.StatusCode
+		task.Response = body
 		if resp.StatusCode >= 500 || resp.StatusCode == 408 {
 			t.recovery(task, fmt.Sprintf("upstream HTTP %d; acceptance unknown", resp.StatusCode))
 		} else {
@@ -139,6 +141,11 @@ func (t *Tracker) submit(task *Task, schema *Schema) {
 func (t *Tracker) consumeResponse(task *Task, schema *Schema) {
 	if schema.Mode == "sync" {
 		quantity, unit, err := ExtractUsage(schema, task.Response)
+		if err == nil && quantity == 0 && schema.Response.Usage.Quantity == "$result_files" {
+			task.ResponseStatus = 200
+			t.complete(task, StatusFailed, nil, nil, "upstream returned no images")
+			return
+		}
 		var usage *Usage
 		if err == nil {
 			usage = &Usage{Quantity: quantity, Unit: unit}

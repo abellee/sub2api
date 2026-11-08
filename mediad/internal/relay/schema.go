@@ -102,6 +102,7 @@ type ResponseSpec struct {
 
 // UsageSpec 描述一次成功生成的计费用量。
 // Quantity 为数字 = 固定量;为字符串 = 从上游响应按点路径提取。
+// "$result_files" counts the actual result files, including Gemini inlineData images.
 type UsageSpec struct {
 	Quantity any    `json:"quantity"`
 	Unit     string `json:"unit"`

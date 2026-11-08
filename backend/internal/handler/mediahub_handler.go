@@ -23,6 +23,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 	"go.uber.org/zap"
 
 	"github.com/Wei-Shaw/sub2api/internal/mediahub"
@@ -70,6 +71,7 @@ func LoadMediaHubConfig() MediaHubConfig {
 // MediaHubRelayHandler 是媒体中转的 gin 处理器。
 type MediaHubRelayHandler struct {
 	oai      *OpenAIGatewayHandler
+	accounts *service.GatewayService
 	cfg      MediaHubConfig
 	bindings *mediahub.BindingStore
 	settle   *mediahub.SettleServer
@@ -178,6 +180,25 @@ func (h *MediaHubRelayHandler) Relay(c *gin.Context) {
 		return
 	}
 	model := gjson.GetBytes(body, "model").String()
+	if c.GetString(mediaProtocolKey) != "" {
+		if c.GetString(mediaProtocolKey) == "gemini" {
+			model = c.GetString(mediaModelKey)
+		} else {
+			if gjson.GetBytes(body, "stream").Bool() {
+				mediaStandardError(c, 400, "streaming is not enabled for this media group")
+				return
+			}
+			format := gjson.GetBytes(body, "response_format").String()
+			if format != "" && format != "url" && format != "b64_json" {
+				mediaStandardError(c, 400, "response_format must be url or b64_json")
+				return
+			}
+			if model == "" {
+				model = "gpt-image-2"
+				body, _ = sjson.SetBytes(body, "model", model)
+			}
+		}
+	}
 
 	// 冻结:媒体生成为完成后计费,按绑定声明的估算口径在途预留,
 	// 防止并发击穿与弃单白嫖(查询/轮询不冻结,不拦截用户取回已付费结果)。
@@ -253,6 +274,10 @@ func (h *MediaHubRelayHandler) Relay(c *gin.Context) {
 	}
 
 	contentType := resp.Header.Get("Content-Type")
+	if c.GetString(mediaProtocolKey) != "" {
+		h.finishStandard(c, resp, body, subject.UserID, apiKey.ID, gid)
+		return
+	}
 	if contentType == "" {
 		contentType = "application/json"
 	}
@@ -322,7 +347,14 @@ func inflightEstimate(binding mediahub.Binding, model string, body []byte) servi
 			BodyBytes: len(body), MaxTokens: 1,
 		}
 	default:
-		return service.InflightEstimateRequest{Model: model, Kind: service.InflightEstimateImage, Units: 1}
+		units := int(gjson.GetBytes(body, "n").Int())
+		if units <= 0 {
+			units = int(gjson.GetBytes(body, "generationConfig.candidateCount").Int())
+		}
+		if units <= 0 {
+			units = 1
+		}
+		return service.InflightEstimateRequest{Model: model, Kind: service.InflightEstimateImage, Units: units}
 	}
 }
 
@@ -381,13 +413,26 @@ func (h *MediaHubRelayHandler) resolveUpstream(groupID int64, model string) (str
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	gid := groupID
-	account, err := h.oai.gatewayService.SelectAccountForModel(ctx, &gid, "", model)
+	account, err := h.selectAccount(ctx, &gid, model)
 	if err != nil || account == nil {
 		logger.L().Warn("mediahub: select account failed",
 			zap.Int64("group_id", groupID), zap.String("model", model), zap.Error(err))
 		return "", ""
 	}
 	return account.GetBaseURL(), account.GetCredential("api_key")
+}
+
+func (h *MediaHubRelayHandler) selectAccount(ctx context.Context, groupID *int64, model string) (*service.Account, error) {
+	if h.accounts != nil && groupID != nil {
+		group, err := h.accounts.ResolveGroupByID(ctx, *groupID)
+		if err != nil {
+			return nil, err
+		}
+		if group != nil && group.Platform == service.PlatformGemini {
+			return h.accounts.SelectAccountForModel(ctx, groupID, "", model)
+		}
+	}
+	return h.oai.gatewayService.SelectAccountForModel(ctx, groupID, "", model)
 }
 
 // mediaHubBillingSink 把 SDK 的结算请求翻译成核心 RecordUsage 调用。
@@ -427,19 +472,23 @@ func (s *mediaHubBillingSink) Settle(req mediahub.SettleRequest) error {
 	if apiKey.GroupID != nil {
 		gid = apiKey.GroupID
 	}
-	account, err := s.h.oai.gatewayService.SelectAccountForModel(billingCtx, gid, "", req.Model)
+	account, err := s.h.selectAccount(billingCtx, gid, req.Model)
 	if err != nil || account == nil {
 		return fmt.Errorf("mediahub: select account for model %s: %w", req.Model, err)
 	}
 
+	endpoint := "/v1/images/generations"
+	if account.Platform == service.PlatformGemini {
+		endpoint = "/v1beta/models/" + req.Model + ":generateContent"
+	}
 	// 回调确认必须等实际入账成功，否则微服务无法知道主站还需重试。
 	return s.h.oai.gatewayService.RecordUsage(billingCtx, &service.OpenAIRecordUsageInput{
 		Result:           result,
 		APIKey:           apiKey,
 		User:             apiKey.User,
 		Account:          account,
-		InboundEndpoint:  "/media",
-		UpstreamEndpoint: "/media",
+		InboundEndpoint:  endpoint,
+		UpstreamEndpoint: endpoint,
 		APIKeyService:    s.h.oai.apiKeyService,
 	})
 }

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -25,6 +26,8 @@ type ForwardInput struct {
 	Credential  string
 	// ClientPath 是客户端请求的子路径(用于 mediad 日志/审计)。
 	ClientPath string
+	// ResultFormat requests a protocol-compatible result after settlement.
+	ResultFormat string
 	// Body 是客户端原始请求体。
 	Body []byte
 	// ContentType 是客户端 Content-Type(multipart 原样传递)。
@@ -124,6 +127,9 @@ func ForwardTaskStatus(ctx context.Context, client *http.Client, in ForwardInput
 	}
 	relayPath := "/relay/tasks/" + taskID
 	target := strings.TrimRight(in.MediadBaseURL, "/") + relayPath
+	if in.ResultFormat != "" {
+		target += "?response_format=" + url.QueryEscape(in.ResultFormat)
+	}
 	ts := strconv.FormatInt(time.Now().Unix(), 10)
 	sig := Sign(in.RelaySecret, ts, http.MethodGet, relayPath, nil)
 
@@ -146,9 +152,12 @@ func ForwardTaskStatus(ctx context.Context, client *http.Client, in ForwardInput
 		return nil, fmt.Errorf("mediahub: mediad unreachable: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, (128<<20)+1))
 	if err != nil {
 		return nil, fmt.Errorf("mediahub: read mediad response: %w", err)
+	}
+	if len(body) > 128<<20 {
+		return nil, fmt.Errorf("mediahub: result exceeds response limit")
 	}
 	return &ForwardResponse{StatusCode: resp.StatusCode, Header: resp.Header, Body: body}, nil
 }

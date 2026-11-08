@@ -104,6 +104,11 @@ func ExtractUsage(schema *Schema, respBody []byte) (float64, string, error) {
 	case int:
 		return float64(q), unit, nil
 	case string:
+		if q == "$result_files" {
+			var refs []string
+			collectResultRefs(ExtractResult(schema, respBody), "", &refs)
+			return float64(len(refs)), unit, nil
+		}
 		var data any
 		if err := json.Unmarshal(respBody, &data); err != nil {
 			return 0, unit, fmt.Errorf("usage source response is not JSON: %w", err)

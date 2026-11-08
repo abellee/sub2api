@@ -122,6 +122,18 @@ func (s *ResultStager) Stage(ctx context.Context, task *Task) ([]ResultFile, err
 func collectResultRefs(v any, key string, out *[]string) {
 	switch n := v.(type) {
 	case map[string]any:
+		// Gemini returns base64 and its MIME type together, possibly after text parts.
+		if key == "inlineData" || key == "inline_data" {
+			data, _ := n["data"].(string)
+			mime, _ := n["mimeType"].(string)
+			if mime == "" {
+				mime, _ = n["mime_type"].(string)
+			}
+			if data != "" && strings.HasPrefix(mime, "image/") {
+				*out = append(*out, "data:"+mime+";base64,"+data)
+			}
+			return
+		}
 		keys := make([]string, 0, len(n))
 		for k := range n {
 			keys = append(keys, k)
@@ -135,6 +147,9 @@ func collectResultRefs(v any, key string, out *[]string) {
 			collectResultRefs(e, key, out)
 		}
 	case string:
+		if key == "text" || key == "revised_prompt" {
+			return
+		}
 		if key == "b64_json" {
 			*out = append(*out, "data:application/octet-stream;base64,"+n)
 		} else if strings.HasPrefix(n, "http://") || strings.HasPrefix(n, "https://") || strings.HasPrefix(n, "data:") || strings.HasPrefix(n, "/") {

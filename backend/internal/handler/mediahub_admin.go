@@ -67,6 +67,9 @@ func InitMediaHub(h *Handlers) error {
 	}
 	var err error
 	h.MediaHub, err = NewMediaHubController(path, DefaultMediaHubSettings(), h.OpenAIGateway, h.MediaLinks)
+	if err == nil && h.MediaHub.relay != nil && h.Gateway != nil {
+		h.MediaHub.relay.accounts = h.Gateway.gatewayService
+	}
 	return err
 }
 
