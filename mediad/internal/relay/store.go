@@ -123,6 +123,19 @@ func (s *MemoryStore) Get(id string) (*Task, bool) {
 	return cloneTask(t), ok
 }
 
+// Public status and downloads do not need to copy saved prompts, credentials or image bodies.
+func (s *MemoryStore) PublicTask(id string) (*Task, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	t, ok := s.tasks[id]
+	if !ok {
+		return nil, false
+	}
+	return &Task{ID: t.ID, Status: t.Status, CallbackState: t.CallbackState, CreatedAt: t.CreatedAt,
+		ErrorMessage: t.ErrorMessage, FilesAcknowledged: t.FilesAcknowledged, DownloadToken: t.DownloadToken,
+		Files: append([]ResultFile(nil), t.Files...)}, true
+}
+
 func (s *MemoryStore) Update(task *Task) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

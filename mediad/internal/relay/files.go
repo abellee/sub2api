@@ -83,7 +83,8 @@ func (t *Tracker) prepareDownloadLinks(task *Task) error {
 }
 
 func (h *RelayHandler) handleDownload(w http.ResponseWriter, r *http.Request) {
-	task, ok := h.store.Get(r.PathValue("taskID"))
+	publicMediaHeaders(w)
+	task, ok := h.store.PublicTask(r.PathValue("taskID"))
 	if !ok || task.Status != StatusSucceeded || task.CallbackState != CallbackConfirmed || task.DownloadToken == "" || task.FilesAcknowledged || h.tracker.stager == nil {
 		http.NotFound(w, r)
 		return

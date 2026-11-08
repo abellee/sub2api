@@ -116,6 +116,9 @@ func TestStandardResultsAndGeminiImageCounting(t *testing.T) {
 				if len(out["candidates"].([]any)) != 2 || len(out["download_urls"].([]any)) != 2 {
 					t.Fatal("native Gemini response lost")
 				}
+				if strings.Contains(w.Body.String(), `"inlineData"`) || strings.Contains(w.Body.String(), encoded) || strings.Count(w.Body.String(), `"fileUri"`) != 2 || !strings.Contains(w.Body.String(), "https://example.com is text") {
+					t.Fatal("Gemini must retain text and replace image bodies with media links", w.Body.String())
+				}
 			} else if out["data"].([]any)[0].(map[string]any)["b64_json"] != encoded {
 				t.Fatal("standard base64 mismatch")
 			}

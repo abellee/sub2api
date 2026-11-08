@@ -28,6 +28,8 @@ type ForwardInput struct {
 	ClientPath string
 	// ResultFormat requests a protocol-compatible result after settlement.
 	ResultFormat string
+	Wait         bool
+	Protocol     string
 	// Body 是客户端原始请求体。
 	Body []byte
 	// ContentType 是客户端 Content-Type(multipart 原样传递)。
@@ -86,6 +88,9 @@ func Forward(ctx context.Context, client *http.Client, in ForwardInput) (*Forwar
 	if in.UpstreamModel != "" {
 		req.Header.Set(HeaderModel, in.UpstreamModel)
 	}
+	if in.Protocol != "" {
+		req.Header.Set("X-Media-Protocol", in.Protocol)
+	}
 	if in.IdempotencyKey != "" {
 		req.Header.Set(HeaderIdempotencyKey, in.IdempotencyKey)
 	}
@@ -118,17 +123,22 @@ func Forward(ctx context.Context, client *http.Client, in ForwardInput) (*Forwar
 	return out, nil
 }
 
-// ForwardTaskStatus 以签名 GET 轮询 mediad 任务状态
-// (GET /media/tasks/{task_id} → mediad GET /relay/tasks/{task_id})。
-// 任务归属由 mediad 按身份头强制校验,越权与未知一律 404。
-func ForwardTaskStatus(ctx context.Context, client *http.Client, in ForwardInput, taskID string) (*ForwardResponse, error) {
+// OpenTaskResult leaves waiting and result encoding to mediad and streams its response.
+func OpenTaskResult(ctx context.Context, client *http.Client, in ForwardInput, taskID string) (*http.Response, error) {
 	if strings.TrimSpace(in.MediadBaseURL) == "" {
 		return nil, fmt.Errorf("mediahub: mediad base url is empty")
 	}
 	relayPath := "/relay/tasks/" + taskID
 	target := strings.TrimRight(in.MediadBaseURL, "/") + relayPath
+	query := url.Values{}
 	if in.ResultFormat != "" {
-		target += "?response_format=" + url.QueryEscape(in.ResultFormat)
+		query.Set("response_format", in.ResultFormat)
+	}
+	if in.Wait {
+		query.Set("wait", "true")
+	}
+	if len(query) > 0 {
+		target += "?" + query.Encode()
 	}
 	ts := strconv.FormatInt(time.Now().Unix(), 10)
 	sig := Sign(in.RelaySecret, ts, http.MethodGet, relayPath, nil)
@@ -150,6 +160,14 @@ func ForwardTaskStatus(ctx context.Context, client *http.Client, in ForwardInput
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("mediahub: mediad unreachable: %w", err)
+	}
+	return resp, nil
+}
+
+func ForwardTaskStatus(ctx context.Context, client *http.Client, in ForwardInput, taskID string) (*ForwardResponse, error) {
+	resp, err := OpenTaskResult(ctx, client, in, taskID)
+	if err != nil {
+		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, (128<<20)+1))

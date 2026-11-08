@@ -23,6 +23,7 @@ const (
 	HeaderUpstreamURL    = "X-Media-Upstream-URL"
 	HeaderSchemaVersion  = "X-Media-Schema-Version"
 	HeaderIdempotencyKey = "X-Media-Idempotency-Key"
+	HeaderProtocol       = "X-Media-Protocol"
 	HeaderModel          = "X-Media-Model"
 	HeaderUserID         = "X-Sub2API-User-Id"
 	HeaderKeyID          = "X-Sub2API-Key-Id"
@@ -48,6 +49,7 @@ func NewRelayHandler(registry *SchemaRegistry, store *MemoryStore, tracker *Trac
 }
 
 func (h *RelayHandler) Register(mux *http.ServeMux) {
+	mux.HandleFunc("GET /downloads/{taskID}/result", h.handlePublicResult)
 	mux.HandleFunc("GET /downloads/{taskID}/{fileID}", h.handleDownload)
 	mux.HandleFunc("POST /relay/{schemaID}", h.handleCreate)
 	mux.HandleFunc("POST /relay/{schemaID}/{path...}", h.handleCreate)
@@ -87,6 +89,13 @@ func (h *RelayHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "missing_required_headers", "upstream and identity headers are required")
 		return
 	}
+	if r.Header.Get(HeaderProtocol) != "" {
+		in.Body, in.ContentType, err = normalizeStandardRequest(in, r.Header.Get(HeaderProtocol))
+		if err != nil {
+			writeError(w, 400, "invalid_request_error", err.Error())
+			return
+		}
+	}
 	assembled, err := Assemble(in)
 	if err != nil {
 		writeError(w, 400, "assemble_failed", err.Error())
@@ -94,7 +103,7 @@ func (h *RelayHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	task := &Task{ID: newTaskID(h.now()), Schema: schema, SchemaID: schema.ID, SchemaVersion: schema.Version, Request: assembled, Model: in.Model, UserID: in.UserID, KeyID: in.KeyID, GroupID: in.GroupID, UpstreamURL: in.UpstreamURL, Credential: in.Credential, Status: StatusQueued, CreatedAt: h.now(), CallbackState: CallbackPending}
 	var params map[string]any
-	_ = json.Unmarshal(body, &params)
+	_ = json.Unmarshal(in.Body, &params)
 	task.Parameters = map[string]any{}
 	for _, k := range []string{"duration", "resolution", "size", "n"} {
 		if v, ok := params[k]; ok {
@@ -128,7 +137,7 @@ func (h *RelayHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 				writeError(w, 409, "idempotency_conflict", "same key used with a different request")
 				return
 			}
-			writeAccepted(w, prev, true)
+			h.writeAccepted(w, prev, true)
 			return
 		}
 	}
@@ -139,12 +148,7 @@ func (h *RelayHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.tracker.Track(task)
-	writeAccepted(w, task, false)
-}
-
-func writeAccepted(w http.ResponseWriter, task *Task, duplicate bool) {
-	w.Header().Set("Location", "/relay/tasks/"+task.ID)
-	writeJSON(w, http.StatusAccepted, map[string]any{"task_id": task.ID, "upstream_task_id": task.UpstreamTaskID, "status": task.Status, "poll_url": "/relay/tasks/" + task.ID, "duplicated": duplicate})
+	h.writeAccepted(w, task, false)
 }
 
 func (h *RelayHandler) handleTaskStatus(w http.ResponseWriter, r *http.Request) {
@@ -162,6 +166,10 @@ func (h *RelayHandler) handleTaskStatus(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if format := r.URL.Query().Get("response_format"); format != "" {
+		if r.URL.Query().Get("wait") == "true" {
+			h.waitStandardResult(w, r, task, format)
+			return
+		}
 		h.handleStandardResult(w, r, task, format)
 		return
 	}

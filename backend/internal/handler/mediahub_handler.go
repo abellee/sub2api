@@ -23,7 +23,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
 	"go.uber.org/zap"
 
 	"github.com/Wei-Shaw/sub2api/internal/mediahub"
@@ -190,27 +189,27 @@ func (h *MediaHubRelayHandler) Relay(c *gin.Context) {
 	}
 	contentType := c.GetHeader("Content-Type")
 	clientPath := c.Param("path")
+	metadata := body
 	if c.GetString(mediaProtocolKey) != "" {
 		clientPath = strings.TrimSuffix(c.Request.URL.Path, "/async")
 		if strings.HasPrefix(strings.ToLower(contentType), "multipart/") {
-			body, err = mediaImageMultipart(body, contentType)
+			metadata, err = mediaImageMultipartMetadata(body, contentType)
 			if err != nil {
 				mediaStandardError(c, 400, err.Error())
 				return
 			}
-			contentType = "application/json"
 		}
 	}
-	model := gjson.GetBytes(body, "model").String()
+	model := gjson.GetBytes(metadata, "model").String()
 	if c.GetString(mediaProtocolKey) != "" {
-		if c.GetString(mediaProtocolKey) == "gemini" {
+		if strings.HasPrefix(c.GetString(mediaProtocolKey), "gemini") {
 			model = c.GetString(mediaModelKey)
 		} else if c.GetString(mediaProtocolKey) != "grok_video" {
-			if strings.HasSuffix(c.GetString(mediaProtocolKey), "_async") && gjson.GetBytes(body, "stream").Bool() {
+			if strings.HasSuffix(c.GetString(mediaProtocolKey), "_async") && gjson.GetBytes(metadata, "stream").Bool() {
 				mediaStandardError(c, 400, "async image requests do not support stream=true")
 				return
 			}
-			format := gjson.GetBytes(body, "response_format").String()
+			format := gjson.GetBytes(metadata, "response_format").String()
 			if format != "" && format != "url" && format != "b64_json" {
 				mediaStandardError(c, 400, "response_format must be url or b64_json")
 				return
@@ -220,17 +219,14 @@ func (h *MediaHubRelayHandler) Relay(c *gin.Context) {
 				if strings.HasPrefix(c.GetString(mediaProtocolKey), "grok_image") {
 					model = "grok-imagine-image"
 				}
-				body, _ = sjson.SetBytes(body, "model", model)
 			}
 		}
 	}
 	if strings.HasPrefix(c.GetString(mediaProtocolKey), "grok_image") && model == "grok-imagine" {
 		model = "grok-imagine-image-quality"
-		body, _ = sjson.SetBytes(body, "model", model)
 	}
 	if c.GetString(mediaProtocolKey) == "grok_video" && model == "" {
 		model = "grok-imagine-video"
-		body, _ = sjson.SetBytes(body, "model", model)
 	}
 
 	// 冻结:媒体生成为完成后计费,按绑定声明的估算口径在途预留,
@@ -239,7 +235,7 @@ func (h *MediaHubRelayHandler) Relay(c *gin.Context) {
 	if h.oai != nil {
 		subscription, _ := middleware2.GetSubscriptionFromContext(c)
 		inflightDone, inflightErr := reserveInflightBalance(c, h.oai.billingCacheService, h.oai.gatewayService,
-			apiKey, subscription, inflightEstimate(binding, model, body))
+			apiKey, subscription, inflightEstimate(binding, model, metadata))
 		if inflightErr != nil {
 			c.JSON(http.StatusPaymentRequired, gin.H{"error": gin.H{"type": "insufficient_balance", "message": "insufficient balance for media generation"}})
 			return
@@ -265,6 +261,7 @@ func (h *MediaHubRelayHandler) Relay(c *gin.Context) {
 		UpstreamURL:    upstreamURL,
 		Credential:     credential,
 		ClientPath:     clientPath,
+		Protocol:       strings.TrimSuffix(c.GetString(mediaProtocolKey), "_async"),
 		Body:           body,
 		ContentType:    contentType,
 		UpstreamModel:  model,
@@ -309,7 +306,7 @@ func (h *MediaHubRelayHandler) Relay(c *gin.Context) {
 
 	contentType = resp.Header.Get("Content-Type")
 	if c.GetString(mediaProtocolKey) != "" {
-		h.finishStandard(c, resp, body, subject.UserID, apiKey.ID, gid)
+		h.finishStandard(c, resp, metadata, subject.UserID, apiKey.ID, gid)
 		return
 	}
 	if contentType == "" {
