@@ -174,11 +174,17 @@ jobs:
         if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
         working-directory: backend
         run: go test -tags=embed ./internal/web ./internal/server/middleware
+      - name: Install pinned GoReleaser through GitHub API
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/goreleaser-bin" "$RUNNER_TEMP/goreleaser-download"
+          gh release download v2.20.0 --repo goreleaser/goreleaser --pattern goreleaser_Linux_x86_64.tar.gz --dir "$RUNNER_TEMP/goreleaser-download"
+          echo "d2483159e6007f814132cb56635ad30a70013dbeb813d6033a7e01adf6ae108c  $RUNNER_TEMP/goreleaser-download/goreleaser_Linux_x86_64.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/goreleaser-download/goreleaser_Linux_x86_64.tar.gz" -C "$RUNNER_TEMP/goreleaser-bin" goreleaser
+          echo "$RUNNER_TEMP/goreleaser-bin" >> "$GITHUB_PATH"
       - name: Build and archive without publishing
-        uses: goreleaser/goreleaser-action@v7
-        with:
-          version: '~> v2'
-          args: release --snapshot --clean --skip=validate,publish,docker,announce --config=${{ runner.temp }}/goreleaser.matrix.yaml
+        run: goreleaser release --snapshot --clean --skip=validate,publish,docker,announce --config=${{ runner.temp }}/goreleaser.matrix.yaml
         env:
           AUDIT_SDK_COMMIT: ${{ steps.audit-sdk.outputs.commit }}
           GITHUB_REPO_OWNER: ${{ github.repository_owner }}
@@ -208,7 +214,7 @@ jobs:
           key: ${{ steps.go-cache.outputs.cache-primary-key }}
 
   release:
-    needs: [prepare, build-binaries]
+    needs: [prepare, build-binaries, source-lint]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -284,11 +290,17 @@ jobs:
           args=(publish --output "$RUNNER_TEMP/goreleaser.publisher.yaml")
           if [[ "$SIMPLE_RELEASE" == true ]]; then args+=(--simple); fi
           python "$RUNNER_TEMP/release-tools/release_matrix.py" config "${args[@]}"
+      - name: Install pinned GoReleaser through GitHub API
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/goreleaser-bin" "$RUNNER_TEMP/goreleaser-download"
+          gh release download v2.20.0 --repo goreleaser/goreleaser --pattern goreleaser_Linux_x86_64.tar.gz --dir "$RUNNER_TEMP/goreleaser-download"
+          echo "d2483159e6007f814132cb56635ad30a70013dbeb813d6033a7e01adf6ae108c  $RUNNER_TEMP/goreleaser-download/goreleaser_Linux_x86_64.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/goreleaser-download/goreleaser_Linux_x86_64.tar.gz" -C "$RUNNER_TEMP/goreleaser-bin" goreleaser
+          echo "$RUNNER_TEMP/goreleaser-bin" >> "$GITHUB_PATH"
       - name: Publish existing archives and release notes
-        uses: goreleaser/goreleaser-action@v7
-        with:
-          version: '~> v2'
-          args: release --clean --skip=validate,before,docker ${{ env.DRY_RUN == 'true' && '--snapshot --skip=publish,announce' || '' }} --config=${{ runner.temp }}/goreleaser.publisher.yaml
+        run: goreleaser release --clean --skip=validate,before,docker ${{ env.DRY_RUN == 'true' && '--snapshot --skip=publish,announce' || '' }} --config=${{ runner.temp }}/goreleaser.publisher.yaml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GORELEASER_CURRENT_TAG: ${{ needs.prepare.outputs.tag }}
@@ -423,3 +435,40 @@ jobs:
           git add backend/cmd/server/VERSION
           git commit -m "chore: sync VERSION to ${VERSION} [skip ci]"
           git push origin HEAD:${{ github.event.repository.default_branch }}
+
+  source-lint:
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+      - name: Verify selected source
+        run: test "$(git rev-parse HEAD)" = 0167d5ea8d79f314d983118068bcefb731e3674c
+      - name: Resolve pinned private SDK
+        id: audit-sdk
+        run: python3 .github/release-tools/audit_sdk.py ref
+      - name: Restore private SDK
+        env:
+          AUDIT_SDK_BUNDLE: ${{ secrets[format('AUDIT_SDK_{0}', steps.audit-sdk.outputs.commit)] }}
+          AUDIT_SDK_BUNDLE_PART2: ${{ secrets[format('AUDIT_SDK_{0}_PART2', steps.audit-sdk.outputs.commit)] }}
+          AUDIT_SDK_BUNDLE_PART3: ${{ secrets[format('AUDIT_SDK_{0}_PART3', steps.audit-sdk.outputs.commit)] }}
+          AUDIT_SDK_BUNDLE_PART4: ${{ secrets[format('AUDIT_SDK_{0}_PART4', steps.audit-sdk.outputs.commit)] }}
+        run: python3 .github/release-tools/audit_sdk.py restore
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: backend/go.mod
+          cache: true
+          cache-dependency-path: backend/go.sum
+      - name: Install pinned linter through GitHub API
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/lint-download"
+          gh release download v2.14.0 --repo golangci/golangci-lint --pattern golangci-lint-2.14.0-linux-amd64.tar.gz --dir "$RUNNER_TEMP/lint-download"
+          echo "ab90aeb7b066f92a33415b638a50fe5344bbb75a0d32ad30cc248d88f81032ab  $RUNNER_TEMP/lint-download/golangci-lint-2.14.0-linux-amd64.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/lint-download/golangci-lint-2.14.0-linux-amd64.tar.gz" -C "$RUNNER_TEMP/lint-download"
+          echo "$RUNNER_TEMP/lint-download/golangci-lint-2.14.0-linux-amd64" >> "$GITHUB_PATH"
+      - name: Lint selected release source
+        working-directory: backend
+        run: golangci-lint run --timeout=30m ./...
