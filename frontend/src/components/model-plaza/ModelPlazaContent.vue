@@ -102,7 +102,24 @@ function cacheGridClass(source: CachePriceSource) {
   const count = cachePriceLines(source).filter((line) => line.value != null).length
   return count >= 3 ? 'model-plaza__cache-grid--three' : count === 2 ? 'model-plaza__cache-grid--two' : 'model-plaza__cache-grid--one'
 }
-function unitLabel(entry: ModelPlazaEntry) { return entry.kind === 'image' ? `${entry.currency === 'CNY' ? 'CNY' : 'USD'} / ${text.value.perImageUnit.replace(/^\/ /, '')}` : entry.kind === 'video' ? `${entry.currency === 'CNY' ? 'CNY' : 'USD'} / ${text.value.perVideoUnit.replace(/^\/ /, '')}` : `${entry.currency === 'CNY' ? 'CNY' : 'USD'} / 1M TOKENS` }
+function requestLabel(entry: ModelPlazaEntry) {
+  if (entry.kind === 'image') return text.value.perImage
+  if (entry.kind === 'video') return text.value.perVideo
+  return language.value === 'zh' ? '按次' : 'Per request'
+}
+function requestUnit(entry: ModelPlazaEntry) {
+  if (entry.kind === 'image') return text.value.perImageUnit
+  if (entry.kind === 'video') return text.value.perVideoUnit
+  return language.value === 'zh' ? '/ 次' : '/ request'
+}
+function requestTierLabel(entry: ModelPlazaEntry, label: string) {
+  if (label) return label
+  return entry.kind === 'per_request' && entry.tiers.length > 1
+    ? (language.value === 'zh' ? '默认价格' : 'Default price') : requestLabel(entry)
+}
+function unitLabel(entry: ModelPlazaEntry) {
+  return `${entry.currency} ${entry.kind === 'token' ? '/ 1M TOKENS' : requestUnit(entry)}`
+}
 function formatRate(value: number) { return `${Number(value).toFixed(4).replace(/\.?0+$/, '')}x` }
 function isLowestRate(group: ModelPlazaGroup) { return selectedProvider.value !== 'all' && lowestRateMultiplier.value !== null && Math.abs((group.user_rate_multiplier ?? group.rate_multiplier) - lowestRateMultiplier.value) < Number.EPSILON }
 function setView(nextView: ViewMode) { view.value = nextView; localStorage.setItem('llmfree-model-view', nextView) }
@@ -337,9 +354,9 @@ onMounted(loadData)
         </template>
         <div v-else class="model-plaza__context-prices model-plaza__media-prices">
           <div class="model-plaza__context-tier">
-            <div class="model-plaza__context-head"><span>{{ entry.kind === 'image' ? text.perImage : text.perVideo }}</span><strong>{{ entry.kind === 'image' ? text.perImageUnit : text.perVideoUnit }}</strong></div>
+            <div class="model-plaza__context-head"><span>{{ requestLabel(entry) }}</span><strong>{{ requestUnit(entry) }}</strong></div>
             <div class="model-plaza__context-grid">
-              <span v-for="tier in entry.tiers" :key="tier.label"><small>{{ tier.label || (entry.kind === 'image' ? text.perImage : text.perVideo) }}</small><em>{{ text.original }} {{ formatListedPrice(tier.original, entry.currency, activePriceTab(entry).multiplier) }}</em><strong>{{ text.actual }} {{ formatListedActual(tier.original, entry.rateMultiplier, activePriceTab(entry).multiplier, entry.currency) }}</strong></span>
+              <span v-for="(tier, index) in entry.tiers" :key="index"><small>{{ requestTierLabel(entry, tier.label) }}</small><em>{{ text.original }} {{ formatListedPrice(tier.original, entry.currency, activePriceTab(entry).multiplier) }}</em><strong>{{ text.actual }} {{ formatListedActual(tier.original, entry.rateMultiplier, activePriceTab(entry).multiplier, entry.currency) }}</strong></span>
             </div>
           </div>
         </div>
@@ -362,7 +379,7 @@ onMounted(loadData)
               </td>
               <td><span class="model-plaza__table-original">{{ text.original }} {{ formatListedPrice(entry.output, entry.currency, activePriceTab(entry).multiplier) }}</span><strong class="model-plaza__table-actual">{{ text.actual }} {{ formatListedActual(entry.output, entry.rateMultiplier, activePriceTab(entry).multiplier, entry.currency) }}</strong><span v-for="tier in (isLongContextExpanded(entry) ? longContextTiers(entry) : [])" :key="tier.label" class="model-plaza__table-interval"><small>{{ text.longContext }} · {{ tier.label }}</small><span>{{ text.original }} {{ formatListedPrice(tier.output, entry.currency, activePriceTab(entry).multiplier) }}</span><strong>{{ text.actual }} {{ formatListedActual(tier.output, entry.rateMultiplier, activePriceTab(entry).multiplier, entry.currency) }}</strong></span></td>
             </template>
-            <td v-else colspan="3"><div class="model-plaza__table-media"><span v-for="tier in entry.tiers" :key="tier.label" class="model-plaza__media-chip"><small>{{ tier.label || (entry.kind === 'image' ? text.perImage : text.perVideo) }}</small><span class="model-plaza__table-original">{{ text.original }} {{ formatListedPrice(tier.original, entry.currency, activePriceTab(entry).multiplier) }}</span><strong class="model-plaza__table-actual">{{ text.actual }} {{ formatListedActual(tier.original, entry.rateMultiplier, activePriceTab(entry).multiplier, entry.currency) }}</strong></span></div></td>
+            <td v-else colspan="3"><div class="model-plaza__table-media"><span v-for="(tier, index) in entry.tiers" :key="index" class="model-plaza__media-chip"><small>{{ requestTierLabel(entry, tier.label) }}</small><span class="model-plaza__table-original">{{ text.original }} {{ formatListedPrice(tier.original, entry.currency, activePriceTab(entry).multiplier) }}</span><strong class="model-plaza__table-actual">{{ text.actual }} {{ formatListedActual(tier.original, entry.rateMultiplier, activePriceTab(entry).multiplier, entry.currency) }}</strong></span></div></td>
             <td>{{ unitLabel(entry) }}</td>
           </tr>
         </tbody>

@@ -336,13 +336,13 @@ func (s *PublicTransitService) SnapshotV2Range(ctx context.Context, baseURL, raw
 
 // Adjust exported results after aggregation, leaving stored measurements intact.
 func adjustPublicTransitPassiveResults(passive *PublicTransitPassiveDisclosure) {
-	adjust := func(requestCount int64, health *ChannelMonitorV2Health, successRate *float64, ttft, duration **int, metrics *ChannelMonitorV2Metric) {
-		enoughSamples := requestCount >= DefaultChannelMonitorV2HealthThresholds().MinimumSample
-		if health != nil && health.MinimumSample > 0 {
-			// Public metrics redact counts; health was computed before redaction.
-			enoughSamples = health.ErrorRateScore != nil
+	adjust := func(requestCount int64, successRate *float64, ttft, duration **int, metrics *ChannelMonitorV2Metric) {
+		hasSamples := requestCount > 0
+		if metrics != nil {
+			// Public counts are redacted; measured rates and averages still identify traffic.
+			hasSamples = hasSamples || metrics.SuccessRate > 0 || metrics.ErrorRate > 0 || metrics.TTFT.AvgMs != nil || metrics.Duration.AvgMs != nil
 		}
-		if !enoughSamples {
+		if !hasSamples {
 			return
 		}
 		if successRate != nil {
@@ -360,26 +360,26 @@ func adjustPublicTransitPassiveResults(passive *PublicTransitPassiveDisclosure) 
 			metrics.Duration.AvgMs = publicTransitLatencyResult(metrics.Duration.AvgMs, false)
 		}
 	}
-	adjust(passive.Window.RequestCount, passive.Window.Health, &passive.Window.SuccessRate, &passive.Window.AvgTTFTMs, &passive.Window.AvgLatencyMs, passive.Window.Metrics)
+	adjust(passive.Window.RequestCount, &passive.Window.SuccessRate, &passive.Window.AvgTTFTMs, &passive.Window.AvgLatencyMs, passive.Window.Metrics)
 	for i := range passive.Models {
 		model := &passive.Models[i]
-		adjust(model.RequestCount, model.Health, &model.SuccessRate, &model.AvgTTFTMs, &model.AvgLatencyMs, model.Metrics)
+		adjust(model.RequestCount, &model.SuccessRate, &model.AvgTTFTMs, &model.AvgLatencyMs, model.Metrics)
 	}
 	for i := range passive.Groups {
 		group := &passive.Groups[i]
-		adjust(group.RequestCount, group.Health, &group.SuccessRate, &group.AvgTTFTMs, &group.AvgLatencyMs, group.Metrics)
+		adjust(group.RequestCount, &group.SuccessRate, &group.AvgTTFTMs, &group.AvgLatencyMs, group.Metrics)
 		for j := range group.Buckets {
 			bucket := &group.Buckets[j]
-			adjust(bucket.RequestCount, bucket.Health, &bucket.SuccessRate, &bucket.AvgTTFTMs, &bucket.AvgLatencyMs, bucket.Metrics)
+			adjust(bucket.RequestCount, &bucket.SuccessRate, &bucket.AvgTTFTMs, &bucket.AvgLatencyMs, bucket.Metrics)
 		}
 	}
 	if passive.Matrix != nil {
 		for i := range passive.Matrix.Items {
 			item := &passive.Matrix.Items[i]
-			adjust(item.Metrics.RequestCount, &item.Health, nil, nil, nil, &item.Metrics)
+			adjust(item.Metrics.RequestCount, nil, nil, nil, &item.Metrics)
 			for j := range item.Buckets {
 				bucket := &item.Buckets[j]
-				adjust(bucket.Metrics.RequestCount, &bucket.Health, nil, nil, nil, &bucket.Metrics)
+				adjust(bucket.Metrics.RequestCount, nil, nil, nil, &bucket.Metrics)
 			}
 		}
 	}

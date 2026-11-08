@@ -3,6 +3,7 @@ import type { ModelPlazaGroup, PlazaModel } from '@/api/modelPlaza'
 import type { UserPricingInterval } from '@/api/channels'
 import {
   BILLING_MODE_IMAGE,
+  BILLING_MODE_PER_REQUEST,
   BILLING_MODE_TOKEN,
   BILLING_MODE_VIDEO,
   type BillingMode,
@@ -12,7 +13,7 @@ import { formatDecimal } from '@/utils/pricing'
 export const MODEL_PLAZA_IMAGE_TIERS = ['1K', '2K', '4K'] as const
 export const MODEL_PLAZA_VIDEO_TIERS = ['480p', '720p', '1080p'] as const
 
-export type ModelPlazaBillingKind = 'token' | 'image' | 'video'
+export type ModelPlazaBillingKind = 'token' | 'per_request' | 'image' | 'video'
 
 export interface ModelPlazaTierPrice {
   label: string
@@ -78,7 +79,7 @@ export function buildModelPlazaEntries(
       seen.add(id)
       const kind = modelPlazaEntryKind(group, model)
       const rateMultiplier = mediaRateMultiplier(group, kind)
-      if (kind === 'image' || kind === 'video') {
+      if (kind !== 'token') {
         return [{
           id,
           provider: modelPlazaProviderForGroup(group),
@@ -89,7 +90,7 @@ export function buildModelPlazaEntries(
           cacheWrite: null,
           cacheWrite1h: null,
           cacheRead: null,
-          tiers: mediaTiers(kind, model),
+          tiers: kind === 'per_request' ? requestTiers(model) : mediaTiers(kind, model),
           tokenTiers: [],
           officialTokenTiers: [],
           groupId: group.id,
@@ -142,6 +143,7 @@ export function modelPlazaEntryKind(
   model: PlazaModel,
 ): ModelPlazaBillingKind {
   const mode = billingModeOf(model)
+  if (mode === BILLING_MODE_PER_REQUEST) return 'per_request'
   if (mode === BILLING_MODE_IMAGE) return 'image'
   if (mode === BILLING_MODE_VIDEO) return 'video'
   if (mode === BILLING_MODE_TOKEN) return 'token'
@@ -171,6 +173,22 @@ function mediaRateMultiplier(group: ModelPlazaGroup, kind: ModelPlazaBillingKind
     return group.video_rate_multiplier ?? 1
   }
   return groupRate
+}
+
+function requestTiers(model: PlazaModel): ModelPlazaTierPrice[] {
+  const tiers: ModelPlazaTierPrice[] = []
+  const defaultPrice = formatRequestPrice(model.pricing?.per_request_price)
+  if (defaultPrice != null) tiers.push({ label: '', original: defaultPrice })
+  for (const interval of model.pricing?.intervals ?? []) {
+    const price = formatRequestPrice(interval.per_request_price)
+    if (price == null) continue
+    tiers.push({
+      label: interval.tier_label || (interval.min_tokens === 0 && interval.max_tokens == null
+        ? '≥0' : tokenRangeLabel(interval.min_tokens, interval.max_tokens)),
+      original: price,
+    })
+  }
+  return tiers.length > 0 ? tiers : [{ label: '', original: null }]
 }
 
 function mediaTiers(kind: 'image' | 'video', model: PlazaModel): ModelPlazaTierPrice[] {
