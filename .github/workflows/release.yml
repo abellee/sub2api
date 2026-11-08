@@ -174,11 +174,17 @@ jobs:
         if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
         working-directory: backend
         run: go test -tags=embed ./internal/web ./internal/server/middleware
+      - name: Install pinned GoReleaser through GitHub API
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/goreleaser-bin" "$RUNNER_TEMP/goreleaser-download"
+          gh release download v2.20.0 --repo goreleaser/goreleaser --pattern goreleaser_Linux_x86_64.tar.gz --dir "$RUNNER_TEMP/goreleaser-download"
+          echo "d2483159e6007f814132cb56635ad30a70013dbeb813d6033a7e01adf6ae108c  $RUNNER_TEMP/goreleaser-download/goreleaser_Linux_x86_64.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/goreleaser-download/goreleaser_Linux_x86_64.tar.gz" -C "$RUNNER_TEMP/goreleaser-bin" goreleaser
+          echo "$RUNNER_TEMP/goreleaser-bin" >> "$GITHUB_PATH"
       - name: Build and archive without publishing
-        uses: goreleaser/goreleaser-action@v7
-        with:
-          version: '~> v2'
-          args: release --snapshot --clean --skip=validate,publish,docker,announce --config=${{ runner.temp }}/goreleaser.matrix.yaml
+        run: goreleaser release --snapshot --clean --skip=validate,publish,docker,announce --config=${{ runner.temp }}/goreleaser.matrix.yaml
         env:
           AUDIT_SDK_COMMIT: ${{ steps.audit-sdk.outputs.commit }}
           GITHUB_REPO_OWNER: ${{ github.repository_owner }}
@@ -284,11 +290,17 @@ jobs:
           args=(publish --output "$RUNNER_TEMP/goreleaser.publisher.yaml")
           if [[ "$SIMPLE_RELEASE" == true ]]; then args+=(--simple); fi
           python "$RUNNER_TEMP/release-tools/release_matrix.py" config "${args[@]}"
+      - name: Install pinned GoReleaser through GitHub API
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/goreleaser-bin" "$RUNNER_TEMP/goreleaser-download"
+          gh release download v2.20.0 --repo goreleaser/goreleaser --pattern goreleaser_Linux_x86_64.tar.gz --dir "$RUNNER_TEMP/goreleaser-download"
+          echo "d2483159e6007f814132cb56635ad30a70013dbeb813d6033a7e01adf6ae108c  $RUNNER_TEMP/goreleaser-download/goreleaser_Linux_x86_64.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/goreleaser-download/goreleaser_Linux_x86_64.tar.gz" -C "$RUNNER_TEMP/goreleaser-bin" goreleaser
+          echo "$RUNNER_TEMP/goreleaser-bin" >> "$GITHUB_PATH"
       - name: Publish existing archives and release notes
-        uses: goreleaser/goreleaser-action@v7
-        with:
-          version: '~> v2'
-          args: release --clean --skip=validate,before,docker ${{ env.DRY_RUN == 'true' && '--snapshot --skip=publish,announce' || '' }} --config=${{ runner.temp }}/goreleaser.publisher.yaml
+        run: goreleaser release --clean --skip=validate,before,docker ${{ env.DRY_RUN == 'true' && '--snapshot --skip=publish,announce' || '' }} --config=${{ runner.temp }}/goreleaser.publisher.yaml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GORELEASER_CURRENT_TAG: ${{ needs.prepare.outputs.tag }}

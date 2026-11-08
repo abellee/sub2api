@@ -338,6 +338,11 @@ export default defineConfig(({ mode }) => {
       'vue-i18n': 'vue-i18n/dist/vue-i18n.runtime.esm-bundler.js'
     }
   },
+    define: {
+      // Compile translated strings without unsafe-eval, including named placeholders.
+      __INTLIFY_JIT_COMPILATION__: true,
+      __INTLIFY_DROP_MESSAGE_COMPILER__: false
+    },
     optimizeDeps: {
       // The dependency tree is already installed from the lockfile. Avoid a
       // broad filesystem scan on Windows that can terminate the dev server.
@@ -345,7 +350,7 @@ export default defineConfig(({ mode }) => {
       // CJS packages still need explicit pre-bundling when dependency
       // discovery is disabled; otherwise the browser receives the raw UMD
       // file and named/default imports fail during route loading.
-      include: ['file-saver', 'qrcode']
+      include: ['file-saver', 'qrcode', 'vue-i18n']
     },
   build: {
     outDir: '../backend/internal/web/dist',
