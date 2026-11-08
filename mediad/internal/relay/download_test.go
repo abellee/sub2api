@@ -39,6 +39,9 @@ func TestRetainedDownloadRequiresConfirmationAndPrivateToken(t *testing.T) {
 		t.Fatal(err)
 	}
 	u, _ := url.Parse(task.Files[0].DownloadURL)
+	if !strings.HasSuffix(u.Path, "/f0000.png") {
+		t.Fatal("download URL has no real extension", u.Path)
+	}
 	request := func(s *MemoryStore, path string) *httptest.ResponseRecorder {
 		tr := NewTracker(s, func(string) (*Schema, bool) { return nil, false }, nil, nil)
 		defer tr.Stop()
@@ -58,6 +61,16 @@ func TestRetainedDownloadRequiresConfirmationAndPrivateToken(t *testing.T) {
 	}
 	if w := request(store, u.RequestURI()); w.Code != 200 || w.Body.String() != "image" {
 		t.Fatal("confirmed download unavailable", w.Code)
+	}
+	if w := request(store, u.RequestURI()); !strings.Contains(w.Header().Get("Content-Disposition"), "f0000.png") {
+		t.Fatal("download filename has no extension")
+	}
+	legacy := strings.Replace(u.RequestURI(), "f0000.png", "f0000", 1)
+	if w := request(store, legacy); w.Code != 200 || !strings.Contains(w.Header().Get("Content-Disposition"), "f0000.png") {
+		t.Fatal("old download broken", w.Code)
+	}
+	if w := request(store, strings.Replace(u.RequestURI(), "f0000.png", "f0000.gif", 1)); w.Code != 404 {
+		t.Fatal("wrong extension accepted")
 	}
 	if w := request(store, u.Path); w.Code != 404 {
 		t.Fatal("missing token accepted")
@@ -88,5 +101,22 @@ func TestRetainedDownloadRequiresConfirmationAndPrivateToken(t *testing.T) {
 	}
 	if _, err = os.Stat(filepath.Join(files, task.ID, "f0000")); err != nil {
 		t.Fatal("legacy acknowledgement deleted retained file")
+	}
+}
+
+func TestDownloadFilenameFormats(t *testing.T) {
+	for ct, ext := range map[string]string{"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/svg+xml": ".svg", "image/webp": ".webp", "video/mp4": ".mp4", "application/octet-stream": ".bin"} {
+		file := ResultFile{ID: "f0000", ContentType: ct, DownloadURL: "https://d.tokenfree.dev/downloads/task/f0000?token=original"}
+		if downloadFilename(file) != "f0000"+ext {
+			t.Fatal(ct)
+		}
+		u, _ := url.Parse(formattedDownloadURL(file))
+		if !strings.HasSuffix(u.Path, ext) || u.Query().Get("token") != "original" {
+			t.Fatal("URL or signature changed", ct)
+		}
+		file.DownloadURL = u.String()
+		if formattedDownloadURL(file) != file.DownloadURL {
+			t.Fatal("duplicate extension")
+		}
 	}
 }

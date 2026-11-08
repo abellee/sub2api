@@ -44,7 +44,7 @@ func (h *RelayHandler) handleStandardResult(w http.ResponseWriter, r *http.Reque
 		}
 		urls := make([]string, 0, len(task.Files))
 		for _, file := range task.Files {
-			urls = append(urls, file.DownloadURL)
+			urls = append(urls, formattedDownloadURL(file))
 		}
 		out["download_urls"] = urls
 	} else {
@@ -61,7 +61,7 @@ func (h *RelayHandler) handleStandardResult(w http.ResponseWriter, r *http.Reque
 					}
 				}
 			}
-			item["url"] = file.DownloadURL
+			item["url"] = formattedDownloadURL(file)
 			if format == "openai_b64_json" {
 				if h.tracker.stager == nil {
 					writeError(w, 503, "storage_unavailable", "result storage unavailable")
@@ -74,7 +74,7 @@ func (h *RelayHandler) handleStandardResult(w http.ResponseWriter, r *http.Reque
 				}
 				delete(item, "url")
 				item["b64_json"] = base64.StdEncoding.EncodeToString(raw)
-				item["download_url"] = file.DownloadURL
+				item["download_url"] = formattedDownloadURL(file)
 			}
 			data = append(data, item)
 		}

@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"os"
@@ -27,6 +28,32 @@ type ResultFile struct {
 	Size        int64  `json:"size_bytes"`
 	SHA256      string `json:"sha256"`
 	ContentType string `json:"content_type"`
+}
+
+func downloadFilename(file ResultFile) string {
+	ct, _, _ := mime.ParseMediaType(file.ContentType)
+	ext := map[string]string{
+		"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp",
+		"image/gif": ".gif", "image/svg+xml": ".svg", "image/avif": ".avif",
+		"video/mp4": ".mp4", "video/webm": ".webm", "audio/mpeg": ".mp3",
+		"audio/wav": ".wav", "audio/ogg": ".ogg",
+	}[ct]
+	if ext == "" {
+		ext = ".bin"
+	}
+	return file.ID + ext
+}
+
+// Keep the storage ID and signature stable so existing links remain valid.
+func formattedDownloadURL(file ResultFile) string {
+	u, err := url.Parse(file.DownloadURL)
+	if err != nil || file.DownloadURL == "" {
+		return file.DownloadURL
+	}
+	if strings.HasSuffix(u.Path, "/"+file.ID) {
+		u.Path = strings.TrimSuffix(u.Path, file.ID) + downloadFilename(file)
+	}
+	return u.String()
 }
 
 func downloadToken(task *Task, fileID string) string {
@@ -47,7 +74,7 @@ func (t *Tracker) prepareDownloadLinks(task *Task) error {
 		task.DownloadToken = hex.EncodeToString(token[:])
 	}
 	for i := range task.Files {
-		task.Files[i].DownloadURL = strings.TrimRight(t.downloadBase, "/") + "/downloads/" + task.ID + "/" + task.Files[i].ID + "?token=" + downloadToken(task, task.Files[i].ID)
+		task.Files[i].DownloadURL = strings.TrimRight(t.downloadBase, "/") + "/downloads/" + task.ID + "/" + downloadFilename(task.Files[i]) + "?token=" + downloadToken(task, task.Files[i].ID)
 	}
 	if !t.saveResult(task) {
 		return fmt.Errorf("could not persist download links")
@@ -62,19 +89,18 @@ func (h *RelayHandler) handleDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.PathValue("fileID")
-	expected := downloadToken(task, id)
-	if !hmac.Equal([]byte(expected), []byte(r.URL.Query().Get("token"))) {
-		http.NotFound(w, r)
-		return
-	}
 	for _, meta := range task.Files {
-		if meta.ID == id {
+		if meta.ID == id || downloadFilename(meta) == id {
+			if !hmac.Equal([]byte(downloadToken(task, meta.ID)), []byte(r.URL.Query().Get("token"))) {
+				http.NotFound(w, r)
+				return
+			}
 			w.Header().Set("Content-Type", meta.ContentType)
-			w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", id))
+			w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": downloadFilename(meta)}))
 			w.Header().Set("Cache-Control", "private, no-store")
 			w.Header().Set("Referrer-Policy", "no-referrer")
 			w.Header().Set("X-Content-Type-Options", "nosniff")
-			http.ServeFile(w, r, filepath.Join(h.tracker.stager.Root, task.ID, id))
+			http.ServeFile(w, r, filepath.Join(h.tracker.stager.Root, task.ID, meta.ID))
 			return
 		}
 	}

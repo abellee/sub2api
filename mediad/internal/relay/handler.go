@@ -165,6 +165,9 @@ func (h *RelayHandler) handleTaskStatus(w http.ResponseWriter, r *http.Request) 
 		h.handleStandardResult(w, r, task, format)
 		return
 	}
+	for i := range task.Files {
+		task.Files[i].DownloadURL = formattedDownloadURL(task.Files[i])
+	}
 	out := publicTaskView(task)
 	if task.Result != nil {
 		out["result"] = task.Result
