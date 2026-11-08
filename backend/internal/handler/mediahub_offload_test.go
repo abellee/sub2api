@@ -90,6 +90,12 @@ func TestMediaOffloadWithRealAgent(t *testing.T) {
 		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 42})
 		controller.TryStandardImage(c, false)
 	})
+	router.GET("/v1/images/tasks/:task_id", func(c *gin.Context) {
+		gid := int64(3)
+		c.Set(string(middleware.ContextKeyAPIKey), &service.APIKey{ID: 7, GroupID: &gid})
+		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 42})
+		controller.TryStandardImageTask(c)
+	})
 	main := httptest.NewServer(router)
 	defer main.Close()
 	schema := `{"fixture":{"id":"fixture","version":1,"mode":"sync","upstream":{"create":{"method":"POST","path":"/v1/images/generations"}},"request":{"body_mode":"passthrough","credential":{"Authorization":"Bearer {credential}"}},"response":{"usage":{"quantity":"data","unit":"image"},"result":{"files":"data"}}}}`
@@ -135,19 +141,19 @@ func TestMediaOffloadWithRealAgent(t *testing.T) {
 		t.Fatal(response.StatusCode, string(raw), err)
 	}
 	pollURL := gjson.GetBytes(raw, "poll_url").String()
-	if !strings.HasPrefix(pollURL, mediaURL+"/downloads/") {
-		t.Fatal("main did not return media link", string(raw))
+	if pollURL != "/v1/images/tasks/"+gjson.GetBytes(raw, "task_id").String() {
+		t.Fatal("existing task query address changed", string(raw))
 	}
 	close(release)
 	for {
-		resp, err := http.Get(pollURL)
+		resp, err := http.Get(main.URL + pollURL)
 		if err != nil {
 			t.Fatal(err)
 		}
 		raw, _ = io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
-		if resp.StatusCode != 200 || resp.Header.Get("Access-Control-Allow-Origin") != "*" {
-			t.Fatal("browser cannot query media", resp.StatusCode, string(raw))
+		if resp.StatusCode != 200 {
+			t.Fatal("existing task query failed", resp.StatusCode, string(raw))
 		}
 		if gjson.GetBytes(raw, "status").String() == "completed" {
 			break

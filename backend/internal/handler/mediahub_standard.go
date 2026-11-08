@@ -145,10 +145,7 @@ func (h *MediaHubRelayHandler) finishStandard(c *gin.Context, accepted *mediahub
 	if strings.HasSuffix(c.GetString(mediaProtocolKey), "_async") {
 		c.Header("Location", "/v1/images/tasks/"+id)
 		c.Header("Retry-After", "3")
-		pollURL := gjson.GetBytes(accepted.Body, "result_url").String()
-		if pollURL == "" {
-			pollURL = "/v1/images/tasks/" + id
-		}
+		pollURL := "/v1/images/tasks/" + id
 		c.JSON(202, gin.H{"id": id, "task_id": id, "object": "image.generation.task", "status": "processing", "poll_url": pollURL})
 		return
 	}

@@ -103,7 +103,7 @@ func TestMediaStandardEndpoints(t *testing.T) {
 			r.Header.Set("Content-Type", "application/json")
 			router.ServeHTTP(w, r)
 			if strings.HasSuffix(protocol, "_async") {
-				if w.Code != 202 || gjson.Get(w.Body.String(), "poll_url").String() != "https://media.example/downloads/mtask_standard/result?token=opaque" {
+				if w.Code != 202 || gjson.Get(w.Body.String(), "poll_url").String() != "/v1/images/tasks/mtask_standard" {
 					t.Fatal(w.Code, w.Body.String())
 				}
 				w = httptest.NewRecorder()
