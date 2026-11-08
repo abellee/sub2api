@@ -71,6 +71,7 @@ describe('Media service administration', () => {
     await wrapper.get('[data-testid="tab-runtime"]').trigger('click'); await flushPromises()
     const input = wrapper.findAll('input[type="number"]').find(input => input.attributes('min') === '0')!
     expect(input.exists()).toBe(true)
+    expect(input.attributes('max')).toBeUndefined()
     await input.setValue(0)
     await wrapper.get('form').trigger('submit'); await flushPromises()
     expect(api.agent).toHaveBeenCalledWith('PUT', '/config', expect.objectContaining({ file_retention_hours: 0 }))

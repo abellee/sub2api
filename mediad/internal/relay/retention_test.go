@@ -42,7 +42,10 @@ func TestFileRetentionProtectsUnfinishedResultsAndPersistsExpiry(t *testing.T) {
 	if n, err := store.GCFiles(0, media); err != nil || n != 0 {
 		t.Fatalf("disabled cleanup: %d %v", n, err)
 	}
-	if n, err := store.GCFiles(72*time.Hour, media); err != nil || n != 1 {
+	if n, err := store.GCFiles(int(^uint(0)>>1), media); err != nil || n != 0 {
+		t.Fatalf("large retention overflowed: %d %v", n, err)
+	}
+	if n, err := store.GCFiles(72, media); err != nil || n != 1 {
 		t.Fatalf("cleanup: %d %v", n, err)
 	}
 	if _, err := os.Stat(filepath.Join(media, "expired")); !os.IsNotExist(err) {

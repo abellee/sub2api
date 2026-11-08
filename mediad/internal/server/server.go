@@ -98,7 +98,7 @@ func (s *Server) Run(ctx context.Context) error {
 			defer cancel()
 			return s.httpServer.Shutdown(shutdown)
 		case <-gc.C:
-			if n, err := s.store.GCFiles(time.Duration(s.settings.FileRetentionHours())*time.Hour, s.settings.Active().ResultDir); err != nil {
+			if n, err := s.store.GCFiles(s.settings.FileRetentionHours(), s.settings.Active().ResultDir); err != nil {
 				s.logger.Printf("[mediad] file cleanup: %v", err)
 			} else if n > 0 {
 				s.logger.Printf("[mediad] expired media cleaned: %d tasks", n)

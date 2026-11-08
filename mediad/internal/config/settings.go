@@ -53,7 +53,7 @@ func DefaultSettings(cfg Config) Settings {
 	if maxSync <= 0 {
 		maxSync = 600
 	}
-	return Settings{Listen: cfg.Listen, DataDir: cfg.DataDir, ResultDir: root, DownloadBaseURL: cfg.DownloadBaseURL, MaxFileMiB: maxFile, MaxSyncSeconds: maxSync, MaxConcurrent: 8, PollIntervalSeconds: 5, MaxPollSeconds: 1800, DownloadTimeoutSeconds: 120, DownloadAttempts: 3, TaskRetentionHours: 24, GCMinutes: 30, PersistCredentials: cfg.PersistCredentials, LogLevel: cfg.LogLevel, RelaySecret: cfg.RelaySecret, ManagementToken: cfg.ManagementToken}
+	return Settings{Listen: cfg.Listen, DataDir: cfg.DataDir, ResultDir: root, DownloadBaseURL: cfg.DownloadBaseURL, MaxFileMiB: maxFile, MaxSyncSeconds: maxSync, MaxConcurrent: 8, PollIntervalSeconds: 5, MaxPollSeconds: 1800, DownloadTimeoutSeconds: 120, DownloadAttempts: 3, TaskRetentionHours: 24, FileRetentionHours: 1, GCMinutes: 30, PersistCredentials: cfg.PersistCredentials, LogLevel: cfg.LogLevel, RelaySecret: cfg.RelaySecret, ManagementToken: cfg.ManagementToken}
 }
 
 func (s Settings) Validate() error {
@@ -72,6 +72,9 @@ func (s Settings) Validate() error {
 	if !s.PersistCredentials {
 		return fmt.Errorf("persist_credentials must remain enabled for reliable task recovery")
 	}
+	if s.FileRetentionHours < 0 {
+		return fmt.Errorf("file_retention_hours must be non-negative")
+	}
 	limits := []struct {
 		name            string
 		value, min, max int
@@ -79,7 +82,7 @@ func (s Settings) Validate() error {
 		{"max_file_mib", s.MaxFileMiB, 1, 10240}, {"max_sync_seconds", s.MaxSyncSeconds, 1, 86400},
 		{"max_concurrent", s.MaxConcurrent, 1, 128}, {"poll_interval_seconds", s.PollIntervalSeconds, 1, 3600},
 		{"max_poll_seconds", s.MaxPollSeconds, 1, 604800}, {"download_timeout_seconds", s.DownloadTimeoutSeconds, 1, 86400},
-		{"download_attempts", s.DownloadAttempts, 1, 100}, {"task_retention_hours", s.TaskRetentionHours, 1, 87600}, {"file_retention_hours", s.FileRetentionHours, 0, 87600}, {"gc_minutes", s.GCMinutes, 1, 1440},
+		{"download_attempts", s.DownloadAttempts, 1, 100}, {"task_retention_hours", s.TaskRetentionHours, 1, 87600}, {"gc_minutes", s.GCMinutes, 1, 1440},
 	}
 	for _, x := range limits {
 		if x.value < x.min || x.value > x.max {

@@ -52,3 +52,18 @@ func TestSettingsPersistRedactAndRestart(t *testing.T) {
 		t.Fatal("rejected update changed disk")
 	}
 }
+
+func TestFileRetentionDefaultAndNoPolicyMaximum(t *testing.T) {
+	s := DefaultSettings(Config{PersistCredentials: true})
+	if s.FileRetentionHours != 1 {
+		t.Fatal("default retention must be one hour")
+	}
+	s.FileRetentionHours = int(^uint(0) >> 1)
+	if err := s.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	s.FileRetentionHours = -1
+	if s.Validate() == nil {
+		t.Fatal("negative retention accepted")
+	}
+}

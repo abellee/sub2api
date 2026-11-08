@@ -205,15 +205,15 @@ func (s *MemoryStore) Delete(id string) error {
 }
 
 // GCFiles expires only terminal results already accepted by the main site.
-func (s *MemoryStore) GCFiles(ttl time.Duration, root string) (int, error) {
-	if ttl <= 0 {
+func (s *MemoryStore) GCFiles(hours int, root string) (int, error) {
+	if hours <= 0 {
 		return 0, nil
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	removed := 0
 	for id, prev := range s.tasks {
-		if prev.CallbackState != CallbackConfirmed || prev.FilesAcknowledged || prev.Status != StatusSucceeded || prev.CompletedAt == nil || time.Since(*prev.CompletedAt) < ttl {
+		if prev.CallbackState != CallbackConfirmed || prev.FilesAcknowledged || prev.Status != StatusSucceeded || prev.CompletedAt == nil || time.Since(*prev.CompletedAt)/time.Hour < time.Duration(hours) {
 			continue
 		}
 		// Never let a malformed persisted task turn cleanup into deletion outside the media directory.

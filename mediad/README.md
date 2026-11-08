@@ -51,7 +51,7 @@
 | max_concurrent | 8；任务超出后持久排队 |
 | poll_interval_seconds / max_poll_seconds | 5 / 1800；默认查询间隔及总等待，规则可覆盖 |
 | download_timeout_seconds / download_attempts | 120 / 3；单文件下载等待及总尝试次数 |
-| file_retention_hours | 0（永久）；按生成完成时间保留指定小时数，保存立即生效，只删除主站已确认成功的结果；旧配置继续永久保留 |
+| file_retention_hours | 默认 1 小时，无时长上限，0 为永久；按生成完成时间保留指定小时数，保存立即生效，只删除主站已确认成功的结果 |
 | task_retention_hours / gc_minutes | 24 / 30；每 30 分钟清理过期文件及符合条件的任务记录；未完成、待恢复和未确认结果保留 |
 | log_level | info；兼容字段，当前统一运行日志不按此值过滤 |
 
