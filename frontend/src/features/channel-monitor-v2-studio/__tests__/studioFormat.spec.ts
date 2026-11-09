@@ -315,22 +315,41 @@ describe('studioFormat', () => {
     expect(studioAccentFromState(null)).toBe('teal')
   })
 
+  it('excludes groups below 70% cache before ranking and limiting active groups', () => {
+    const live = {
+      state: 'healthy' as const,
+      buckets: [{ metrics: metric({ rpm: 10, cache_rate: 0.99 }) }],
+    }
+    const cards = [
+      { ...live, key: 'low', metrics: metric({ cache_rate: 0.6999 }) },
+      { ...live, key: 'zero', metrics: metric({ cache_rate: 0 }) },
+      { ...live, key: 'missing', metrics: null },
+      { ...live, key: 'invalid', metrics: metric({ cache_rate: Number.NaN }) },
+      { ...live, key: 'boundary', metrics: metric({ cache_rate: 0.7 }) },
+      { ...live, key: 'above', metrics: metric({ cache_rate: 0.9 }) },
+    ]
+
+    expect(pickStudioActiveGroups(cards, 2).map((card) => card.key)).toEqual(['boundary', 'above'])
+    expect(pickStudioActiveGroups(cards).map((card) => card.key)).toEqual(['boundary', 'above'])
+    expect(pickStudioActiveGroups(cards.slice(0, 4))).toEqual([])
+  })
+
   it('picks the currently busiest groups for the active section', () => {
     const idle = {
       key: 'idle',
-      metrics: metric(),
+      metrics: metric({ cache_rate: 0.8 }),
       health: health(),
       buckets: [{ metrics: metric(), health: health() }],
     }
     const live = {
       key: 'live',
-      metrics: metric({ rpm: 4, request_count: 20 }),
+      metrics: metric({ cache_rate: 0.8, rpm: 4, request_count: 20 }),
       health: health({ overall: 'healthy', score: 90 }),
       buckets: [{ metrics: metric({ rpm: 4 }), health: health({ overall: 'healthy', score: 90 }) }],
     }
     const hot = {
       key: 'hot',
-      metrics: metric({ rpm: 40, request_count: 200 }),
+      metrics: metric({ cache_rate: 0.8, rpm: 40, request_count: 200 }),
       health: health({ overall: 'healthy', score: 80 }),
       buckets: [{ metrics: metric({ rpm: 40 }), health: health({ overall: 'healthy', score: 80 }) }],
     }
@@ -338,7 +357,7 @@ describe('studioFormat', () => {
     expect(pickStudioActiveGroups([idle, live, hot]).map((card) => card.key)).toEqual(['hot', 'live'])
     const stale = {
       key: 'stale',
-      metrics: metric({ rpm: 90, request_count: 900 }),
+      metrics: metric({ cache_rate: 0.8, rpm: 90, request_count: 900 }),
       health: health({ overall: 'healthy', score: 95 }),
       buckets: [
         { metrics: metric({ rpm: 90, request_count: 90 }), health: health({ overall: 'healthy', score: 95 }) },
@@ -350,7 +369,7 @@ describe('studioFormat', () => {
     expect(pickStudioActiveGroups([stale, live, hot]).map((card) => card.key)).toEqual(['hot', 'live'])
     const filling = {
       key: 'filling',
-      metrics: metric(),
+      metrics: metric({ cache_rate: 0.8 }),
       health: health(),
       buckets: [
         { metrics: metric(), health: health() },
@@ -369,7 +388,7 @@ describe('studioFormat', () => {
     const mixed = pickStudioActiveGroups([
       { ...hot, key: 'bad', state: 'critical' },
       { ...live, key: 'ok', state: 'healthy' },
-      { ...live, key: 'warn', state: 'warning', metrics: metric({ rpm: 12, request_count: 60 }) },
+      { ...live, key: 'warn', state: 'warning', metrics: metric({ cache_rate: 0.8, rpm: 12, request_count: 60 }) },
     ])
     expect(mixed.map((card) => card.key)).toEqual(['ok', 'warn', 'bad'])
     expect(sortStudioCardsByStatus(mixed).map((card) => card.key)).toEqual(['ok', 'warn', 'bad'])
@@ -379,21 +398,21 @@ describe('studioFormat', () => {
     const ok = {
       key: 'ok',
       state: 'healthy' as const,
-      metrics: metric({ rpm: 4, request_count: 20 }),
+      metrics: metric({ cache_rate: 0.8, rpm: 4, request_count: 20 }),
       health: health({ overall: 'healthy', score: 90 }),
       buckets: [{ metrics: metric({ rpm: 4 }), health: health({ overall: 'healthy', score: 90 }) }],
     }
     const badHot = {
       key: 'bad-hot',
       state: 'critical' as const,
-      metrics: metric({ rpm: 80, request_count: 400 }),
+      metrics: metric({ cache_rate: 0.8, rpm: 80, request_count: 400 }),
       health: health({ overall: 'critical', score: 20 }),
       buckets: [{ metrics: metric({ rpm: 80 }), health: health({ overall: 'critical', score: 20 }) }],
     }
     const badWarm = {
       key: 'bad-warm',
       state: 'critical' as const,
-      metrics: metric({ rpm: 8, request_count: 40 }),
+      metrics: metric({ cache_rate: 0.8, rpm: 8, request_count: 40 }),
       health: health({ overall: 'critical', score: 25 }),
       buckets: [{ metrics: metric({ rpm: 8 }), health: health({ overall: 'critical', score: 25 }) }],
     }

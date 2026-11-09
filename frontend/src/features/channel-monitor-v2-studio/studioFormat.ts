@@ -360,7 +360,7 @@ export function studioActiveGroupState(card: StudioActivitySource): StudioTone {
   return 'unknown'
 }
 
-/** Currently-live group cards only. 健康/波动 fill first; 异常 can still take leftover current slots. */
+/** Live groups with at least 70% cache rate. 健康/波动 fill first; 异常 can fill leftover slots. */
 export function pickStudioActiveGroups<T extends StudioActivitySource>(
   cards: T[],
   limit = STUDIO_ACTIVE_GROUP_LIMIT,
@@ -373,7 +373,7 @@ export function pickStudioActiveGroups<T extends StudioActivitySource>(
       score: studioGroupActivityScore(card),
       state: studioActiveGroupState(card),
     }))
-    .filter((item) => item.score > 0)
+    .filter((item) => item.score > 0 && (item.card.metrics?.cache_rate ?? 0) >= 0.7)
     .sort(
       (a, b) =>
         studioStatusSortRank(a.state) - studioStatusSortRank(b.state) ||
