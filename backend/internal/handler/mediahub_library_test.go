@@ -40,22 +40,26 @@ func TestMediaLibraryIsolationPaginationAndDeletion(t *testing.T) {
 			t.Error("missing management credential")
 		}
 		var in struct {
-			UserID int64              `json:"user_id"`
-			Files  []libraryFileState `json:"files"`
+			UserID int64 `json:"user_id"`
+			Files  []struct {
+				TaskID string `json:"task_id"`
+				FileID string `json:"file_id"`
+			} `json:"files"`
 		}
-		if json.NewDecoder(r.Body).Decode(&in) != nil || in.UserID != 42 || len(in.Files) > 50 {
+		decoder := json.NewDecoder(r.Body)
+		decoder.DisallowUnknownFields()
+		if decoder.Decode(&in) != nil || in.UserID != 42 || len(in.Files) > 50 {
 			t.Error("invalid owner or batch")
 		}
-		for i := range in.Files {
-			in.Files[i].Available = true
+		states := make([]libraryFileState, 0, len(in.Files))
+		for _, file := range in.Files {
 			expiry := time.Now().Add(time.Hour)
-			in.Files[i].ExpiresAt = &expiry
-			in.Files[i].Deleted = true
+			states = append(states, libraryFileState{TaskID: file.TaskID, FileID: file.FileID, Available: true, ExpiresAt: &expiry, Deleted: true})
 		}
 		if r.URL.Path == "/management/files/delete" {
 			deletedRefs += len(in.Files)
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"files": in.Files})
+		_ = json.NewEncoder(w).Encode(map[string]any{"files": states})
 	}))
 	defer remote.Close()
 	defaults := DefaultMediaHubSettings()

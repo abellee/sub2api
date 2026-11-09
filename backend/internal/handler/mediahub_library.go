@@ -34,9 +34,13 @@ func (h *MediaHubController) RegisterUser(user *gin.RouterGroup) {
 func (h *MediaHubController) libraryStates(ctx context.Context, userID int64, records []mediahub.ResultLink, remove bool) ([]libraryFileState, error) {
 	s := h.settings.Active()
 	client := &mediahub.ManagementClient{BaseURL: s.MediadBaseURL, Token: s.ManagementToken, HTTP: &http.Client{Timeout: 25 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
-	refs := make([]libraryFileState, 0, len(records))
+	type fileRef struct {
+		TaskID string `json:"task_id"`
+		FileID string `json:"file_id"`
+	}
+	refs := make([]fileRef, 0, len(records))
 	for _, record := range records {
-		refs = append(refs, libraryFileState{TaskID: record.TaskID, FileID: record.FileID})
+		refs = append(refs, fileRef{TaskID: record.TaskID, FileID: record.FileID})
 	}
 	path := "/management/files/status"
 	if remove {
