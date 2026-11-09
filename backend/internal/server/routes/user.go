@@ -30,6 +30,7 @@ func RegisterUserRoutes(
 		}
 		authenticated.GET("/documentation", handler.NewDocumentationHandler(newUIConfigStore()).ListPublished)
 		authenticated.GET("/documentation/categories", handler.NewDocumentationHandler(newUIConfigStore()).Categories)
+		authenticated.GET("/documentation/:id/skill", handler.NewDocumentationHandler(newUIConfigStore()).DownloadSkill)
 		// 用户接口
 		user := authenticated.Group("/user")
 		{

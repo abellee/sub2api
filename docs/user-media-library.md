@@ -15,7 +15,7 @@
 
 ## 上线要求
 
-主站、前端和 mediad 需一起更新，并执行主站迁移 `251_media_generation_files_deleted_at.sql`。本次没有部署，也没有操作线上文件。
+主站、前端和 mediad 需一起更新，沿用 dev.6 已有迁移 `251_media_file_deletion.sql`，没有新增迁移。发布版本为主站 dev.7、mediad 0.1.1。
 
 ## 本地开发
 

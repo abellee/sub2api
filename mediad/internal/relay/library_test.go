@@ -98,14 +98,14 @@ func TestLibraryDeletesOnlyOwnedFilesAndSurvivesStaleUpdatesAndRestart(t *testin
 		Candidates []struct {
 			Content struct {
 				Parts []struct {
-					InlineData struct {
-						Data string `json:"data"`
-					} `json:"inlineData"`
+					FileData struct {
+						URI string `json:"fileUri"`
+					} `json:"fileData"`
 				} `json:"parts"`
 			} `json:"content"`
 		} `json:"candidates"`
 	}
-	if result.Code != 200 || json.Unmarshal(result.Body.Bytes(), &remaining) != nil || len(remaining.Candidates) != 1 || len(remaining.Candidates[0].Content.Parts) != 1 || remaining.Candidates[0].Content.Parts[0].InlineData.Data != "bWVkaWE=" {
+	if result.Code != 200 || json.Unmarshal(result.Body.Bytes(), &remaining) != nil || len(remaining.Candidates) != 1 || len(remaining.Candidates[0].Content.Parts) != 1 || remaining.Candidates[0].Content.Parts[0].FileData.URI != formattedDownloadURL(current.Files[0]) {
 		t.Fatal("remaining Gemini image unavailable", result.Code, result.Body.String())
 	}
 	if w := request("/management/files/delete", body, "management"); !strings.Contains(w.Body.String(), `"deleted":true`) {

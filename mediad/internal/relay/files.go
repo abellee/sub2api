@@ -83,8 +83,9 @@ func (t *Tracker) prepareDownloadLinks(task *Task) error {
 }
 
 func (h *RelayHandler) handleDownload(w http.ResponseWriter, r *http.Request) {
-	task, ok := h.store.Get(r.PathValue("taskID"))
-	if !ok || task.Status != StatusSucceeded || task.CallbackState != CallbackConfirmed || task.DownloadToken == "" || task.FilesAcknowledged || h.tracker.stager == nil {
+	publicMediaHeaders(w)
+	task, ok := h.store.PublicTask(r.PathValue("taskID"))
+	if !ok || task.Status != StatusSucceeded || task.CallbackState != CallbackConfirmed || task.DownloadToken == "" || h.tracker.stager == nil {
 		http.NotFound(w, r)
 		return
 	}
@@ -93,6 +94,10 @@ func (h *RelayHandler) handleDownload(w http.ResponseWriter, r *http.Request) {
 		if meta.ID == id || downloadFilename(meta) == id {
 			if !hmac.Equal([]byte(downloadToken(task, meta.ID)), []byte(r.URL.Query().Get("token"))) {
 				http.NotFound(w, r)
+				return
+			}
+			if task.FilesAcknowledged {
+				writeError(w, http.StatusGone, "result_expired", "media file has expired")
 				return
 			}
 			w.Header().Set("Content-Type", meta.ContentType)

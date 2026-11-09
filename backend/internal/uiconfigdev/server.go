@@ -77,5 +77,6 @@ func NewHandler(store *service.GroupCategoryStore, authBackend string) http.Hand
 	router.PUT("/api/v1/admin/documentation", authenticate(true), documentation.Update)
 	router.GET("/api/v1/documentation", authenticate(false), documentation.ListPublished)
 	router.GET("/api/v1/documentation/categories", authenticate(false), documentation.Categories)
+	router.GET("/api/v1/documentation/:id/skill", authenticate(false), documentation.DownloadSkill)
 	return router
 }

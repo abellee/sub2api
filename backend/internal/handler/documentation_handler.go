@@ -54,6 +54,29 @@ func (h *DocumentationHandler) Categories(c *gin.Context) {
 	response.Success(c, snap.Categories)
 }
 
+func (h *DocumentationHandler) DownloadSkill(c *gin.Context) {
+	c.Header("Cache-Control", "private, no-store")
+	snap, err := h.store.Documentation(c.Request.Context())
+	if err != nil {
+		response.InternalError(c, "文档加载失败")
+		return
+	}
+	for _, article := range snap.Articles {
+		if article.ID != c.Param("id") || !article.Published || !article.Agent.Enabled {
+			continue
+		}
+		data, err := service.BuildDocumentationSkill(article)
+		if err != nil {
+			response.InternalError(c, "Skill 生成失败")
+			return
+		}
+		c.Header("Content-Disposition", `attachment; filename="tokenfree-creative.zip"`)
+		c.Data(http.StatusOK, "application/zip", data)
+		return
+	}
+	response.NotFound(c, "文档不存在或未启用 Skill")
+}
+
 func (h *DocumentationHandler) Update(c *gin.Context) {
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 8*1024*1024)
 	var snap service.DocumentationSnapshot

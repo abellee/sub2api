@@ -24,6 +24,7 @@ type Task struct {
 	Parameters        map[string]any   `json:"parameters,omitempty"`
 	Files             []ResultFile     `json:"files,omitempty"`
 	FilesAcknowledged bool             `json:"files_acknowledged"`
+	FilesDeletedAt    *time.Time       `json:"files_deleted_at,omitempty"`
 	Fingerprint       string           `json:"fingerprint,omitempty"`
 	PollStartedAt     time.Time        `json:"poll_started_at,omitempty"`
 	ID                string           `json:"id"`
@@ -90,10 +91,11 @@ type Store interface {
 // MemoryStore 是 Store 的内存实现。onDirty 在每次变更后触发,
 // 供服务层做防抖快照持久化。
 type MemoryStore struct {
-	mu      sync.RWMutex
-	tasks   map[string]*Task
-	onDirty func()
-	root    string
+	mu        sync.RWMutex
+	tasks     map[string]*Task
+	onDirty   func()
+	root      string
+	deletions *deletionQueue
 }
 
 // NewMemoryStore 创建内存任务表。
@@ -101,7 +103,7 @@ func NewMemoryStore(onDirty func()) *MemoryStore {
 	if onDirty == nil {
 		onDirty = func() {}
 	}
-	return &MemoryStore{tasks: map[string]*Task{}, onDirty: onDirty}
+	return &MemoryStore{tasks: map[string]*Task{}, onDirty: onDirty, deletions: &deletionQueue{items: map[string]deletionNotice{}}}
 }
 
 func (s *MemoryStore) Create(task *Task) error {
@@ -125,6 +127,20 @@ func (s *MemoryStore) Get(id string) (*Task, bool) {
 	return cloneTask(t), ok
 }
 
+// Public status and downloads do not need to copy saved prompts, credentials or image bodies.
+func (s *MemoryStore) PublicTask(id string) (*Task, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	t, ok := s.tasks[id]
+	if !ok {
+		return nil, false
+	}
+	return &Task{ID: t.ID, Status: t.Status, CallbackState: t.CallbackState, CreatedAt: t.CreatedAt,
+		UserID: t.UserID, KeyID: t.KeyID, FilesDeletedAt: t.FilesDeletedAt,
+		ErrorMessage: t.ErrorMessage, FilesAcknowledged: t.FilesAcknowledged, DownloadToken: t.DownloadToken,
+		Files: append([]ResultFile(nil), t.Files...)}, true
+}
+
 func (s *MemoryStore) Update(task *Task) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -135,6 +151,9 @@ func (s *MemoryStore) Update(task *Task) error {
 	}
 	if prev := s.tasks[task.ID]; prev != nil && prev.FilesAcknowledged {
 		task.FilesAcknowledged = true
+		task.FilesDeletedAt = prev.FilesDeletedAt
+		task.Response = nil
+		task.Result = nil
 	}
 	if err := s.persist(task); err != nil {
 		return err
@@ -213,25 +232,42 @@ func (s *MemoryStore) Delete(id string) error {
 
 // GCFiles expires only terminal results already accepted by the main site.
 func (s *MemoryStore) GCFiles(hours int, root string) (int, error) {
-	if hours <= 0 {
-		return 0, nil
-	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	removed := 0
 	for id, prev := range s.tasks {
-		if prev.CallbackState != CallbackConfirmed || prev.FilesAcknowledged || prev.Status != StatusSucceeded || prev.CompletedAt == nil || time.Since(*prev.CompletedAt)/time.Hour < time.Duration(hours) {
+		if prev.CallbackState != CallbackConfirmed || prev.FilesDeletedAt != nil || prev.Status != StatusSucceeded || prev.CompletedAt == nil || (!prev.FilesAcknowledged && !s.deletions.hasRetentionTask(id) && (hours <= 0 || time.Since(*prev.CompletedAt)/time.Hour < time.Duration(hours))) {
 			continue
 		}
 		// Never let a malformed persisted task turn cleanup into deletion outside the media directory.
 		if root == "" || id == "" || id == "." || id == ".." || filepath.Base(id) != id {
 			return removed, fmt.Errorf("invalid media cleanup path for task %q", id)
 		}
+		if info, err := os.Stat(root); err != nil || !info.IsDir() {
+			return removed, fmt.Errorf("media storage root is unavailable")
+		}
+		ids := make([]string, 0, len(prev.Files))
+		for _, file := range prev.Files {
+			ids = append(ids, file.ID)
+		}
+		ev := newDeletionEvent(prev, ids, time.Now().UTC(), "retention_expired")
+		if len(ids) > 0 {
+			if err := s.deletions.put(ev, false); err != nil {
+				return removed, err
+			}
+		}
 		if err := os.RemoveAll(filepath.Join(root, id)); err != nil {
 			return removed, err
 		}
+		ev.DeletedAt = time.Now().UTC()
+		if len(ids) > 0 {
+			if err := s.deletions.put(ev, true); err != nil {
+				return removed, err
+			}
+		}
 		task := cloneTask(prev)
 		task.FilesAcknowledged = true
+		task.FilesDeletedAt = &ev.DeletedAt
 		// Raw upstream responses can also contain the expired image as base64.
 		task.Response = nil
 		task.Result = nil
@@ -299,6 +335,9 @@ func NewDiskStore(root string) (*MemoryStore, error) {
 	}
 	s := NewMemoryStore(nil)
 	s.root = root
+	if err := s.deletions.load(filepath.Join(root, "file-deletions")); err != nil {
+		return nil, err
+	}
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		return nil, err

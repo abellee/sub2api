@@ -49,15 +49,19 @@ type settleEvent struct {
 // SettleServer 处理 mediad 的终态回调:
 // 验签(HMAC,与注册的 callback_secret 一致)→ 幂等 → 交给 Sink 结算。
 type SettleServer struct {
-	secret   SettleCallbackSecretProvider
-	sink     SettlementSink
-	dedupTTL time.Duration
+	secret    SettleCallbackSecretProvider
+	sink      SettlementSink
+	deletions FileDeletionSink
+	dedupTTL  time.Duration
 
 	mu         sync.Mutex
 	seen       map[string]time.Time
 	processing map[string]bool
 	login      func(format string, args ...any) // 可注入日志;nil 用静默
 }
+
+// SetFileDeletionSink must be called before serving callbacks.
+func (s *SettleServer) SetFileDeletionSink(sink FileDeletionSink) { s.deletions = sink }
 
 // NewSettleServer 创建回调处理服务。dedupTTL 为幂等记忆窗口(默认 24h)。
 func NewSettleServer(secret SettleCallbackSecretProvider, sink SettlementSink, dedupTTL time.Duration) *SettleServer {
@@ -105,6 +109,28 @@ func (s *SettleServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if ev.Event == "callback.test" {
 		writeJSON(w, 200, map[string]any{"received": true})
+		return
+	}
+	if ev.Event == "files.deleted" {
+		var deletion FileDeletionEvent
+		if err := json.Unmarshal(body, &deletion); err != nil {
+			writeJSON(w, 400, map[string]any{"error": "invalid file deletion event"})
+			return
+		}
+		if s.deletions == nil {
+			writeJSON(w, 503, map[string]any{"error": "file deletion storage unavailable"})
+			return
+		}
+		if err := s.deletions.MarkDeleted(r.Context(), deletion); err != nil {
+			s.logf("[mediahub] file deletion failed task=%s: %v", deletion.TaskID, err)
+			writeJSON(w, 503, map[string]any{"error": "file deletion update failed"})
+			return
+		}
+		writeJSON(w, 200, map[string]any{"files_deleted": true, "event_id": deletion.EventID})
+		return
+	}
+	if ev.Event != "" && ev.Event != "task.completed" {
+		writeJSON(w, 400, map[string]any{"error": "unknown callback event"})
 		return
 	}
 	if strings.TrimSpace(ev.TaskID) == "" || (ev.Status != "succeeded" && ev.Status != "failed") {

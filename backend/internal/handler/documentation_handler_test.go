@@ -3,9 +3,11 @@
 package handler
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -15,6 +17,77 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+func TestDocumentationSkillDownloadUsesLatestSavedContent(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	store := service.NewGroupCategoryStore(filepath.Join(t.TempDir(), "config.db"))
+	snap, err := store.Documentation(context.Background())
+	require.NoError(t, err)
+	r := gin.New()
+	r.GET("/documentation/:id/skill", NewDocumentationHandler(store).DownloadSkill)
+	for _, content := range []string{"# Original full reference", "# Updated full reference\n\nNew parameters and examples"} {
+		snap.Articles[0].Content = content
+		snap.Articles[0].Agent.Template = "Current instructions\n{{document}}\n{{api_key}}"
+		require.NoError(t, store.SaveDocumentation(context.Background(), snap))
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/documentation/"+snap.Articles[0].ID+"/skill", nil))
+		require.Equal(t, http.StatusOK, w.Code)
+		require.Equal(t, "private, no-store", w.Header().Get("Cache-Control"))
+		require.Equal(t, `attachment; filename="tokenfree-creative.zip"`, w.Header().Get("Content-Disposition"))
+		archive, err := zip.NewReader(bytes.NewReader(w.Body.Bytes()), int64(w.Body.Len()))
+		require.NoError(t, err)
+		files := map[string]string{}
+		for _, file := range archive.File {
+			reader, err := file.Open()
+			require.NoError(t, err)
+			raw, err := io.ReadAll(reader)
+			require.NoError(t, err)
+			require.NoError(t, reader.Close())
+			files[file.Name] = string(raw)
+		}
+		require.Equal(t, content, files["tokenfree-creative/references/api.md"])
+		require.Contains(t, files["tokenfree-creative/SKILL.md"], "Current instructions")
+		require.Contains(t, files["tokenfree-creative/SKILL.md"], "name: tokenfree-creative")
+		require.Contains(t, files["tokenfree-creative/agents/openai.yaml"], "display_name: TokenFree Creative")
+	}
+}
+
+func TestDocumentationSkillDownloadOnlyExportsEnabledPublishedArticles(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	store := service.NewGroupCategoryStore(filepath.Join(t.TempDir(), "config.db"))
+	snap, err := store.Documentation(context.Background())
+	require.NoError(t, err)
+	snap.Articles[1].Published = false
+	snap.Articles[2].Agent.Enabled = false
+	require.NoError(t, store.SaveDocumentation(context.Background(), snap))
+	r := gin.New()
+	r.GET("/documentation/:id/skill", NewDocumentationHandler(store).DownloadSkill)
+	for _, tc := range []struct {
+		id     string
+		status int
+	}{
+		{snap.Articles[0].ID, http.StatusOK},
+		{snap.Articles[1].ID, http.StatusNotFound},
+		{snap.Articles[2].ID, http.StatusNotFound},
+		{"missing", http.StatusNotFound},
+	} {
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/documentation/"+tc.id+"/skill", nil)
+		req.Header.Set("Authorization", "Bearer synthetic-personal-secret")
+		r.ServeHTTP(w, req)
+		require.Equal(t, tc.status, w.Code)
+		require.Equal(t, "private, no-store", w.Header().Get("Cache-Control"))
+		if tc.status == http.StatusOK {
+			require.Equal(t, "application/zip", w.Header().Get("Content-Type"))
+			require.Contains(t, w.Header().Get("Content-Disposition"), ".zip")
+			archive, err := zip.NewReader(bytes.NewReader(w.Body.Bytes()), int64(w.Body.Len()))
+			require.NoError(t, err)
+			require.Len(t, archive.File, 3)
+		} else {
+			require.Empty(t, w.Header().Get("Content-Disposition"))
+		}
+	}
+}
 
 func TestDocumentationPublishedAndCategoryFiltering(t *testing.T) {
 	gin.SetMode(gin.TestMode)

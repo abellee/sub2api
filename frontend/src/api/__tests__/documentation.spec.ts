@@ -1,11 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { getDocumentation, getDocumentationCategories } from '../documentation'
+import { downloadDocumentationSkill, getDocumentation, getDocumentationCategories } from '../documentation'
 
 const { get } = vi.hoisted(() => ({ get: vi.fn() }))
 vi.mock('../client', () => ({ apiClient: { get } }))
 beforeEach(() => vi.clearAllMocks())
 
 describe('Documentation data API', () => {
+  it('downloads a Skill through the authenticated client as a blob', async () => {
+    const data = new Blob(['zip'], { type: 'application/zip' })
+    get.mockResolvedValue({ data })
+    expect(await downloadDocumentationSkill('custom/guide')).toBe(data)
+    expect(get).toHaveBeenCalledWith('/documentation/custom%2Fguide/skill', { responseType: 'blob' })
+  })
   it('passes a category identifier to the article endpoint and preserves the returned data', async () => {
     const data = { revision: 3, categories: [{ id: 'custom-guides', name: 'Custom guides' }], articles: [{ id: 'guide-1', category_id: 'custom-guides', content: '# Guide', agent: { template: '{{document}}' } }] }
     get.mockResolvedValue({ data })

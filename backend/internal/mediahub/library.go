@@ -22,6 +22,7 @@ func (s *ResultLinkStore) LibraryPage(ctx context.Context, userID int64, after, 
 		if err = rows.Scan(&v.ID, &v.UserID, &v.TaskID, &v.FileID, &v.Model, &v.DownloadURL, &v.ContentType, &v.SizeBytes, &v.SHA256, &v.CreatedAt); err != nil {
 			return nil, "", err
 		}
+		v.applyDeletion()
 		out = append(out, v)
 	}
 	if err := rows.Err(); err != nil {
@@ -35,10 +36,10 @@ func (s *ResultLinkStore) LibraryPage(ctx context.Context, userID int64, after, 
 	return out, next, nil
 }
 
-func (s *ResultLinkStore) MarkDeleted(ctx context.Context, userID int64, id string) error {
+func (s *ResultLinkStore) MarkUserDeleted(ctx context.Context, userID int64, id string) error {
 	if s == nil || s.db == nil {
 		return errors.New("media result database is not configured")
 	}
-	_, err := s.db.ExecContext(ctx, `UPDATE media_generation_files SET deleted_at=$3 WHERE user_id=$1 AND id=$2 AND deleted_at IS NULL`, userID, id, time.Now())
+	_, err := s.db.ExecContext(ctx, `UPDATE media_generation_files SET deleted_at=$3,delete_reason='user_deleted' WHERE user_id=$1 AND id=$2 AND deleted_at IS NULL`, userID, id, time.Now())
 	return err
 }

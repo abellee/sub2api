@@ -23,6 +23,7 @@
       </details>
     </div>
     <div class="agent-actions"><button type="button" class="agent-copy" :disabled="keysLoading || !!keysError || (keys.length > 1 && !selectedKey)" @click="copyPrompt">复制提示词 ↗</button><span>{{ includesDocument ? '直接发给 Agent，无需再附文档。' : '按管理员配置复制提示词。' }}</span></div>
+    <CreativeSkillExport :article="article" />
     <p v-if="copyStatus" class="agent-status" role="status" aria-live="polite">{{ copyStatus }}</p>
   </section>
 </template>
@@ -31,6 +32,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import Select from '@/components/common/Select.vue'
 import Input from '@/components/common/Input.vue'
+import CreativeSkillExport from './CreativeSkillExport.vue'
 import { list } from '@/api/keys'
 import type { ApiKey } from '@/types'
 import type { DocumentationArticle } from '@/api/documentation'

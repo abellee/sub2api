@@ -142,7 +142,7 @@ func (h *MediaHubController) deleteLibrary(c *gin.Context) {
 	records := []mediahub.ResultLink{}
 	for _, id := range in.IDs {
 		record, err := h.links.Get(c.Request.Context(), userID, id)
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, sql.ErrNoRows) || (err == nil && record.DeletedAt != nil) {
 			deleted = append(deleted, id)
 			continue
 		}
@@ -160,7 +160,7 @@ func (h *MediaHubController) deleteLibrary(c *gin.Context) {
 		}
 		for i, state := range states {
 			id := records[i].ID
-			if !state.Deleted || h.links.MarkDeleted(c.Request.Context(), userID, id) != nil {
+			if !state.Deleted || h.links.MarkUserDeleted(c.Request.Context(), userID, id) != nil {
 				failed = append(failed, id)
 			} else {
 				deleted = append(deleted, id)

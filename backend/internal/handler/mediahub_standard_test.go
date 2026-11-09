@@ -21,7 +21,7 @@ import (
 )
 
 func TestMediaStandardEndpoints(t *testing.T) {
-	for _, protocol := range []string{"openai", "openai_async", "gemini", "grok_image"} {
+	for _, protocol := range []string{"openai", "openai_async", "gemini_async", "gemini", "grok_image"} {
 		t.Run(protocol, func(t *testing.T) {
 			stateQueries := 0
 			media := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -30,7 +30,7 @@ func TestMediaStandardEndpoints(t *testing.T) {
 				}
 				if r.Method == "POST" {
 					want := "gpt-image-2.6"
-					if protocol == "gemini" {
+					if strings.HasPrefix(protocol, "gemini") {
 						want = "gemini-3-pro-image"
 					}
 					if protocol == "grok_image" {
@@ -40,14 +40,14 @@ func TestMediaStandardEndpoints(t *testing.T) {
 						t.Error("model missing from relay", r.Header.Get(mediahub.HeaderModel))
 					}
 					w.WriteHeader(202)
-					_, _ = w.Write([]byte(`{"task_id":"mtask_standard"}`))
+					_, _ = w.Write([]byte(`{"task_id":"mtask_standard","result_url":"https://media.example/downloads/mtask_standard/result?token=opaque"}`))
 					return
 				}
 				switch r.URL.Query().Get("response_format") {
 				case "state":
 					stateQueries++
 					status, callback := "processing", "pending"
-					if stateQueries > 1 || protocol == "openai_async" {
+					if stateQueries > 1 || strings.HasSuffix(protocol, "_async") {
 						status = "succeeded"
 						callback = "confirmed"
 					}
@@ -85,9 +85,12 @@ func TestMediaStandardEndpoints(t *testing.T) {
 			router.GET("/v1/images/tasks/:task_id", func(c *gin.Context) { controller.TryStandardImageTask(c) })
 			router.POST("/v1beta/models/*modelAction", func(c *gin.Context) { controller.TryStandardGemini(c) })
 			path, body := "/v1/images/generations", `{"model":"gpt-image-2.6","prompt":"test","response_format":"url"}`
-			if protocol == "gemini" {
+			if strings.HasPrefix(protocol, "gemini") {
 				path = "/v1beta/models/gemini-3-pro-image:generateContent"
 				body = `{"contents":[{"parts":[{"text":"test"}]}]}`
+			}
+			if protocol == "gemini_async" {
+				path += "?async=true"
 			}
 			if protocol == "openai_async" {
 				path += "/async"
@@ -99,7 +102,7 @@ func TestMediaStandardEndpoints(t *testing.T) {
 			r := httptest.NewRequest("POST", path, strings.NewReader(body))
 			r.Header.Set("Content-Type", "application/json")
 			router.ServeHTTP(w, r)
-			if protocol == "openai_async" {
+			if strings.HasSuffix(protocol, "_async") {
 				if w.Code != 202 || gjson.Get(w.Body.String(), "poll_url").String() != "/v1/images/tasks/mtask_standard" {
 					t.Fatal(w.Code, w.Body.String())
 				}
@@ -108,9 +111,11 @@ func TestMediaStandardEndpoints(t *testing.T) {
 				if w.Code != 200 || gjson.Get(w.Body.String(), "status").String() != "completed" {
 					t.Fatal(w.Code, w.Body.String())
 				}
+			} else if stateQueries != 0 {
+				t.Fatal("main polled while waiting", stateQueries)
 			} else if w.Code != 200 {
 				t.Fatal(w.Code, w.Body.String())
-			} else if protocol == "gemini" && !gjson.Get(w.Body.String(), "candidates.0.content.parts.0.inlineData.data").Exists() {
+			} else if strings.HasPrefix(protocol, "gemini") && !gjson.Get(w.Body.String(), "candidates.0.content.parts.0.inlineData.data").Exists() {
 				t.Fatal("native response lost", w.Body.String())
 			} else if protocol != "gemini" && !gjson.Get(w.Body.String(), "data.0.url").Exists() {
 				t.Fatal("standard images response lost", w.Body.String())
@@ -133,14 +138,14 @@ func TestMediaImageMultipart(t *testing.T) {
 		_, _ = part.Write([]byte("\x89PNG\r\n\x1a\nimage"))
 	}
 	_ = w.Close()
-	out, err := mediaImageMultipart(body.Bytes(), w.FormDataContentType())
+	out, err := mediaImageMultipartMetadata(body.Bytes(), w.FormDataContentType())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !gjson.GetBytes(out, "stream").Bool() || gjson.GetBytes(out, "n").Int() != 2 || len(gjson.GetBytes(out, "images").Array()) != 2 || !strings.HasPrefix(gjson.GetBytes(out, "mask.image_url").String(), "data:image/png;base64,") {
-		t.Fatal("multipart options or files lost")
+	if !gjson.GetBytes(out, "stream").Bool() || gjson.GetBytes(out, "n").Int() != 2 || gjson.GetBytes(out, "images").Exists() || gjson.GetBytes(out, "mask").Exists() || gjson.GetBytes(out, "prompt").Exists() {
+		t.Fatal("routing metadata lost or image bytes encoded by main")
 	}
-	if _, err = mediaImageMultipart(body.Bytes(), "multipart/form-data"); err == nil {
+	if _, err = mediaImageMultipartMetadata(body.Bytes(), "multipart/form-data"); err == nil {
 		t.Fatal("missing boundary accepted")
 	}
 }
@@ -150,15 +155,28 @@ func TestMediaImageStreamFlushesBeforeCompletion(t *testing.T) {
 		t.Run(endpoint, func(t *testing.T) {
 			release := make(chan struct{})
 			media := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Query().Get("response_format") == "state" {
-					<-release
-					_, _ = w.Write([]byte(`{"status":"succeeded","callback_state":"confirmed"}`))
+				wantFormat := "openai_sse"
+				event := "image_generation.completed"
+				if endpoint == "edits" {
+					wantFormat = "openai_edit_sse"
+					event = "image_edit.completed"
+				}
+				if r.URL.Query().Get("response_format") != wantFormat || r.URL.Query().Get("wait") != "true" {
+					t.Error("main must delegate one wait/stream to media", r.URL.RawQuery)
+				}
+				w.Header().Set("Content-Type", "text/event-stream")
+				_, _ = io.WriteString(w, ": keep-alive\n\n")
+				flusher, ok := w.(http.Flusher)
+				if !ok {
+					t.Error("test server does not support flushing")
 					return
 				}
-				if r.URL.Query().Get("response_format") != "openai_b64_json" {
-					t.Error("stream must contain base64")
+				flusher.Flush()
+				<-release
+				for _, image := range []string{"aW1hZ2Ux", "aW1hZ2Uy"} {
+					_, _ = io.WriteString(w, "event: "+event+"\ndata: {\"b64_json\":\""+image+"\",\"created_at\":123}\n\n")
 				}
-				_, _ = w.Write([]byte(`{"created":123,"output_format":"png","data":[{"b64_json":"aW1hZ2Ux","download_url":"https://d.tokenfree.dev/1"},{"b64_json":"aW1hZ2Uy","download_url":"https://d.tokenfree.dev/2"}]}`))
+
 			}))
 			defer media.Close()
 			h := &MediaHubRelayHandler{cfg: MediaHubConfig{MediadBaseURL: media.URL, RelaySecret: "test", ForwardTimeout: 5 * time.Second}, client: media.Client()}
@@ -173,7 +191,7 @@ func TestMediaImageStreamFlushesBeforeCompletion(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 			reader := bufio.NewReader(resp.Body)
 			line, err := reader.ReadString('\n')
 			if err != nil || line != ": keep-alive\n" {
@@ -196,11 +214,17 @@ func TestMediaImageStreamFlushesBeforeCompletion(t *testing.T) {
 }
 
 func TestMediaStandardStreamFailure(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "event: error\ndata: {\"error\":{\"code\":\"content_policy_violation\"}}\n\n")
+	}))
+	defer upstream.Close()
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Header("Content-Type", "text/event-stream")
-	c.Writer.Flush()
-	mediaStreamResult(c, &mediahub.ForwardResponse{StatusCode: 400, Body: []byte(`{"error":{"code":"content_policy_violation","message":"blocked"}}`)})
+	c.Request = httptest.NewRequest("POST", "/v1/images/generations", nil)
+	c.Set(mediaProtocolKey, "openai")
+	h := &MediaHubRelayHandler{cfg: MediaHubConfig{MediadBaseURL: upstream.URL, ForwardTimeout: time.Second}, client: upstream.Client()}
+	h.finishStandard(c, &mediahub.ForwardResponse{StatusCode: 202, Body: []byte(`{"task_id":"mtask_error"}`)}, []byte(`{"stream":true}`), 42, 7, 3)
 	if !strings.Contains(w.Body.String(), "event: error") || !strings.Contains(w.Body.String(), "content_policy_violation") {
 		t.Fatal(w.Body.String())
 	}

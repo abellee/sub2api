@@ -27,21 +27,25 @@ func TestMediaGrokVideoLifecycle(t *testing.T) {
 				t.Error("image rule used for video", r.URL.Path)
 			}
 			raw, _ := io.ReadAll(r.Body)
-			if gjson.GetBytes(raw, "model").String() != "grok-imagine-video" {
+			if r.Header.Get(mediahub.HeaderModel) != "grok-imagine-video" || gjson.GetBytes(raw, "model").Exists() {
 				t.Error("missing video model")
 			}
 			w.WriteHeader(202)
-			io.WriteString(w, `{"task_id":"mtask_video"}`)
+			_, _ = io.WriteString(w, `{"task_id":"mtask_video","result_url":"https://d.tokenfree.dev/downloads/mtask_video/result?token=test"}`)
 			return
 		}
 		if r.URL.Query().Get("response_format") == "state" {
-			io.WriteString(w, `{"status":"`+status+`","callback_state":"confirmed"}`)
+			_, _ = io.WriteString(w, `{"status":"`+status+`","callback_state":"confirmed"}`)
 			return
 		}
 		if r.URL.Query().Get("response_format") != "grok_video" {
 			t.Error("wrong result format")
 		}
-		io.WriteString(w, `{"request_id":"mtask_video","status":"done","video":{"url":"https://d.tokenfree.dev/downloads/video.mp4","duration":6}}`)
+		if status != "succeeded" {
+			_, _ = io.WriteString(w, `{"request_id":"mtask_video","status":"pending"}`)
+			return
+		}
+		_, _ = io.WriteString(w, `{"request_id":"mtask_video","status":"done","video":{"url":"https://d.tokenfree.dev/downloads/video.mp4","duration":6}}`)
 	}))
 	defer media.Close()
 	bindings, err := mediahub.NewBindingStore(filepath.Join(t.TempDir(), "bindings.json"))
@@ -73,7 +77,7 @@ func TestMediaGrokVideoLifecycle(t *testing.T) {
 		router.ServeHTTP(w, r)
 		return w
 	}
-	if w := request("POST", "/v1/videos/generations"); w.Code != 200 || gjson.Get(w.Body.String(), "request_id").String() != "mtask_video" {
+	if w := request("POST", "/v1/videos/generations"); w.Code != 200 || gjson.Get(w.Body.String(), "request_id").String() != "mtask_video" || gjson.Get(w.Body.String(), "id").String() != "mtask_video" {
 		t.Fatal(w.Code, w.Body.String())
 	}
 	if w := request("GET", "/v1/videos/mtask_video"); w.Code != 200 || gjson.Get(w.Body.String(), "status").String() != "pending" {

@@ -6,6 +6,26 @@ import { defaultDocumentationAgent, renderAgentTemplate, renderDocumentationMark
 const article = () => structuredClone(defaults.articles[0]) as DocumentationArticle
 
 describe('Markdown documentation', () => {
+  it('contains wide tables without changing columns or escaped pipes in code', () => {
+    const result = renderDocumentationMarkdown('| Parameter | Type | Description |\n| --- | --- | --- |\n| `response_format` | `url \\| b64_json` | A long endpoint: `/v1/images/generations/async` |')
+    const doc = new DOMParser().parseFromString(result.html, 'text/html')
+    const scroll = doc.querySelector('.docs-table-scroll')!
+    expect(scroll.getAttribute('tabindex')).toBe('0')
+    expect(scroll.getAttribute('role')).toBe('region')
+    expect(scroll.querySelectorAll('th')).toHaveLength(3)
+    expect(scroll.querySelectorAll('td')).toHaveLength(3)
+    expect(scroll.querySelectorAll('td')[1].textContent).toBe('url | b64_json')
+  })
+  it('uses the same code panel in previews and readers without changing literal code', () => {
+    const source = '```python\nprint("<API_KEY>")\n```'
+    for (const copyButtons of [false, true]) {
+      const result = renderDocumentationMarkdown(source, copyButtons)
+      const doc = new DOMParser().parseFromString(result.html, 'text/html')
+      expect(doc.querySelector('.docs-code-toolbar span')?.textContent).toBe('python')
+      expect(doc.querySelector('.docs-code-block pre code')?.textContent).toBe('print("<API_KEY>")\n')
+      expect(!!doc.querySelector('.docs-code-toolbar button[data-copy-code]')).toBe(copyButtons)
+    }
+  })
   it('finds heading levels and keeps duplicate headings unique while ignoring fenced headings', () => {
     const rendered = renderDocumentationMarkdown('# Title\n\n## Same\n\n### Same\n\n~~~md\n# Not a chapter\n~~~')
     expect(rendered.sections.map(section => [section.label, section.level])).toEqual([['Title', 1], ['Same', 2], ['Same', 3]])

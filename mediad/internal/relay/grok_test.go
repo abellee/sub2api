@@ -76,6 +76,9 @@ func TestGrokVideoSchemaEndToEnd(t *testing.T) {
 	tracker.SetCallback(CallbackConfig{URL: callback.URL, Enabled: true, Secret: "cb"})
 	mux := http.NewServeMux()
 	NewRelayHandler(registry, store, tracker, relaySecret, nil).Register(mux)
+	media := httptest.NewServer(mux)
+	defer media.Close()
+	tracker.ConfigureDownloads(media.URL)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, signedRequest(t, "POST", "/relay/grok-video/v1/videos/extensions", []byte(`{"model":"grok-imagine-video","video":{"url":"https://example.com/input.mp4"},"duration":6}`), map[string]string{HeaderUpstreamURL: upstream.URL, HeaderModel: "grok-imagine-video", "Content-Type": "application/json"}))
 	if w.Code != 202 {
@@ -95,12 +98,41 @@ func TestGrokVideoSchemaEndToEnd(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
+	public, err := http.Get(accepted["result_url"].(string))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ready struct {
+		Status string `json:"status"`
+		Result struct {
+			Data []struct {
+				URL  string `json:"url"`
+				MIME string `json:"mime_type"`
+			} `json:"data"`
+		} `json:"result"`
+	}
+	err = json.NewDecoder(public.Body).Decode(&ready)
+	_ = public.Body.Close()
+	if err != nil || ready.Status != "completed" || len(ready.Result.Data) != 1 || ready.Result.Data[0].MIME != "video/mp4" {
+		t.Fatal("video result unavailable", ready, err)
+	}
+	download, _ := http.NewRequest("GET", ready.Result.Data[0].URL, nil)
+	download.Header.Set("Range", "bytes=0-7")
+	file, err := http.DefaultClient.Do(download)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := io.ReadAll(file.Body)
+	_ = file.Body.Close()
+	if err != nil || file.StatusCode != 206 || len(data) != 8 || file.Header.Get("Access-Control-Allow-Origin") != "*" {
+		t.Fatal("video player cannot read a range", file.StatusCode, string(data), err)
+	}
 	target := "/relay/tasks/" + id + "?response_format=grok_video"
 	w = httptest.NewRecorder()
 	mux.ServeHTTP(w, signedRequest(t, "GET", target, nil, nil))
 	var result map[string]any
 	json.Unmarshal(w.Body.Bytes(), &result)
-	if w.Code != 200 || result["status"] != "done" || !strings.Contains(result["video"].(map[string]any)["url"].(string), ".mp4?") {
+	if w.Code != 200 || result["status"] != "done" || result["id"] != id || result["video_url"] != result["video"].(map[string]any)["url"] || !strings.Contains(result["video_url"].(string), ".mp4?") {
 		t.Fatal(w.Code, w.Body.String())
 	}
 	w = httptest.NewRecorder()

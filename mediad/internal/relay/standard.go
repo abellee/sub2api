@@ -33,6 +33,10 @@ func (h *RelayHandler) handleStandardResult(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if task.Status != StatusSucceeded || task.CallbackState != CallbackConfirmed || len(task.Files) == 0 {
+		if format == "grok_video" {
+			writeJSON(w, 200, map[string]any{"id": task.ID, "request_id": task.ID, "status": "pending"})
+			return
+		}
 		writeError(w, 409, "result_pending", "result or settlement is pending")
 		return
 	}
@@ -46,24 +50,15 @@ func (h *RelayHandler) handleStandardResult(w http.ResponseWriter, r *http.Reque
 		if task.Usage != nil {
 			video["duration"] = task.Usage.Quantity
 		}
-		writeJSON(w, 200, map[string]any{"request_id": task.ID, "status": "done", "model": task.Model, "video": video})
+		writeJSON(w, 200, map[string]any{"id": task.ID, "request_id": task.ID, "status": "done", "model": task.Model, "video": video, "video_url": video["url"], "url": video["url"]})
 		return
 	}
 	if format == "gemini" {
 		// Deleted images must not survive in the original inline response.
 		if len(task.DeletedFileIDs) > 0 {
-			if h.tracker.stager == nil {
-				writeError(w, 503, "storage_unavailable", "result storage unavailable")
-				return
-			}
-			parts := make([]map[string]any, 0, len(task.Files))
+			parts := make([]any, 0, len(task.Files))
 			for _, file := range task.Files {
-				raw, err := os.ReadFile(filepath.Join(h.tracker.stager.Root, task.ID, file.ID))
-				if err != nil {
-					writeError(w, 503, "file_unavailable", "saved result unavailable")
-					return
-				}
-				parts = append(parts, map[string]any{"inlineData": map[string]any{"mimeType": file.ContentType, "data": base64.StdEncoding.EncodeToString(raw)}})
+				parts = append(parts, map[string]any{"fileData": map[string]any{"mimeType": file.ContentType, "fileUri": formattedDownloadURL(file)}})
 			}
 			out["candidates"] = []any{map[string]any{"content": map[string]any{"role": "model", "parts": parts}, "finishReason": "STOP"}}
 		}
@@ -74,6 +69,32 @@ func (h *RelayHandler) handleStandardResult(w http.ResponseWriter, r *http.Reque
 		urls := make([]string, 0, len(task.Files))
 		for _, file := range task.Files {
 			urls = append(urls, formattedDownloadURL(file))
+		}
+		// Canvas and Gemini clients can read fileData without transferring image bodies through the gateway.
+		fileIndex := 0
+		candidates, _ := out["candidates"].([]any)
+		for _, candidate := range candidates {
+			fields, _ := candidate.(map[string]any)
+			content, _ := fields["content"].(map[string]any)
+			parts, _ := content["parts"].([]any)
+			for _, part := range parts {
+				fields, _ := part.(map[string]any)
+				if fields == nil || fileIndex >= len(task.Files) {
+					continue
+				}
+				_, inline := fields["inlineData"]
+				_, snakeInline := fields["inline_data"]
+				_, file := fields["fileData"]
+				_, snakeFile := fields["file_data"]
+				if !inline && !snakeInline && !file && !snakeFile {
+					continue
+				}
+				delete(fields, "inlineData")
+				delete(fields, "inline_data")
+				delete(fields, "file_data")
+				fields["fileData"] = map[string]any{"mimeType": task.Files[fileIndex].ContentType, "fileUri": urls[fileIndex]}
+				fileIndex++
+			}
 		}
 		out["download_urls"] = urls
 	} else {

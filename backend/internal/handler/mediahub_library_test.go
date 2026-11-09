@@ -167,7 +167,7 @@ func TestMediaLibraryIsolationPaginationAndDeletion(t *testing.T) {
 	if err := links.MarkReady(ctx, 42, "mtask_library_0"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := links.Get(ctx, 42, ids[0]); err == nil {
+	if record, err := links.Get(ctx, 42, ids[0]); err != nil || record.Status != "deleted" || record.DownloadURL != "" || record.DeleteReason != "user_deleted" {
 		t.Fatal("deleted record visible")
 	}
 	if w := request("POST", "/media-files/delete", body, "owner"); w.Code != 200 || deletedRefs != 1 {
