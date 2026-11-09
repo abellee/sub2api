@@ -14,6 +14,7 @@ export default {
     deletedCount: '{count} files deleted', failedCount: '{count} files could not be deleted. You can retry.',
     collecting: 'Finding all creations…', clearIncomplete: 'Cleanup incomplete', clearLoadError: 'Could not load all creations. No deletion has started. Please retry.',
     batchHint: 'Deleting 10 files per batch. Please keep this page open.', preview: 'Preview', previous: 'Previous creation', next: 'Next creation',
+    download: 'Download file',
     previewTools: 'Preview tools', zoomIn: 'Zoom in', zoomOut: 'Zoom out', rotate: 'Rotate clockwise', resetView: 'Reset zoom and rotation',
     openPreview: 'Preview {name}', previewError: 'Thumbnail unavailable. Click to try the preview.', generatedFile: 'Generated creation'
   }

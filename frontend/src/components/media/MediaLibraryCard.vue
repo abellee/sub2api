@@ -44,7 +44,7 @@ onUnmounted(() => { observer?.disconnect(); resizeObserver?.disconnect() })
     </button>
     <div class="card-info">
       <div class="card-model" :title="file.model">{{ file.model || t('mediaLibrary.generatedFile') }}</div>
-      <div class="card-bottom"><span class="card-countdown" :class="{ urgent: remaining !== null && remaining < 3600 }" :title="file.expires_at ? new Date(file.expires_at).toLocaleString() : ''"><Icon name="clock" size="xs" />{{ countdown }}</span><button class="card-delete" :disabled="disabled" :aria-label="t('mediaLibrary.deleteTitle')" @click="$emit('delete')"><Icon name="trash" size="sm" /></button></div>
+      <div class="card-bottom"><span class="card-countdown" :class="{ urgent: remaining !== null && remaining < 3600 }" :title="file.expires_at ? new Date(file.expires_at).toLocaleString() : ''"><Icon name="clock" size="xs" />{{ countdown }}</span><span class="card-actions"><a class="card-download" :href="disabled ? undefined : file.download_url" download :aria-label="t('mediaLibrary.download')" :title="t('mediaLibrary.download')" :aria-disabled="disabled || undefined" :tabindex="disabled ? -1 : undefined" referrerpolicy="no-referrer" @click.stop><Icon name="download" size="sm" /></a><button class="card-delete" :disabled="disabled" :aria-label="t('mediaLibrary.deleteTitle')" @click="$emit('delete')"><Icon name="trash" size="sm" /></button></span></div>
     </div>
   </article>
 </template>
@@ -62,6 +62,11 @@ onUnmounted(() => { observer?.disconnect(); resizeObserver?.disconnect() })
 .card-bottom { display: flex; align-items: center; justify-content: space-between; gap: 4px; margin-top: 6px; }
 .card-countdown { display: flex; align-items: center; gap: 5px; font-size: 11px; font-variant-numeric: tabular-nums; color: #8490a2; }
 .card-countdown.urgent { color: #d78235; }
+.card-actions { display: flex; align-items: center; }
+.card-download { display: grid; place-items: center; padding: 8px; color: #8c98aa; border-radius: 8px; }
+.card-download:hover { color: #2563eb; background: #eff6ff; }
+.card-download[aria-disabled=true] { opacity: .4; cursor: not-allowed; }
+.card-download:focus-visible, .card-delete:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
 .card-delete { padding: 8px; color: #8c98aa; border-radius: 8px; }
 .card-delete:hover { color: #dc3545; background: #fff0f1; }
 .card-delete:disabled { opacity: .4; cursor: not-allowed; }

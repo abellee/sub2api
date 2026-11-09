@@ -14,6 +14,7 @@ export default {
     deletedCount: '已删除 {count} 个文件', failedCount: '{count} 个文件删除失败，可重试。',
     collecting: '正在获取全部作品…', clearIncomplete: '清理未完成', clearLoadError: '未能获取全部作品，尚未开始删除，请重试。',
     batchHint: '每批删除 10 个文件，请保持页面打开。', preview: '作品预览', previous: '上一个作品', next: '下一个作品',
+    download: '下载文件',
     previewTools: '预览工具', zoomIn: '放大', zoomOut: '缩小', rotate: '顺时针旋转', resetView: '重置缩放和旋转',
     openPreview: '预览 {name}', previewError: '缩略图暂不可用，点击重试预览', generatedFile: '生成的作品'
   }

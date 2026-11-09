@@ -112,7 +112,7 @@ describe('user media library', () => {
     for (let i = 0; i < 5; i++) await click('缩小')
     expect(transform()).toContain('scale(0.25)')
     expect(lightbox().querySelector<HTMLButtonElement>('[aria-label="缩小"]')!.disabled).toBe(true)
-    const last = lightbox().querySelector<HTMLButtonElement>('[aria-label="顺时针旋转"]')!
+    const last = lightbox().querySelector<HTMLAnchorElement>('[aria-label="下载文件"]')!
     last.focus()
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', cancelable: true }))
     expect(document.activeElement).toBe(lightbox().querySelector('.lightbox-close'))
@@ -121,6 +121,30 @@ describe('user media library', () => {
     expect(document.querySelector('.library-lightbox')).toBeNull()
     expect(document.body.classList.contains('media-lightbox-open')).toBe(false)
     expect(document.activeElement).toBe(origin)
+  })
+
+  it('downloads the original image and video from cards and the current lightbox', async () => {
+    const media = [file(0), file(1)]
+    media[0].download_url = 'https://d.example/downloads/image.png?token=image-signature'
+    media[1].download_url = 'https://d.example/downloads/video.mp4?token=video-signature'
+    await open(media)
+    for (const item of media) {
+      const card = wrapper.get(`[data-media-id="${item.id}"]`)
+      const download = card.get('a[aria-label="下载文件"]')
+      expect(download.attributes('href')).toBe(item.download_url)
+      expect(download.attributes('download')).toBeDefined()
+      expect(download.attributes('referrerpolicy')).toBe('no-referrer')
+      expect(download.find('img, video').exists()).toBe(false)
+    }
+    await wrapper.get('[data-media-id="mf0"] .card-preview').trigger('click')
+    const link = () => document.querySelector<HTMLAnchorElement>('.lightbox-download')!
+    expect(link().getAttribute('href')).toBe(media[0].download_url)
+    expect(link().hasAttribute('download')).toBe(true)
+    document.querySelector<HTMLButtonElement>('.lightbox-next')!.click()
+    await flushPromises()
+    expect(link().getAttribute('href')).toBe(media[1].download_url)
+    expect(document.querySelector('.library-lightbox video')).not.toBeNull()
+    expect(mediaLibraryAPI.delete).not.toHaveBeenCalled()
   })
 
   it('clears unloaded files of all types in batches of 10 and retains failures for retry', async () => {

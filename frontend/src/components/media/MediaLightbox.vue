@@ -46,7 +46,7 @@ function drag(event: PointerEvent) {
 function keyboard(event: KeyboardEvent) {
   if (event.key === 'Escape') { event.preventDefault(); emit('close'); return }
   if (event.key === 'Tab') {
-    const controls = [...(overlay.value?.querySelectorAll<HTMLElement>('button:not(:disabled), video[controls]') || [])]
+    const controls = [...(overlay.value?.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], video[controls]') || [])]
     const index = controls.indexOf(document.activeElement as HTMLElement)
     if (index === -1 || (event.shiftKey && index === 0) || (!event.shiftKey && index === controls.length - 1)) {
       event.preventDefault()
@@ -92,6 +92,8 @@ onUnmounted(() => {
         <button class="lightbox-button" :disabled="scale >= 4" :aria-label="t('mediaLibrary.zoomIn')" :title="t('mediaLibrary.zoomIn')" @click="zoom(0.25)"><Icon name="plus" size="md" /></button>
         <span class="lightbox-divider" />
         <button class="lightbox-button" :aria-label="t('mediaLibrary.rotate')" :title="t('mediaLibrary.rotate')" @click="rotation = (rotation + 90) % 360"><Icon name="rotate" size="md" /></button>
+        <span class="lightbox-divider" />
+        <a class="lightbox-button lightbox-download" :href="file.download_url" download :aria-label="t('mediaLibrary.download')" :title="t('mediaLibrary.download')" referrerpolicy="no-referrer" @click.stop><Icon name="download" size="md" /></a>
       </div>
     </div>
   </Teleport>
