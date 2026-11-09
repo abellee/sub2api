@@ -166,7 +166,12 @@ func TestMediaImageStreamFlushesBeforeCompletion(t *testing.T) {
 				}
 				w.Header().Set("Content-Type", "text/event-stream")
 				_, _ = io.WriteString(w, ": keep-alive\n\n")
-				w.(http.Flusher).Flush()
+				flusher, ok := w.(http.Flusher)
+				if !ok {
+					t.Error("test server does not support flushing")
+					return
+				}
+				flusher.Flush()
 				<-release
 				for _, image := range []string{"aW1hZ2Ux", "aW1hZ2Uy"} {
 					_, _ = io.WriteString(w, "event: "+event+"\ndata: {\"b64_json\":\""+image+"\",\"created_at\":123}\n\n")
@@ -186,7 +191,7 @@ func TestMediaImageStreamFlushesBeforeCompletion(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 			reader := bufio.NewReader(resp.Body)
 			line, err := reader.ReadString('\n')
 			if err != nil || line != ": keep-alive\n" {

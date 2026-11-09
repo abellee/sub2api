@@ -125,7 +125,7 @@ func TestMediaOffloadWithRealAgent(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(outbox, deletion.EventID+".json"), notice, 0600); err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command(binary)
+	cmd := exec.Command(binary) // #nosec G702 -- opt-in test fixture: developer supplies a locally built mediad binary, never request input.
 	cmd.Env = append(os.Environ(), "MEDIAD_LISTEN="+addr, "MEDIAD_DATA_DIR="+dir, "MEDIAD_RESULT_DIR="+filepath.Join(dir, "media"), "MEDIAD_DOWNLOAD_BASE_URL="+mediaURL, "MEDIAD_RELAY_SECRET=fixture-relay", "MEDIAD_MANAGEMENT_TOKEN=fixture-admin", "MEDIAD_CONFIG_PATH="+filepath.Join(dir, "settings.json"))
 	logFile, err := os.Create(filepath.Join(dir, "agent.log"))
 	if err != nil {

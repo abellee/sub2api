@@ -119,9 +119,10 @@ func (h *MediaHubController) TryStandardGemini(c *gin.Context) bool {
 func mediaStandardError(c *gin.Context, status int, message string) {
 	if strings.HasPrefix(c.GetString(mediaProtocolKey), "gemini") {
 		code := "INTERNAL"
-		if status == 400 {
+		switch status {
+		case 400:
 			code = "INVALID_ARGUMENT"
-		} else if status == 504 {
+		case 504:
 			code = "DEADLINE_EXCEEDED"
 		}
 		c.JSON(status, gin.H{"error": gin.H{"code": status, "message": message, "status": code}})

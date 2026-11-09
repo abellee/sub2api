@@ -31,11 +31,11 @@ func TestMediaGrokVideoLifecycle(t *testing.T) {
 				t.Error("missing video model")
 			}
 			w.WriteHeader(202)
-			io.WriteString(w, `{"task_id":"mtask_video","result_url":"https://d.tokenfree.dev/downloads/mtask_video/result?token=test"}`)
+			_, _ = io.WriteString(w, `{"task_id":"mtask_video","result_url":"https://d.tokenfree.dev/downloads/mtask_video/result?token=test"}`)
 			return
 		}
 		if r.URL.Query().Get("response_format") == "state" {
-			io.WriteString(w, `{"status":"`+status+`","callback_state":"confirmed"}`)
+			_, _ = io.WriteString(w, `{"status":"`+status+`","callback_state":"confirmed"}`)
 			return
 		}
 		if r.URL.Query().Get("response_format") != "grok_video" {
@@ -45,7 +45,7 @@ func TestMediaGrokVideoLifecycle(t *testing.T) {
 			_, _ = io.WriteString(w, `{"request_id":"mtask_video","status":"pending"}`)
 			return
 		}
-		io.WriteString(w, `{"request_id":"mtask_video","status":"done","video":{"url":"https://d.tokenfree.dev/downloads/video.mp4","duration":6}}`)
+		_, _ = io.WriteString(w, `{"request_id":"mtask_video","status":"done","video":{"url":"https://d.tokenfree.dev/downloads/video.mp4","duration":6}}`)
 	}))
 	defer media.Close()
 	bindings, err := mediahub.NewBindingStore(filepath.Join(t.TempDir(), "bindings.json"))
