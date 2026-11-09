@@ -38,6 +38,7 @@ describe('StudioSidebar', () => {
       expect(wrapper.findAll('.sidebar-nav a[href="/admin/dashboard"]')).toHaveLength(1)
       expect(wrapper.findAll('.sidebar-nav a[href="/dashboard"]')).toHaveLength(1)
       expect(wrapper.findAll('.sidebar-nav a[href="/admin/media-service"]')).toHaveLength(1)
+      expect(wrapper.findAll('.sidebar-nav a[href="/media-library"]')).toHaveLength(1)
       const personalSection = wrapper.findAll('.sidebar-section').find(section => section.find('a[href="/dashboard"]').exists())
       expect(personalSection?.find('.sidebar-section-title').text()).toBe('账户')
       expect(personalSection?.find('a[href="/dashboard"]').exists()).toBe(true)

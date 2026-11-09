@@ -50,6 +50,23 @@ func (h *RelayHandler) handleStandardResult(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if format == "gemini" {
+		// Deleted images must not survive in the original inline response.
+		if len(task.DeletedFileIDs) > 0 {
+			if h.tracker.stager == nil {
+				writeError(w, 503, "storage_unavailable", "result storage unavailable")
+				return
+			}
+			parts := make([]map[string]any, 0, len(task.Files))
+			for _, file := range task.Files {
+				raw, err := os.ReadFile(filepath.Join(h.tracker.stager.Root, task.ID, file.ID))
+				if err != nil {
+					writeError(w, 503, "file_unavailable", "saved result unavailable")
+					return
+				}
+				parts = append(parts, map[string]any{"inlineData": map[string]any{"mimeType": file.ContentType, "data": base64.StdEncoding.EncodeToString(raw)}})
+			}
+			out["candidates"] = []any{map[string]any{"content": map[string]any{"role": "model", "parts": parts}, "finishReason": "STOP"}}
+		}
 		if _, ok := out["candidates"]; !ok {
 			writeError(w, 502, "invalid_result", "Gemini candidates missing")
 			return

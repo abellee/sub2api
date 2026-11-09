@@ -222,6 +222,12 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/media-library',
+    name: 'MediaLibrary',
+    component: () => import('@/views/user/MediaLibraryView.vue'),
+    meta: { requiresAuth: true, requiresAdmin: false, title: 'My Creations', titleKey: 'mediaLibrary.title', descriptionKey: 'mediaLibrary.description' }
+  },
+  {
     path: '/docs/creative',
     name: 'CreativeDocs',
     component: () => import('@/views/user/CreativeDocsView.vue'),

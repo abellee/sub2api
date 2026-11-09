@@ -91,7 +91,7 @@ func (s *ResultLinkStore) List(ctx context.Context, userID int64, taskID string)
 	if s == nil || s.db == nil {
 		return nil, errors.New("media result database is not configured")
 	}
-	query := `SELECT id,user_id,task_id,file_id,model,download_url,content_type,size_bytes,sha256,created_at FROM media_generation_files WHERE user_id=$1 AND ready=true AND ($2='' OR task_id=$2) ORDER BY created_at DESC,id`
+	query := `SELECT id,user_id,task_id,file_id,model,download_url,content_type,size_bytes,sha256,created_at FROM media_generation_files WHERE user_id=$1 AND ready=true AND deleted_at IS NULL AND ($2='' OR task_id=$2) ORDER BY created_at DESC,id`
 	if taskID == "" {
 		query += " LIMIT 200"
 	}
@@ -115,6 +115,6 @@ func (s *ResultLinkStore) Get(ctx context.Context, userID int64, id string) (*Re
 		return nil, errors.New("media result database is not configured")
 	}
 	var v ResultLink
-	err := s.db.QueryRowContext(ctx, `SELECT id,user_id,task_id,file_id,model,download_url,content_type,size_bytes,sha256,created_at FROM media_generation_files WHERE user_id=$1 AND id=$2 AND ready=true`, userID, id).Scan(&v.ID, &v.UserID, &v.TaskID, &v.FileID, &v.Model, &v.DownloadURL, &v.ContentType, &v.SizeBytes, &v.SHA256, &v.CreatedAt)
+	err := s.db.QueryRowContext(ctx, `SELECT id,user_id,task_id,file_id,model,download_url,content_type,size_bytes,sha256,created_at FROM media_generation_files WHERE user_id=$1 AND id=$2 AND ready=true AND deleted_at IS NULL`, userID, id).Scan(&v.ID, &v.UserID, &v.TaskID, &v.FileID, &v.Model, &v.DownloadURL, &v.ContentType, &v.SizeBytes, &v.SHA256, &v.CreatedAt)
 	return &v, err
 }

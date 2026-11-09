@@ -32,6 +32,8 @@ func NewManagementHandler(registry *SchemaRegistry, store *MemoryStore, tracker 
 
 // Register 把管理端点挂到 mux。
 func (h *ManagementHandler) Register(mux *http.ServeMux) {
+	mux.Handle("POST /management/files/status", h.auth(h.handleLibrary))
+	mux.Handle("POST /management/files/delete", h.auth(h.handleLibrary))
 	if h.Settings != nil {
 		h.tracker.runtimeSettings = h.Settings
 		mux.Handle("GET /management/config", h.auth(h.handleConfig))

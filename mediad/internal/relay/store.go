@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 )
@@ -14,6 +15,7 @@ import (
 // → 回调 sub2api(confirmed)→ TTL 回收。
 // interrupted 表示持久化恢复时缺少凭证、无法继续轮询的任务。
 type Task struct {
+	DeletedFileIDs    []string         `json:"deleted_file_ids,omitempty"`
 	DownloadToken     string           `json:"download_token,omitempty"`
 	Schema            *Schema          `json:"schema,omitempty"`
 	Request           *UpstreamRequest `json:"request,omitempty"`
@@ -126,6 +128,11 @@ func (s *MemoryStore) Get(id string) (*Task, bool) {
 func (s *MemoryStore) Update(task *Task) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if prev := s.tasks[task.ID]; prev != nil && len(prev.DeletedFileIDs) > 0 {
+		task.DeletedFileIDs = slices.Clone(prev.DeletedFileIDs)
+		task.Files = slices.DeleteFunc(task.Files, func(f ResultFile) bool { return slices.Contains(task.DeletedFileIDs, f.ID) })
+		task.Response, task.Result = nil, nil
+	}
 	if prev := s.tasks[task.ID]; prev != nil && prev.FilesAcknowledged {
 		task.FilesAcknowledged = true
 	}

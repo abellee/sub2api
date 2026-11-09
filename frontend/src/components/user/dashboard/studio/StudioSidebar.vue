@@ -781,6 +781,7 @@ function buildSelfNavItems(withDashboard: boolean): NavItem[] {
     { path: '/affiliate', label: t('nav.affiliate'), icon: UsersIcon, hideInSimpleMode: true, featureFlag: flagAffiliate },
     { path: '/profile', label: t('nav.profile'), icon: UserIcon },
     { path: '/model-plaza', label: t('nav.modelPlaza'), icon: ChannelIcon },
+    { path: '/media-library', label: t('nav.mediaLibrary'), icon: MediaLibraryIcon },
     { path: '/docs/creative', label: t('nav.creativeDocs'), icon: CreativeDocsIcon },
     { path: '/redeem', label: t('nav.redeem'), icon: GiftIcon, hideInSimpleMode: true },
     ...customMenuItemsForUser.value.map((item): NavItem => ({
@@ -810,6 +811,7 @@ const userNavSections = computed(() => groupUserMenu(userNavItems.value, userMen
 const personalNavSections = computed(() => groupUserMenu(personalNavItems.value, userMenuStore.config.sections, t('nav.myAccount'), userMenuStore.config.hidden_items))
 
 // Custom menu items filtered by visibility
+const MediaLibraryIcon = { render: () => h(Icon, { name: 'grid', size: 'md' }) }
 const CreativeDocsIcon = { render: () => h(Icon, { name: 'book', size: 'md' }) }
 
 const customMenuItemsForUser = computed(() => {

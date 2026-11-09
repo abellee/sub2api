@@ -1,6 +1,6 @@
 export default {
   creativeDocs: {
-    title: '生图 / 生视频',
+    title: '生图/视频文档',
     description: '图片与视频 API 接入指南',
     images: '图片',
     videos: '视频',

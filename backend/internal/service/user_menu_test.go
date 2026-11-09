@@ -28,7 +28,7 @@ func TestUserMenuPersistence(t *testing.T) {
 	require.Empty(t, empty.Sections)
 
 	input := UserMenuConfig{Sections: []UserMenuSection{
-		{ID: " models ", Title: " 模型与服务 ", Items: []string{" /model-plaza ", "/keys", "/custom/docs-1", "/docs/creative"}},
+		{ID: " models ", Title: " 模型与服务 ", Items: []string{" /model-plaza ", "/keys", "/custom/docs-1", "/docs/creative", "/media-library"}},
 		{ID: "account", Title: "账户", Items: []string{"/usage", "/profile"}},
 		{ID: "empty", Title: "暂未分配"},
 	}}
@@ -36,7 +36,7 @@ func TestUserMenuPersistence(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "models", saved.Sections[0].ID)
 	require.Equal(t, "模型与服务", saved.Sections[0].Title)
-	require.Equal(t, []string{"/model-plaza", "/keys", "/custom/docs-1", "/docs/creative"}, saved.Sections[0].Items)
+	require.Equal(t, []string{"/model-plaza", "/keys", "/custom/docs-1", "/docs/creative", "/media-library"}, saved.Sections[0].Items)
 	require.NotNil(t, saved.Sections[2].Items)
 	svc = NewGroupCategoryStore(path)
 	loaded, err := svc.GetUserMenu(ctx)

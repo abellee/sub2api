@@ -190,6 +190,7 @@ export default {
     channels: 'Channels',
     availableChannels: 'Available Channels',
     modelPlaza: 'Model Plaza',
+    mediaLibrary: 'My Creations',
     creativeDocs: 'Image / Video Guide',
     documentation: 'Documentation',
     appCenter: 'App Center',

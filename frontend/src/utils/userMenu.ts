@@ -14,6 +14,7 @@ export const USER_MENU_ITEMS = [
   { path: '/affiliate', labelKey: 'nav.affiliate' },
   { path: '/profile', labelKey: 'nav.profile' },
   { path: '/model-plaza', labelKey: 'nav.modelPlaza' },
+  { path: '/media-library', labelKey: 'nav.mediaLibrary' },
   { path: '/docs/creative', labelKey: 'nav.creativeDocs' },
   { path: '/redeem', labelKey: 'nav.redeem' },
 ] as const
