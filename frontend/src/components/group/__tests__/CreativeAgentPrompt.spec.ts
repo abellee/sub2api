@@ -7,6 +7,7 @@ import type { DocumentationArticle } from '@/api/documentation'
 
 const { list } = vi.hoisted(() => ({ list: vi.fn() }))
 vi.mock('@/api/keys', () => ({ list }))
+vi.mock('@/api/documentation', () => ({ downloadDocumentationSkill: vi.fn() }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
 const article = () => structuredClone(defaults.articles[1]) as DocumentationArticle
 const key = (id: number, overrides = {}) => ({ id, group_id: 70, group: { name: '图片分组' }, name: 'Key ' + id, key: 'synthetic-secret-' + id, status: 'active', expires_at: null, quota: 0, quota_used: 0, ...overrides })
@@ -96,7 +97,7 @@ describe('Configurable Agent prompt and personal keys', () => {
     await openPrompt(source)
     expect(wrapper.get('h2').text()).toBe('配置的标题')
     expect(wrapper.get('.agent-description').text()).toBe('配置的说明')
-    expect(wrapper.find('details').exists()).toBe(false)
+    expect(wrapper.find('.agent-details').exists()).toBe(false)
     writeText.mockRejectedValueOnce(new Error('denied'))
     await wrapper.get('.agent-copy').trigger('click'); await flushPromises()
     expect(wrapper.get('.agent-status').text()).toContain('复制失败')

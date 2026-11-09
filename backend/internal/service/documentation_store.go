@@ -82,7 +82,7 @@ func ValidateDocumentation(snap *DocumentationSnapshot) error {
 		names[cat.Name] = true
 	}
 	ids := map[string]bool{}
-	logos := map[string]bool{"": true, "openai": true, "gemini": true, "azure": true, "adobe": true, "bytedance": true, "midjourney": true, "alibaba": true}
+	logos := map[string]bool{"": true, "openai": true, "gemini": true, "azure": true, "grok": true, "adobe": true, "bytedance": true, "midjourney": true, "alibaba": true}
 	variables := map[string]bool{"article_name": true, "base_url": true, "api_key": true, "document": true, "group_name": true}
 	for i := range snap.Articles {
 		article := &snap.Articles[i]

@@ -61,13 +61,16 @@ func TestMenuDevelopmentProxyAuthenticationAndPersistence(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 	require.JSONEq(t, `{"code":0,"message":"success","data":`+body+`}`, w.Body.String())
 	// Documentation uses the same verified identity, with administrator-only writes.
-	for _, endpoint := range []string{"/api/v1/documentation", "/api/v1/documentation/categories", "/api/v1/admin/documentation"} {
+	for _, endpoint := range []string{"/api/v1/documentation", "/api/v1/documentation/categories", "/api/v1/documentation/image-1k/skill", "/api/v1/admin/documentation"} {
 		require.Equal(t, http.StatusUnauthorized, call(http.MethodGet, endpoint, "", "").Code)
 	}
 	require.Equal(t, http.StatusForbidden, call(http.MethodGet, "/api/v1/admin/documentation", "user", "").Code)
 	require.Equal(t, http.StatusForbidden, call(http.MethodPut, "/api/v1/admin/documentation", "user", `{}`).Code)
 	require.Equal(t, http.StatusOK, call(http.MethodGet, "/api/v1/documentation", "user", "").Code)
 	require.Equal(t, http.StatusOK, call(http.MethodGet, "/api/v1/documentation/categories", "user", "").Code)
+	skill := call(http.MethodGet, "/api/v1/documentation/image-1k/skill", "user", "")
+	require.Equal(t, http.StatusOK, skill.Code)
+	require.Equal(t, "application/zip", skill.Header().Get("Content-Type"))
 	require.Equal(t, http.StatusOK, call(http.MethodGet, "/api/v1/admin/documentation", "admin", "").Code)
 }
 

@@ -47,7 +47,7 @@ func TestDocumentationDefaultsAndPersistence(t *testing.T) {
 	snap.Articles[0].Content = "# Changed\n\n## New chapter\n\nContent."
 	require.NoError(t, store.SaveDocumentation(ctx, snap))
 	require.EqualValues(t, 1, snap.Revision)
-	snap.Articles[0].Logo = "gemini"
+	snap.Articles[0].Logo = "grok"
 	require.NoError(t, store.SaveDocumentation(ctx, snap))
 	require.EqualValues(t, 2, snap.Revision)
 	reloaded, err := NewGroupCategoryStore(path).Documentation(ctx)

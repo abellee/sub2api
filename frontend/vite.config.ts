@@ -419,7 +419,7 @@ export default defineConfig(({ mode }) => {
             .map((path) => [path, { target: uiConfigDirect, changeOrigin: true }])
         ) : {}),
         ...(documentationDirect ? {
-          '^/api/v1/(?:admin/)?documentation(?:/categories)?/?(?:\\?.*)?$': { target: documentationDirect, changeOrigin: true }
+          '^/api/v1/(?:admin/)?documentation(?:/categories|/[^/]+/skill)?/?(?:\\?.*)?$': { target: documentationDirect, changeOrigin: true }
         } : {}),
         '/push-api': {
           target: pushNotifierUrl,

@@ -36,6 +36,10 @@ export async function getDocumentationCategories(): Promise<DocumentationCategor
   const { data } = await apiClient.get<DocumentationCategory[]>('/documentation/categories')
   return data
 }
+export async function downloadDocumentationSkill(id: string): Promise<Blob> {
+  const { data } = await apiClient.get<Blob>(`/documentation/${encodeURIComponent(id)}/skill`, { responseType: 'blob' })
+  return data
+}
 export async function saveDocumentation(snapshot: DocumentationSnapshot): Promise<DocumentationSnapshot> {
   const { data } = await apiClient.put<DocumentationSnapshot>('/admin/documentation', snapshot)
   return data

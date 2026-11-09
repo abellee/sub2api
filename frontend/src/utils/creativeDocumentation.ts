@@ -7,6 +7,7 @@ import type { ReferencePage } from '../../public/creative-docs/reference-content
 export const documentationLogos = [
   { value: '', label: '无 Logo' }, { value: 'openai', label: 'OpenAI' },
   { value: 'gemini', label: 'Gemini' }, { value: 'azure', label: 'Azure' },
+  { value: 'grok', label: 'Grok' },
   { value: 'adobe', label: 'Adobe' }, { value: 'bytedance', label: '字节跳动' },
   { value: 'midjourney', label: 'Midjourney' }, { value: 'alibaba', label: '阿里巴巴' },
 ]

@@ -46,6 +46,19 @@
 
 Markdown 渲染沿用现有 `marked` 和 `DOMPurify`，过滤脚本和危险属性。自动读取一至六级标题生成目录，代码块中的标题不会进入目录；重复标题具有独立锚点。保留代码复制、页面平滑滚动和点击后立即固定章节高亮的行为。
 
+## Skill 导出
+
+阅读页直接显示“导入为 Skill · TokenFree Creative”，分为两步：
+
+1. 点击下载按钮，取得 `TokenFree Creative.zip`。
+2. 点击 Codex、Claude Code、TRAE、Qoder、CodeBuddy、Kimi Code 或 ZCode 的 Logo，查看对应添加方法和官方说明。切换 Logo 仅切换说明。
+
+ZIP 包含 `tokenfree-creative/SKILL.md`、`references/api.md` 及 Codex 的 `agents/openai.yaml` 显示名称。Skill 标题和显示名称为 TokenFree Creative，目录和调用标识为 `tokenfree-creative`。包内保留当前已保存文章的完整提示词及 Markdown，不读取用户选中的 API Key；使用时从本地 `TOKENFREE_API_KEY` 环境变量读取。不同文章共用名称，替换同名 Skill 会更新为当前文章，页面明确提示这一点。
+
+项目目录：Codex、Kimi Code、ZCode 使用 `.agents/skills/`，Claude Code 使用 `.claude/skills/`，TRAE 使用 `.trae/skills/`，Qoder IDE 使用 `.qoder/skills/`，CodeBuddy 使用 `.codebuddy/skills/`。Kimi Code 需选择 Git 项目根目录。TRAE、Qoder 桌面端另提供 ZIP 上传步骤。
+
+下载接口为 `GET /api/v1/documentation/:id/skill`，沿用登录鉴权和面板限流，返回 ZIP，并禁止缓存。草稿、未启用 Agent 或不存在的文章返回 404。
+
 ## API 与本地预览
 
 - `GET /api/v1/admin/documentation`、`PUT /api/v1/admin/documentation`：管理员读取和保存。
