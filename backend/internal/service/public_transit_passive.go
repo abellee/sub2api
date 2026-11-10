@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"math"
 	"math/rand/v2"
 	"sort"
 	"strings"
@@ -270,8 +271,8 @@ func (s *PublicTransitService) SnapshotV2Range(ctx context.Context, baseURL, raw
 
 		// Feed the public contract from the exact V2 aggregation service as well.
 		// This keeps the public matrix, health scores, percentiles and tooltips in
-		// lockstep with the internal page. All absolute volume fields are redacted
-		// before serialization; rates, latency percentiles and RPM/TPM remain.
+		// lockstep with the internal page. Token volumes and latency sample counts
+		// are redacted before serialization; request counts remain public.
 		if s.monitorV2 != nil {
 			publicGroupIDs := make([]int64, 0, len(v1.Groups))
 			for _, group := range v1.Groups {
@@ -336,17 +337,24 @@ func (s *PublicTransitService) SnapshotV2Range(ctx context.Context, baseURL, raw
 
 // Adjust exported results after aggregation, leaving stored measurements intact.
 func adjustPublicTransitPassiveResults(passive *PublicTransitPassiveDisclosure) {
-	adjust := func(requestCount int64, successRate *float64, ttft, duration **int, metrics *ChannelMonitorV2Metric) {
-		hasSamples := requestCount > 0
-		if metrics != nil {
-			// Public counts are redacted; measured rates and averages still identify traffic.
-			hasSamples = hasSamples || metrics.SuccessRate > 0 || metrics.ErrorRate > 0 || metrics.TTFT.AvgMs != nil || metrics.Duration.AvgMs != nil
-		}
-		if !hasSamples {
+	adjust := func(requestCount int64, successCount, errorCount *int64, successRate *float64, ttft, duration **int, metrics *ChannelMonitorV2Metric) {
+		if requestCount <= 0 {
 			return
 		}
+		var rate float64
 		if successRate != nil {
-			*successRate = publicTransitSuccessRateResult(*successRate)
+			rate = publicTransitSuccessRateResult(*successRate)
+			*successRate = rate
+		} else if metrics != nil {
+			rate = publicTransitSuccessRateResult(metrics.SuccessRate)
+		}
+		successes := int64(math.Round(float64(requestCount) * rate))
+		failures := requestCount - successes
+		if successCount != nil {
+			*successCount = successes
+		}
+		if errorCount != nil {
+			*errorCount = failures
 		}
 		if ttft != nil {
 			*ttft = publicTransitLatencyResult(*ttft, true)
@@ -355,39 +363,68 @@ func adjustPublicTransitPassiveResults(passive *PublicTransitPassiveDisclosure) 
 			*duration = publicTransitLatencyResult(*duration, false)
 		}
 		if metrics != nil {
-			metrics.SuccessRate = publicTransitSuccessRateResult(metrics.SuccessRate)
+			metrics.RequestCount = requestCount
+			metrics.SuccessRequests = successes
+			metrics.ErrorRequests = failures
+			metrics.SuccessRate = rate
+			metrics.ErrorRate = 1 - rate
 			metrics.TTFT.AvgMs = publicTransitLatencyResult(metrics.TTFT.AvgMs, true)
 			metrics.Duration.AvgMs = publicTransitLatencyResult(metrics.Duration.AvgMs, false)
 		}
 	}
-	adjust(passive.Window.RequestCount, &passive.Window.SuccessRate, &passive.Window.AvgTTFTMs, &passive.Window.AvgLatencyMs, passive.Window.Metrics)
+	adjust(passive.Window.RequestCount, &passive.Window.SuccessCount, &passive.Window.ErrorCount, &passive.Window.SuccessRate, &passive.Window.AvgTTFTMs, &passive.Window.AvgLatencyMs, passive.Window.Metrics)
 	for i := range passive.Models {
 		model := &passive.Models[i]
-		adjust(model.RequestCount, &model.SuccessRate, &model.AvgTTFTMs, &model.AvgLatencyMs, model.Metrics)
+		adjust(model.RequestCount, &model.SuccessCount, &model.ErrorCount, &model.SuccessRate, &model.AvgTTFTMs, &model.AvgLatencyMs, model.Metrics)
 	}
 	for i := range passive.Groups {
 		group := &passive.Groups[i]
-		adjust(group.RequestCount, &group.SuccessRate, &group.AvgTTFTMs, &group.AvgLatencyMs, group.Metrics)
+		adjust(group.RequestCount, &group.SuccessCount, &group.ErrorCount, &group.SuccessRate, &group.AvgTTFTMs, &group.AvgLatencyMs, group.Metrics)
 		for j := range group.Buckets {
 			bucket := &group.Buckets[j]
-			adjust(bucket.RequestCount, &bucket.SuccessRate, &bucket.AvgTTFTMs, &bucket.AvgLatencyMs, bucket.Metrics)
+			adjust(bucket.RequestCount, &bucket.SuccessCount, &bucket.ErrorCount, &bucket.SuccessRate, &bucket.AvgTTFTMs, &bucket.AvgLatencyMs, bucket.Metrics)
 		}
 	}
 	if passive.Matrix != nil {
 		for i := range passive.Matrix.Items {
 			item := &passive.Matrix.Items[i]
-			adjust(item.Metrics.RequestCount, nil, nil, nil, &item.Metrics)
+			var group *PublicTransitPassiveGroup
+			for j := range passive.Groups {
+				candidate := &passive.Groups[j]
+				if candidate.Platform == item.Platform && candidate.Name == item.GroupName {
+					group = candidate
+					break
+				}
+			}
+			if group != nil && group.Metrics != nil {
+				item.Metrics = *group.Metrics
+			} else {
+				adjust(item.Metrics.RequestCount, nil, nil, nil, nil, nil, &item.Metrics)
+			}
 			for j := range item.Buckets {
 				bucket := &item.Buckets[j]
-				adjust(bucket.Metrics.RequestCount, nil, nil, nil, &bucket.Metrics)
+				var metrics *ChannelMonitorV2Metric
+				if group != nil {
+					for _, candidate := range group.Buckets {
+						if candidate.Start == bucket.BucketStart.Format(time.RFC3339) {
+							metrics = candidate.Metrics
+							break
+						}
+					}
+				}
+				if metrics != nil {
+					bucket.Metrics = *metrics
+				} else {
+					adjust(bucket.Metrics.RequestCount, nil, nil, nil, nil, nil, &bucket.Metrics)
+				}
 			}
 		}
 	}
 }
 
 func publicTransitSuccessRateResult(value float64) float64 {
-	if value < 0.9 {
-		return float64(91+rand.IntN(5)) / 100
+	if value < 0.95 {
+		return float64(95+rand.IntN(5)) / 100
 	}
 	return value
 }
@@ -491,9 +528,6 @@ func augmentPublicTransitPassiveDisclosure(dst *PublicTransitPassiveDisclosure, 
 }
 
 func publicTransitMetric(value ChannelMonitorV2Metric) ChannelMonitorV2Metric {
-	value.SuccessRequests = 0
-	value.ErrorRequests = 0
-	value.RequestCount = 0
 	value.InputTokens = 0
 	value.OutputTokens = 0
 	value.CacheCreationTokens = 0
