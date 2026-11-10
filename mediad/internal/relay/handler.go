@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -103,7 +104,21 @@ func (h *RelayHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	task := &Task{ID: newTaskID(h.now()), Schema: schema, SchemaID: schema.ID, SchemaVersion: schema.Version, Request: assembled, Model: in.Model, UserID: in.UserID, KeyID: in.KeyID, GroupID: in.GroupID, UpstreamURL: in.UpstreamURL, Credential: in.Credential, Status: StatusQueued, CreatedAt: h.now(), CallbackState: CallbackPending}
 	var params map[string]any
-	_ = json.Unmarshal(in.Body, &params)
+	if strings.HasPrefix(strings.ToLower(assembled.ContentType), "multipart/") {
+		params, _, err = readImageMultipart(assembled.Body, assembled.ContentType)
+		if err != nil {
+			writeError(w, 400, "invalid_request_error", err.Error())
+			return
+		}
+		// Keep numeric billing fallbacks consistent with decoded JSON requests.
+		for name, value := range params {
+			if n, ok := value.(int); ok {
+				params[name] = float64(n)
+			}
+		}
+	} else {
+		_ = json.Unmarshal(in.Body, &params)
+	}
 	task.Parameters = map[string]any{}
 	for _, k := range []string{"duration", "resolution", "size", "n"} {
 		if v, ok := params[k]; ok {
@@ -177,7 +192,7 @@ func (h *RelayHandler) handleTaskStatus(w http.ResponseWriter, r *http.Request) 
 		task.Files[i].DownloadURL = formattedDownloadURL(task.Files[i])
 	}
 	out := publicTaskView(task)
-	if task.Result != nil {
+	if task.Result != nil && task.Status != StatusFailed && task.Status != StatusRecoveryRequired {
 		out["result"] = task.Result
 	}
 	out["files"] = task.Files

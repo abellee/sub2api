@@ -63,7 +63,7 @@ func Assemble(in AssembleInput) (*UpstreamRequest, error) {
 	for name, tmpl := range in.Schema.Request.HeaderParams {
 		header.Set(name, renderTemplate(tmpl, in))
 	}
-	if header.Get("Content-Type") == "" && payload != nil {
+	if payload != nil && (header.Get("Content-Type") == "" || strings.HasPrefix(ct, "multipart/")) {
 		header.Set("Content-Type", ct)
 	}
 
@@ -94,6 +94,9 @@ func Assemble(in AssembleInput) (*UpstreamRequest, error) {
 // buildPayload 依据 body 模式与 multipart 规则产出上游 body。
 func buildPayload(in AssembleInput) ([]byte, string, error) {
 	spec := in.Schema.Request
+	if strings.HasPrefix(strings.ToLower(in.ContentType), "multipart/") && passthroughImageEdit(in) {
+		return buildImageEditMultipart(in)
+	}
 
 	var clientFields map[string]any
 	isMultipart := strings.HasPrefix(strings.ToLower(in.ContentType), "multipart/")

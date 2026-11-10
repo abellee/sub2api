@@ -22,14 +22,8 @@ func (h *RelayHandler) handleStandardResult(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusGone, "result_expired", "media files have expired")
 		return
 	}
-	if task.Status == StatusFailed {
-		if (task.ResponseStatus >= 400 || (format == "gemini" && task.ResponseStatus == 200)) && json.Valid(task.Response) {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(task.ResponseStatus)
-			_, _ = w.Write(task.Response)
-			return
-		}
-		writeError(w, 502, "generation_failed", task.ErrorMessage)
+	if task.Status == StatusFailed || task.Status == StatusRecoveryRequired {
+		writeTaskError(w, task, format)
 		return
 	}
 	if task.Status != StatusSucceeded || task.CallbackState != CallbackConfirmed || len(task.Files) == 0 {

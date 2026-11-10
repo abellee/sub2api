@@ -10,6 +10,7 @@ import (
 
 func (h *RelayHandler) waitStandardResult(w http.ResponseWriter, r *http.Request, task *Task, format string) {
 	stream := format == "openai_sse" || format == "openai_edit_sse"
+	w.Header().Set("X-Task-Id", task.ID)
 	if !stream && format != "openai_url" && format != "openai_b64_json" && format != "gemini" {
 		writeError(w, 400, "invalid_format", "unsupported result format")
 		return
@@ -27,7 +28,7 @@ func (h *RelayHandler) waitStandardResult(w http.ResponseWriter, r *http.Request
 	defer ticker.Stop()
 	lastHeartbeat := time.Now()
 	for {
-		if task.Status == StatusFailed || (task.Status == StatusSucceeded && task.CallbackState == CallbackConfirmed) {
+		if task.Status == StatusFailed || task.Status == StatusRecoveryRequired || (task.Status == StatusSucceeded && task.CallbackState == CallbackConfirmed) {
 			var ok bool
 			task, ok = h.store.Get(task.ID)
 			if !ok {

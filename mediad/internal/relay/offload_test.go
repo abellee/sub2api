@@ -133,7 +133,7 @@ func TestMediaWaitFlushesAndEncodesEveryImage(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !strings.Contains(string(body), "event: error") || !strings.Contains(string(body), "policy_blocked") {
+			if !strings.Contains(string(body), "event: error") || !strings.Contains(string(body), "generation_failed") || strings.Contains(string(body), "policy_blocked") {
 				t.Fatal(string(body))
 			}
 			w := httptest.NewRecorder()

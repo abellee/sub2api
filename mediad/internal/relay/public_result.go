@@ -50,9 +50,10 @@ func (h *RelayHandler) handlePublicResult(w http.ResponseWriter, r *http.Request
 	}
 	out := map[string]any{"id": id, "task_id": id, "status": "processing"}
 	switch {
-	case task.Status == StatusFailed:
-		out["status"] = "failed"
-		out["error"] = map[string]any{"message": task.ErrorMessage}
+	case task.Status == StatusFailed || task.Status == StatusRecoveryRequired:
+		out["status"] = task.Status
+		_, code, message := publicTaskError(task)
+		out["error"] = map[string]any{"type": code, "message": message}
 	case task.Status == StatusSucceeded && task.CallbackState == CallbackConfirmed && len(task.Files) > 0:
 		out["status"] = "completed"
 		items := make([]map[string]any, 0, len(task.Files))

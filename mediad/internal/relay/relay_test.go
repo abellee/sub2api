@@ -344,8 +344,12 @@ func TestPollTimeoutPreservesUnknownResultForRecovery(t *testing.T) {
 		var st map[string]any
 		_ = json.Unmarshal(stRec.Body.Bytes(), &st)
 		if st["status"] == StatusRecoveryRequired {
-			if !strings.Contains(fmt.Sprint(st["error_message"]), "poll_timeout") {
-				t.Fatalf("expected poll_timeout, got %v", st["error_message"])
+			if strings.Contains(fmt.Sprint(st["error_message"]), "poll_timeout") || !strings.Contains(fmt.Sprint(st["error_message"]), "task ID") {
+				t.Fatalf("expected public recovery message, got %v", st["error_message"])
+			}
+			internal, _ := fx.handler.store.Get(taskID)
+			if !strings.Contains(internal.ErrorMessage, "poll_timeout") {
+				t.Fatal("internal timeout diagnostic lost")
 			}
 			if st["upstream_task_id"] != "up-123" {
 				t.Fatalf("lost upstream task ID: %v", st)

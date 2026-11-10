@@ -12,6 +12,10 @@
 
 签名任务查询接受 `response_format=state|openai_url|openai_b64_json|gemini`。标准结果仅在生成成功且主站确认结算后返回；`state` 只返回任务元数据。Gemini 保留原生响应并增加下载链接，OpenAI URL 替换为本服务长期保留的签名链接。
 
+OpenAI 图片编辑使用透传规则（`body_mode=passthrough`，未配置文件转 JSON）时，multipart 上传保持为 multipart，并应用选中模型和规则的固定参数。其他规则继续使用原有转换方式。
+
+生成失败或进入 `recovery_required` 时，同步等待立即返回通用错误与本服务任务编号；流式请求返回 `error` 事件。任务查询和公开结果链接同样隐藏原始错误、账号、地址与凭据信息。原始响应和诊断信息保留在私有任务记录中，管理接口可查看诊断；不自动重发受理情况不明的请求。
+
 `GET /downloads/{task_id}/{file_id}?token=...` 由主站记录的链接访问。每个文件有独立令牌，服务重启后链接保持有效；主站未确认通知前不能下载。链接持有人可下载，禁止日志记录或公开分享令牌。没有目录索引。旧 `POST /relay/tasks/{task_id}/files/ack` 返回 410，不再删除文件。
 
 ## 接口

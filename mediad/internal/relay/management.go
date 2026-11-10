@@ -347,7 +347,15 @@ func (h *ManagementHandler) handlePending(w http.ResponseWriter, r *http.Request
 		if t.CallbackState == CallbackConfirmed {
 			continue
 		}
-		out = append(out, publicTaskView(t))
+		view := publicTaskView(t)
+		// Detailed diagnostics are restricted to the authenticated management endpoint.
+		if t.ErrorMessage != "" {
+			view["error_message"] = t.ErrorMessage
+		}
+		if t.LastCallbackError != "" {
+			view["last_callback_error"] = t.LastCallbackError
+		}
+		out = append(out, view)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"tasks": out, "count": len(out)})
 }
@@ -448,10 +456,11 @@ func publicTaskView(t *Task) map[string]any {
 		out["usage"] = map[string]any{"quantity": t.Usage.Quantity, "unit": t.Usage.Unit}
 	}
 	if t.ErrorMessage != "" {
-		out["error_message"] = t.ErrorMessage
+		_, _, message := publicTaskError(t)
+		out["error_message"] = message
 	}
 	if t.LastCallbackError != "" {
-		out["last_callback_error"] = t.LastCallbackError
+		out["last_callback_error"] = "Result confirmation is pending."
 	}
 	return out
 }
