@@ -59,6 +59,28 @@ function mountTable(
 }
 
 describe('PlazaModelPricingTable', () => {
+  it.each([false, true])('shows independent 12h prices without a 1h label (intervals=%s)', async (intervals) => {
+    const model = tokenModel({ name: 'gpt-6-luna', platform: 'openai' })
+    model.pricing!.cache_write_price = null
+    model.pricing!.cache_write_12h_price = 2e-6
+    model.pricing!.cache_read_price = null
+    model.official_pricing = { input_price: 1e-6, output_price: 5e-6, cache_write_price: null, cache_write_12h_price: 4e-6, cache_read_price: null }
+    if (intervals) {
+      model.pricing!.intervals = [{ min_tokens: 0, max_tokens: null, input_price: null, output_price: null, cache_write_price: null, cache_write_12h_price: 2e-6, cache_read_price: null, per_request_price: null }]
+      model.official_pricing.intervals = [{ min_tokens: 0, max_tokens: null, input_price: 1e-6, output_price: 5e-6, cache_write_price: null, cache_write_12h_price: 4e-6, cache_read_price: null, per_request_price: null }]
+    }
+    const wrapper = mountTable([model], 0.5)
+    try {
+      if (intervals) await wrapper.get('.model-plaza-table__long-context-toggle').trigger('click')
+      const buckets = wrapper.findAll('.pz-cache-tag')
+      expect(buckets.map((tag) => tag.text())).toEqual(['12h', '12h'])
+      const prices = buckets.map((tag) => tag.element.parentElement!.textContent?.replace(/\s/g, ''))
+      expect(prices).toEqual(['12h$4.00', '12h$1.00'])
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
   it.each([
     ['deepseek', 'deepseek-chat'],
     ['zhipu', 'glm-5'],

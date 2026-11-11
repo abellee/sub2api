@@ -206,6 +206,13 @@
                       <span class="pz-cache-tag">1h</span>
                     {{ officialDisplay(m, 'cache_write_1h_price', iv) }}
                     </div>
+                    <div
+                      v-if="officialIntervalPrice(m, iv, 'cache_write_12h_price') != null"
+                      class="whitespace-nowrap font-mono text-xs leading-5 text-gray-500 dark:text-dark-400"
+                    >
+                      <span class="pz-cache-tag">12h</span>
+                      {{ officialDisplay(m, 'cache_write_12h_price', iv) }}
+                    </div>
                   </div>
                 </template>
                 <div
@@ -216,6 +223,10 @@
                   <div v-if="officialFor(m, 'cache_write_1h_price') != null">
                     <span class="pz-cache-tag">1h</span>
                     {{ officialDisplay(m, 'cache_write_1h_price') }}
+                  </div>
+                  <div v-if="officialFor(m, 'cache_write_12h_price') != null">
+                    <span class="pz-cache-tag">12h</span>
+                    {{ officialDisplay(m, 'cache_write_12h_price') }}
                   </div>
                 </div>
                 <span v-else class="text-gray-400 dark:text-dark-500">-</span>
@@ -296,6 +307,13 @@
                       <span class="pz-cache-tag">1h</span>
                       {{ paidPerMillion(intervalPrice(m, iv, 'cache_write_1h_price'), period, currencyFor(m)) }}
                     </div>
+                    <div
+                      v-if="intervalPrice(m, iv, 'cache_write_12h_price') != null"
+                      class="whitespace-nowrap font-mono text-xs leading-5 text-gray-800 dark:text-gray-200"
+                    >
+                      <span class="pz-cache-tag">12h</span>
+                      {{ paidPerMillion(intervalPrice(m, iv, 'cache_write_12h_price'), period, currencyFor(m)) }}
+                    </div>
                   </div>
                 </template>
                 <div
@@ -306,6 +324,10 @@
                   <div v-if="priceFor(m, 'cache_write_1h_price') != null">
                     <span class="pz-cache-tag">1h</span>
                     {{ paidPerMillion(priceFor(m, 'cache_write_1h_price'), period, currencyFor(m)) }}
+                  </div>
+                  <div v-if="priceFor(m, 'cache_write_12h_price') != null">
+                    <span class="pz-cache-tag">12h</span>
+                    {{ paidPerMillion(priceFor(m, 'cache_write_12h_price'), period, currencyFor(m)) }}
                   </div>
                 </div>
                 <span v-else class="text-gray-400 dark:text-dark-500">-</span>
@@ -800,7 +822,7 @@ function timeToMinutes(value: string): number | null {
 }
 
 /** 实付价 = 渠道单价 × 生效倍率(时段行再乘时段倍率),按 $/1M token 展示。 */
-type PricingField = 'input_price' | 'output_price' | 'cache_write_price' | 'cache_write_1h_price' | 'cache_read_price'
+type PricingField = 'input_price' | 'output_price' | 'cache_write_price' | 'cache_write_1h_price' | 'cache_write_12h_price' | 'cache_read_price'
 
 function priceFor(m: PlazaModel, field: PricingField): number | null {
   return m.pricing?.[field] ?? m.official_pricing?.[field] ?? null
@@ -902,13 +924,15 @@ function perUnitSuffix(m: PlazaModel): string {
 function hasCachePricing(m: PlazaModel): boolean {
   return priceFor(m, 'cache_write_price') != null
     || priceFor(m, 'cache_write_1h_price') != null
+    || priceFor(m, 'cache_write_12h_price') != null
     || priceFor(m, 'cache_read_price') != null
-    || tokenIntervals(m).some((iv) => iv.cache_write_price != null || iv.cache_write_1h_price != null || iv.cache_read_price != null)
+    || tokenIntervals(m).some((iv) => iv.cache_write_price != null || iv.cache_write_1h_price != null || iv.cache_write_12h_price != null || iv.cache_read_price != null)
 }
 
 function hasOfficialCache(m: PlazaModel): boolean {
   return officialFor(m, 'cache_write_price') != null
     || officialFor(m, 'cache_write_1h_price') != null
+    || officialFor(m, 'cache_write_12h_price') != null
     || officialFor(m, 'cache_read_price') != null
 }
 
@@ -930,7 +954,7 @@ function officialIntervals(m: PlazaModel): UserPricingInterval[] {
 /** 任一档带缓存价才按档渲染缓存列;否则沿用平价的写入/读取两行。 */
 function hasTierCachePricing(intervals: UserPricingInterval[]): boolean {
   return intervals.some((iv) =>
-    iv.cache_write_price != null || iv.cache_write_1h_price != null || iv.cache_read_price != null ||
+    iv.cache_write_price != null || iv.cache_write_1h_price != null || iv.cache_write_12h_price != null || iv.cache_read_price != null ||
     iv.cache_write_multiplier != null || iv.cache_read_multiplier != null
   )
 }
@@ -938,6 +962,7 @@ function hasTierCachePricing(intervals: UserPricingInterval[]): boolean {
 function hasTierCachePricingForModel(m: PlazaModel): boolean {
   return tokenIntervals(m).some((iv) => intervalPrice(m, iv, 'cache_write_price') != null
     || intervalPrice(m, iv, 'cache_write_1h_price') != null
+    || intervalPrice(m, iv, 'cache_write_12h_price') != null
     || intervalPrice(m, iv, 'cache_read_price') != null)
 }
 
@@ -963,6 +988,7 @@ function tokenIntervals(m: PlazaModel): UserPricingInterval[] {
       || iv.output_price != null
       || iv.cache_write_price != null
       || iv.cache_write_1h_price != null
+      || iv.cache_write_12h_price != null
       || iv.cache_read_price != null
     )
 }
