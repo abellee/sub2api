@@ -575,7 +575,12 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		return nil, err
 	}
 
+	thinkingCompat, err := normalizeGroupAnthropicThinkingCompat(platform, input.AnthropicThinkingCompat)
+	if err != nil {
+		return nil, err
+	}
 	group := &Group{
+		AnthropicThinkingCompat:         thinkingCompat,
 		Name:                            input.Name,
 		Description:                     input.Description,
 		I18n:                            i18n,
@@ -1041,6 +1046,15 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 		}
 		group.ModelAllowlist = modelAllowlist
 	}
+	thinkingCompat := group.AnthropicThinkingCompat
+	if input.AnthropicThinkingCompat != nil {
+		thinkingCompat = *input.AnthropicThinkingCompat
+	}
+	thinkingCompat, err = normalizeGroupAnthropicThinkingCompat(group.Platform, thinkingCompat)
+	if err != nil {
+		return nil, err
+	}
+	group.AnthropicThinkingCompat = thinkingCompat
 	if input.CodexModelsManifestConfig != nil {
 		group.CodexModelsManifestConfig = *input.CodexModelsManifestConfig
 	}

@@ -822,6 +822,20 @@ func (_c *GroupCreate) SetNillableModelAllowlist(v *domain.GroupModelAllowlist) 
 	return _c
 }
 
+// SetAnthropicThinkingCompat sets the "anthropic_thinking_compat" field.
+func (_c *GroupCreate) SetAnthropicThinkingCompat(v domain.GroupAnthropicThinkingCompat) *GroupCreate {
+	_c.mutation.SetAnthropicThinkingCompat(v)
+	return _c
+}
+
+// SetNillableAnthropicThinkingCompat sets the "anthropic_thinking_compat" field if the given value is not nil.
+func (_c *GroupCreate) SetNillableAnthropicThinkingCompat(v *domain.GroupAnthropicThinkingCompat) *GroupCreate {
+	if v != nil {
+		_c.SetAnthropicThinkingCompat(*v)
+	}
+	return _c
+}
+
 // SetCodexModelsManifestConfig sets the "codex_models_manifest_config" field.
 func (_c *GroupCreate) SetCodexModelsManifestConfig(v domain.GroupCodexModelsManifestConfig) *GroupCreate {
 	_c.mutation.SetCodexModelsManifestConfig(v)
@@ -1207,6 +1221,10 @@ func (_c *GroupCreate) defaults() error {
 		v := group.DefaultModelAllowlist
 		_c.mutation.SetModelAllowlist(v)
 	}
+	if _, ok := _c.mutation.AnthropicThinkingCompat(); !ok {
+		v := group.DefaultAnthropicThinkingCompat
+		_c.mutation.SetAnthropicThinkingCompat(v)
+	}
 	if _, ok := _c.mutation.CodexModelsManifestConfig(); !ok {
 		v := group.DefaultCodexModelsManifestConfig
 		_c.mutation.SetCodexModelsManifestConfig(v)
@@ -1417,6 +1435,9 @@ func (_c *GroupCreate) check() error {
 	}
 	if _, ok := _c.mutation.ModelAllowlist(); !ok {
 		return &ValidationError{Name: "model_allowlist", err: errors.New(`ent: missing required field "Group.model_allowlist"`)}
+	}
+	if _, ok := _c.mutation.AnthropicThinkingCompat(); !ok {
+		return &ValidationError{Name: "anthropic_thinking_compat", err: errors.New(`ent: missing required field "Group.anthropic_thinking_compat"`)}
 	}
 	if _, ok := _c.mutation.CodexModelsManifestConfig(); !ok {
 		return &ValidationError{Name: "codex_models_manifest_config", err: errors.New(`ent: missing required field "Group.codex_models_manifest_config"`)}
@@ -1718,6 +1739,10 @@ func (_c *GroupCreate) createSpec() (*Group, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.ModelAllowlist(); ok {
 		_spec.SetField(group.FieldModelAllowlist, field.TypeJSON, value)
 		_node.ModelAllowlist = value
+	}
+	if value, ok := _c.mutation.AnthropicThinkingCompat(); ok {
+		_spec.SetField(group.FieldAnthropicThinkingCompat, field.TypeJSON, value)
+		_node.AnthropicThinkingCompat = value
 	}
 	if value, ok := _c.mutation.CodexModelsManifestConfig(); ok {
 		_spec.SetField(group.FieldCodexModelsManifestConfig, field.TypeJSON, value)
@@ -2870,6 +2895,18 @@ func (u *GroupUpsert) SetModelAllowlist(v domain.GroupModelAllowlist) *GroupUpse
 // UpdateModelAllowlist sets the "model_allowlist" field to the value that was provided on create.
 func (u *GroupUpsert) UpdateModelAllowlist() *GroupUpsert {
 	u.SetExcluded(group.FieldModelAllowlist)
+	return u
+}
+
+// SetAnthropicThinkingCompat sets the "anthropic_thinking_compat" field.
+func (u *GroupUpsert) SetAnthropicThinkingCompat(v domain.GroupAnthropicThinkingCompat) *GroupUpsert {
+	u.Set(group.FieldAnthropicThinkingCompat, v)
+	return u
+}
+
+// UpdateAnthropicThinkingCompat sets the "anthropic_thinking_compat" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateAnthropicThinkingCompat() *GroupUpsert {
+	u.SetExcluded(group.FieldAnthropicThinkingCompat)
 	return u
 }
 
@@ -4159,6 +4196,20 @@ func (u *GroupUpsertOne) SetModelAllowlist(v domain.GroupModelAllowlist) *GroupU
 func (u *GroupUpsertOne) UpdateModelAllowlist() *GroupUpsertOne {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdateModelAllowlist()
+	})
+}
+
+// SetAnthropicThinkingCompat sets the "anthropic_thinking_compat" field.
+func (u *GroupUpsertOne) SetAnthropicThinkingCompat(v domain.GroupAnthropicThinkingCompat) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetAnthropicThinkingCompat(v)
+	})
+}
+
+// UpdateAnthropicThinkingCompat sets the "anthropic_thinking_compat" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateAnthropicThinkingCompat() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateAnthropicThinkingCompat()
 	})
 }
 
@@ -5633,6 +5684,20 @@ func (u *GroupUpsertBulk) SetModelAllowlist(v domain.GroupModelAllowlist) *Group
 func (u *GroupUpsertBulk) UpdateModelAllowlist() *GroupUpsertBulk {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdateModelAllowlist()
+	})
+}
+
+// SetAnthropicThinkingCompat sets the "anthropic_thinking_compat" field.
+func (u *GroupUpsertBulk) SetAnthropicThinkingCompat(v domain.GroupAnthropicThinkingCompat) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetAnthropicThinkingCompat(v)
+	})
+}
+
+// UpdateAnthropicThinkingCompat sets the "anthropic_thinking_compat" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateAnthropicThinkingCompat() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateAnthropicThinkingCompat()
 	})
 }
 

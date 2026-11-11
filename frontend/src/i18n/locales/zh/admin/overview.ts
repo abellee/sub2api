@@ -1206,6 +1206,16 @@ export default {
         bufferRangeError: '安全缓冲应在 0 到 99.99 之间',
         sumTooHigh: '最低毛利率与安全缓冲之和必须小于 100%，否则将排除全部账号'
       },
+      thinkingCompat: {
+        title: '旧版思考参数转换',
+        hint: '将旧版 enabled 转为 adaptive；Sonnet 5.5 的 disabled 转为 between_tools，并移除旧的思考预算。',
+        allModels: '全部模型',
+        selectedModels: '指定模型',
+        models: '生效模型',
+        modelsHint: '填写请求使用的模型名，每行一个，也可用逗号分隔；支持 * 匹配。',
+        selectAtLeastOne: '请至少填写一个生效模型',
+        limitHint: '仅转换需要新思考格式的模型，旧模型保持原样。其他不兼容参数（如 between_tools 配合 xhigh/max）仍会报错。',
+      },
       modelAllowlist: {
         title: '模型白名单',
         hint: '开启后，不在白名单中的模型会被拒绝（404 model_not_found），模型列表接口也只展示白名单内的模型。条目支持精确模型 ID 与任意位置的 * 通配（如 gpt-*-codex）。注意：Claude Code 会用 haiku 系小模型做标题/摘要等探测，/messages/count_tokens 同样受白名单控制，请一并勾选所需的小模型。',

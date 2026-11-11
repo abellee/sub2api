@@ -140,6 +140,8 @@ type Group struct {
 	MessagesDispatchModelConfig domain.OpenAIMessagesDispatchModelConfig `json:"messages_dispatch_model_config,omitempty"`
 	// 分组模型白名单：同时约束模型列表接口与请求准入
 	ModelAllowlist domain.GroupModelAllowlist `json:"model_allowlist,omitempty"`
+	// AnthropicThinkingCompat holds the value of the "anthropic_thinking_compat" field.
+	AnthropicThinkingCompat domain.GroupAnthropicThinkingCompat `json:"anthropic_thinking_compat,omitempty"`
 	// 固定账号获取 Codex Model Manifest 配置；开启后 /models 请求只用选定账号拉取（仅 openai 平台）
 	CodexModelsManifestConfig domain.GroupCodexModelsManifestConfig `json:"codex_models_manifest_config,omitempty"`
 	// 分组 RPM 上限，0 表示不限制；设置后接管该分组用户的限流
@@ -262,7 +264,7 @@ func (*Group) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case group.FieldI18n, group.FieldVideoModelPrices, group.FieldModelPricing, group.FieldModelRouting, group.FieldSupportedModelScopes, group.FieldMessagesDispatchModelConfig, group.FieldModelAllowlist, group.FieldCodexModelsManifestConfig, group.FieldReasoningEffortMappings:
+		case group.FieldI18n, group.FieldVideoModelPrices, group.FieldModelPricing, group.FieldModelRouting, group.FieldSupportedModelScopes, group.FieldMessagesDispatchModelConfig, group.FieldModelAllowlist, group.FieldAnthropicThinkingCompat, group.FieldCodexModelsManifestConfig, group.FieldReasoningEffortMappings:
 			values[i] = new([]byte)
 		case group.FieldPeakRateEnabled, group.FieldIsExclusive, group.FieldAllowImageGeneration, group.FieldAllowBatchImageGeneration, group.FieldImageCountBilling, group.FieldImageRateIndependent, group.FieldVideoRateIndependent, group.FieldLongContextPricingEnabled, group.FieldClaudeCodeOnly, group.FieldModelRoutingEnabled, group.FieldMcpXMLInject, group.FieldAllowMessagesDispatch, group.FieldAllowLive, group.FieldForceOpenaiFast, group.FieldFreeOpenaiFast, group.FieldRequireOauthOnly, group.FieldRequirePrivacySet, group.FieldProfitControlEnabled:
 			values[i] = new(sql.NullBool)
@@ -688,6 +690,14 @@ func (_m *Group) assignValues(columns []string, values []any) error {
 					return fmt.Errorf("unmarshal field model_allowlist: %w", err)
 				}
 			}
+		case group.FieldAnthropicThinkingCompat:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field anthropic_thinking_compat", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.AnthropicThinkingCompat); err != nil {
+					return fmt.Errorf("unmarshal field anthropic_thinking_compat: %w", err)
+				}
+			}
 		case group.FieldCodexModelsManifestConfig:
 			if value, ok := values[i].(*[]byte); !ok {
 				return fmt.Errorf("unexpected type %T for field codex_models_manifest_config", values[i])
@@ -1033,6 +1043,9 @@ func (_m *Group) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("model_allowlist=")
 	builder.WriteString(fmt.Sprintf("%v", _m.ModelAllowlist))
+	builder.WriteString(", ")
+	builder.WriteString("anthropic_thinking_compat=")
+	builder.WriteString(fmt.Sprintf("%v", _m.AnthropicThinkingCompat))
 	builder.WriteString(", ")
 	builder.WriteString("codex_models_manifest_config=")
 	builder.WriteString(fmt.Sprintf("%v", _m.CodexModelsManifestConfig))

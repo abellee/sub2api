@@ -1209,6 +1209,16 @@ export default {
         bufferRangeError: 'Safety buffer must be between 0 and 99.99',
         sumTooHigh: 'Min gross margin plus safety buffer must be less than 100%, otherwise every account would be excluded'
       },
+      thinkingCompat: {
+        title: 'Legacy thinking conversion',
+        hint: 'Convert enabled to adaptive, and Sonnet 5.5 disabled to between_tools, removing the legacy thinking budget.',
+        allModels: 'All models',
+        selectedModels: 'Selected models',
+        models: 'Models',
+        modelsHint: 'Enter requested model names, one per line or comma-separated. Supports * wildcards.',
+        selectAtLeastOne: 'Enter at least one model',
+        limitHint: 'Only models requiring the new thinking format are converted. Older models keep their format. Other incompatible settings, such as between_tools with xhigh/max, are still rejected.',
+      },
       modelAllowlist: {
         title: 'Model Allowlist',
         hint: 'When enabled, models outside the allowlist are rejected with 404 model_not_found, and model listing endpoints only show allowlisted models. Entries support exact model IDs and * wildcards anywhere (e.g., gpt-*-codex). Note: Claude Code probes with haiku-family models for titles/summaries and /messages/count_tokens is also allowlist-controlled, so make sure the small models you need are selected too.',

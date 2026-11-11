@@ -102,9 +102,18 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 			}
 		} else if account.Type == AccountTypeAPIKey {
 			validationModel = account.GetMappedModel(validationModel)
+		} else if account.Platform == PlatformAnthropic && account.Type == AccountTypeServiceAccount {
+			if resolved, matched := account.ResolveMappedModel(validationModel); matched {
+				validationModel = resolved
+			} else {
+				validationModel = normalizeVertexAnthropicModelID(claude.NormalizeModelID(validationModel))
+			}
 		}
 	}
 	if account != nil && account.Platform == PlatformAnthropic {
+		if err := applyParsedGroupAnthropicThinkingCompat(c, parsed, validationModel); err != nil {
+			return nil, err
+		}
 		if err := validateClaude55Request(parsed.Body.Bytes(), validationModel); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"type": "error", "error": gin.H{"type": "invalid_request_error", "message": err.Error()}})
 			return nil, err

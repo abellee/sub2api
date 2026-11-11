@@ -672,6 +672,12 @@
           />
           <p class="input-hint">{{ t("admin.groups.form.rpmLimitHint") }}</p>
         </div>
+        <AnthropicThinkingCompatField
+          v-if="createForm.platform === 'anthropic'"
+          ref="createThinkingCompatRef"
+          v-model="createThinkingCompat"
+          id-prefix="create-thinking-compat"
+        />
         <ReasoningEffortPolicyFields
           v-if="supportsReasoningEffortPolicyPlatform(createForm.platform)"
           ref="createReasoningEffortPolicyRef"
@@ -2331,6 +2337,12 @@
           />
           <p class="input-hint">{{ t("admin.groups.form.rpmLimitHint") }}</p>
         </div>
+        <AnthropicThinkingCompatField
+          v-if="editForm.platform === 'anthropic'"
+          ref="editThinkingCompatRef"
+          v-model="editThinkingCompat"
+          id-prefix="edit-thinking-compat"
+        />
         <ReasoningEffortPolicyFields
           v-if="supportsReasoningEffortPolicyPlatform(editForm.platform)"
           ref="editReasoningEffortPolicyRef"
@@ -4472,6 +4484,8 @@ import GroupSetCategoryModal from "@/components/admin/group/GroupSetCategoryModa
 import GroupRPMOverridesModal from "@/components/admin/group/GroupRPMOverridesModal.vue";
 import GroupCapacityBadge from "@/components/common/GroupCapacityBadge.vue";
 import ReasoningEffortPolicyFields from "@/components/admin/group/ReasoningEffortPolicyFields.vue";
+import AnthropicThinkingCompatField from "@/components/admin/group/AnthropicThinkingCompatField.vue";
+import type { AnthropicThinkingCompat } from "@/types";
 import CodexManifestAccountsField from "@/components/admin/group/CodexManifestAccountsField.vue";
 import PricingEntryCard from "@/components/admin/channel/PricingEntryCard.vue";
 import type { PricingFormEntry } from "@/components/admin/channel/types";
@@ -5132,6 +5146,11 @@ const createMessagesDispatchDefaults = createDefaultMessagesDispatchFormState();
 const editMessagesDispatchDefaults = createDefaultMessagesDispatchFormState();
 const createModelAllowlistState = reactive(createInitialModelAllowlistState());
 const editModelAllowlistState = reactive(createInitialModelAllowlistState());
+const thinkingCompatDefaults = (): AnthropicThinkingCompat => ({ enabled: false, all_models: true, models: [] });
+const createThinkingCompat = ref<AnthropicThinkingCompat>(thinkingCompatDefaults());
+const editThinkingCompat = ref<AnthropicThinkingCompat>(thinkingCompatDefaults());
+const createThinkingCompatRef = ref<{ validate: () => boolean; resetValidation: () => void } | null>(null);
+const editThinkingCompatRef = ref<{ validate: () => boolean; resetValidation: () => void } | null>(null);
 const createModelAllowlistLoading = ref(false);
 const editModelAllowlistLoading = ref(false);
 type ReasoningEffortPolicyFieldsExpose = {
@@ -6233,6 +6252,8 @@ const closeCreateModal = () => {
   createForm.max_reasoning_effort_over_limit = reasoningEffortOverLimitDowngrade;
   createForm.reasoning_effort_mappings = [];
   createReasoningEffortPolicyRef.value?.resetValidation();
+  createThinkingCompat.value = thinkingCompatDefaults();
+  createThinkingCompatRef.value?.resetValidation();
   resetModelAllowlistState(createModelAllowlistState);
   createModelRoutingRules.value = [];
 };
@@ -6302,6 +6323,13 @@ const handleCreateGroup = async () => {
   ) {
     return;
   }
+  if (
+    createForm.platform === "anthropic" &&
+    createThinkingCompatRef.value &&
+    !createThinkingCompatRef.value.validate()
+  ) {
+    return;
+  }
   if (!validateProfitControlForm(createForm)) {
     return;
   }
@@ -6353,6 +6381,7 @@ const handleCreateGroup = async () => {
       model_routing: convertRoutingRulesToApiFormat(
         createModelRoutingRules.value,
       ),
+      anthropic_thinking_compat: createForm.platform === "anthropic" ? createThinkingCompat.value : thinkingCompatDefaults(),
       model_allowlist: buildModelAllowlistConfig(createModelAllowlistState),
       // 创建时固定账号 manifest 固定发送关闭状态（后端创建路径禁止开启）
       codex_models_manifest_config: createCodexManifestDefaults(),
@@ -6555,6 +6584,12 @@ const handleEdit = async (group: AdminGroup) => {
     group.reasoning_effort_mappings,
     group.platform,
   );
+  const savedThinkingCompat = group.anthropic_thinking_compat ?? thinkingCompatDefaults();
+  editThinkingCompat.value = {
+    ...savedThinkingCompat,
+    models: [...(savedThinkingCompat.models ?? [])],
+  };
+  editThinkingCompatRef.value?.resetValidation();
   resetModelAllowlistState(editModelAllowlistState, group.model_allowlist);
   // 固定账号 manifest 配置：回显配置并异步解析已存账号名称（失败显示 #<id>）
   const savedCodexManifestConfig =
@@ -6623,6 +6658,8 @@ const closeEditModal = () => {
   editForm.audio_stt_price_per_hour = null;
   resetMessagesDispatchFormState(editForm);
   editForm.allow_live = false;
+  editThinkingCompat.value = thinkingCompatDefaults();
+  editThinkingCompatRef.value?.resetValidation();
   resetModelAllowlistState(editModelAllowlistState);
   editCodexManifestConfig.value = createCodexManifestDefaults();
   editCodexManifestAccountNames.value = {};
@@ -6639,6 +6676,13 @@ const handleUpdateGroup = async () => {
     supportsReasoningEffortPolicyPlatform(editForm.platform) &&
     editReasoningEffortPolicyRef.value &&
     !editReasoningEffortPolicyRef.value.validate()
+  ) {
+    return;
+  }
+  if (
+    editForm.platform === "anthropic" &&
+    editThinkingCompatRef.value &&
+    !editThinkingCompatRef.value.validate()
   ) {
     return;
   }
@@ -6703,6 +6747,7 @@ const handleUpdateGroup = async () => {
       model_routing: convertRoutingRulesToApiFormat(
         editModelRoutingRules.value,
       ),
+      anthropic_thinking_compat: editForm.platform === "anthropic" ? editThinkingCompat.value : thinkingCompatDefaults(),
       model_allowlist: buildModelAllowlistConfig(editModelAllowlistState),
       // 非 openai 平台提交关闭状态，与后端归一化一致
       codex_models_manifest_config:
@@ -7141,6 +7186,8 @@ watch(
     }
     createForm.allow_image_generation = defaultAllowImageGenerationForPlatform(newVal);
     resetDisabledBatchImagePricing(createForm);
+    createThinkingCompat.value = thinkingCompatDefaults();
+    createThinkingCompatRef.value?.resetValidation();
     resetModelAllowlistState(createModelAllowlistState);
     loadModelAllowlistCandidates("create", 0, newVal);
   },
@@ -7163,6 +7210,10 @@ watch(
 watch(
   () => editForm.platform,
   (newVal) => {
+    if (newVal !== "anthropic") {
+      editThinkingCompat.value = thinkingCompatDefaults();
+    }
+    editThinkingCompatRef.value?.resetValidation();
     if (!["anthropic", "antigravity"].includes(newVal)) {
       editForm.fallback_group_id_on_invalid_request = null;
     }

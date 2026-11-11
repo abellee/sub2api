@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { AdminGroup } from '@/types'
 import GroupsView from '@/views/admin/GroupsView.vue'
+import AnthropicThinkingCompatField from '@/components/admin/group/AnthropicThinkingCompatField.vue'
 import { adminAPI } from '@/api/admin'
 
 const {
@@ -269,6 +270,62 @@ describe('GroupsView duplicate action', () => {
     expect(wrapper.find('[data-testid="group-composite-routes"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="group-rate-multipliers"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="group-rpm-overrides"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('loads, edits and saves Anthropic thinking conversion scope', async () => {
+    const config = { enabled: true, all_models: false, models: ['claude-sonnet-5-5'] }
+    const group: AdminGroup = { ...sourceGroup, platform: 'anthropic', anthropic_thinking_compat: config }
+    listGroups.mockResolvedValue({ items: [group], total: 1, page: 1, page_size: 20, pages: 1 })
+    updateGroup.mockResolvedValue(group)
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.findAll('button').find(button => button.text() === 'common.edit')!.trigger('click')
+    await flushPromises()
+    const field = wrapper.findComponent(AnthropicThinkingCompatField)
+    expect(field.props('modelValue')).toEqual(config)
+    await field.get('textarea').setValue('claude-sonnet-*\nclaude-opus-*')
+    await flushPromises()
+    await wrapper.get('#edit-group-form').trigger('submit')
+    await flushPromises()
+    expect(updateGroup).toHaveBeenCalledWith(42, expect.objectContaining({
+      anthropic_thinking_compat: { enabled: true, all_models: false, models: ['claude-sonnet-*', 'claude-opus-*'] },
+    }))
+    expect(config.models).toEqual(['claude-sonnet-5-5'])
+    wrapper.unmount()
+  })
+
+  it('creates an Anthropic group with conversion enabled for all models', async () => {
+    vi.mocked(adminAPI.groups.create).mockResolvedValue(sourceGroup)
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.findAll('button').find(button => button.text() === 'admin.groups.createGroup')!.trigger('click')
+    await flushPromises()
+    const field = wrapper.findComponent(AnthropicThinkingCompatField)
+    expect(field.exists()).toBe(true)
+    expect(field.props('modelValue')).toEqual({ enabled: false, all_models: true, models: [] })
+    await field.get('button[role=switch]').trigger('click')
+    await wrapper.get('#create-group-form input[type=text]').setValue('Thinking group')
+    await wrapper.get('#create-group-form').trigger('submit')
+    await flushPromises()
+    expect(adminAPI.groups.create).toHaveBeenCalledWith(expect.objectContaining({
+      anthropic_thinking_compat: { enabled: true, all_models: true, models: [] },
+    }))
+    wrapper.unmount()
+  })
+
+  it('preserves legacy Anthropic groups as conversion disabled', async () => {
+    const group: AdminGroup = { ...sourceGroup, platform: 'anthropic' }
+    listGroups.mockResolvedValue({ items: [group], total: 1, page: 1, page_size: 20, pages: 1 })
+    updateGroup.mockResolvedValue(group)
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.findAll('button').find(button => button.text() === 'common.edit')!.trigger('click')
+    await flushPromises()
+    expect(wrapper.findComponent(AnthropicThinkingCompatField).props('modelValue').enabled).toBe(false)
+    await wrapper.get('#edit-group-form').trigger('submit')
+    await flushPromises()
+    expect(updateGroup).toHaveBeenCalledWith(42, expect.objectContaining({ anthropic_thinking_compat: { enabled: false, all_models: true, models: [] } }))
     wrapper.unmount()
   })
 

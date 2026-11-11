@@ -1107,6 +1107,20 @@ func (_u *GroupUpdate) SetNillableModelAllowlist(v *domain.GroupModelAllowlist) 
 	return _u
 }
 
+// SetAnthropicThinkingCompat sets the "anthropic_thinking_compat" field.
+func (_u *GroupUpdate) SetAnthropicThinkingCompat(v domain.GroupAnthropicThinkingCompat) *GroupUpdate {
+	_u.mutation.SetAnthropicThinkingCompat(v)
+	return _u
+}
+
+// SetNillableAnthropicThinkingCompat sets the "anthropic_thinking_compat" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillableAnthropicThinkingCompat(v *domain.GroupAnthropicThinkingCompat) *GroupUpdate {
+	if v != nil {
+		_u.SetAnthropicThinkingCompat(*v)
+	}
+	return _u
+}
+
 // SetCodexModelsManifestConfig sets the "codex_models_manifest_config" field.
 func (_u *GroupUpdate) SetCodexModelsManifestConfig(v domain.GroupCodexModelsManifestConfig) *GroupUpdate {
 	_u.mutation.SetCodexModelsManifestConfig(v)
@@ -1904,6 +1918,9 @@ func (_u *GroupUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.ModelAllowlist(); ok {
 		_spec.SetField(group.FieldModelAllowlist, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AnthropicThinkingCompat(); ok {
+		_spec.SetField(group.FieldAnthropicThinkingCompat, field.TypeJSON, value)
 	}
 	if value, ok := _u.mutation.CodexModelsManifestConfig(); ok {
 		_spec.SetField(group.FieldCodexModelsManifestConfig, field.TypeJSON, value)
@@ -3327,6 +3344,20 @@ func (_u *GroupUpdateOne) SetNillableModelAllowlist(v *domain.GroupModelAllowlis
 	return _u
 }
 
+// SetAnthropicThinkingCompat sets the "anthropic_thinking_compat" field.
+func (_u *GroupUpdateOne) SetAnthropicThinkingCompat(v domain.GroupAnthropicThinkingCompat) *GroupUpdateOne {
+	_u.mutation.SetAnthropicThinkingCompat(v)
+	return _u
+}
+
+// SetNillableAnthropicThinkingCompat sets the "anthropic_thinking_compat" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillableAnthropicThinkingCompat(v *domain.GroupAnthropicThinkingCompat) *GroupUpdateOne {
+	if v != nil {
+		_u.SetAnthropicThinkingCompat(*v)
+	}
+	return _u
+}
+
 // SetCodexModelsManifestConfig sets the "codex_models_manifest_config" field.
 func (_u *GroupUpdateOne) SetCodexModelsManifestConfig(v domain.GroupCodexModelsManifestConfig) *GroupUpdateOne {
 	_u.mutation.SetCodexModelsManifestConfig(v)
@@ -4154,6 +4185,9 @@ func (_u *GroupUpdateOne) sqlSave(ctx context.Context) (_node *Group, err error)
 	}
 	if value, ok := _u.mutation.ModelAllowlist(); ok {
 		_spec.SetField(group.FieldModelAllowlist, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AnthropicThinkingCompat(); ok {
+		_spec.SetField(group.FieldAnthropicThinkingCompat, field.TypeJSON, value)
 	}
 	if value, ok := _u.mutation.CodexModelsManifestConfig(); ok {
 		_spec.SetField(group.FieldCodexModelsManifestConfig, field.TypeJSON, value)
