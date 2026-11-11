@@ -225,7 +225,7 @@ test('model creates persona copy once; retries reuse generated copy and never ap
       generated++
       assert.equal(payload.config_id, 'default')
       assert.equal(payload.username, 'tokenfree-notifications')
-      assert.equal(payload.flags.enable_default_system_prompt, true)
+      assert.equal(payload.flags.enable_default_system_prompt, false)
       assert.match(payload.message, /当前的人设/)
       assert.match(payload.message, /余额5美元/)
       assert.ok(!payload.message.includes('Browser stays unchanged'))
