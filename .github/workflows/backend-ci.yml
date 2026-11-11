@@ -49,10 +49,13 @@ jobs:
       - name: Verify Go version
         run: |
           go version | grep -q 'go1.27.4'
-      - name: Private SDK tests and vet
+      - name: Verify pinned SDK build inputs
+        working-directory: backend
+        run: go run ./scripts/audit-sdk-manifest.go
+      - name: Private SDK race tests and vet
         working-directory: backend/audit-sdk
         run: |
-          go test ./...
+          go test -race -p 2 ./...
           go vet ./...
       - name: Cost precheck cache history tests
         working-directory: backend/cost-guard-sdk
@@ -76,6 +79,9 @@ jobs:
       - name: Integration tests
         working-directory: backend
         run: make test-integration
+      - name: Audit capture and billing race regressions
+        working-directory: backend
+        run: go test -race -tags=unit -p 2 -count=3 -timeout=20m -run 'Test(ModelSessionCapture|HTTPUpstreamAudit|HTTPUpstreamForwardDrainsUsage)' ./internal/handler ./internal/repository
 
   frontend:
     runs-on: ubuntu-latest

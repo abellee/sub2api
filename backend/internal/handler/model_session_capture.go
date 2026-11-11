@@ -51,13 +51,11 @@ func beginModelSessionCapture(c *gin.Context, key *service.APIKey, model string,
 	if session != "" {
 		session = "session-" + auditcore.Digest([]byte(session))
 	}
-	ctx, s := client.Begin(c.Request.Context(), auditcore.Meta{UserID: key.UserID, APIKeyID: key.ID, GroupID: key.GroupID, Model: model, Endpoint: path, Session: session, Stream: gjson.GetBytes(body, "stream").Bool() || strings.Contains(path, ":streamGenerateContent")})
+	ctx, s := client.CaptureRequest(c.Request.Context(), auditcore.Meta{UserID: key.UserID, APIKeyID: key.ID, GroupID: key.GroupID, Model: model, Endpoint: path, Session: session, Stream: gjson.GetBytes(body, "stream").Bool() || strings.Contains(path, ":streamGenerateContent")}, c.Request.Header, body)
 	if s == nil {
 		return
 	}
 	c.Request = c.Request.WithContext(ctx)
-	s.Metadata("client-request", 0, c.Request.Header, 0)
-	s.Part("client-request", 0, body)
 	c.Writer = &modelSessionWriter{ResponseWriter: c.Writer, session: s}
 }
 
@@ -70,7 +68,7 @@ type modelSessionWriter struct {
 func (w *modelSessionWriter) Write(p []byte) (int, error) {
 	n, err := w.ResponseWriter.Write(p)
 	if n > 0 {
-		w.session.Part("client-response", 0, p[:n])
+		captureModelSession(func() { w.session.Part("client-response", 0, p[:n]) })
 	}
 	if err != nil || n != len(p) {
 		w.failed = true
@@ -80,7 +78,7 @@ func (w *modelSessionWriter) Write(p []byte) (int, error) {
 func (w *modelSessionWriter) WriteString(p string) (int, error) {
 	n, err := w.ResponseWriter.WriteString(p)
 	if n > 0 {
-		w.session.Part("client-response", 0, []byte(p[:n]))
+		captureModelSession(func() { w.session.Part("client-response", 0, []byte(p[:n])) })
 	}
 	if err != nil || n != len(p) {
 		w.failed = true
@@ -89,10 +87,20 @@ func (w *modelSessionWriter) WriteString(p string) (int, error) {
 }
 func (w *modelSessionWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
+// Called only on the owner goroutine; the SDK copies before returning and its
+// own receivers do all later work. Capture faults cannot replace business I/O.
+func captureModelSession(submit func()) {
+	defer func() {
+		if v := recover(); v != nil {
+			slog.Error("audit capture panic isolated; gateway continues", "panic", v)
+		}
+	}()
+	submit()
+}
+
 // ModelSessionCaptureCompletion is installed before gateway handlers. Its defer
 // observes panics without swallowing or changing the application's recovery.
 func ModelSessionCaptureCompletion() gin.HandlerFunc {
-	_ = auditclient.Default()
 	return func(c *gin.Context) {
 		// Keep the request's outer writer while it is still owned by this
 		// middleware. The capture writer may wrap an ops writer whose lease is
@@ -107,8 +115,7 @@ func ModelSessionCaptureCompletion() gin.HandlerFunc {
 					if w, ok := c.Writer.(*modelSessionWriter); ok {
 						failed = failed || w.failed
 					}
-					s.Metadata("client-response", 0, response.Header(), response.Status())
-					s.Finish(response.Status(), failed)
+					captureModelSession(func() { s.Complete(response.Header(), response.Status(), failed) })
 				}
 			}
 			if panicValue != nil {

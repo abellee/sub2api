@@ -11,6 +11,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/audit-sdk/auditclient"
+	"github.com/Wei-Shaw/sub2api/audit-sdk/auditcore"
+	"github.com/Wei-Shaw/sub2api/audit-sdk/auditrpc"
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -60,6 +63,14 @@ func TestHTTPUpstreamForwardDrainsUsageAfterClientDisconnect(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	clientCtx, disconnect := context.WithCancel(t.Context())
 	defer disconnect()
+	offline := httptest.NewServer(auditrpc.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(503) }), false))
+	defer offline.Close()
+	audit, err := auditclient.New(auditclient.Config{RelayURL: offline.URL, Token: strings.Repeat("t", 32), SpoolDir: t.TempDir(), SpoolBytes: 8 << 20})
+	require.NoError(t, err)
+	defer audit.Close()
+	audit.SetPolicy(auditcore.Policy{Version: 1, Enabled: true})
+	clientCtx, capture := audit.CaptureRequest(clientCtx, auditcore.Meta{UserID: 1, Model: "gpt-5.1", Stream: true}, nil, nil)
+	require.NotNil(t, capture)
 	releaseUsage := make(chan struct{})
 	var releaseOnce sync.Once
 	release := func() { releaseOnce.Do(func() { close(releaseUsage) }) }
@@ -135,6 +146,7 @@ func TestHTTPUpstreamForwardDrainsUsageAfterClientDisconnect(t *testing.T) {
 		t.Fatal("forward did not finish draining usage")
 	}
 	require.Len(t, billingRepo.commands, 1)
+	capture.Complete(nil, 200, true)
 	require.Len(t, usageRepo.logs, 1)
 	require.Equal(t, 17, usageRepo.logs[0].InputTokens)
 	require.Equal(t, 8, usageRepo.logs[0].OutputTokens)

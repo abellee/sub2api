@@ -192,6 +192,17 @@ jobs:
           GITHUB_REPO_NAME: ${{ github.event.repository.name }}
           DOCKERHUB_USERNAME: skip
           TAG_MESSAGE: ''
+      - name: Verify linked SDK version in the release binary
+        if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
+        env:
+          AUDIT_SDK_COMMIT: ${{ steps.audit-sdk.outputs.commit }}
+        run: |
+          test -n "$AUDIT_SDK_COMMIT"
+          binary=$(find dist -type f -name sub2api -print -quit)
+          test -n "$binary"
+          "$binary" -version 2>&1 | tee "$RUNNER_TEMP/sub2api-version.txt"
+          grep -F "${AUDIT_SDK_COMMIT:0:12}" "$RUNNER_TEMP/sub2api-version.txt"
+          strings "$binary" | grep -F "$AUDIT_SDK_COMMIT" > /dev/null
       - name: Verify and collect the target archive
         env:
           TARGET_OS: ${{ matrix.goos }}

@@ -221,9 +221,9 @@ func (s *httpUpstreamService) Do(req *http.Request, proxyURL string, accountID i
 	// 执行请求
 	client := s.httpClientForUpstreamRequest(entry.client, req)
 	client = httpClientWithGrokAccessDeniedFallback(client)
-	auditDone := auditclient.ObserveRequest(req, accountID)
-	resp, err := doUpstreamRequest(client, req, s.upstreamDrainTimeout())
-	auditDone(resp, err)
+	resp, err := auditclient.ObserveUpstream(req, accountID, func(r *http.Request) (*http.Response, error) {
+		return doUpstreamRequest(client, r, s.upstreamDrainTimeout())
+	})
 	if err != nil {
 		s.recordOpenAIHTTP2Failure(profile, entry.protocolMode, entry.proxyKey, err)
 		// 请求失败，立即减少计数
@@ -284,9 +284,9 @@ func (s *httpUpstreamService) DoWithTLS(req *http.Request, proxyURL string, acco
 
 	client := s.httpClientForUpstreamRequest(entry.client, req)
 	client = httpClientWithGrokAccessDeniedFallback(client)
-	auditDone := auditclient.ObserveRequest(req, accountID)
-	resp, err := doUpstreamRequest(client, req, s.upstreamDrainTimeout())
-	auditDone(resp, err)
+	resp, err := auditclient.ObserveUpstream(req, accountID, func(r *http.Request) (*http.Response, error) {
+		return doUpstreamRequest(client, r, s.upstreamDrainTimeout())
+	})
 	if err != nil {
 		atomic.AddInt64(&entry.inFlight, -1)
 		atomic.StoreInt64(&entry.lastUsed, time.Now().UnixNano())

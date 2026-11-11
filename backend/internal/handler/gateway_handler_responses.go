@@ -126,6 +126,8 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 		h.responsesSecurityAuditError(c, decision)
 		return
 	}
+	// Capture establishes a derived context; forwarding must retain its session.
+	requestCtx = c.Request.Context()
 
 	// Error passthrough binding
 	if h.errorPassthroughService != nil {

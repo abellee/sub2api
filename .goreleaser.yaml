@@ -4,6 +4,7 @@ project_name: sub2api
 
 before:
   hooks:
+    - sh -c 'cd backend && go run ./scripts/audit-sdk-manifest.go'
     - go mod tidy -C backend
 
 builds:

@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/audit-sdk/auditclient"
 	_ "github.com/Wei-Shaw/sub2api/ent/runtime"
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler"
@@ -63,6 +64,7 @@ func main() {
 
 	if *showVersion {
 		log.Printf("Sub2API %s (commit: %s, built: %s)\n", Version, Commit, Date)
+		log.Printf("Audit SDK %s", auditclient.SDKVersion())
 		return
 	}
 
@@ -148,6 +150,9 @@ func runMainServer() {
 		BuildType: BuildType,
 	}
 
+	// Initialize outside request handling; opening/recovering the SDK spool may
+	// use disk. Capture failures leave the gateway available.
+	audit := auditclient.Default()
 	app, err := initializeApplication(buildInfo)
 	if err != nil {
 		log.Fatalf("Failed to initialize application: %v", err)
@@ -195,6 +200,11 @@ func runMainServer() {
 
 	if err := app.Server.Shutdown(ctx); err != nil {
 		log.Printf("Server forced to shutdown: %v", err)
+	}
+	// Share the existing five-second HTTP grace period; never extend it for
+	// unavailable storage or Relay. SDK reports the memory-only loss boundary.
+	if err := audit.Shutdown(ctx); err != nil {
+		log.Printf("Audit SDK shutdown incomplete: %v", err)
 	}
 
 	log.Println("Server exited")

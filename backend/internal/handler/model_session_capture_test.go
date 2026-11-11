@@ -1,8 +1,8 @@
 package handler
 
 import (
+	"bytes"
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -44,13 +44,17 @@ func TestModelSessionCaptureLeavesBusinessStatusHeadersAndBodyUnchanged(t *testi
 			requestContext, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			router.POST("/v1/responses", func(c *gin.Context) {
-				ctx, s := client.Begin(c.Request.Context(), auditcore.Meta{UserID: 1, Model: "test-model"})
+				input := []byte("input")
+				ctx, s := client.CaptureRequest(c.Request.Context(), auditcore.Meta{UserID: 1, Model: "test-model"}, c.Request.Header, input)
+				clear(input)
 				c.Request = c.Request.WithContext(ctx)
 				c.Writer = &modelSessionWriter{ResponseWriter: c.Writer, session: s}
-				s.Part("client-request", 0, []byte("input"))
 				c.Header("X-Business", "unchanged")
 				c.Status(scenario.status)
-				_, _ = c.Writer.WriteString("data: hello\n\n")
+				chunk := []byte("data: ")
+				_, _ = c.Writer.Write(chunk)
+				clear(chunk)
+				_, _ = c.Writer.WriteString("hello\n\n")
 				c.Writer.Flush()
 				if scenario.streamError {
 					service.MarkOpsStreamError(c, "error", "test", 500)
@@ -67,6 +71,7 @@ func TestModelSessionCaptureLeavesBusinessStatusHeadersAndBodyUnchanged(t *testi
 			if w.Code != scenario.status || w.Body.String() != "data: hello\n\n" || w.Header().Get("X-Business") != "unchanged" {
 				t.Fatalf("business output changed: %d %q", w.Code, w.Body.String())
 			}
+			w.Header().Set("X-Business", "reused-after-handler")
 			// Backup admission is asynchronous; a clean shutdown commits its
 			// journal before another queue instance reopens the durable events.
 			client.Close()
@@ -82,10 +87,27 @@ func TestModelSessionCaptureLeavesBusinessStatusHeadersAndBodyUnchanged(t *testi
 			items, _ := queue.Items(0)
 			var end auditcore.Event
 			var response auditcore.Event
-			for _, item := range items {
-				b, _ := queue.Read(item.ID)
-				var e auditcore.Event
-				_ = json.Unmarshal(b, &e)
+			var body []byte
+			var input []byte
+			for i, item := range items {
+				b, err := queue.Read(item.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				frame, err := auditcore.DecodeCaptureFrame(b)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if frame.Sequence != int64(i+1) {
+					t.Fatalf("out of order frame %d", frame.Sequence)
+				}
+				e := frame.Event
+				if e.Direction == "client-request" {
+					input = append(input, e.Body...)
+				}
+				if e.Direction == "client-response" {
+					body = append(body, e.Body...)
+				}
 				if e.Kind == "end" {
 					end = e
 				}
@@ -98,6 +120,9 @@ func TestModelSessionCaptureLeavesBusinessStatusHeadersAndBodyUnchanged(t *testi
 			}
 			if response.Status != scenario.status || response.Headers.Get("X-Business") != "unchanged" {
 				t.Fatalf("lost final response metadata %+v", response)
+			}
+			if !bytes.Equal(body, []byte("data: hello\n\n")) || string(input) != "input" || !w.Flushed {
+				t.Fatal("buffer reuse, stream bytes or Flush changed")
 			}
 		})
 	}
