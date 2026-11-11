@@ -10,6 +10,20 @@ import (
 
 // Standard results become readable only after the main site confirms billing.
 func (h *RelayHandler) handleStandardResult(w http.ResponseWriter, r *http.Request, task *Task, format string) {
+	if format == "error_context" {
+		// Only the signed, ownership-checked relay endpoint can request these details.
+		if task.Status != StatusFailed && task.Status != StatusRecoveryRequired && task.Status != StatusInterrupted {
+			writeError(w, http.StatusConflict, "result_pending", "task has no terminal error")
+			return
+		}
+		body := task.ErrorBody
+		if len(body) == 0 {
+			body = task.Response
+		}
+		w.Header().Set("Cache-Control", "private, no-store")
+		writeJSON(w, http.StatusOK, map[string]any{"status_code": task.ResponseStatus, "message": task.ErrorMessage, "body": string(body[:min(len(body), 8<<10)])})
+		return
+	}
 	if format == "state" {
 		writeJSON(w, 200, publicTaskView(task))
 		return

@@ -21,6 +21,7 @@ type Task struct {
 	Request           *UpstreamRequest `json:"request,omitempty"`
 	Response          []byte           `json:"response,omitempty"`
 	ResponseStatus    int              `json:"response_status,omitempty"`
+	ErrorBody         []byte           `json:"error_body,omitempty"`
 	Parameters        map[string]any   `json:"parameters,omitempty"`
 	Files             []ResultFile     `json:"files,omitempty"`
 	FilesAcknowledged bool             `json:"files_acknowledged"`

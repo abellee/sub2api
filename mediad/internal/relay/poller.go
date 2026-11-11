@@ -299,6 +299,10 @@ func (t *Tracker) complete(task *Task, status string, usage *Usage, result map[s
 	task.CompletedAt = &now
 	task.CallbackState = CallbackPending
 	if status == StatusFailed && len(task.Files) == 0 {
+		// Keep only the rule-matching prefix after normal result cleanup.
+		if len(task.Response) > 0 {
+			task.ErrorBody = append([]byte(nil), task.Response[:min(len(task.Response), 8<<10)]...)
+		}
 		task.FilesAcknowledged = true
 	}
 	if status == StatusSucceeded && t.stager != nil {
