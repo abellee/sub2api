@@ -79,7 +79,7 @@ func run(write bool) error {
 			return err
 		}
 		rel = filepath.ToSlash(rel)
-		if !(strings.HasSuffix(rel, ".go") && !strings.HasSuffix(rel, "_test.go")) && rel != "go.mod" && rel != "go.sum" {
+		if (strings.HasSuffix(rel, "_test.go") || !strings.HasSuffix(rel, ".go")) && rel != "go.mod" && rel != "go.sum" {
 			return nil
 		}
 		data, err := os.ReadFile(path)

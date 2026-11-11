@@ -39,7 +39,10 @@ func TestHTTPUpstreamAuditPreservesRetryStreamAndCopies(t *testing.T) {
 			return
 		}
 		_, _ = io.WriteString(w, "data: hello\n\n")
-		w.(http.Flusher).Flush()
+		if err := http.NewResponseController(w).Flush(); err != nil {
+			t.Error(err)
+			return
+		}
 		_, _ = io.WriteString(w, "data: [DONE]\n\n")
 	}))
 	defer upstream.Close()
@@ -92,7 +95,11 @@ func TestHTTPUpstreamAuditPreservesRetryStreamAndCopies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer queue.Close()
+	defer func() {
+		if err := queue.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
 	items, err := queue.Items(0)
 	if err != nil {
 		t.Fatal(err)
