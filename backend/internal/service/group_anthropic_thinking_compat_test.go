@@ -62,7 +62,9 @@ func TestGroupAnthropicThinkingCompat(t *testing.T) {
 	}
 	missingKey, _ := gin.CreateTestContext(httptest.NewRecorder())
 	wrongPlatform := thinkingCompatContext(all)
-	wrongPlatform.MustGet("api_key").(*APIKey).Group.Platform = PlatformOpenAI
+	wrongPlatformKey, ok := wrongPlatform.MustGet("api_key").(*APIKey)
+	require.True(t, ok)
+	wrongPlatformKey.Group.Platform = PlatformOpenAI
 	for _, c := range []*gin.Context{nil, missingKey, wrongPlatform} {
 		body := []byte(`{"thinking":{"type":"enabled"}}`)
 		require.Equal(t, body, applyGroupAnthropicThinkingCompat(c, body, "claude-sonnet-5-5", "claude-sonnet-5-5"))
