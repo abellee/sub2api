@@ -822,7 +822,7 @@ export default {
         jobs: 'Background job execution status, including last run time, success time, and error information.',
         qps: 'Queries Per Second (QPS) and Tokens Per Second (TPS), real-time system throughput.',
         tokens: 'Total number of tokens processed in the current time window.',
-        sla: 'Service Level Agreement success rate, excluding business limits (e.g., insufficient balance, quota exceeded).',
+        sla: 'Service success rate, excluding business limits (e.g., insufficient balance, quota exceeded). Repeated failures for the same media task count once.',
         errors: 'Error statistics, including total errors, error rate, and upstream error rate.',
         upstreamErrors: 'Upstream error statistics, excluding rate limit errors (429/529).',
         latency: 'Request duration statistics, including p50, p90, p95, p99 percentiles.',

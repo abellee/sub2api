@@ -35,11 +35,19 @@ func (c *Client) Configured() bool {
 
 // Message is one notification. A nil UserIDs slice sends to every enabled subscription.
 type Message struct {
-	Title     string
-	Body      string
-	URL       string
-	DedupeKey string
-	UserIDs   []int64
+	Title               string
+	Body                string
+	URL                 string
+	DedupeKey           string
+	UserIDs             []int64
+	GroupNotification   *GroupNotification
+	BrowserNotification *bool
+}
+
+// GroupNotification contains public copy, separate from private winner messages.
+type GroupNotification struct {
+	Body     string `json:"body"`
+	Generate bool   `json:"generate,omitempty"`
 }
 
 // Result is the notifier's delivery summary. Notified counts distinct users.
@@ -51,11 +59,13 @@ type Result struct {
 }
 
 type requestBody struct {
-	Title     string   `json:"title"`
-	Body      string   `json:"body"`
-	URL       string   `json:"url"`
-	DedupeKey string   `json:"dedupeKey,omitempty"`
-	UserIDs   *[]int64 `json:"userIDs,omitempty"`
+	Title               string             `json:"title"`
+	Body                string             `json:"body"`
+	URL                 string             `json:"url"`
+	DedupeKey           string             `json:"dedupeKey,omitempty"`
+	UserIDs             *[]int64           `json:"userIDs,omitempty"`
+	GroupNotification   *GroupNotification `json:"groupNotification,omitempty"`
+	BrowserNotification *bool              `json:"browserNotification,omitempty"`
 }
 
 // Subscriber is one user who can currently receive a push.
@@ -104,10 +114,12 @@ func (c *Client) Notify(ctx context.Context, message Message) (Result, error) {
 		return Result{}, fmt.Errorf("push notifier is not configured")
 	}
 	body := requestBody{
-		Title:     message.Title,
-		Body:      message.Body,
-		URL:       message.URL,
-		DedupeKey: message.DedupeKey,
+		Title:               message.Title,
+		Body:                message.Body,
+		URL:                 message.URL,
+		DedupeKey:           message.DedupeKey,
+		GroupNotification:   message.GroupNotification,
+		BrowserNotification: message.BrowserNotification,
 	}
 	if message.UserIDs != nil {
 		ids := make([]int64, len(message.UserIDs))
@@ -124,7 +136,11 @@ func (c *Client) Notify(ctx context.Context, message Message) (Result, error) {
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Push-Token", c.token)
-	resp, err := c.http.Do(req)
+	httpClient := *c.http
+	if message.GroupNotification != nil && message.GroupNotification.Generate {
+		httpClient.Timeout = 90 * time.Second
+	}
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return Result{}, err
 	}

@@ -236,26 +236,25 @@ func (h *MediaHubController) TryStandardImageTask(c *gin.Context) bool {
 		return true
 	}
 	out := gin.H{"id": id, "task_id": id, "status": "processing"}
-	if gjson.GetBytes(state.Body, "files_acknowledged").Bool() {
+	status := gjson.GetBytes(state.Body, "status").String()
+	if mediaTaskFailed(status) {
+		h.relay.writeTaskFailure(c, ctx, in, id, state.Body)
+		return true
+	}
+	if status == "succeeded" && gjson.GetBytes(state.Body, "files_acknowledged").Bool() {
 		c.JSON(http.StatusGone, gin.H{"id": id, "task_id": id, "status": "deleted", "error": gin.H{"message": "media files have expired"}})
 		return true
 	}
-	status := gjson.GetBytes(state.Body, "status").String()
-	if status == "failed" || (status == "succeeded" && gjson.GetBytes(state.Body, "callback_state").String() == "confirmed") {
+	if status == "succeeded" && gjson.GetBytes(state.Body, "callback_state").String() == "confirmed" {
 		result, err := h.relay.standardFetch(ctx, in, id, "openai_url")
 		if err != nil {
 			mediaStandardError(c, 502, "media result unavailable")
 			return true
 		}
 		out["http_status"] = result.StatusCode
-		if status == "failed" {
-			out["status"] = "failed"
-			out["error"] = gin.H{"message": gjson.GetBytes(state.Body, "error_message").String()}
-		} else {
-			out["status"] = "completed"
-			out["result"] = json.RawMessage(result.Body)
-			out["image_url"] = gjson.GetBytes(result.Body, "data.0.url").String()
-		}
+		out["status"] = "completed"
+		out["result"] = json.RawMessage(result.Body)
+		out["image_url"] = gjson.GetBytes(result.Body, "data.0.url").String()
 	}
 	c.JSON(200, out)
 	return true

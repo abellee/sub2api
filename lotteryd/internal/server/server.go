@@ -239,6 +239,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"started_at":     s.StartedAt,
 		"uptime_seconds": int64(time.Since(s.StartedAt).Seconds()),
 		"settlement":     settlement,
+		"cache":          s.App.Store.Cache().Stats(),
 	})
 }
 
@@ -407,6 +408,7 @@ type activityInput struct {
 	Visibility           *lottery.Visibility    `json:"visibility"`
 	Notify               bool                   `json:"notify"`
 	NotifyStages         []string               `json:"notify_stages"`
+	NotifyChannels       []string               `json:"notify_channels"`
 	Conditions           []lottery.ConditionDef `json:"conditions"`
 	Prizes               []prizeInput           `json:"prizes"`
 }
@@ -466,6 +468,10 @@ func (s *Server) handleAdminCreateActivity(w http.ResponseWriter, r *http.Reques
 		fail(w, http.StatusBadRequest, 400, "invalid body: "+err.Error())
 		return
 	}
+	if _, err := lottery.ResolveNotifyChannels(in.NotifyChannels); err != nil {
+		fail(w, http.StatusBadRequest, 400, err.Error())
+		return
+	}
 	a := in.toActivity()
 	if err := s.App.ApplyRepeatGroup(a); err != nil {
 		mapStoreError(w, err)
@@ -480,7 +486,7 @@ func (s *Server) handleAdminCreateActivity(w http.ResponseWriter, r *http.Reques
 		internalError(w, err)
 		return
 	}
-	s.App.SaveActivityNotify(id, in.NotifyStages, in.Notify)
+	s.App.SaveActivityNotify(id, in.NotifyStages, in.Notify, in.NotifyChannels)
 	s.wsHub.Wake()
 	ok(w, map[string]any{"id": id})
 }
@@ -494,6 +500,10 @@ func (s *Server) handleAdminUpdateActivity(w http.ResponseWriter, r *http.Reques
 	var in activityInput
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 		fail(w, http.StatusBadRequest, 400, "invalid body: "+err.Error())
+		return
+	}
+	if _, err := lottery.ResolveNotifyChannels(in.NotifyChannels); err != nil {
+		fail(w, http.StatusBadRequest, 400, err.Error())
 		return
 	}
 	existing, err := s.App.Store.GetActivity(id)
@@ -564,7 +574,7 @@ func (s *Server) handleAdminUpdateActivity(w http.ResponseWriter, r *http.Reques
 		mapStoreError(w, err)
 		return
 	}
-	s.App.SaveActivityNotify(id, in.NotifyStages, in.Notify)
+	s.App.SaveActivityNotify(id, in.NotifyStages, in.Notify, in.NotifyChannels)
 	s.wsHub.Wake()
 	ok(w, map[string]any{"id": id})
 }
@@ -637,15 +647,12 @@ func (s *Server) handleAdminGetActivity(w http.ResponseWriter, r *http.Request, 
 		internalError(w, err)
 		return
 	}
-	stages, err := s.App.Store.ActivityNotifyStages(id)
+	settings, err := s.App.Store.ActivityNotificationSettings(id)
 	if err != nil {
 		internalError(w, err)
 		return
 	}
-	if stages == nil {
-		stages = []string{}
-	}
-	ok(w, map[string]any{"activity": a, "winners": winners, "notify": len(stages) > 0, "notify_stages": stages})
+	ok(w, map[string]any{"activity": a, "winners": winners, "notify": len(settings.Stages) > 0 && len(settings.Channels) > 0, "notify_stages": settings.Stages, "notify_channels": settings.Channels})
 }
 
 func (s *Server) handleAdminRemoveParticipant(w http.ResponseWriter, r *http.Request, _ *Claims) {

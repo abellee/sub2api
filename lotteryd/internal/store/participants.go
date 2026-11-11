@@ -88,7 +88,7 @@ func (s *Store) AddParticipant(activityID, userID int64, email string, weight fl
 	if err != nil {
 		return err
 	}
-	return tx.Commit()
+	return s.changed(tx.Commit())
 }
 
 // ListParticipants returns all participants of an activity.
@@ -147,7 +147,7 @@ func (s *Store) InsertWinner(w *lottery.Winner) error {
 		`UPDATE prizes SET granted_count = granted_count + 1 WHERE id = $1`, w.PrizeID); err != nil {
 		return err
 	}
-	return tx.Commit()
+	return s.changed(tx.Commit())
 }
 
 // UpdateWinnerFulfillment updates the fulfillment state of a winner record.
@@ -156,7 +156,7 @@ func (s *Store) UpdateWinnerFulfillment(id int64, fulfillment, redeemCode, note,
 		`UPDATE winners SET fulfillment=$1, redeem_code=$2, note=$3, error=$4 WHERE id=$5`,
 		fulfillment, redeemCode, note, errMsg, id,
 	)
-	return err
+	return s.changed(err)
 }
 
 func scanWinners(rows *sql.Rows) ([]lottery.Winner, error) {
@@ -177,7 +177,7 @@ func scanWinners(rows *sql.Rows) ([]lottery.Winner, error) {
 const winnerColumns = `id, activity_id, user_id, email, prize_id, prize_name, prize_type, value, fulfillment, redeem_code, note, error, created_at`
 
 // ListWinnersByActivity returns all winner records of an activity (raw email).
-func (s *Store) ListWinnersByActivity(activityID int64) ([]lottery.Winner, error) {
+func (s *Store) readListWinnersByActivity(activityID int64) ([]lottery.Winner, error) {
 	rows, err := s.db.Query(
 		`SELECT `+winnerColumns+` FROM winners WHERE activity_id = $1 ORDER BY id`, activityID)
 	if err != nil {
@@ -189,7 +189,7 @@ func (s *Store) ListWinnersByActivity(activityID int64) ([]lottery.Winner, error
 
 // ListWinnersByUser returns all winner records of a user across activities,
 // with the activity name joined for display.
-func (s *Store) ListWinnersByUser(userID int64) ([]lottery.Winner, error) {
+func (s *Store) readListWinnersByUser(userID int64) ([]lottery.Winner, error) {
 	rows, err := s.db.Query(
 		`SELECT w.id, w.activity_id,
 		        (SELECT name FROM activities WHERE id = w.activity_id) AS activity_name,
@@ -257,11 +257,11 @@ func (s *Store) ReplaceDailyTokens(date string, tokens []lottery.DailyToken) err
 			return fmt.Errorf("upsert %d: %w", t.UserID, err)
 		}
 	}
-	return tx.Commit()
+	return s.changed(tx.Commit())
 }
 
 // DailyTokensWindow returns all per-user daily token rows within [start, end] (inclusive dates).
-func (s *Store) DailyTokensWindow(start, end string) (map[int64]*lottery.UserUsage, error) {
+func (s *Store) readDailyTokensWindow(start, end string) (map[int64]*lottery.UserUsage, error) {
 	rows, err := s.db.Query(
 		`SELECT date, user_id, email, total_tokens FROM user_daily_tokens
 		 WHERE date >= $1 AND date <= $2 ORDER BY date ASC`, start, end)
@@ -293,7 +293,7 @@ func (s *Store) DailyTokensWindow(start, end string) (map[int64]*lottery.UserUsa
 // ---- Sync state ----
 
 // GetState returns a state value ("" when absent).
-func (s *Store) GetState(key string) (string, error) {
+func (s *Store) readGetState(key string) (string, error) {
 	var v string
 	err := s.db.QueryRow(`SELECT value FROM sync_state WHERE key = $1`, key).Scan(&v)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -307,13 +307,13 @@ func (s *Store) SetState(key, value string) error {
 	_, err := s.db.Exec(
 		`INSERT INTO sync_state (key, value) VALUES ($1, $2)
 		 ON CONFLICT(key) DO UPDATE SET value = excluded.value`, key, value)
-	return err
+	return s.changed(err)
 }
 
 // ---- Registered dates ----
 
 // GetRegisteredAt 返回缓存的用户注册时间（未缓存时返回 nil, nil）。
-func (s *Store) GetRegisteredAt(userID int64) (*time.Time, error) {
+func (s *Store) readGetRegisteredAt(userID int64) (*time.Time, error) {
 	var raw string
 	err := s.db.QueryRow(`SELECT registered_at FROM user_registered WHERE user_id = $1`, userID).Scan(&raw)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -335,7 +335,7 @@ func (s *Store) UpsertRegisteredAt(userID int64, email string, t time.Time) erro
 		`INSERT INTO user_registered (user_id, email, registered_at) VALUES ($1, $2, $3)
 		 ON CONFLICT(user_id) DO UPDATE SET email = excluded.email, registered_at = excluded.registered_at`,
 		userID, email, fmtTime(t))
-	return err
+	return s.changed(err)
 }
 
 // ---- 系列重复参与查询（日常定时抽奖） ----

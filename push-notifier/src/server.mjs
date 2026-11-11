@@ -4,6 +4,7 @@ import http from 'node:http'
 import path from 'node:path'
 import webpush from 'web-push'
 import { normalizeClientID } from './store.mjs'
+import { deliverGroupNotification, groupConfig, validateGroupConfig, validateGroupNotification } from './group-notifications.mjs'
 
 const API_PREFIX = '/push-api/v1'
 const MAX_BODY_BYTES = 32 * 1024
@@ -336,6 +337,27 @@ export async function deliverTargeted({ store, validation, userIDs, vapidSubject
   })
 }
 
+const notificationFlights = new WeakMap()
+
+// Manual group notices and activity stages enter through this single dispatcher.
+export async function deliverNotification({ store, validation, userIDs, vapidSubject, sender, groupNotification, browserEnabled = true, groupFetch }) {
+  let flights = notificationFlights.get(store)
+  if (!flights) { flights = new Map(); notificationFlights.set(store, flights) }
+  const key = validation.dedupeKey
+  if (key && flights.has(key)) return flights.get(key)
+  const pending = (async () => {
+    const outcomes = await Promise.allSettled([
+      browserEnabled ? deliverTargeted({ store, validation, userIDs, vapidSubject, sender }) : Promise.resolve({}),
+      groupNotification ? deliverGroupNotification({ store, notification: groupNotification, dedupeKey: key, fetchImpl: groupFetch }) : Promise.resolve(null),
+    ])
+    for (const outcome of outcomes) if (outcome.status === 'rejected') throw outcome.reason
+    const [push, group] = outcomes.map(outcome => outcome.value)
+    return { ...push, ...(group ? { group } : {}) }
+  })()
+  if (key) flights.set(key, pending)
+  try { return await pending } finally { if (key) flights.delete(key) }
+}
+
 export function createServer({
   store,
   authorizeAdmin,
@@ -344,6 +366,7 @@ export function createServer({
   notifyToken = '',
   sender = defaultSender,
   logger = console,
+  groupFetch,
 }) {
   return http.createServer(async (request, response) => {
     const requestURL = new URL(request.url || '/', 'http://localhost')
@@ -415,23 +438,64 @@ export function createServer({
         if (dedupeKey.length > 200) return sendJSON(response, 400, { message: 'dedupeKey is too long' })
         const userIDs = normalizeUserIDs(payload.userIDs)
         if (userIDs.error) return sendJSON(response, 400, { message: userIDs.error })
-        const result = await deliverTargeted({
+        let groupNotification
+        if (payload.browserNotification != null && typeof payload.browserNotification !== 'boolean') return sendJSON(response, 400, { message: 'browserNotification must be a boolean' })
+        if (payload.groupNotification != null) {
+          if (typeof payload.groupNotification !== 'object' || Array.isArray(payload.groupNotification)) {
+            return sendJSON(response, 400, { message: 'invalid group notification' })
+          }
+          groupNotification = validateGroupNotification({ title: payload.title, ...payload.groupNotification }, true)
+          if (groupNotification.error) return sendJSON(response, 400, { message: groupNotification.error })
+        }
+        const result = await deliverNotification({
           store,
           validation: { ...validation, dedupeKey },
           userIDs: userIDs.ids,
           vapidSubject,
           sender,
+          groupNotification,
+          browserEnabled: payload.browserNotification !== false,
+          groupFetch,
         })
+        if (result.group?.failed) return sendJSON(response, 502, { message: result.group.generationFailed ? '群通知文案生成失败，请检查 AstrBot 模型、人设配置及密钥的 chat 权限' : result.group.uncertain ? '群通知结果不确定，请核对群消息后处理，系统不会自动重发' : '群通知发送失败，请检查机器人连接和权限', group: result.group })
         return sendJSON(response, 200, {
           notified: result.notified || 0,
           delivered: result.delivered || 0,
           failed: result.failed || 0,
           deduped: Boolean(result.deduped),
+          ...(result.group ? { group: result.group } : {}),
         })
       }
 
       if (requestURL.pathname.startsWith(`${API_PREFIX}/admin/`)) {
         if (!(await authorizeAdmin(request))) return sendJSON(response, 403, { message: 'administrator access required' })
+
+        if (request.method === 'GET' && requestURL.pathname === `${API_PREFIX}/admin/group-notifications/config`) {
+          return sendJSON(response, 200, groupConfig(store, true))
+        }
+        if (request.method === 'PUT' && requestURL.pathname === `${API_PREFIX}/admin/group-notifications/config`) {
+          const config = validateGroupConfig(await readJSON(request), groupConfig(store))
+          await store.saveGroupConfig(config)
+          return sendJSON(response, 200, groupConfig(store, true))
+        }
+        if (request.method === 'GET' && requestURL.pathname === `${API_PREFIX}/admin/group-notifications/messages`) {
+          return sendJSON(response, 200, { messages: store.state.groupNotifies.slice(0, 100) })
+        }
+        if (request.method === 'POST' && requestURL.pathname === `${API_PREFIX}/admin/group-notifications/send`) {
+          const payload = await readJSON(request)
+          const validation = validateGroupNotification({ ...payload, generate: true }, true)
+          if (validation.error) return sendJSON(response, 400, { message: validation.error })
+          if (typeof payload.requestID !== 'string' || !/^[\w-]{8,128}$/.test(payload.requestID)) {
+            return sendJSON(response, 400, { message: 'invalid request ID' })
+          }
+          validation.dedupeKey = `manual-group:${payload.requestID}`
+          if (!groupConfig(store).enabled) return sendJSON(response, 400, { message: '请先保存并启用群通知配置' })
+          const result = await deliverNotification({ store, validation, groupNotification: validation, browserEnabled: false, groupFetch })
+          return sendJSON(response, result.group.failed ? 502 : 200, {
+            ...result,
+            message: result.group.failed ? (result.group.generationFailed ? '群通知文案生成失败，请检查 AstrBot 模型、人设配置及密钥的 chat 权限' : result.group.uncertain ? '发送结果不确定，请先核对群消息，不要重复点击发送' : '群通知发送失败，请检查机器人连接和权限') : undefined,
+          })
+        }
 
         if (request.method === 'GET' && requestURL.pathname === `${API_PREFIX}/admin/overview`) {
           return sendJSON(response, 200, store.overview())

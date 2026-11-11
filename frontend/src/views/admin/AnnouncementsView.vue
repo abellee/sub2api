@@ -175,55 +175,66 @@
       width="wide"
       @close="closeEdit"
     >
-      <form id="announcement-form" @submit.prevent="handleSave" class="space-y-4">
-        <div>
-          <label class="input-label">{{ t('admin.announcements.form.title') }}</label>
-          <input v-model="form.title" type="text" class="input" required />
-        </div>
-
-        <div>
-          <label class="input-label">{{ t('admin.announcements.form.content') }}</label>
-          <textarea v-model="form.content" rows="6" class="input" required></textarea>
-        </div>
-
-        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+      <form id="announcement-form" @submit.prevent="handleSave">
+        <p v-if="pendingGroupAnnouncement" role="alert" class="mb-4 text-sm text-amber-600 dark:text-amber-400">{{ t('admin.announcements.groupNotifyPending') }}</p>
+        <fieldset :disabled="saving || !!pendingGroupAnnouncement" class="space-y-4">
           <div>
-            <label class="input-label">{{ t('admin.announcements.form.status') }}</label>
-            <Select v-model="form.status" :options="statusOptions" />
+            <label class="input-label">{{ t('admin.announcements.form.title') }}</label>
+            <input v-model="form.title" type="text" class="input" required />
           </div>
-          <div>
-            <label class="input-label">{{ t('admin.announcements.form.notifyMode') }}</label>
-            <Select v-model="form.notify_mode" :options="notifyModeOptions" />
-            <p class="input-hint">{{ t('admin.announcements.form.notifyModeHint') }}</p>
-          </div>
-        </div>
 
-        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div>
-            <label class="input-label">{{ t('admin.announcements.form.startsAt') }}</label>
-            <input v-model="form.starts_at_str" type="datetime-local" max="9999-12-31T23:59" class="input" />
-            <p class="input-hint">{{ t('admin.announcements.form.startsAtHint') }}</p>
+            <label class="input-label">{{ t('admin.announcements.form.content') }}</label>
+            <textarea v-model="form.content" rows="6" class="input" required></textarea>
           </div>
-          <div>
-            <label class="input-label">{{ t('admin.announcements.form.endsAt') }}</label>
-            <input v-model="form.ends_at_str" type="datetime-local" max="9999-12-31T23:59" class="input" />
-            <p class="input-hint">{{ t('admin.announcements.form.endsAtHint') }}</p>
-          </div>
-        </div>
 
-        <AnnouncementTargetingEditor
-          v-model="form.targeting"
-          :groups="subscriptionGroups"
-        />
+          <div v-if="!isEditing">
+            <label class="flex items-center gap-2 text-sm">
+              <input id="announcement-group-notify" v-model="form.group_notify" type="checkbox" :disabled="form.status !== 'active'" class="checkbox" />
+              {{ t('admin.announcements.groupNotify') }}
+            </label>
+            <p class="input-hint">{{ t('admin.announcements.groupNotifyHint') }}</p>
+          </div>
+
+          <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div>
+              <label class="input-label">{{ t('admin.announcements.form.status') }}</label>
+              <Select v-model="form.status" :options="statusOptions" />
+            </div>
+            <div>
+              <label class="input-label">{{ t('admin.announcements.form.notifyMode') }}</label>
+              <Select v-model="form.notify_mode" :options="notifyModeOptions" />
+              <p class="input-hint">{{ t('admin.announcements.form.notifyModeHint') }}</p>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div>
+              <label class="input-label">{{ t('admin.announcements.form.startsAt') }}</label>
+              <input v-model="form.starts_at_str" type="datetime-local" max="9999-12-31T23:59" class="input" />
+              <p class="input-hint">{{ t('admin.announcements.form.startsAtHint') }}</p>
+            </div>
+            <div>
+              <label class="input-label">{{ t('admin.announcements.form.endsAt') }}</label>
+              <input v-model="form.ends_at_str" type="datetime-local" max="9999-12-31T23:59" class="input" />
+              <p class="input-hint">{{ t('admin.announcements.form.endsAtHint') }}</p>
+            </div>
+          </div>
+
+          <AnnouncementTargetingEditor
+            v-model="form.targeting"
+            :groups="subscriptionGroups"
+          />
+        </fieldset>
       </form>
 
       <template #footer>
         <div class="flex justify-end gap-3">
-          <button type="button" @click="closeEdit" class="btn btn-secondary">
+          <button type="button" @click="closeEdit" :disabled="saving" class="btn btn-secondary">
             {{ t('common.cancel') }}
           </button>
           <button type="submit" form="announcement-form" :disabled="saving" class="btn btn-primary">
-            {{ saving ? t('common.saving') : t('common.save') }}
+            {{ saving ? t('common.saving') : pendingGroupAnnouncement ? t('admin.announcements.groupNotifyRetry') : t('common.save') }}
           </button>
         </div>
       </template>
@@ -262,6 +273,7 @@ import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 import { adminAPI } from '@/api/admin'
+import { sendGroupNotification } from '@/api/pushNotifications'
 import { formatDateTime, formatDateTimeLocalInput, parseDateTimeLocalInput } from '@/utils/format'
 import type { AdminGroup, Announcement, AnnouncementTargeting } from '@/types'
 import type { Column } from '@/components/common/types'
@@ -424,6 +436,7 @@ function handleSearch() {
 const showEditDialog = ref(false)
 const saving = ref(false)
 const editingAnnouncement = ref<Announcement | null>(null)
+const pendingGroupAnnouncement = ref<Announcement | null>(null)
 
 const isEditing = computed(() => !!editingAnnouncement.value)
 
@@ -432,6 +445,7 @@ const form = reactive({
   content: '',
   status: 'draft',
   notify_mode: 'silent',
+  group_notify: false,
   starts_at_str: '',
   ends_at_str: '',
   targeting: { any_of: [] } as AnnouncementTargeting
@@ -454,6 +468,8 @@ function resetForm() {
   form.content = ''
   form.status = 'draft'
   form.notify_mode = 'silent'
+  form.group_notify = false
+  pendingGroupAnnouncement.value = null
   form.starts_at_str = ''
   form.ends_at_str = ''
   form.targeting = { any_of: [] }
@@ -479,14 +495,17 @@ function openCreateDialog() {
 }
 
 function openEditDialog(row: Announcement) {
+  pendingGroupAnnouncement.value = null
   editingAnnouncement.value = row
   fillFormFromAnnouncement(row)
   showEditDialog.value = true
 }
 
 function closeEdit() {
+  if (saving.value) return
   showEditDialog.value = false
   editingAnnouncement.value = null
+  pendingGroupAnnouncement.value = null
 }
 
 function buildCreatePayload() {
@@ -534,7 +553,12 @@ function buildUpdatePayload(original: Announcement) {
   return payload
 }
 
+function groupNotificationTime(value: string) {
+  return new Date(value).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) + '（北京时间）'
+}
+
 async function handleSave() {
+  if (saving.value) return
   // Frontend validation for targeting (to avoid ANNOUNCEMENT_INVALID_TARGET)
   const anyOf = form.targeting?.any_of ?? []
   if (anyOf.length > 50) {
@@ -552,8 +576,29 @@ async function handleSave() {
   saving.value = true
   try {
     if (!editingAnnouncement.value) {
-      const payload = buildCreatePayload()
-      await adminAPI.announcements.create(payload)
+      const created = pendingGroupAnnouncement.value || await adminAPI.announcements.create(buildCreatePayload())
+      if (form.group_notify && created.status === 'active') {
+        pendingGroupAnnouncement.value = created
+        try {
+          await sendGroupNotification({
+            title: t('admin.announcements.groupNotify'),
+            body: JSON.stringify({
+              类型: '公告', 标题: created.title, 内容: created.content,
+              生效时间: created.starts_at ? groupNotificationTime(created.starts_at) : '立即生效',
+              结束时间: created.ends_at ? groupNotificationTime(created.ends_at) : '不设结束时间',
+              通知方式: '现在发送；生效时间晚于当前时间时作为预告，不要说已经生效',
+              当前时间: groupNotificationTime(new Date().toISOString()),
+              适用范围: targetingSummary(created.targeting),
+            }),
+            requestID: `announcement-${created.id}`,
+          })
+          pendingGroupAnnouncement.value = null
+        } catch (error: any) {
+          appStore.showError(t('admin.announcements.groupNotifyFailed', { error: error?.message || t('admin.pushNotifications.sendFailed') }))
+          await loadAnnouncements()
+          return
+        }
+      }
       appStore.showSuccess(t('common.success'))
       showEditDialog.value = false
       await loadAnnouncements()

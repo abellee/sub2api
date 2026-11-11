@@ -36,15 +36,17 @@ func TestNotifyEmptyUserIDsIsExplicit(t *testing.T) {
 		ids, ok := body["userIDs"].([]any)
 		require.True(t, ok)
 		require.Empty(t, ids)
+		require.Equal(t, map[string]any{"body": "结果到活动页看一下。"}, body["groupNotification"])
 		_ = json.NewEncoder(w).Encode(Result{})
 	}))
 	defer server.Close()
 
 	_, err := New(server.URL, "secret").Notify(context.Background(), Message{
-		Title:   "抽奖即将开始",
-		Body:    "没有符合条件的用户",
-		URL:     "/lottery",
-		UserIDs: []int64{},
+		Title:             "抽奖即将开始",
+		Body:              "没有符合条件的用户",
+		URL:               "/lottery",
+		UserIDs:           []int64{},
+		GroupNotification: &GroupNotification{Body: "结果到活动页看一下。"},
 	})
 	require.NoError(t, err)
 }

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"lotteryd/internal/cache"
 	"lotteryd/internal/lottery"
 	"lotteryd/internal/push"
 	"lotteryd/internal/store"
@@ -174,6 +175,9 @@ func applyRegistered(usages map[int64]*lottery.UserUsage, userID int64, email st
 func (ap *App) usageWindow(ctx context.Context, maxDays int) (map[int64]*lottery.UserUsage, error) {
 	end := time.Now().In(lottery.Beijing()).AddDate(0, 0, -1)
 	start := end.AddDate(0, 0, -(maxDays - 1))
+	if fresh, _ := ctx.Value(freshUsageKey{}).(bool); fresh {
+		return ap.Store.FreshDailyTokensWindow(dateStr(start), dateStr(end))
+	}
 	return ap.Store.DailyTokensWindow(dateStr(start), dateStr(end))
 }
 
@@ -185,7 +189,11 @@ func (ap *App) usageWindow(ctx context.Context, maxDays int) (map[int64]*lottery
 // 仅符合条件的用户只看自己能参与的场次，已参与或已中奖的场次仍保留。管理员不受限。
 // 右上角的抽奖可见范围不参与这里，它只决定菜单。
 func (ap *App) ListUserActivities(ctx context.Context, userID int64, email, role string, registeredAt *time.Time) ([]ActivityView, error) {
-	return ap.userActivityViews(ctx, userID, email, role, registeredAt, true)
+	auth, _ := ctx.Value(userUsageKey{}).(userUsageAuth)
+	key := fmt.Sprintf("activity-views:%d:%s:%s:%s", userID, role, cache.Hash(email), cache.Hash(auth.bearer))
+	return cache.Load(ap.Store.Cache(), ctx, key, 15*time.Second, func() ([]ActivityView, error) {
+		return ap.userActivityViews(ctx, userID, email, role, registeredAt, true)
+	})
 }
 
 func (ap *App) userActivityViews(ctx context.Context, userID int64, email, role string, registeredAt *time.Time, filterItem bool) ([]ActivityView, error) {
@@ -211,9 +219,13 @@ func (ap *App) userActivityViews(ctx context.Context, userID int64, email, role 
 		}
 		applyRegistered(usages, userID, email, ap.registeredAt(ctx, userID, email, registeredAt))
 	}
+	state, err := ap.Store.UserActivityRecords(userID)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]ActivityView, 0, len(candidates))
 	for _, a := range candidates {
-		v, err := ap.buildActivityView(ctx, a, userID, email, registeredAt, now, usages, false)
+		v, err := ap.buildActivityView(ctx, a, userID, email, registeredAt, now, usages, false, state)
 		if err != nil {
 			return nil, err
 		}
@@ -250,19 +262,20 @@ func (ap *App) UserCanSeeActivity(ctx context.Context, activityID, userID int64,
 	return false, nil
 }
 
-func (ap *App) buildActivityView(ctx context.Context, a *lottery.Activity, userID int64, email string, registeredAt *time.Time, now time.Time, usages map[int64]*lottery.UserUsage, withWinners bool) (*ActivityView, error) {
-	joined, err := ap.Store.HasParticipant(a.ID, userID)
+func (ap *App) buildActivityView(ctx context.Context, a *lottery.Activity, userID int64, email string, registeredAt *time.Time, now time.Time, usages map[int64]*lottery.UserUsage, withWinners bool, records ...*store.UserActivityRecords) (*ActivityView, error) {
+	var state *store.UserActivityRecords
+	var err error
+	if len(records) > 0 {
+		state = records[0]
+	} else {
+		state, err = ap.Store.UserActivityRecords(userID)
+	}
 	if err != nil {
 		return nil, err
 	}
-	won, err := ap.Store.HasWinner(a.ID, userID)
-	if err != nil {
-		return nil, err
-	}
-	count, err := ap.Store.CountParticipants(a.ID)
-	if err != nil {
-		return nil, err
-	}
+	joined := state.Joined[a.ID]
+	_, won := state.Winners[a.ID]
+	count := state.Counts[a.ID]
 
 	v := &ActivityView{
 		ID: a.ID, Name: a.Name, Description: a.Description,
@@ -285,23 +298,12 @@ func (ap *App) buildActivityView(ctx context.Context, a *lottery.Activity, userI
 		v.DrawnAt = &t
 	}
 	if won {
-		ws, err := ap.Store.ListWinnersByUser(userID)
-		if err != nil {
-			return nil, err
-		}
-		for i := range ws {
-			if ws[i].ActivityID == a.ID {
-				w := ws[i]
-				w.Email = lottery.MaskEmail(w.Email)
-				v.Won = &w
-				break
-			}
-		}
+		w := state.Winners[a.ID]
+		w.Email = lottery.MaskEmail(w.Email)
+		v.Won = &w
 	}
-	removed, err := ap.Store.HasRemovedParticipant(a.ID, userID)
-	if err != nil {
-		return nil, err
-	}
+	removed := state.Removed[a.ID]
+
 	if removed {
 		v.EligibleReason = store.ErrParticipantRemoved.Error()
 	}
@@ -354,11 +356,41 @@ func (ap *App) buildActivityView(ctx context.Context, a *lottery.Activity, userI
 
 // EligibilityList 返回参与中、符合条件且未参与的活动（供全局引导弹窗）。
 func (ap *App) EligibilityList(ctx context.Context, userID int64, email string, registeredAt *time.Time) ([]ActivityView, error) {
+	return ap.EligibilityListExcluding(ctx, userID, email, registeredAt, nil)
+}
+
+func (ap *App) EligibilityListExcluding(ctx context.Context, userID int64, email string, registeredAt *time.Time, seen map[int64]bool) ([]ActivityView, error) {
 	acts, err := ap.Store.ListActivities()
 	if err != nil {
 		return nil, err
 	}
 	now := time.Now()
+	candidates := make([]lottery.Activity, 0, len(acts))
+	for _, a := range acts {
+		if seen[a.ID] || a.Status != "active" || !a.DrawnAt.IsZero() || !now.After(a.StartsAt) || !a.Visibility.ShowsTo(email, true) {
+			continue
+		}
+		candidates = append(candidates, a)
+	}
+	if len(candidates) == 0 {
+		return []ActivityView{}, nil
+	}
+	acts = candidates
+	records, err := ap.Store.UserActivityRecords(userID)
+	if err != nil {
+		return nil, err
+	}
+	remaining := acts[:0]
+	for _, a := range acts {
+		if records.Removed[a.ID] || records.Joined[a.ID] || (a.MaxParticipants > 0 && records.Counts[a.ID] >= a.MaxParticipants) {
+			continue
+		}
+		remaining = append(remaining, a)
+	}
+	acts = remaining
+	if len(acts) == 0 {
+		return []ActivityView{}, nil
+	}
 	usages, err := ap.userUsageWindow(ctx, userID, email, acts)
 	if err != nil {
 		return nil, err
@@ -370,33 +402,13 @@ func (ap *App) EligibilityList(ctx context.Context, userID int64, email string, 
 		if a.Status != "active" || !a.DrawnAt.IsZero() || !now.After(a.StartsAt) {
 			continue
 		}
-		removed, err := ap.Store.HasRemovedParticipant(a.ID, userID)
-		if err != nil {
-			return nil, err
-		}
-		if removed {
+		if records.Removed[a.ID] || records.Joined[a.ID] {
 			continue
 		}
-		// 部分用户：名单外不弹。全部用户和仅符合条件的用户仍按参与条件判断。
-		if !a.Visibility.ShowsTo(email, true) {
+		if a.MaxParticipants > 0 && records.Counts[a.ID] >= a.MaxParticipants {
 			continue
 		}
-		joined, err := ap.Store.HasParticipant(a.ID, userID)
-		if err != nil {
-			return nil, err
-		}
-		if joined {
-			continue
-		}
-		if a.MaxParticipants > 0 {
-			count, err := ap.Store.CountParticipants(a.ID)
-			if err != nil {
-				return nil, err
-			}
-			if count >= a.MaxParticipants {
-				continue
-			}
-		}
+
 		if err := ap.fillHistoricalRecharge(ctx, usages, userID, email, a.Conditions); err != nil {
 			return nil, err
 		}
@@ -429,6 +441,7 @@ func (ap *App) EligibilityList(ctx context.Context, userID int64, email string, 
 // Participate 在校验窗口、资格、容量后把用户登记为参与者。
 // identity 由 HTTP 层通过 /auth/me 复核后传入。
 func (ap *App) Participate(ctx context.Context, activityID, userID int64, identity *sub2api.Identity, now time.Time) (*ActivityView, error) {
+	ctx = FreshUserUsage(ctx)
 	a, err := ap.Store.GetActivity(activityID)
 	if err != nil {
 		return nil, err
@@ -534,7 +547,7 @@ func (ap *App) AdminListActivities(ctx context.Context) ([]ActivityView, error) 
 	if err != nil {
 		return nil, err
 	}
-	notifyStages, err := ap.Store.ListActivityNotifyStages()
+	notifySettings, err := ap.Store.ListActivityNotificationSettings()
 	if err != nil {
 		return nil, err
 	}
@@ -575,13 +588,15 @@ func (ap *App) AdminListActivities(ctx context.Context) ([]ActivityView, error) 
 			v.RepeatPolicy = policy
 		}
 		counts := pushLogs[a.ID]
-		stages := notifyStages[a.ID]
+		settings := notifySettings[a.ID]
+		stages := settings.Stages
 		if stages == nil {
 			stages = []string{}
 		}
 		v.Notifications = &ActivityNotificationView{
-			Enabled:     len(stages) > 0,
+			Enabled:     len(stages) > 0 && len(settings.Channels) > 0,
 			Stages:      stages,
+			Channels:    settings.Channels,
 			BeforeStart: stageCountPtr(counts, lottery.StageBeforeStart),
 			Started:     stageCountPtr(counts, lottery.StageStarted),
 			BeforeDraw:  stageCountPtr(counts, lottery.StageBeforeDraw),
@@ -859,6 +874,11 @@ func (ap *App) GetDailyConfigs() []lottery.DailyConfig {
 // SaveDailyConfig 新建（ID=0）或更新日常定时抽奖配置，返回带 ID 的配置。
 // 可见范围未填时，新建按全部用户，更新保留原来的范围。保存后同步到该配置尚未开奖的场次。
 func (ap *App) SaveDailyConfig(c lottery.DailyConfig) (lottery.DailyConfig, error) {
+	channels, channelErr := lottery.ResolveNotifyChannels(c.NotifyChannels)
+	if channelErr != nil {
+		return c, channelErr
+	}
+	c.NotifyChannels = channels
 	c.RepeatGroup = lottery.NormalizeRepeatGroup(c.RepeatGroup)
 	list := ap.GetDailyConfigs()
 	if c.ID > 0 {
@@ -1211,15 +1231,15 @@ func (ap *App) ensureNextDailyRound(cfg lottery.DailyConfig, now time.Time) erro
 	if err != nil {
 		return err
 	}
-	ap.SaveActivityNotify(id, cfg.NotifyStages, cfg.Notify)
+	ap.SaveActivityNotify(id, cfg.NotifyStages, cfg.Notify, cfg.NotifyChannels)
 	slog.Info("daily activity created", "id", id, "config", cfg.ID, "name", cfg.Name, "start", start.Format(time.RFC3339))
 	return ap.Store.SetState(keyFor(start), strconv.FormatInt(id, 10))
 }
 
 // SaveActivityNotify 把勾选的阶段写到活动上。旧配置只有总开关时，打开表示四个阶段都发。
-func (ap *App) SaveActivityNotify(id int64, stages []string, legacyAll bool) {
+func (ap *App) SaveActivityNotify(id int64, stages []string, legacyAll bool, channels []string) {
 	resolved := lottery.ResolveNotifyStages(stages, legacyAll)
-	if nerr := ap.Store.SetActivityNotify(id, resolved); nerr != nil {
+	if nerr := ap.Store.SetActivityNotify(id, resolved, channels); nerr != nil {
 		slog.Warn("activity notify stages", "id", id, "err", nerr)
 	}
 }
@@ -1310,7 +1330,7 @@ func (ap *App) RegenerateDailyRound(cfgID int64, now time.Time) error {
 	if err != nil {
 		return err
 	}
-	ap.SaveActivityNotify(id, cfg.NotifyStages, cfg.Notify)
+	ap.SaveActivityNotify(id, cfg.NotifyStages, cfg.Notify, cfg.NotifyChannels)
 	key := fmt.Sprintf("daily_created:%d:%s", cfg.ID, start.Format("2006-01-02"))
 	if err := ap.Store.SetState(key, strconv.FormatInt(id, 10)); err != nil {
 		return err

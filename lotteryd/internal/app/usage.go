@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"lotteryd/internal/cache"
 	"time"
 
 	"lotteryd/internal/lottery"
@@ -12,6 +13,12 @@ import (
 var ErrUsageUnavailable = errors.New("usage data unavailable")
 
 type userUsageKey struct{}
+type freshUsageKey struct{}
+
+func FreshUserUsage(ctx context.Context) context.Context {
+	return context.WithValue(ctx, freshUsageKey{}, true)
+}
+
 type userUsageAuth struct {
 	userID int64
 	bearer string
@@ -46,7 +53,17 @@ func (ap *App) userUsageWindow(ctx context.Context, userID int64, email string, 
 	}
 	end := time.Now().In(lottery.Beijing()).AddDate(0, 0, -1)
 	start := end.AddDate(0, 0, -(days - 1))
-	daily, err := ap.Sub2API.FetchUserDailyTokens(ctx, auth.bearer, dateStr(start), dateStr(end))
+	load := func() ([]lottery.DailyToken, error) {
+		return ap.Sub2API.FetchUserDailyTokens(ctx, auth.bearer, dateStr(start), dateStr(end))
+	}
+	var daily []lottery.DailyToken
+	var err error
+	if fresh, _ := ctx.Value(freshUsageKey{}).(bool); fresh {
+		daily, err = load()
+	} else {
+		key := fmt.Sprintf("usage:%d:%s:%s:%s", userID, cache.Hash(auth.bearer), dateStr(start), dateStr(end))
+		daily, err = cache.Load(ap.Store.Cache(), ctx, key, 15*time.Second, load)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrUsageUnavailable, err)
 	}

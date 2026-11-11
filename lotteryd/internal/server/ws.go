@@ -37,6 +37,8 @@ type wsOutMessage struct {
 }
 
 type wsClient struct {
+	mu          sync.Mutex
+	closed      bool
 	conn        *websocket.Conn
 	userID      int64
 	bearer      string
@@ -94,6 +96,7 @@ func (h *wsHub) remove(c *wsClient) {
 	h.mu.Lock()
 	if _, ok := h.clients[c]; ok {
 		delete(h.clients, c)
+		c.closed = true
 		close(c.send)
 	}
 	h.mu.Unlock()
@@ -101,25 +104,70 @@ func (h *wsHub) remove(c *wsClient) {
 
 func (h *wsHub) broadcastEligibility(ctx context.Context) {
 	h.mu.Lock()
-	targets := make([]*wsClient, 0, len(h.clients))
+	groups := map[wsIdentity][]*wsClient{}
 	for c := range h.clients {
-		targets = append(targets, c)
+		key := wsIdentity{c.userID, c.email, c.role, c.bearer}
+		groups[key] = append(groups[key], c)
 	}
 	h.mu.Unlock()
-	for _, c := range targets {
-		h.pushIfNew(ctx, c)
+	for _, clients := range groups {
+		h.pushGroup(ctx, clients)
 	}
 }
 
-// pushIfNew 计算该用户当前符合条件的活动和任务，发现新增（未推过的）就推送。
-func (h *wsHub) pushIfNew(ctx context.Context, c *wsClient) {
-	if !h.pushLottery(ctx, c) {
+type wsIdentity struct {
+	userID              int64
+	email, role, bearer string
+}
+
+// The same signed-in user may have several tabs. Calculate once, deliver to each.
+func (h *wsHub) pushIfNew(ctx context.Context, c *wsClient) { h.pushGroup(ctx, []*wsClient{c}) }
+
+func commonSeen(clients []*wsClient, tasks bool) map[int64]bool {
+	out := map[int64]bool{}
+	for i, c := range clients {
+		ids := c.lastIDs
+		if tasks {
+			ids = c.lastTaskIDs
+		}
+		if i == 0 {
+			for id, seen := range ids {
+				if seen {
+					out[id] = true
+				}
+			}
+			continue
+		}
+		for id := range out {
+			if !ids[id] {
+				delete(out, id)
+			}
+		}
+	}
+	return out
+}
+
+func (h *wsHub) pushGroup(ctx context.Context, clients []*wsClient) {
+	if len(clients) == 0 {
 		return
 	}
-	if !h.pushTasks(ctx, c) {
-		return
+	for _, c := range clients {
+		c.mu.Lock()
+		defer c.mu.Unlock()
 	}
-	h.pushWins(c)
+	first := clients[0]
+	usageCtx := app.WithUserUsageBearer(ctx, first.userID, first.bearer)
+	activities, _ := h.sv.App.EligibilityListExcluding(usageCtx, first.userID, first.email, first.regAt, commonSeen(clients, false))
+	tasks, _ := h.sv.App.TaskPromptListExcluding(ctx, first.userID, first.email, first.role, first.regAt, commonSeen(clients, true))
+	wins, winErr := h.sv.App.MyWinnings(first.userID)
+	for _, c := range clients {
+		if !h.sendLottery(c, activities) || !h.sendTasks(c, tasks) {
+			continue
+		}
+		if winErr == nil {
+			h.sendWins(c, wins)
+		}
+	}
 }
 
 // pendingWinMessages 第一次只登记已有中奖，不发送。之后按从早到晚返回新中奖。
@@ -147,6 +195,10 @@ func (h *wsHub) pushWins(c *wsClient) bool {
 	if err != nil {
 		return true
 	}
+	return h.sendWins(c, wins)
+}
+
+func (h *wsHub) sendWins(c *wsClient, wins []lottery.Winner) bool {
 	if c.lastWinIDs == nil {
 		c.lastWinIDs = map[int64]bool{}
 	}
@@ -161,20 +213,33 @@ func (h *wsHub) pushWins(c *wsClient) bool {
 }
 
 func (h *wsHub) trySend(c *wsClient, msg wsOutMessage) bool {
+	h.mu.Lock()
+	if c.closed {
+		h.mu.Unlock()
+		return false
+	}
 	select {
 	case c.send <- msg:
+		h.mu.Unlock()
 		return true
 	default:
-		// 发送队列满视为连接僵死，丢弃连接
+		h.mu.Unlock()
 		h.remove(c)
 		return false
 	}
 }
 
 func (h *wsHub) pushLottery(ctx context.Context, c *wsClient) bool {
-	views, err := h.sv.App.EligibilityList(app.WithUserUsageBearer(ctx, c.userID, c.bearer), c.userID, c.email, c.regAt)
+	views, err := h.sv.App.EligibilityListExcluding(app.WithUserUsageBearer(ctx, c.userID, c.bearer), c.userID, c.email, c.regAt, c.lastIDs)
 	if err != nil {
 		return true
+	}
+	return h.sendLottery(c, views)
+}
+
+func (h *wsHub) sendLottery(c *wsClient, views []app.ActivityView) bool {
+	if c.lastIDs == nil {
+		c.lastIDs = map[int64]bool{}
 	}
 	for i := range views {
 		v := &views[i]
@@ -193,9 +258,16 @@ func (h *wsHub) pushLottery(ctx context.Context, c *wsClient) bool {
 }
 
 func (h *wsHub) pushTasks(ctx context.Context, c *wsClient) bool {
-	tasks, err := h.sv.App.TaskPromptList(ctx, c.userID, c.email, c.role, c.regAt)
+	tasks, err := h.sv.App.TaskPromptListExcluding(ctx, c.userID, c.email, c.role, c.regAt, c.lastTaskIDs)
 	if err != nil {
 		return true
+	}
+	return h.sendTasks(c, tasks)
+}
+
+func (h *wsHub) sendTasks(c *wsClient, tasks []app.TaskPromptView) bool {
+	if c.lastTaskIDs == nil {
+		c.lastTaskIDs = map[int64]bool{}
 	}
 	for i := range tasks {
 		t := &tasks[i]
@@ -298,10 +370,7 @@ func (s *Server) wsReadPump(c *wsClient) {
 				Type string `json:"type"`
 			}
 			if json.Unmarshal(data, &m) == nil && m.Type == "ping" {
-				select {
-				case c.send <- wsOutMessage{Type: "pong"}:
-				default:
-				}
+				s.wsHub.trySend(c, wsOutMessage{Type: "pong"})
 			}
 		}
 	}

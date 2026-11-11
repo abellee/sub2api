@@ -6,7 +6,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"sync/atomic"
 	"time"
+
+	"lotteryd/internal/cache"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 
@@ -15,7 +18,9 @@ import (
 
 // Store wraps the PostgreSQL database.
 type Store struct {
-	db *sql.DB
+	db       *sql.DB
+	cache    *cache.Cache
+	revision atomic.Uint64
 }
 
 // Open connects to the PostgreSQL database at dsn (and applies the schema).
@@ -200,7 +205,7 @@ func (s *Store) CreateActivity(a *lottery.Activity) (int64, error) {
 	if err := insertChildren(tx, id, a); err != nil {
 		return 0, err
 	}
-	return id, tx.Commit()
+	return id, s.changed(tx.Commit())
 }
 
 func insertChildren(tx *sql.Tx, activityID int64, a *lottery.Activity) error {
@@ -288,14 +293,14 @@ func (s *Store) UpdateActivity(a *lottery.Activity) error {
 	if err := insertChildren(tx, a.ID, a); err != nil {
 		return err
 	}
-	return tx.Commit()
+	return s.changed(tx.Commit())
 }
 
 // MarkDrawn stamps the draw time of an activity (idempotent per draw run).
 func (s *Store) MarkDrawn(id int64, at time.Time) error {
 	_, err := s.db.Exec(`UPDATE activities SET drawn_at = $1, updated_at = $2 WHERE id = $3 AND drawn_at = ''`,
 		fmtTime(at), fmtTime(time.Now().UTC()), id)
-	return err
+	return s.changed(err)
 }
 
 // SetActivityStatus archives or restores an activity.
@@ -307,7 +312,7 @@ func (s *Store) SetActivityStatus(id int64, status string) error {
 	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrNotFound
 	}
-	return nil
+	return s.changed(nil)
 }
 
 func scanActivities(rows *sql.Rows) ([]lottery.Activity, error) {
@@ -352,33 +357,19 @@ func (s *Store) SetUndrawnActivityVisibility(dailyConfigID int64, visibility lot
 		`UPDATE activities SET visibility_json=$1, updated_at=$2 WHERE daily_config_id=$3 AND status='active' AND drawn_at=''`,
 		string(raw), fmtTime(time.Now().UTC()), dailyConfigID,
 	)
-	return err
+	return s.changed(err)
 }
 
 // ListActivities returns all activities ordered by draws_at.
 func (s *Store) ListActivities() ([]lottery.Activity, error) {
-	rows, err := s.db.Query(`SELECT ` + activityColumns + ` FROM activities ORDER BY draws_at ASC, id ASC`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	acts, err := scanActivities(rows)
-	if err != nil {
-		return nil, err
-	}
-	for i := range acts {
-		if err := s.loadChildren(&acts[i]); err != nil {
-			return nil, err
-		}
-	}
-	return acts, nil
+	return cache.Load(s.cache, context.Background(), "activities", readCacheTTL, s.activitySnapshot)
 }
 
-// GetActivity loads one activity with conditions and prizes.
 type activityQuerier interface {
 	Query(string, ...any) (*sql.Rows, error)
 }
 
+// GetActivity reloads a single activity for authoritative validation.
 func (s *Store) GetActivity(id int64) (*lottery.Activity, error) { return getActivity(s.db, id) }
 
 func getActivity(db activityQuerier, id int64) (*lottery.Activity, error) {

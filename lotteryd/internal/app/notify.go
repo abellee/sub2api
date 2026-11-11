@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -18,6 +19,7 @@ import (
 type ActivityNotificationView struct {
 	Enabled     bool     `json:"enabled"`
 	Stages      []string `json:"stages"`
+	Channels    []string `json:"channels"`
 	BeforeStart *int     `json:"before_start,omitempty"`
 	Started     *int     `json:"started,omitempty"`
 	BeforeDraw  *int     `json:"before_draw,omitempty"`
@@ -44,7 +46,7 @@ func (ap *App) NotifyDueActivities(ctx context.Context, now time.Time) error {
 	if !ap.pushReady() {
 		return nil
 	}
-	selected, err := ap.Store.ListActivityNotifyStages()
+	selected, err := ap.Store.ListActivityNotificationSettings()
 	if err != nil {
 		return err
 	}
@@ -63,7 +65,11 @@ func (ap *App) NotifyDueActivities(ctx context.Context, now time.Time) error {
 			continue
 		}
 		allowed := map[string]struct{}{}
-		for _, stage := range selected[activity.ID] {
+		settings := selected[activity.ID]
+		if len(settings.Channels) == 0 {
+			continue
+		}
+		for _, stage := range settings.Stages {
 			allowed[stage] = struct{}{}
 		}
 		if len(allowed) == 0 {
@@ -77,7 +83,7 @@ func (ap *App) NotifyDueActivities(ctx context.Context, now time.Time) error {
 			if _, ok := allowed[stage]; !ok {
 				continue
 			}
-			notified, sendErr := ap.sendActivityStage(ctx, activity, stage, now)
+			notified, sendErr := ap.sendActivityStage(ctx, activity, stage, now, settings.Channels)
 			if sendErr != nil {
 				slog.Warn("activity notification failed", "activity", activity.ID, "stage", stage, "err", sendErr)
 				if firstErr == nil {
@@ -93,9 +99,10 @@ func (ap *App) NotifyDueActivities(ctx context.Context, now time.Time) error {
 	return firstErr
 }
 
-func (ap *App) sendActivityStage(ctx context.Context, activity *lottery.Activity, stage string, now time.Time) (int, error) {
-	var userIDs []int64
-	if stage == lottery.StageResults {
+func (ap *App) sendActivityStage(ctx context.Context, activity *lottery.Activity, stage string, now time.Time, channels []string) (int, error) {
+	browser := lottery.HasNotifyChannel(channels, lottery.NotifyBrowser)
+	userIDs := make([]int64, 0)
+	if browser && stage == lottery.StageResults {
 		winners, err := ap.Store.ListWinnersByActivity(activity.ID)
 		if err != nil {
 			return 0, err
@@ -111,23 +118,26 @@ func (ap *App) sendActivityStage(ctx context.Context, activity *lottery.Activity
 			seen[winner.UserID] = struct{}{}
 			userIDs = append(userIDs, winner.UserID)
 		}
-	} else {
+	} else if browser {
 		ids, err := ap.activityNotifyUserIDs(ctx, activity, now)
 		if err != nil {
 			return 0, err
 		}
 		userIDs = ids
 	}
-	if len(userIDs) == 0 {
-		return 0, nil
-	}
 	title, body := activityPushCopy(activity, stage)
+	var group *push.GroupNotification
+	if lottery.HasNotifyChannel(channels, lottery.NotifyGroup) {
+		group = &push.GroupNotification{Body: activityGroupCopy(activity, stage), Generate: true}
+	}
 	result, err := ap.Push.Notify(ctx, push.Message{
-		Title:     title,
-		Body:      body,
-		URL:       "/lottery",
-		DedupeKey: fmt.Sprintf("lottery:%d:%s", activity.ID, stage),
-		UserIDs:   userIDs,
+		Title:               title,
+		Body:                body,
+		URL:                 "/lottery",
+		DedupeKey:           fmt.Sprintf("lottery:%d:%s", activity.ID, stage),
+		UserIDs:             userIDs,
+		BrowserNotification: &browser,
+		GroupNotification:   group,
 	})
 	if err != nil {
 		return 0, err
@@ -238,6 +248,23 @@ func activityPushCopy(activity *lottery.Activity, stage string) (string, string)
 	default:
 		return "抽奖结果", fmt.Sprintf("「%s」已开奖，你中奖了", activity.Name)
 	}
+}
+
+func activityGroupCopy(activity *lottery.Activity, stage string) string {
+	stages := map[string]string{lottery.StageBeforeStart: "开始前10分钟", lottery.StageStarted: "正式开始", lottery.StageBeforeDraw: "开奖前5分钟", lottery.StageResults: "已开奖，提醒查看结果，不代表所有人中奖"}
+	type publicPrize struct {
+		Name  string  `json:"名称"`
+		Type  string  `json:"类型"`
+		Value float64 `json:"面额美元"`
+		Stock int64   `json:"数量"`
+	}
+	prizes := make([]publicPrize, 0, len(activity.Prizes))
+	for _, prize := range activity.Prizes {
+		prizes = append(prizes, publicPrize{prize.Name, prize.PrizeType, prize.Value, prize.Stock})
+	}
+	info := map[string]any{"活动名称": activity.Name, "活动说明": activity.Description, "阶段": stages[stage], "开始时间（北京时间）": activity.StartsAt.In(lottery.Beijing()).Format("2006-01-02 15:04"), "开奖时间（北京时间）": activity.DrawsAt.In(lottery.Beijing()).Format("2006-01-02 15:04"), "参与人数上限（0为不限）": activity.MaxParticipants, "条件满足方式": activity.ConditionMatch, "参与条件": activity.Conditions, "奖品": prizes}
+	data, _ := json.Marshal(info)
+	return string(data)
 }
 
 // NotifyDueTaskRewards 通知已经拿到奖励、当前仍符合参与条件、且开启了通知的用户。

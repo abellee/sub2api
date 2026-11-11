@@ -339,7 +339,12 @@ func (h *MediaHubRelayHandler) taskStatus(c *gin.Context, userID, keyID, groupID
 		return
 	}
 	if json.Unmarshal(resp.Body, &state) == nil {
-		if state["files_acknowledged"] == true {
+		status, _ := state["status"].(string)
+		if mediaTaskFailed(status) {
+			h.writeTaskFailure(c, ctx, mediahub.ForwardInput{MediadBaseURL: h.cfg.MediadBaseURL, RelaySecret: h.cfg.RelaySecret, UserID: userID, KeyID: keyID, GroupID: groupID}, taskID, resp.Body)
+			return
+		}
+		if status == "succeeded" && state["files_acknowledged"] == true {
 			c.JSON(http.StatusGone, gin.H{"task_id": taskID, "status": "deleted", "error": gin.H{"message": "media files have expired"}})
 			return
 		}

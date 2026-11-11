@@ -37,6 +37,19 @@ func TestResolveNotifyStages(t *testing.T) {
 	require.Equal(t, []string{StageStarted, StageResults}, ResolveNotifyStages([]string{"results", "nope", "started", "started"}, false))
 }
 
+func TestResolveNotifyChannels(t *testing.T) {
+	for _, tc := range []struct{ input, want []string }{
+		{nil, []string{NotifyBrowser, NotifyGroup}}, {[]string{}, []string{}},
+		{[]string{NotifyGroup, NotifyGroup}, []string{NotifyGroup}}, {[]string{NotifyBrowser}, []string{NotifyBrowser}},
+	} {
+		channels, err := ResolveNotifyChannels(tc.input)
+		require.NoError(t, err)
+		require.Equal(t, tc.want, channels)
+	}
+	_, err := ResolveNotifyChannels([]string{"unknown"})
+	require.Error(t, err)
+}
+
 func TestNextStageProgress(t *testing.T) {
 	cap, units := NextStageProgress(100, 0)
 	require.Equal(t, 100.0, cap)

@@ -9,6 +9,7 @@ import (
 	"sort"
 	"time"
 
+	"lotteryd/internal/cache"
 	"lotteryd/internal/lottery"
 	"lotteryd/internal/store"
 	"lotteryd/internal/sub2api"
@@ -170,7 +171,7 @@ type modelUsageHit struct {
 
 // fillTaskProgress 填入当前用户在任务统计口径下、今天（北京时间）的阶段进度。
 // 今天不在任务周期内时进度为 0。用量接口失败时保留任务卡片，并标记进度未就绪。
-func (ap *App) fillTaskProgress(ctx context.Context, view *UserTaskView, t *lottery.Task, userID int64, today string, cache map[modelUsageKey]modelUsageHit) {
+func (ap *App) fillTaskProgress(ctx context.Context, view *UserTaskView, t *lottery.Task, userID int64, today string, requestCache map[modelUsageKey]modelUsageHit) {
 	usage := 0.0
 	ready := true
 	if today >= t.StartDate && today <= t.EndDate() {
@@ -178,9 +179,12 @@ func (ap *App) fillTaskProgress(ctx context.Context, view *UserTaskView, t *lott
 			ready = false
 		} else {
 			key := modelUsageKey{groupID: t.GroupID, model: t.Model}
-			hit, ok := cache[key]
+			hit, ok := requestCache[key]
 			if !ok {
-				tokens, err := ap.Sub2API.FetchUserDailyModelUsage(ctx, today, t.GroupID, t.Model, userID)
+				usageKey := fmt.Sprintf("model-usage:%d:%s:%d:%s", userID, today, t.GroupID, cache.Hash(t.Model))
+				tokens, err := cache.Load(ap.Store.Cache(), ctx, usageKey, 15*time.Second, func() (float64, error) {
+					return ap.Sub2API.FetchUserDailyModelUsage(ctx, today, t.GroupID, t.Model, userID)
+				})
 				extra := ap.taskTestUsage(today, t.GroupID, t.Model)
 				switch {
 				case err != nil && extra <= 0:
@@ -192,7 +196,7 @@ func (ap *App) fillTaskProgress(ctx context.Context, view *UserTaskView, t *lott
 				default:
 					hit = modelUsageHit{tokens: tokens + extra, ok: true}
 				}
-				cache[key] = hit
+				requestCache[key] = hit
 			}
 			if !hit.ok {
 				ready = false
@@ -326,6 +330,10 @@ type TaskPromptView struct {
 // 管理员不受每条任务的可见范围限制。其他用户在部分用户模式下必须在名单里。
 // 任务白/黑名单和可参与条件（全部满足，空条件视为可参与）都要过。
 func (ap *App) TaskPromptList(ctx context.Context, userID int64, email, role string, registeredAt *time.Time) ([]TaskPromptView, error) {
+	return ap.TaskPromptListExcluding(ctx, userID, email, role, registeredAt, nil)
+}
+
+func (ap *App) TaskPromptListExcluding(ctx context.Context, userID int64, email, role string, registeredAt *time.Time, seen map[int64]bool) ([]TaskPromptView, error) {
 	admin := role == "admin"
 	tasks, err := ap.Store.ListTasks()
 	if err != nil {
@@ -335,7 +343,7 @@ func (ap *App) TaskPromptList(ctx context.Context, userID int64, email, role str
 	candidates := make([]lottery.Task, 0)
 	maxWindow := 0
 	for _, t := range tasks {
-		if t.Status != lottery.TaskActive || !t.UserAllowed(email) {
+		if seen[t.ID] || t.Status != lottery.TaskActive || !t.UserAllowed(email) {
 			continue
 		}
 		if !admin && !t.Visibility.ShowsTo(email, true) {

@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS activity_notify (
 	enabled BOOLEAN NOT NULL,
 	stages TEXT NOT NULL DEFAULT ''
 );
+ALTER TABLE activity_notify ADD COLUMN IF NOT EXISTS channels TEXT NOT NULL DEFAULT 'browser,group';
 
 CREATE TABLE IF NOT EXISTS activity_push_log (
 	activity_id BIGINT NOT NULL,
@@ -41,52 +42,64 @@ func (s *Store) migrateNotify() error {
 }
 
 // SetActivityNotify 保存勾选的通知阶段。空列表表示不发送。
-func (s *Store) SetActivityNotify(activityID int64, stages []string) error {
+func (s *Store) SetActivityNotify(activityID int64, stages []string, channels []string) error {
+	channels, err := lottery.ResolveNotifyChannels(channels)
+	if err != nil {
+		return err
+	}
 	normalized := lottery.NormalizeNotifyStages(stages)
 	enabled := false
 	if len(normalized) > 0 {
 		enabled = true
 	}
-	_, err := s.db.Exec(`
-		INSERT INTO activity_notify(activity_id, enabled, stages) VALUES($1, $2, $3)
-		ON CONFLICT(activity_id) DO UPDATE SET enabled = excluded.enabled, stages = excluded.stages
-	`, activityID, enabled, strings.Join(normalized, ","))
-	return err
+	_, err = s.db.Exec(`
+		INSERT INTO activity_notify(activity_id, enabled, stages, channels) VALUES($1, $2, $3, $4)
+		ON CONFLICT(activity_id) DO UPDATE SET enabled = excluded.enabled, stages = excluded.stages, channels = excluded.channels
+	`, activityID, enabled, strings.Join(normalized, ","), strings.Join(channels, ","))
+	return s.changed(err)
 }
 
-// ActivityNotifyStages 返回这场活动勾选的阶段。
+// ActivityNotificationSettings 返回这场活动勾选的阶段和渠道。
 // 旧数据只记了 enabled=1、没有阶段列表时，视为四个阶段都勾选。没有记录时为空。
-func (s *Store) ActivityNotifyStages(activityID int64) ([]string, error) {
+func (s *Store) ActivityNotificationSettings(activityID int64) (lottery.NotificationSettings, error) {
 	var enabled bool
-	var raw string
-	err := s.db.QueryRow(`SELECT enabled, stages FROM activity_notify WHERE activity_id = $1`, activityID).Scan(&enabled, &raw)
+	var raw, channels string
+	err := s.db.QueryRow(`SELECT enabled, stages, channels FROM activity_notify WHERE activity_id = $1`, activityID).Scan(&enabled, &raw, &channels)
 	if err == sql.ErrNoRows {
-		return []string{}, nil
+		return lottery.NotificationSettings{Stages: []string{}, Channels: []string{lottery.NotifyBrowser, lottery.NotifyGroup}}, nil
 	}
 	if err != nil {
-		return nil, err
+		return lottery.NotificationSettings{}, err
 	}
-	return decodeNotifyStages(enabled, raw), nil
+	return decodeNotificationSettings(enabled, raw, channels), nil
 }
 
-// ListActivityNotifyStages 返回每场活动勾选的阶段。
-func (s *Store) ListActivityNotifyStages() (map[int64][]string, error) {
-	rows, err := s.db.Query(`SELECT activity_id, enabled, stages FROM activity_notify`)
+// ListActivityNotificationSettings 返回每场活动勾选的阶段和渠道。
+func (s *Store) readListActivityNotificationSettings() (map[int64]lottery.NotificationSettings, error) {
+	rows, err := s.db.Query(`SELECT activity_id, enabled, stages, channels FROM activity_notify`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	out := map[int64][]string{}
+	out := map[int64]lottery.NotificationSettings{}
 	for rows.Next() {
 		var id int64
 		var enabled bool
-		var raw string
-		if err := rows.Scan(&id, &enabled, &raw); err != nil {
+		var raw, channels string
+		if err := rows.Scan(&id, &enabled, &raw, &channels); err != nil {
 			return nil, err
 		}
-		out[id] = decodeNotifyStages(enabled, raw)
+		out[id] = decodeNotificationSettings(enabled, raw, channels)
 	}
 	return out, rows.Err()
+}
+
+func decodeNotificationSettings(enabled bool, stages, channels string) lottery.NotificationSettings {
+	selected := []string{}
+	if channels != "" {
+		selected = strings.Split(channels, ",")
+	}
+	return lottery.NotificationSettings{Stages: decodeNotifyStages(enabled, stages), Channels: selected}
 }
 
 func decodeNotifyStages(enabled bool, raw string) []string {
@@ -106,7 +119,7 @@ func decodeNotifyStages(enabled bool, raw string) []string {
 }
 
 // ListActivityPushLogs 返回每个活动各阶段已通知的用户数。
-func (s *Store) ListActivityPushLogs() (map[int64]map[string]int, error) {
+func (s *Store) readListActivityPushLogs() (map[int64]map[string]int, error) {
 	rows, err := s.db.Query(`SELECT activity_id, stage, notified FROM activity_push_log`)
 	if err != nil {
 		return nil, err
@@ -134,7 +147,7 @@ func (s *Store) MarkActivityPush(activityID int64, stage string, notified int) e
 		INSERT INTO activity_push_log(activity_id, stage, notified, sent_at) VALUES($1, $2, $3, $4)
 		ON CONFLICT(activity_id, stage) DO UPDATE SET notified = excluded.notified, sent_at = excluded.sent_at
 	`, activityID, stage, notified, time.Now().UTC().Format(time.RFC3339))
-	return err
+	return s.changed(err)
 }
 
 // TaskRewardPush 一条已完成、尚未尝试通知的任务奖励。
@@ -176,11 +189,11 @@ func (s *Store) MarkTaskRewardNotified(rewardID, taskID, userID int64, notified 
 		INSERT INTO task_reward_push(reward_id, task_id, user_id, notified, sent_at) VALUES($1, $2, $3, $4, $5)
 		ON CONFLICT(reward_id) DO UPDATE SET notified = excluded.notified, sent_at = excluded.sent_at
 	`, rewardID, taskID, userID, notified, time.Now().UTC().Format(time.RFC3339))
-	return err
+	return s.changed(err)
 }
 
 // CountNotifiedTaskUsers 统计每个任务实际通知到的不同用户数。
-func (s *Store) CountNotifiedTaskUsers() (map[int64]int64, error) {
+func (s *Store) readCountNotifiedTaskUsers() (map[int64]int64, error) {
 	rows, err := s.db.Query(`SELECT task_id, COUNT(DISTINCT user_id) FROM task_reward_push WHERE notified = TRUE GROUP BY task_id`)
 	if err != nil {
 		return nil, err

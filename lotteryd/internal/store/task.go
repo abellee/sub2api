@@ -107,7 +107,7 @@ func (s *Store) UpsertTaskTestUsage(date string, groupID int64, model string, to
 		 ON CONFLICT(date, group_id, model) DO UPDATE SET tokens = excluded.tokens`,
 		date, groupID, model, tokens,
 	)
-	return err
+	return s.changed(err)
 }
 
 func scanTaskRow(row interface{ Scan(...any) error }) (*lottery.Task, error) {
@@ -163,7 +163,7 @@ func (s *Store) UpsertTask(t *lottery.Task) (int64, error) {
 		if n, _ := res.RowsAffected(); n == 0 {
 			return 0, ErrNotFound
 		}
-		return t.ID, nil
+		return t.ID, s.changed(nil)
 	}
 
 	var id int64
@@ -180,7 +180,7 @@ func (s *Store) UpsertTask(t *lottery.Task) (int64, error) {
 		return 0, err
 	}
 	t.ID = id
-	return id, nil
+	return id, s.changed(nil)
 }
 
 // GetTask 读取单个任务。
@@ -194,7 +194,7 @@ func (s *Store) GetTask(id int64) (*lottery.Task, error) {
 }
 
 // ListTasks 读取全部任务（创建时间倒序）。
-func (s *Store) ListTasks() ([]lottery.Task, error) {
+func (s *Store) readListTasks() ([]lottery.Task, error) {
 	rows, err := s.db.Query(`SELECT ` + taskColumns + ` FROM tasks ORDER BY id DESC`)
 	if err != nil {
 		return nil, err
@@ -220,7 +220,7 @@ func (s *Store) SetTaskStatus(id int64, status string) error {
 	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrNotFound
 	}
-	return nil
+	return s.changed(nil)
 }
 
 // DeleteTask 删除任务及其码池与结算记录（管理员二次确认后调用）。
@@ -240,7 +240,7 @@ func (s *Store) DeleteTask(id int64) error {
 			return err
 		}
 	}
-	return tx.Commit()
+	return s.changed(tx.Commit())
 }
 
 // ---- 码池 ----
@@ -273,7 +273,7 @@ func (s *Store) ReplaceAvailableTaskCodes(taskID int64, codes []string) (int64, 
 	if err := tx.Commit(); err != nil {
 		return 0, err
 	}
-	return n, nil
+	return n, s.changed(nil)
 }
 
 // TaskCodeCounts 返回码池可用/已发放数量。
@@ -358,7 +358,7 @@ func (s *Store) TakeRandomTaskCodes(taskID int64, n int, rewardID int64) ([]stri
 	for _, p := range picks {
 		codes = append(codes, p.code)
 	}
-	return codes, nil
+	return codes, s.changed(nil)
 }
 
 // ---- 结算记录 ----
@@ -407,7 +407,7 @@ func (s *Store) InsertTaskReward(r *lottery.TaskReward) (int64, bool, error) {
 		return 0, false, err
 	}
 	r.ID = id
-	return id, true, nil
+	return id, true, s.changed(nil)
 }
 
 // UpdateTaskReward 更新发放状态/兑换码/备注。
@@ -417,7 +417,7 @@ func (s *Store) UpdateTaskReward(id int64, fulfillment string, codes []string, n
 		`UPDATE task_rewards SET fulfillment=$1, codes_json=$2, note=$3, error=$4 WHERE id=$5`,
 		fulfillment, string(codesJSON), note, errMsg, id,
 	)
-	return err
+	return s.changed(err)
 }
 
 // ListTaskRewards 某任务的全部结算记录（含任务名，管理端发放记录页）。

@@ -20,6 +20,8 @@ import {
   formatValue,
   notifyStagesFrom,
   selectedNotifyStages,
+  notifyChannelsFrom,
+  selectedNotifyChannels,
   type ActivityInput,
   type ActivityView,
   type ConditionDef,
@@ -197,6 +199,7 @@ function emptyForm(): {
   repeatGroup: string
   /** 勾选后才发送的阶段通知。 */
   notifyStages: ReturnType<typeof emptyNotifyStages>
+  notifyChannels: ReturnType<typeof notifyChannelsFrom>
   visibilityMode: 'all' | 'partial' | 'eligible'
   visibilityEmails: string[]
   blacklistEmails: string[]
@@ -220,6 +223,7 @@ function emptyForm(): {
     repeatPolicy: 'unlimited',
     repeatGroup: '',
     notifyStages: emptyNotifyStages(),
+    notifyChannels: notifyChannelsFrom(),
     visibilityMode: 'all',
     visibilityEmails: [],
     blacklistEmails: []
@@ -230,7 +234,7 @@ const notifyStageOptions = [
   { key: 'before_start' as const, label: '开始前 10 分钟' },
   { key: 'started' as const, label: '正式开始' },
   { key: 'before_draw' as const, label: '开奖前 5 分钟' },
-  { key: 'results' as const, label: '开奖结果（仅中奖用户）' }
+  { key: 'results' as const, label: '开奖结果' }
 ]
 
 function notifyStageSummary(stages: string[] | undefined, enabled: boolean): string {
@@ -310,6 +314,7 @@ function editDaily(c: DailyConfig) {
   form.value.repeatPolicy = c.repeat_policy || 'unlimited'
   form.value.repeatGroup = (c.repeat_group || '').trim()
   form.value.notifyStages = notifyStagesFrom(c.notify_stages, c.notify === true)
+  form.value.notifyChannels = notifyChannelsFrom(c.notify_channels)
   form.value.visibilityMode = c.visibility?.mode === 'partial' || c.visibility?.mode === 'eligible' ? c.visibility.mode : 'all'
   form.value.visibilityEmails = [...(c.visibility?.allowed_emails ?? [])]
   userSearchQuery.value = ''
@@ -474,6 +479,7 @@ function fillForm(a: ActivityView) {
     dailyStartTime: '08:00',
     dailyDurationHours: 12,
     notifyStages: notifyStagesFrom(a.notifications?.stages, a.notifications?.enabled === true),
+    notifyChannels: notifyChannelsFrom(a.notifications?.channels),
     conditions: [],
     prizes: a.prizes.map((p) => ({
       name: p.name,
@@ -499,6 +505,7 @@ function fillForm(a: ActivityView) {
     form.value.conditions = detail.activity.conditions.map((c) => ({ ...c }))
     form.value.autoBonusPercent = detail.activity.auto_bonus_percent
     form.value.notifyStages = notifyStagesFrom(detail.notify_stages, detail.notify === true)
+    form.value.notifyChannels = notifyChannelsFrom(detail.notify_channels)
     const vis = detail.activity.visibility
     form.value.visibilityMode = vis?.mode === 'partial' || vis?.mode === 'eligible' ? vis.mode : 'all'
     form.value.visibilityEmails = [...(vis?.allowed_emails ?? [])]
@@ -757,6 +764,7 @@ function buildInput(): ActivityInput {
     visibility: visibilityInput(),
     notify: selectedNotifyStages(form.value.notifyStages).length > 0,
     notify_stages: selectedNotifyStages(form.value.notifyStages),
+    notify_channels: selectedNotifyChannels(form.value.notifyChannels),
     ...buildSharedParts()
   }
 }
@@ -803,6 +811,7 @@ async function submit(regenerate = false) {
         visibility: visibilityInput(),
         notify: selectedNotifyStages(form.value.notifyStages).length > 0,
         notify_stages: selectedNotifyStages(form.value.notifyStages),
+        notify_channels: selectedNotifyChannels(form.value.notifyChannels),
         condition_match: form.value.conditionMatch,
         auto_bonus_percent: Number(form.value.autoBonusPercent) || 0,
         ...buildSharedParts()
@@ -1220,7 +1229,7 @@ onMounted(refresh)
               <p class="mt-0.5 text-xs text-gray-400 dark:text-dark-500">
                 <template v-if="a.notifications?.enabled">
                   通知阶段：{{ notifyStageSummary(a.notifications.stages, true) || '已勾选' }}
-                  · 人数：开始前 {{ stageCount(a.notifications.before_start) }}
+                  · 推送人数：开始前 {{ stageCount(a.notifications.before_start) }}
                   · 已开始 {{ stageCount(a.notifications.started) }}
                   · 开奖前 {{ stageCount(a.notifications.before_draw) }}
                   · 开奖结果 {{ stageCount(a.notifications.results) }}
@@ -1365,7 +1374,11 @@ onMounted(refresh)
             </label>
             <div class="sm:col-span-2 rounded-xl border border-gray-100 px-4 py-3 dark:border-dark-700">
               <p class="text-sm font-medium text-gray-800 dark:text-gray-100">发送阶段通知</p>
-              <p class="mt-1 text-xs text-gray-400 dark:text-dark-500">只通知勾选的阶段。前三项发给符合参与条件且已开启通知的用户，开奖结果只发给中奖用户。</p>
+              <p class="mt-1 text-xs text-gray-400 dark:text-dark-500">只发送勾选的阶段和渠道。浏览器通知沿用原规则，开奖结果只通知中奖用户；群通知会把活动信息交给机器人，按当前人设生成后发送，不含活动链接和中奖私密信息。</p>
+              <div class="mt-3 flex flex-wrap gap-5">
+                <label class="flex items-center gap-2 text-sm"><input v-model="form.notifyChannels.browser" type="checkbox" aria-label="浏览器通知" class="h-4 w-4" />浏览器通知</label>
+                <label class="flex items-center gap-2 text-sm"><input v-model="form.notifyChannels.group" type="checkbox" aria-label="群通知" class="h-4 w-4" />群通知</label>
+              </div>
               <div class="mt-3 grid gap-2 sm:grid-cols-2">
                 <label
                   v-for="item in notifyStageOptions"

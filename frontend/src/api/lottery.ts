@@ -103,6 +103,7 @@ export interface ActivityView {
     enabled: boolean
     /** 勾选后才会发送的阶段。旧数据只有 enabled 时，打开表示四个阶段都发。 */
     stages?: string[]
+    channels?: NotifyChannel[]
     before_start?: number
     started?: number
     before_draw?: number
@@ -112,6 +113,15 @@ export interface ActivityView {
 
 export const NOTIFY_STAGES = ['before_start', 'started', 'before_draw', 'results'] as const
 export type NotifyStage = (typeof NOTIFY_STAGES)[number]
+export type NotifyChannel = 'browser' | 'group'
+
+export function notifyChannelsFrom(channels?: NotifyChannel[] | null) {
+  return { browser: channels == null || channels.includes('browser'), group: channels == null || channels.includes('group') }
+}
+
+export function selectedNotifyChannels(flags: { browser: boolean; group: boolean }): NotifyChannel[] {
+  return (['browser', 'group'] as const).filter(channel => flags[channel])
+}
 
 export function emptyNotifyStages(): Record<NotifyStage, boolean> {
   return { before_start: false, started: false, before_draw: false, results: false }
@@ -161,6 +171,7 @@ export interface AdminActivityDetail {
   winners: WinnerRecord[]
   notify?: boolean
   notify_stages?: string[]
+  notify_channels?: NotifyChannel[]
 }
 
 export interface ActivityInput {
@@ -181,6 +192,7 @@ export interface ActivityInput {
   /** 为 true 且没有 notify_stages 时，四个阶段都通知。显式列表只通知勾选的阶段。 */
   notify?: boolean
   notify_stages?: string[]
+  notify_channels?: NotifyChannel[]
   conditions: ConditionDef[]
   prizes: Array<{
     name: string
@@ -399,6 +411,7 @@ export interface DailyConfig {
   /** 为 true 且没有 notify_stages 时，四个阶段都通知。显式列表只通知勾选的阶段。 */
   notify?: boolean
   notify_stages?: string[]
+  notify_channels?: NotifyChannel[]
   condition_match: ConditionMatch
   auto_bonus_percent: number
   conditions: ConditionDef[]

@@ -469,6 +469,7 @@ type DailyConfig struct {
 	// NotifyStages 非 nil 时只发送勾选的阶段，空列表表示不发送。
 	Notify           bool           `json:"notify"`
 	NotifyStages     []string       `json:"notify_stages,omitempty"`
+	NotifyChannels   []string       `json:"notify_channels"`
 	ConditionMatch   string         `json:"condition_match"` // all | any
 	AutoBonusPercent float64        `json:"auto_bonus_percent"`
 	Conditions       []ConditionDef `json:"conditions"`

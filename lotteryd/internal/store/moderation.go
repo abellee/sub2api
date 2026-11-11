@@ -62,7 +62,7 @@ func (s *Store) RemoveParticipant(activityID, userID int64) error {
 	if n == 0 {
 		return ErrNotFound
 	}
-	return tx.Commit()
+	return s.changed(tx.Commit())
 }
 
 func (s *Store) SetUndrawnActivityBlacklist(configID int64, emails []string) error {
@@ -71,7 +71,7 @@ func (s *Store) SetUndrawnActivityBlacklist(configID int64, emails []string) err
 		return err
 	}
 	_, err = s.db.Exec(`UPDATE activities SET blacklist_json=$1, updated_at=$2 WHERE daily_config_id=$3 AND drawn_at='' AND status='active'`, string(raw), fmtTime(time.Now()), configID)
-	return err
+	return s.changed(err)
 }
 
 // DrawActivity reloads the blacklist and participants under the activity lock,
@@ -125,5 +125,5 @@ func (s *Store) DrawActivity(id int64) (*lottery.Activity, error) {
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
-	return a, nil
+	return a, s.changed(nil)
 }

@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   listPushMessages: vi.fn(), listPushSubscriptions: vi.fn(), listPushSchedules: vi.fn(),
   deletePushSchedule: vi.fn(), clearPushMessages: vi.fn(), deletePushMessage: vi.fn(), uploadPushImage: vi.fn(),
   showError: vi.fn(), showSuccess: vi.fn(), showPageNotification: vi.fn(),
+  getGroupNotificationConfig: vi.fn(), listGroupNotifications: vi.fn(),
 }))
 vi.mock('@/api/pushNotifications', () => mocks)
 vi.mock('@/stores/app', () => ({ useAppStore: () => mocks }))
@@ -42,6 +43,19 @@ async function render() {
 }
 
 describe('targeted notification composer', () => {
+  it('loads group settings only when opening the group tab and preserves the push draft', async () => {
+    mocks.getGroupNotificationConfig.mockResolvedValue({ enabled: false, baseURL: '', platformID: 'napcat', groupIDs: [], configID: 'default', keyConfigured: false })
+    mocks.listGroupNotifications.mockResolvedValue([])
+    const wrapper = await render()
+    expect(mocks.getGroupNotificationConfig).not.toHaveBeenCalled()
+    await wrapper.get('#notification-tab-group').trigger('click')
+    await flushPromises()
+    expect(mocks.getGroupNotificationConfig).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('#group-base-url').exists()).toBe(true)
+    await wrapper.get('#notification-tab-push').trigger('click')
+    expect((wrapper.get('#push-title').element as HTMLInputElement).value).toBe('Test')
+    wrapper.unmount()
+  })
   it('explains that an older notification service needs updating without retrying as a broadcast', async () => {
     mocks.broadcastPush.mockRejectedValueOnce(Object.assign(new Error('not found'), { status: 404 }))
     const wrapper = await render()

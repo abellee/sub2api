@@ -11,6 +11,8 @@ const EMPTY_STATE = Object.freeze({
   schedules: [],
   notifies: [],
   pageNotices: [],
+  groupNotificationConfig: null,
+  groupNotifies: [],
 })
 
 function cloneEmptyState() {
@@ -103,6 +105,8 @@ export class PushStore {
         schedules: Array.isArray(parsed.schedules) ? parsed.schedules : [],
         notifies: Array.isArray(parsed.notifies) ? parsed.notifies : [],
         pageNotices: Array.isArray(parsed.pageNotices) ? parsed.pageNotices : [],
+        groupNotificationConfig: parsed.groupNotificationConfig || null,
+        groupNotifies: Array.isArray(parsed.groupNotifies) ? parsed.groupNotifies : [],
       }
     } catch (error) {
       if (error?.code !== 'ENOENT') throw error
@@ -287,6 +291,21 @@ export class PushStore {
         if (this.state.notifies.length > 5000) this.state.notifies.length = 5000
       }
       return { ...record, deduped: false }
+    })
+  }
+
+  async saveGroupConfig(config) {
+    return this.mutate(() => { this.state.groupNotificationConfig = { ...config } })
+  }
+
+  async saveGroupReceipt(receipt) {
+    return this.mutate(() => {
+      const records = this.state.groupNotifies
+      const index = records.findIndex(item => item.key === receipt.key)
+      const record = { ...receipt, updatedAt: new Date().toISOString() }
+      if (index >= 0) records.splice(index, 1)
+      records.unshift(record)
+      if (records.length > 5000) records.length = 5000
     })
   }
 

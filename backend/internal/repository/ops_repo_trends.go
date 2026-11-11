@@ -453,11 +453,11 @@ SELECT
   ` + bucketExpr + ` AS bucket,
   COUNT(*) FILTER (WHERE COALESCE(status_code, 0) >= 400) AS error_total,
   COUNT(*) FILTER (WHERE COALESCE(status_code, 0) >= 400 AND is_business_limited) AS business_limited,
-  COUNT(*) FILTER (WHERE COALESCE(status_code, 0) >= 400 AND NOT is_business_limited) AS error_sla,
-  COUNT(*) FILTER (WHERE error_owner = 'provider' AND NOT is_business_limited AND COALESCE(upstream_status_code, status_code, 0) NOT IN (429, 529)) AS upstream_excl,
-  COUNT(*) FILTER (WHERE error_owner = 'provider' AND NOT is_business_limited AND COALESCE(upstream_status_code, status_code, 0) = 429) AS upstream_429,
-  COUNT(*) FILTER (WHERE error_owner = 'provider' AND NOT is_business_limited AND COALESCE(upstream_status_code, status_code, 0) = 529) AS upstream_529
-FROM ops_error_logs
+  COUNT(*) FILTER (WHERE COALESCE(status_code, 0) >= 400 AND NOT is_business_limited AND is_sla_sample) AS error_sla,
+  COUNT(*) FILTER (WHERE error_owner = 'provider' AND NOT is_business_limited AND is_sla_sample AND COALESCE(upstream_status_code, status_code, 0) NOT IN (429, 529)) AS upstream_excl,
+  COUNT(*) FILTER (WHERE error_owner = 'provider' AND NOT is_business_limited AND is_sla_sample AND COALESCE(upstream_status_code, status_code, 0) = 429) AS upstream_429,
+  COUNT(*) FILTER (WHERE error_owner = 'provider' AND NOT is_business_limited AND is_sla_sample AND COALESCE(upstream_status_code, status_code, 0) = 529) AS upstream_529
+FROM ops_error_log_metrics
 ` + where + `
 GROUP BY 1
 ORDER BY 1 ASC`
@@ -564,9 +564,9 @@ func (r *opsRepository) GetErrorDistribution(ctx context.Context, filter *servic
 SELECT
   COALESCE(upstream_status_code, status_code, 0) AS status_code,
   COUNT(*) AS total,
-  COUNT(*) FILTER (WHERE NOT is_business_limited) AS sla,
+  COUNT(*) FILTER (WHERE NOT is_business_limited AND is_sla_sample) AS sla,
   COUNT(*) FILTER (WHERE is_business_limited) AS business_limited
-FROM ops_error_logs
+FROM ops_error_log_metrics
 ` + where + `
   AND COALESCE(status_code, 0) >= 400
 GROUP BY 1

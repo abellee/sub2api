@@ -8,9 +8,27 @@ import {
   getPushOverview,
   savePushSubscription,
   uploadPushImage,
+  getGroupNotificationConfig,
+  saveGroupNotificationConfig,
+  sendGroupNotification,
+  listGroupNotifications,
 } from '@/api/pushNotifications'
 
 describe('push notification API', () => {
+  it('uses admin authentication for group config, history, and sends with stable request IDs', async () => {
+    localStorage.setItem('auth_token', 'admin-token')
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => Response.json({ messages: [] }))
+    await getGroupNotificationConfig()
+    await saveGroupNotificationConfig({ enabled: true, baseURL: 'http://astrbot:6185', platformID: 'napcat', groupIDs: ['764163343'], configID: 'default', keyConfigured: true })
+    await sendGroupNotification({ title: '提醒', body: '0点结束。', requestID: 'manual-request-1' })
+    await expect(listGroupNotifications()).resolves.toEqual([])
+    expect(fetchMock.mock.calls.map(call => call[0])).toEqual([
+      '/push-api/v1/admin/group-notifications/config', '/push-api/v1/admin/group-notifications/config',
+      '/push-api/v1/admin/group-notifications/send', '/push-api/v1/admin/group-notifications/messages',
+    ])
+    for (const call of fetchMock.mock.calls) expect((call[1]?.headers as Headers).get('Authorization')).toBe('Bearer admin-token')
+    expect(JSON.parse(fetchMock.mock.calls[2][1]?.body as string).requestID).toBe('manual-request-1')
+  })
   beforeEach(() => {
     localStorage.clear()
     vi.restoreAllMocks()

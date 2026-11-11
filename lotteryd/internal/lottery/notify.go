@@ -1,9 +1,53 @@
 package lottery
 
 import (
+	"fmt"
 	"strings"
 	"time"
 )
+
+const NotifyBrowser = "browser"
+const NotifyGroup = "group"
+
+type NotificationSettings struct {
+	Stages   []string `json:"stages"`
+	Channels []string `json:"channels"`
+}
+
+// 未提供渠道的旧活动沿用两个渠道；显式空列表表示都不发送。
+func ResolveNotifyChannels(channels []string) ([]string, error) {
+	if channels == nil {
+		return []string{NotifyBrowser, NotifyGroup}, nil
+	}
+	out := make([]string, 0, 2)
+	for _, channel := range channels {
+		if channel != NotifyBrowser && channel != NotifyGroup {
+			return nil, fmt.Errorf("unknown notification channel %q", channel)
+		}
+		found := false
+		for _, existing := range out {
+			if existing == channel {
+				found = true
+			}
+		}
+		if !found {
+			out = append(out, channel)
+		}
+	}
+	return out, nil
+}
+
+func HasNotifyChannel(channels []string, channel string) bool {
+	if channels == nil {
+		return channel == NotifyBrowser || channel == NotifyGroup
+	}
+	for _, selected := range channels {
+		if selected == channel {
+			return true
+		}
+	}
+	return false
+}
 
 const (
 	StageBeforeStart = "before_start"

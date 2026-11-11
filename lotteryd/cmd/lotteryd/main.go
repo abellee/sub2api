@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"lotteryd/internal/app"
+	"lotteryd/internal/cache"
 	"lotteryd/internal/migrator"
 	"lotteryd/internal/push"
 	"lotteryd/internal/rpc"
@@ -49,6 +50,7 @@ func main() {
 		drawEvery     = flag.Duration("draw-interval", envDuration("LOTTERYD_DRAW_INTERVAL", 30*time.Second), "Draw scheduler interval")
 		backfill      = flag.Int("backfill-days", 35, "Days of usage data to backfill when no watermark exists")
 		settlement    = flag.String("settlement", envOr("LOTTERYD_SETTLEMENT", "auto"), "Settlement gate: auto (off for dev builds), on, or off")
+		redisURL      = flag.String("redis-url", envOr("LOTTERYD_REDIS_URL", "redis://127.0.0.1:6379/0"), "Redis URL for lottery read-through cache (empty disables)")
 		showVer       = flag.Bool("version", false, "Show version information")
 	)
 	flag.Parse()
@@ -83,6 +85,13 @@ func main() {
 		os.Exit(1)
 	}
 	defer func() { _ = st.Close() }()
+	readCache, err := cache.New(*redisURL, *pgDSN)
+	if err != nil {
+		logger.Error("configure Redis cache", "err", err)
+		os.Exit(1)
+	}
+	defer readCache.Close()
+	st.SetCache(readCache)
 
 	client := sub2api.NewClient(*sub2apiURL, *adminKey)
 	disableSettlement := settlementDisabled(*settlement, Version)
@@ -163,10 +172,10 @@ func main() {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
+				revision := st.Revision()
 				if err := ap.DrawDueActivities(ctx, time.Now()); err != nil {
 					slog.Warn("draw scheduler failed", "err", err)
 				}
-				srv.WakeWS()
 				if err := ap.NotifyDueActivities(ctx, time.Now()); err != nil {
 					slog.Warn("activity notification scheduler failed", "err", err)
 				}
@@ -178,6 +187,9 @@ func main() {
 				ap.SettleDueTasks(ctx, time.Now())
 				if err := ap.NotifyDueTaskRewards(ctx); err != nil {
 					slog.Warn("task reward notification scheduler failed", "err", err)
+				}
+				if st.Revision() != revision {
+					srv.WakeWS()
 				}
 			}
 		}

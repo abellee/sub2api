@@ -1,6 +1,10 @@
 <template>
   <AppLayout>
-    <div class="space-y-5">
+    <div class="mb-5 flex gap-2 border-b border-gray-200 dark:border-dark-700" role="tablist" :aria-label="t('admin.pushNotifications.title')">
+      <button v-for="tab in ['push', 'group'] as const" :id="`notification-tab-${tab}`" :key="tab" type="button" role="tab" :aria-selected="activeTab === tab" :aria-controls="`notification-panel-${tab}`" class="px-4 py-3 text-sm font-medium" :class="activeTab === tab ? 'border-b-2 border-primary-500 text-primary-600' : 'text-gray-500'" @click="activeTab = tab">{{ t(`admin.pushNotifications.tabs.${tab}`) }}</button>
+    </div>
+    <GroupNotificationsPanel v-if="groupOpened" v-show="activeTab === 'group'" id="notification-panel-group" role="tabpanel" aria-labelledby="notification-tab-group" />
+    <div v-show="activeTab === 'push'" id="notification-panel-push" role="tabpanel" aria-labelledby="notification-tab-push" class="space-y-5">
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <div class="card p-4">
           <p class="text-xs font-medium text-gray-500 dark:text-dark-300">{{ t('admin.pushNotifications.stats.subscriptions') }}</p>
@@ -360,6 +364,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+import GroupNotificationsPanel from './GroupNotificationsPanel.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { useAppStore } from '@/stores/app'
 import {
@@ -384,6 +389,9 @@ import { showPageNotification } from '@/composables/usePageNotifications'
 
 const { t } = useI18n()
 const appStore = useAppStore()
+const activeTab = ref<'push' | 'group'>('push')
+const groupOpened = ref(false)
+watch(activeTab, tab => { if (tab === 'group') groupOpened.value = true })
 const loading = ref(false)
 const sending = ref(false)
 const showConfirm = ref(false)

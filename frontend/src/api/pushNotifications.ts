@@ -1,5 +1,40 @@
 const PUSH_API_BASE = '/push-api/v1'
 
+export interface GroupNotificationConfig {
+  enabled: boolean
+  baseURL: string
+  platformID: string
+  groupIDs: string[]
+  configID: string
+  keyConfigured: boolean
+}
+
+export interface GroupNotificationRecord {
+  key: string
+  groupID: string
+  title: string
+  body: string
+  status: 'sending' | 'sent' | 'failed' | 'uncertain'
+  updatedAt: string
+}
+
+export function getGroupNotificationConfig(): Promise<GroupNotificationConfig> {
+  return request('/admin/group-notifications/config', {}, true)
+}
+
+export function saveGroupNotificationConfig(config: GroupNotificationConfig & { apiKey?: string }): Promise<GroupNotificationConfig> {
+  return request('/admin/group-notifications/config', { method: 'PUT', body: JSON.stringify(config) }, true)
+}
+
+export function sendGroupNotification(input: { title: string; body: string; requestID: string }): Promise<{ group: { delivered: number; failed: number } }> {
+  return request('/admin/group-notifications/send', { method: 'POST', body: JSON.stringify(input) }, true)
+}
+
+export async function listGroupNotifications(): Promise<GroupNotificationRecord[]> {
+  const response = await request<{ messages: GroupNotificationRecord[] }>('/admin/group-notifications/messages', {}, true)
+  return response.messages
+}
+
 export interface PushSubscriptionPayload {
   clientId?: string
   endpoint: string
