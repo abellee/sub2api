@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7
-ARG GOLANG_IMAGE=golang:1.27.3-alpine
+ARG GOLANG_IMAGE=golang:1.27.4-alpine
 ARG ALPINE_IMAGE=alpine:3.21
 FROM --platform=${BUILDPLATFORM} ${GOLANG_IMAGE} AS builder
 ARG TARGETOS
