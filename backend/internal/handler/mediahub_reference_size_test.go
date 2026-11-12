@@ -36,9 +36,10 @@ func TestMediaImageReferenceSize(t *testing.T) {
 						count = 2
 					}
 					size := "auto"
-					if scenario == "omitted" {
+					switch scenario {
+					case "omitted":
 						size = ""
-					} else if scenario == "explicit" {
+					case "explicit":
 						size = "1024x1024"
 					}
 					expected := size
@@ -97,7 +98,7 @@ func TestMediaImageReferenceSize(t *testing.T) {
 							parsed := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(raw))
 							parsed.Header.Set("Content-Type", r.Header.Get("Content-Type"))
 							require.NoError(t, parsed.ParseMultipartForm(1<<20))
-							defer parsed.MultipartForm.RemoveAll()
+							defer func() { require.NoError(t, parsed.MultipartForm.RemoveAll()) }()
 							require.Equal(t, expected, parsed.FormValue("size"))
 							require.Equal(t, "preserve", parsed.FormValue("custom"))
 							require.Len(t, parsed.MultipartForm.File["image[]"], count)

@@ -76,7 +76,7 @@ func openAIReferenceImageURLSize(ctx context.Context, rawURL string) string {
 	if err != nil {
 		return ""
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return ""
 	}

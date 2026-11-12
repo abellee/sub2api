@@ -115,7 +115,7 @@ func TestOpenAIImagesReferenceSizeMultipartPreservesFiles(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(parsed.Body))
 	request.Header.Set("Content-Type", parsed.ContentType)
 	require.NoError(t, request.ParseMultipartForm(1<<20))
-	defer request.MultipartForm.RemoveAll()
+	defer func() { require.NoError(t, request.MultipartForm.RemoveAll()) }()
 	require.Equal(t, "640x960", request.FormValue("size"))
 	require.Equal(t, " keep spacing ", request.FormValue("prompt"))
 	require.Equal(t, "keep me", request.FormValue("custom"))
@@ -158,7 +158,8 @@ func TestOpenAIImagesReferenceSizeLeavesUnreadableOrMultipleImagesUnchanged(t *t
 
 func TestOpenAIImagesReferenceSizePublicURL(t *testing.T) {
 	imageBytes := referenceSizePNG(t, 640, 960)
-	transport := newImageDownloadHTTPClient(nil).Transport.(*imageDownloadTransport)
+	transport, ok := newImageDownloadHTTPClient(nil).Transport.(*imageDownloadTransport)
+	require.True(t, ok)
 	transport.direct = referenceSizeRoundTripper(func(request *http.Request) (*http.Response, error) {
 		require.Empty(t, request.Header.Get("Authorization"))
 		return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(imageBytes)), Header: make(http.Header)}, nil
