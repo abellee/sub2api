@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/mediahub"
 	middleware "github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -17,8 +18,10 @@ func mediaTaskFailed(status string) bool {
 	return status == "failed" || status == "recovery_required" || status == "interrupted"
 }
 
-// Provider details are used only for rule matching, never as a client message.
-func (h *MediaHubRelayHandler) writeTaskFailure(c *gin.Context, ctx context.Context, in mediahub.ForwardInput, id string, state []byte) {
+// Provider details feed rule matching and private Ops diagnostics, never client messages.
+func (h *MediaHubRelayHandler) taskFailureContext(c *gin.Context, ctx context.Context, in mediahub.ForwardInput, id string, state []byte) (int, []byte) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 	taskStatus := gjson.GetBytes(state, "status").String()
 	upstreamStatus := int(gjson.GetBytes(state, "response_status").Int())
 	matchBody := []byte(gjson.GetBytes(state, "error_message").String())
@@ -41,6 +44,16 @@ func (h *MediaHubRelayHandler) writeTaskFailure(c *gin.Context, ctx context.Cont
 			matchBody = []byte(fmt.Sprintf("upstream HTTP %d: %s", upstreamStatus, string(matchBody)))
 		}
 	}
+	if upstreamStatus > 0 || len(matchBody) > 0 {
+		detail, _ := service.SanitizeOpsErrorBodyForQueue(string(matchBody))
+		service.SetOpsUpstreamError(c, upstreamStatus, parseOpsErrorResponse([]byte(detail)).Message, detail)
+	}
+	return upstreamStatus, matchBody
+}
+
+func (h *MediaHubRelayHandler) writeTaskFailure(c *gin.Context, ctx context.Context, in mediahub.ForwardInput, id string, state []byte) {
+	taskStatus := gjson.GetBytes(state, "status").String()
+	upstreamStatus, matchBody := h.taskFailureContext(c, ctx, in, id, state)
 	status, errorType, message := http.StatusBadGateway, "generation_failed", "Generation failed. Please contact support with the task ID."
 	if taskStatus == "recovery_required" || taskStatus == "interrupted" {
 		errorType, message = "generation_unavailable", "Generation result is unavailable. Please contact support with the task ID before retrying."

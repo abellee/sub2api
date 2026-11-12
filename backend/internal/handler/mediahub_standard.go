@@ -86,6 +86,9 @@ func (h *MediaHubController) TryStandardVideoTask(c *gin.Context, content bool) 
 	if result.StatusCode == http.StatusNotFound && h.relay.deletedTaskResponse(c, subject.UserID, id) {
 		return true
 	}
+	if result.StatusCode >= http.StatusBadRequest {
+		h.relay.taskFailureContext(c, ctx, in, id, nil)
+	}
 	if content && result.StatusCode == 200 {
 		if url := gjson.GetBytes(result.Body, "video.url").String(); url != "" {
 			c.Header("Cache-Control", "private, no-store")
@@ -184,6 +187,9 @@ func (h *MediaHubRelayHandler) finishStandard(c *gin.Context, accepted *mediahub
 		return
 	}
 	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode >= http.StatusBadRequest {
+		h.taskFailureContext(c, ctx, in, id, nil)
+	}
 	c.Header("X-Task-Id", id)
 	for _, name := range []string{"Content-Type", "Cache-Control", "X-Accel-Buffering"} {
 		if value := response.Header.Get(name); value != "" {
