@@ -20,7 +20,7 @@ func (s *OpenAIGatewayService) SetContentSafetyBilling(safety *ContentSafetyBill
 // This runs before account failover/cooldown. A matched request is terminal, so
 // another upstream account cannot turn a single safety refusal into many debits.
 func (s *OpenAIGatewayService) contentSafetyRejection(c *gin.Context, account *Account, resp *http.Response, body []byte, scope string) (string, bool) {
-	if s.contentSafetyBilling == nil || c == nil || account == nil || !account.IsGrok() || resp.StatusCode != http.StatusForbidden {
+	if s.contentSafetyBilling == nil || c == nil || account == nil || (!account.IsGrok() && account.ID != 65) || resp.StatusCode != http.StatusForbidden {
 		return "", false
 	}
 	key := "content_safety_billing:" + scope
@@ -31,7 +31,7 @@ func (s *OpenAIGatewayService) contentSafetyRejection(c *gin.Context, account *A
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
-	config, err := s.contentSafetyBilling.Match(ctx, resp.StatusCode, body)
+	config, err := s.contentSafetyBilling.Match(ctx, account.ID, resp.StatusCode, body)
 	if err != nil {
 		slog.Error("content safety configuration unavailable", "error", err)
 		return "", false

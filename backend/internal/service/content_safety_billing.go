@@ -147,9 +147,9 @@ func (s *ContentSafetyBillingService) UpdateConfig(ctx context.Context, c Conten
 	return err
 }
 
-// Match only the decoded error description, never a whole JSON envelope whose
-// unrelated fields could accidentally trigger a debit. Plain-text errors work too.
-func (s *ContentSafetyBillingService) Match(ctx context.Context, status int, body []byte) (*ContentSafetyBillingConfig, error) {
+// Account 65 treats every upstream 403 as a safety rejection. Other accounts
+// match only the decoded error description, never unrelated JSON fields.
+func (s *ContentSafetyBillingService) Match(ctx context.Context, accountID int64, status int, body []byte) (*ContentSafetyBillingConfig, error) {
 	if s == nil || status != 403 {
 		return nil, nil
 	}
@@ -159,6 +159,10 @@ func (s *ContentSafetyBillingService) Match(ctx context.Context, status int, bod
 	}
 	if !c.Enabled {
 		return nil, nil
+	}
+	if accountID == 65 {
+		c.MatchDescription = "Account 65: upstream HTTP 403"
+		return &c, nil
 	}
 	message := extractUpstreamErrorMessage(body)
 	if !json.Valid(body) {

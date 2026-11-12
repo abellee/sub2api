@@ -83,6 +83,59 @@ func TestContentSafetyGatewayScopeAndNonGrok(t *testing.T) {
 	require.Len(t, b.commands, 2)
 }
 
+func TestContentSafetyGatewayAccount65Forbidden(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		accountID int64
+		status    int
+		body      string
+		disabled  bool
+		want      bool
+	}{
+		{"short refusal", 65, 403, `{"error":{"message":"I'm sorry, I can't help with that request."}}`, false, true},
+		{"plain forbidden", 65, 403, "Forbidden", false, true},
+		{"empty body", 65, 403, "", false, true},
+		{"other account", 66, 403, "Forbidden", false, false},
+		{"original keyword rule", 66, 403, "Failed check: SAFETY_CHECK_TYPE", false, true},
+		{"other status", 65, 400, "Forbidden", false, false},
+		{"disabled", 65, 403, "Forbidden", true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			b := &safetyBillingFake{balance: 1}
+			safety := newSafetyTestService(t, b)
+			config := safetyTestConfig()
+			config.Enabled = !tc.disabled
+			require.NoError(t, safety.UpdateConfig(context.Background(), config))
+			svc := &OpenAIGatewayService{contentSafetyBilling: safety}
+			c, w := safetyGatewayContext("/v1/chat/completions")
+			resp := &http.Response{StatusCode: tc.status, Header: http.Header{}}
+			account := &Account{ID: tc.accountID, Platform: PlatformGrok}
+			// Repeated handling of one request must create only one debit.
+			for i := 0; i < 2; i++ {
+				require.Equal(t, tc.want, svc.handleContentSafetyBilling(c, account, resp, []byte(tc.body)))
+			}
+			page, err := safety.Records(context.Background(), 1, 20)
+			require.NoError(t, err)
+			if !tc.want {
+				require.Empty(t, b.commands)
+				require.Empty(t, page.Items)
+				require.Equal(t, float64(1), b.balance)
+				return
+			}
+			require.Equal(t, 403, w.Code)
+			require.Contains(t, w.Body.String(), config.ClientMessage)
+			require.Len(t, b.commands, 1)
+			require.Equal(t, 1-config.Amount, b.balance)
+			require.Len(t, page.Items, 1)
+			require.Equal(t, tc.accountID, page.Items[0].AccountID)
+			require.Equal(t, "charged", page.Items[0].Status)
+			if tc.accountID == 65 {
+				require.Equal(t, "Account 65: upstream HTTP 403", page.Items[0].Notes)
+			}
+		})
+	}
+}
+
 func TestContentSafetyGatewayMediaNativeErrorAndPendingDebit(t *testing.T) {
 	b := &safetyBillingFake{balance: 1, fail: true}
 	safety := newSafetyTestService(t, b)

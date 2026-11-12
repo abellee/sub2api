@@ -118,7 +118,7 @@ func TestContentSafetyBillingMatchAndValidation(t *testing.T) {
 		{"case sensitive", 403, `{"message":"failed check: safety_check_type"}`, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			config, err := s.Match(ctx, tc.status, []byte(tc.body))
+			config, err := s.Match(ctx, 33, tc.status, []byte(tc.body))
 			require.NoError(t, err)
 			require.Equal(t, tc.want, config != nil)
 		})
@@ -126,7 +126,7 @@ func TestContentSafetyBillingMatchAndValidation(t *testing.T) {
 	c := safetyTestConfig()
 	c.Enabled = false
 	require.NoError(t, s.UpdateConfig(ctx, c))
-	config, err := s.Match(ctx, 403, []byte(c.MatchDescription))
+	config, err := s.Match(ctx, 33, 403, []byte(c.MatchDescription))
 	require.NoError(t, err)
 	require.Nil(t, config)
 	for _, amount := range []float64{-1, 0, math.NaN(), math.Inf(1), 1000001, 0.000000001} {
