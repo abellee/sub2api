@@ -18,7 +18,7 @@ func mediaTaskFailed(status string) bool {
 	return status == "failed" || status == "recovery_required" || status == "interrupted"
 }
 
-// Provider details feed rule matching and private Ops diagnostics, never client messages.
+// Provider details feed rule matching and private Ops diagnostics.
 func (h *MediaHubRelayHandler) taskFailureContext(c *gin.Context, ctx context.Context, in mediahub.ForwardInput, id string, state []byte) (int, []byte) {
 	// Private diagnostics are an immediate lookup, even after a synchronous wait.
 	in.Wait = false
@@ -67,6 +67,25 @@ func (h *MediaHubRelayHandler) writeTaskFailure(c *gin.Context, ctx context.Cont
 			status, errorType, message = 429, "generation_busy", "Generation service is busy. Please try again later."
 		}
 	}
+	status, message, _ = h.applyTaskFailureRule(c, upstreamStatus, matchBody, status, message)
+	c.Header("X-Task-Id", id)
+	c.JSON(status, gin.H{"id": id, "task_id": id, "status": taskStatus, "http_status": status,
+		"error": gin.H{"type": errorType, "message": message}})
+}
+
+func (h *MediaHubRelayHandler) applyTaskFailureRule(c *gin.Context, upstreamStatus int, matchBody []byte, status int, message string) (int, string, bool) {
+	changed := false
+	switch upstreamStatus {
+	case 400, 413, 415, 422:
+		original := service.ExtractUpstreamErrorMessage(matchBody)
+		if original == "" && !gjson.ValidBytes(matchBody) {
+			original = string(matchBody)
+		}
+		if strings.TrimSpace(original) != "" {
+			message = service.SanitizeUpstreamErrorMessage(original)
+			changed = true
+		}
+	}
 	platform := service.PlatformOpenAI
 	if key, ok := middleware.GetAPIKeyFromContext(c); ok && key != nil && key.Group != nil && key.Group.Platform != "" {
 		platform = key.Group.Platform
@@ -84,9 +103,8 @@ func (h *MediaHubRelayHandler) writeTaskFailure(c *gin.Context, ctx context.Cont
 			if rule.SkipMonitoring {
 				c.Set(service.OpsSkipPassthroughKey, true)
 			}
+			return status, message, true
 		}
 	}
-	c.Header("X-Task-Id", id)
-	c.JSON(status, gin.H{"id": id, "task_id": id, "status": taskStatus, "http_status": status,
-		"error": gin.H{"type": errorType, "message": message}})
+	return status, message, changed
 }

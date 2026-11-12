@@ -87,7 +87,13 @@ func (h *MediaHubController) TryStandardVideoTask(c *gin.Context, content bool) 
 		return true
 	}
 	if result.StatusCode >= http.StatusBadRequest {
-		h.relay.taskFailureContext(c, ctx, in, id, nil)
+		c.Header("X-Task-Id", id)
+		upstreamStatus, matchBody := h.relay.taskFailureContext(c, ctx, in, id, nil)
+		message := gjson.GetBytes(result.Body, "error.message").String()
+		if status, message, rewritten := h.relay.applyTaskFailureRule(c, upstreamStatus, matchBody, result.StatusCode, message); rewritten {
+			mediaStandardError(c, status, message)
+			return true
+		}
 	}
 	if content && result.StatusCode == 200 {
 		if url := gjson.GetBytes(result.Body, "video.url").String(); url != "" {
@@ -188,7 +194,20 @@ func (h *MediaHubRelayHandler) finishStandard(c *gin.Context, accepted *mediahub
 	}
 	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode >= http.StatusBadRequest {
-		h.taskFailureContext(c, ctx, in, id, nil)
+		upstreamStatus, matchBody := h.taskFailureContext(c, ctx, in, id, nil)
+		raw, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+		if err != nil {
+			mediaStandardError(c, 502, "media error response unavailable")
+			return
+		}
+		message := gjson.GetBytes(raw, "error.message").String()
+		c.Header("X-Task-Id", id)
+		if status, message, rewritten := h.applyTaskFailureRule(c, upstreamStatus, matchBody, response.StatusCode, message); rewritten {
+			mediaStandardError(c, status, message)
+		} else {
+			c.Data(response.StatusCode, "application/json", raw)
+		}
+		return
 	}
 	c.Header("X-Task-Id", id)
 	for _, name := range []string{"Content-Type", "Cache-Control", "X-Accel-Buffering"} {

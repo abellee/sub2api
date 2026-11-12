@@ -17,7 +17,7 @@ import (
 
 func TestMediaFailurePersistsPrivateUpstreamDiagnostics(t *testing.T) {
 	const invalidSize = "GPT 尺寸每边须为 480～3840 的 16 倍数"
-	const requestMessage = "Generation failed. Please check the request and try again."
+	const requestMessage = invalidSize
 	const genericMessage = "Generation failed. Please contact support with the task ID."
 	for _, tc := range []struct {
 		name, method, path, protocol, state, raw, message string
@@ -90,7 +90,9 @@ func TestMediaFailurePersistsPrivateUpstreamDiagnostics(t *testing.T) {
 			router.ServeHTTP(w, httptest.NewRequest(tc.method, tc.path, nil))
 			require.Equal(t, tc.clientStatus, w.Code)
 			require.Contains(t, w.Body.String(), tc.message)
-			require.NotContains(t, w.Body.String(), invalidSize)
+			if tc.message != invalidSize {
+				require.NotContains(t, w.Body.String(), invalidSize)
+			}
 			require.NotContains(t, w.Body.String(), "account forbidden")
 			require.NotContains(t, w.Body.String(), "provider unavailable")
 			require.NotContains(t, w.Body.String(), "upstream route missing")
@@ -102,7 +104,6 @@ func TestMediaFailurePersistsPrivateUpstreamDiagnostics(t *testing.T) {
 			require.Equal(t, tc.upstream, *job.entry.UpstreamStatusCode)
 			require.NotNil(t, job.entry.UpstreamErrorMessage)
 			require.NotNil(t, job.entry.UpstreamErrorDetail)
-			require.NotEqual(t, tc.message, *job.entry.UpstreamErrorMessage)
 			wantDetail, _ := service.SanitizeOpsErrorBodyForQueue(tc.raw)
 			require.Equal(t, wantDetail, *job.entry.UpstreamErrorDetail)
 			require.Equal(t, parseOpsErrorResponse([]byte(wantDetail)).Message, *job.entry.UpstreamErrorMessage)
