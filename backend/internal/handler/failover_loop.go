@@ -13,6 +13,12 @@ import (
 	"go.uber.org/zap"
 )
 
+func markAccountErrorFailoverAction(c *gin.Context, action string, accountID int64) {
+	if c != nil && c.Request != nil {
+		service.MarkRequestAccountFailoverAction(c.Request.Context(), action, accountID)
+	}
+}
+
 func logAccountErrorFailoverResult(c *gin.Context, status int) {
 	if c == nil || c.Request == nil {
 		return
