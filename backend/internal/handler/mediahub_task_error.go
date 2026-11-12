@@ -74,13 +74,10 @@ func (h *MediaHubRelayHandler) writeTaskFailure(c *gin.Context, ctx context.Cont
 }
 
 func (h *MediaHubRelayHandler) applyTaskFailureRule(c *gin.Context, upstreamStatus int, matchBody []byte, status int, message string) (int, string, bool) {
+	original := mediaTaskErrorMessage(matchBody)
 	changed := false
 	switch upstreamStatus {
 	case 400, 413, 415, 422:
-		original := service.ExtractUpstreamErrorMessage(matchBody)
-		if original == "" && !gjson.ValidBytes(matchBody) {
-			original = string(matchBody)
-		}
 		if strings.TrimSpace(original) != "" {
 			message = service.SanitizeUpstreamErrorMessage(original)
 			changed = true
@@ -91,7 +88,7 @@ func (h *MediaHubRelayHandler) applyTaskFailureRule(c *gin.Context, upstreamStat
 		platform = key.Group.Platform
 	}
 	if h.oai != nil && h.oai.errorPassthroughService != nil {
-		if rule := h.oai.errorPassthroughService.MatchRule(platform, upstreamStatus, matchBody); rule != nil {
+		if rule := h.oai.errorPassthroughService.MatchRule(platform, upstreamStatus, []byte(original)); rule != nil {
 			if rule.PassthroughCode && upstreamStatus >= 400 && upstreamStatus <= 599 {
 				status = upstreamStatus
 			} else if rule.ResponseCode != nil && *rule.ResponseCode >= 400 && *rule.ResponseCode <= 599 {
@@ -107,4 +104,16 @@ func (h *MediaHubRelayHandler) applyTaskFailureRule(c *gin.Context, upstreamStat
 		}
 	}
 	return status, message, changed
+}
+
+func mediaTaskErrorMessage(body []byte) string {
+	if !gjson.ValidBytes(body) {
+		return string(body) // Older media services return the saved message as plain text.
+	}
+	for _, path := range []string{"error.message", "message"} {
+		if message := gjson.GetBytes(body, path); message.Type == gjson.String && strings.TrimSpace(message.Str) != "" {
+			return message.Str
+		}
+	}
+	return ""
 }

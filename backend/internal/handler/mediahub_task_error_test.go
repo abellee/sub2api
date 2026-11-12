@@ -26,6 +26,11 @@ func TestMediaTaskFailureRulesAndPrivacy(t *testing.T) {
 	}{
 		{name: "historical failure with cleaned files", status: "failed", summary: "upstream HTTP 400", upstream: 400, wantCode: 502, wantMessage: custom},
 		{name: "private keyword", status: "failed", raw: "account FROZEN " + private, upstream: 400, wantCode: 502, wantMessage: custom, skip: true},
+		{name: "metadata must not match", status: "failed", raw: `{"error":{"message":"invalid size","type":"api_error"},"url":"https://provider.example","account":"frozen"}`, upstream: 400, wantCode: 400, wantMessage: "invalid size"},
+		{name: "top level message", status: "failed", raw: `{"message":"invalid size","type":"api_error"}`, upstream: 400, wantCode: 400, wantMessage: "invalid size"},
+		{name: "missing message", status: "failed", raw: `{"error":{"type":"api_error"},"detail":"account frozen"}`, upstream: 400, wantCode: 400, wantMessage: "Generation failed. Please check the request and try again."},
+		{name: "object message ignored", status: "failed", raw: `{"error":{"message":{"type":"api_error"}},"message":"invalid size"}`, upstream: 400, wantCode: 400, wantMessage: "invalid size"},
+		{name: "message keyword overrides metadata", status: "failed", raw: `{"error":{"message":"account FROZEN","type":"api_error"}}`, upstream: 400, wantCode: 502, wantMessage: custom},
 		{name: "unmatched request error", status: "failed", raw: "invalid size", upstream: 400, wantCode: 400, wantMessage: "invalid size"},
 		{name: "non-parameter passthrough forbidden", status: "failed", raw: "account frozen " + private, upstream: 403, passthrough: true, wantCode: 502, wantMessage: "Generation failed. Please contact support with the task ID."},
 		{name: "parameter keyword passthrough", status: "failed", raw: `{"error":{"message":"invalid size: expected 16 pixel multiples"},"api_key":"sk-private-token"}`, upstream: 400, passthrough: true, wantCode: 502, wantMessage: "invalid size: expected 16 pixel multiples"},
@@ -63,7 +68,7 @@ func TestMediaTaskFailureRulesAndPrivacy(t *testing.T) {
 				}))
 				defer media.Close()
 				code, msg := 502, custom
-				rule := &model.ErrorPassthroughRule{ID: 1, Enabled: true, Keywords: []string{"http", "frozen", "16 pixel"}, MatchMode: model.MatchModeAny, Platforms: []string{service.PlatformOpenAI}, ResponseCode: &code, CustomMessage: &msg, PassthroughBody: tc.passthrough, SkipMonitoring: tc.skip}
+				rule := &model.ErrorPassthroughRule{ID: 1, Enabled: true, Keywords: []string{"http", "frozen", "16 pixel", "api"}, MatchMode: model.MatchModeAny, Platforms: []string{service.PlatformOpenAI}, ResponseCode: &code, CustomMessage: &msg, PassthroughBody: tc.passthrough, SkipMonitoring: tc.skip}
 				relay := &MediaHubRelayHandler{cfg: MediaHubConfig{MediadBaseURL: media.URL, RelaySecret: "test", ForwardTimeout: time.Second}, client: media.Client(), oai: newBodyLimitPassthroughHandler(t, rule)}
 				controller := &MediaHubController{relay: relay}
 				router := gin.New()
@@ -114,6 +119,9 @@ func TestMediaStandardFailureRules(t *testing.T) {
 		{"payload size keyword", 413, "尺寸", true, false, original},
 		{"format keyword", 415, "尺寸", true, false, original},
 		{"custom message", 400, "尺寸", false, false, custom},
+		{"metadata api ignored", 400, "api", false, false, original},
+		{"metadata URL ignored", 400, "http", false, false, original},
+		{"metadata account ignored", 400, "frozen", false, false, original},
 		{"unmatched keyword", 400, "unsupported quality", true, false, original},
 		{"OR code without keyword", 400, "unsupported quality", true, true, original},
 		{"code only", 400, "", true, true, original},
@@ -128,7 +136,7 @@ func TestMediaStandardFailureRules(t *testing.T) {
 						if r.URL.Query().Get("wait") == "true" {
 							t.Error("diagnostics must not wait")
 						}
-						_ = json.NewEncoder(w).Encode(gin.H{"status_code": tc.upstream, "body": `{"error":{"message":"` + original + `"},"api_key":"sk-private-token"}`})
+						_ = json.NewEncoder(w).Encode(gin.H{"status_code": tc.upstream, "body": `{"error":{"message":"` + original + `","type":"api_error"},"api_key":"sk-private-token","url":"https://provider.example","account":"frozen"}`})
 						return
 					}
 					w.WriteHeader(tc.upstream)
@@ -172,7 +180,7 @@ func TestMediaStandardFailureRules(t *testing.T) {
 				w := httptest.NewRecorder()
 				router.ServeHTTP(w, httptest.NewRequest(method, path, nil))
 				wantStatus := 400
-				if tc.name == "unmatched keyword" || tc.name == "no rule service" {
+				if tc.name == "unmatched keyword" || tc.name == "no rule service" || strings.HasPrefix(tc.name, "metadata ") {
 					wantStatus = tc.upstream
 				}
 				if w.Code != wantStatus || gjson.Get(w.Body.String(), "error.message").String() != tc.want {
