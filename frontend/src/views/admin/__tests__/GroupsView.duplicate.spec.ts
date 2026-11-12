@@ -259,6 +259,23 @@ describe('GroupsView duplicate action', () => {
     wrapper.unmount()
   })
 
+  it.each([false, true])('loads and saves reference sizing when the saved switch is %s', async (enabled) => {
+    const group = { ...sourceGroup, allow_image_generation: true, image_auto_size_from_reference: enabled }
+    listGroups.mockResolvedValue({ items: [group], total: 1, page: 1, page_size: 20, pages: 1 })
+    updateGroup.mockResolvedValue(group)
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.findAll('button').find(button => button.text() === 'common.edit')!.trigger('click')
+    await flushPromises()
+    const checkbox = wrapper.get<HTMLInputElement>('#edit-group-image-auto-size-from-reference')
+    expect(checkbox.element.checked).toBe(enabled)
+    await checkbox.setValue(!enabled)
+    await wrapper.get('#edit-group-form').trigger('submit')
+    await flushPromises()
+    expect(updateGroup).toHaveBeenCalledWith(42, expect.objectContaining({ image_auto_size_from_reference: !enabled }))
+    wrapper.unmount()
+  })
+
   it('hides advanced group actions in simple mode', async () => {
     authState.isSimpleMode = true
     const compositeGroup = { ...sourceGroup, platform: 'composite' }

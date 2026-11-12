@@ -951,6 +951,19 @@
               />
               {{ t(imagePricingI18nKey(createForm.platform, "allowImageGeneration")) }}
             </label>
+            <label
+              v-if="createForm.platform === 'openai' || createForm.platform === 'composite'"
+              class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300"
+              :title="t('admin.groups.imageAutoSizeFromReferenceHint')"
+            >
+              <input
+                id="create-group-image-auto-size-from-reference"
+                v-model="createForm.image_auto_size_from_reference"
+                type="checkbox"
+                class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              {{ t('admin.groups.imageAutoSizeFromReference') }}
+            </label>
             <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
               <input
                 v-model="createForm.image_rate_independent"
@@ -2617,6 +2630,19 @@
                 class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
               />
               {{ t(imagePricingI18nKey(editForm.platform, "allowImageGeneration")) }}
+            </label>
+            <label
+              v-if="editForm.platform === 'openai' || editForm.platform === 'composite'"
+              class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300"
+              :title="t('admin.groups.imageAutoSizeFromReferenceHint')"
+            >
+              <input
+                id="edit-group-image-auto-size-from-reference"
+                v-model="editForm.image_auto_size_from_reference"
+                type="checkbox"
+                class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              {{ t('admin.groups.imageAutoSizeFromReference') }}
             </label>
             <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
               <input
@@ -5227,6 +5253,7 @@ const createForm = reactive({
   // 图片生成计费配置
   allow_image_generation: false,
   allow_batch_image_generation: false,
+  image_auto_size_from_reference: false,
   image_count_billing: false,
   image_rate_independent: false,
   image_rate_multiplier: 1,
@@ -5594,6 +5621,7 @@ const editForm = reactive({
   // 图片生成计费配置
   allow_image_generation: false,
   allow_batch_image_generation: false,
+  image_auto_size_from_reference: false,
   image_count_billing: false,
   image_rate_independent: false,
   image_rate_multiplier: 1,
@@ -6208,6 +6236,7 @@ const closeCreateModal = () => {
   createForm.allow_image_generation = false;
   createForm.allow_batch_image_generation = false;
   createForm.image_count_billing = false;
+  createForm.image_auto_size_from_reference = false;
   createForm.image_rate_independent = false;
   createForm.image_rate_multiplier = 1;
   createForm.batch_image_discount_multiplier = 0.5;
@@ -6514,6 +6543,7 @@ const handleEdit = async (group: AdminGroup) => {
   editForm.allow_batch_image_generation =
     group.allow_batch_image_generation ?? false;
   editForm.image_count_billing = group.image_count_billing ?? false;
+  editForm.image_auto_size_from_reference = group.image_auto_size_from_reference ?? false;
   editForm.image_rate_independent = group.image_rate_independent ?? false;
   editForm.image_rate_multiplier = group.image_rate_multiplier ?? 1;
   editForm.batch_image_discount_multiplier =

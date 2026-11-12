@@ -5,7 +5,10 @@ package routes
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
+	"image"
+	"image/png"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -53,12 +56,14 @@ func (r compatibleImagesAccounts) ListModelAvailabilityCandidates(context.Contex
 
 type compatibleImagesUpstream struct {
 	service.HTTPUpstream
-	accountIDs []int64
-	body       []byte
+	accountIDs  []int64
+	body        []byte
+	contentType string
 }
 
 func (u *compatibleImagesUpstream) Do(req *http.Request, _ string, id int64, _ int) (*http.Response, error) {
 	u.accountIDs = append(u.accountIDs, id)
+	u.contentType = req.Header.Get("Content-Type")
 	var err error
 	u.body, err = io.ReadAll(req.Body)
 	if err != nil {
@@ -79,12 +84,13 @@ func (r *compatibleImagesUsage) Create(_ context.Context, log *service.UsageLog)
 
 func TestCompositeCompatibleImagesEndToEnd(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	for _, scenario := range []string{"generation", "json_edit", "multipart_alias", "disabled", "native_only", "restricted"} {
+	for _, scenario := range []string{"generation", "json_edit", "multipart_alias", "disabled", "native_only", "restricted", "auto_json", "auto_upload", "auto_disabled", "auto_json_multiple", "auto_upload_multiple", "auto_json_unreadable", "auto_upload_unreadable"} {
 		t.Run(scenario, func(t *testing.T) {
 			const model = "gemini-3.1-flash-image"
 			groupID := int64(101)
 			price := 0.17
 			group := &service.Group{ID: groupID, Platform: service.PlatformComposite, AllowImageGeneration: scenario != "disabled", RateMultiplier: 1, ImagePrice1K: &price, ImagePrice2K: &price, ImagePrice4K: &price}
+			group.ImageAutoSizeFromReference = strings.HasPrefix(scenario, "auto_") && scenario != "auto_disabled"
 			accounts := []service.Account{}
 			// Native accounts deliberately advertise the same model and have higher
 			// priority, proving the image capability fence controls selection.
@@ -138,6 +144,44 @@ func TestCompositeCompatibleImagesEndToEnd(t *testing.T) {
 				require.NoError(t, writer.Close())
 				body, contentType = buf.Bytes(), writer.FormDataContentType()
 			}
+			if strings.HasPrefix(scenario, "auto_") {
+				endpoint = "/v1/images/edits"
+				var imageBuffer bytes.Buffer
+				require.NoError(t, png.Encode(&imageBuffer, image.NewRGBA(image.Rect(0, 0, 640, 960))))
+				if strings.HasPrefix(scenario, "auto_upload") {
+					var buffer bytes.Buffer
+					writer := multipart.NewWriter(&buffer)
+					require.NoError(t, writer.WriteField("model", model))
+					require.NoError(t, writer.WriteField("prompt", "draw"))
+					require.NoError(t, writer.WriteField("size", "auto"))
+					part, err := writer.CreateFormFile("image", "reference.png")
+					require.NoError(t, err)
+					imageBytes := imageBuffer.Bytes()
+					if scenario == "auto_upload_unreadable" {
+						imageBytes = []byte("unreadable")
+					}
+					_, err = part.Write(imageBytes)
+					require.NoError(t, err)
+					if scenario == "auto_upload_multiple" {
+						part, err = writer.CreateFormFile("image", "second.png")
+						require.NoError(t, err)
+						_, err = part.Write(imageBytes)
+						require.NoError(t, err)
+					}
+					require.NoError(t, writer.Close())
+					body, contentType = buffer.Bytes(), writer.FormDataContentType()
+				} else {
+					imageURL := "data:image/png;base64," + base64.StdEncoding.EncodeToString(imageBuffer.Bytes())
+					if scenario == "auto_json_unreadable" {
+						imageURL = "data:image/png;base64,aW52YWxpZA=="
+					}
+					if scenario == "auto_json_multiple" {
+						body = []byte(fmt.Sprintf(`{"model":%q,"prompt":"draw","size":"auto","images":[%q,%q]}`, model, imageURL, imageURL))
+					} else {
+						body = []byte(fmt.Sprintf(`{"model":%q,"prompt":"draw","size":"auto","image":%q}`, model, imageURL))
+					}
+				}
+			}
 			req := httptest.NewRequest(http.MethodPost, endpoint, bytes.NewReader(body))
 			req.Header.Set("Content-Type", contentType)
 			rec := httptest.NewRecorder()
@@ -154,6 +198,21 @@ func TestCompositeCompatibleImagesEndToEnd(t *testing.T) {
 			}
 			require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 			require.Equal(t, []int64{3}, upstream.accountIDs)
+			if strings.HasPrefix(scenario, "auto_") {
+				expectedSize := "640x960"
+				if scenario == "auto_disabled" || strings.HasSuffix(scenario, "_multiple") || strings.HasSuffix(scenario, "_unreadable") {
+					expectedSize = "auto"
+				}
+				if strings.HasPrefix(scenario, "auto_upload") {
+					forwarded := httptest.NewRequest(http.MethodPost, endpoint, bytes.NewReader(upstream.body))
+					forwarded.Header.Set("Content-Type", upstream.contentType)
+					require.NoError(t, forwarded.ParseMultipartForm(1<<20))
+					defer forwarded.MultipartForm.RemoveAll()
+					require.Equal(t, expectedSize, forwarded.FormValue("size"))
+				} else {
+					require.Contains(t, string(upstream.body), fmt.Sprintf(`"size":%q`, expectedSize))
+				}
+			}
 			require.Contains(t, string(upstream.body), model)
 			require.Contains(t, rec.Body.String(), "aW1hZ2U=")
 			require.Len(t, usage.logs, 1, "the image must reach usage recording, not just return HTTP 200")

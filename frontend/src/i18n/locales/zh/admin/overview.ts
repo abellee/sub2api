@@ -844,6 +844,8 @@ export default {
 
     // Groups Management
     groups: {
+      imageAutoSizeFromReference: 'auto 尺寸跟随参考图',
+      imageAutoSizeFromReferenceHint: '仅在明确传入 size=auto 且只有一张参考图时生效；读取失败、多图、未传 size 或指定尺寸时保持原样。',
       title: '分组管理',
       description: '管理 API 密钥分组和费率配置',
       recommendation: {

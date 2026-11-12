@@ -338,6 +338,10 @@ func parseOpenAIImagesJSONRequest(body []byte, req *OpenAIImagesRequest) error {
 				return fmt.Errorf("invalid images field type")
 			}
 			for _, item := range images.Array() {
+				if item.Type == gjson.String && strings.TrimSpace(item.String()) != "" {
+					req.InputImageURLs = append(req.InputImageURLs, strings.TrimSpace(item.String()))
+					continue
+				}
 				if imageURL := strings.TrimSpace(item.Get("image_url").String()); imageURL != "" {
 					req.InputImageURLs = append(req.InputImageURLs, imageURL)
 					continue
@@ -345,6 +349,11 @@ func parseOpenAIImagesJSONRequest(body []byte, req *OpenAIImagesRequest) error {
 				if item.Get("file_id").Exists() {
 					return fmt.Errorf("images[].file_id is not supported (use images[].image_url instead)")
 				}
+			}
+		}
+		if len(req.InputImageURLs) == 0 {
+			if image := gjson.GetBytes(body, "image"); image.Type == gjson.String && strings.TrimSpace(image.String()) != "" {
+				req.InputImageURLs = append(req.InputImageURLs, strings.TrimSpace(image.String()))
 			}
 		}
 		if maskImageURL := strings.TrimSpace(gjson.GetBytes(body, "mask.image_url").String()); maskImageURL != "" {
@@ -973,6 +982,10 @@ func rewriteOpenAIImagesModel(body []byte, contentType string, model string) ([]
 }
 
 func rewriteOpenAIImagesMultipartModel(body []byte, contentType string, model string) ([]byte, string, error) {
+	return rewriteOpenAIImagesMultipartField(body, contentType, "model", model)
+}
+
+func rewriteOpenAIImagesMultipartField(body []byte, contentType, field, value string) ([]byte, string, error) {
 	_, params, err := mime.ParseMediaType(contentType)
 	if err != nil {
 		return nil, "", fmt.Errorf("parse multipart content-type: %w", err)
@@ -985,7 +998,7 @@ func rewriteOpenAIImagesMultipartModel(body []byte, contentType string, model st
 	reader := multipart.NewReader(bytes.NewReader(body), boundary)
 	var buffer bytes.Buffer
 	writer := multipart.NewWriter(&buffer)
-	modelWritten := false
+	fieldWritten := false
 
 	for {
 		part, err := reader.NextPart()
@@ -1004,12 +1017,12 @@ func rewriteOpenAIImagesMultipartModel(body []byte, contentType string, model st
 			return nil, "", fmt.Errorf("create multipart part: %w", err)
 		}
 
-		if formName == "model" && part.FileName() == "" {
-			if _, err := target.Write([]byte(model)); err != nil {
+		if formName == field && part.FileName() == "" {
+			if _, err := target.Write([]byte(value)); err != nil {
 				_ = part.Close()
-				return nil, "", fmt.Errorf("rewrite multipart model: %w", err)
+				return nil, "", fmt.Errorf("rewrite multipart %s: %w", field, err)
 			}
-			modelWritten = true
+			fieldWritten = true
 			_ = part.Close()
 			continue
 		}
@@ -1020,9 +1033,9 @@ func rewriteOpenAIImagesMultipartModel(body []byte, contentType string, model st
 		_ = part.Close()
 	}
 
-	if !modelWritten {
-		if err := writer.WriteField("model", model); err != nil {
-			return nil, "", fmt.Errorf("append multipart model field: %w", err)
+	if !fieldWritten {
+		if err := writer.WriteField(field, value); err != nil {
+			return nil, "", fmt.Errorf("append multipart %s field: %w", field, err)
 		}
 	}
 	if err := writer.Close(); err != nil {

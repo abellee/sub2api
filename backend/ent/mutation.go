@@ -22109,6 +22109,7 @@ type GroupMutation struct {
 	adddefault_validity_days                *int
 	allow_image_generation                  *bool
 	allow_batch_image_generation            *bool
+	image_auto_size_from_reference          *bool
 	image_count_billing                     *bool
 	image_rate_independent                  *bool
 	image_rate_multiplier                   *float64
@@ -23293,6 +23294,42 @@ func (m *GroupMutation) OldAllowBatchImageGeneration(ctx context.Context) (v boo
 // ResetAllowBatchImageGeneration resets all changes to the "allow_batch_image_generation" field.
 func (m *GroupMutation) ResetAllowBatchImageGeneration() {
 	m.allow_batch_image_generation = nil
+}
+
+// SetImageAutoSizeFromReference sets the "image_auto_size_from_reference" field.
+func (m *GroupMutation) SetImageAutoSizeFromReference(b bool) {
+	m.image_auto_size_from_reference = &b
+}
+
+// ImageAutoSizeFromReference returns the value of the "image_auto_size_from_reference" field in the mutation.
+func (m *GroupMutation) ImageAutoSizeFromReference() (r bool, exists bool) {
+	v := m.image_auto_size_from_reference
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldImageAutoSizeFromReference returns the old "image_auto_size_from_reference" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldImageAutoSizeFromReference(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldImageAutoSizeFromReference is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldImageAutoSizeFromReference requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldImageAutoSizeFromReference: %w", err)
+	}
+	return oldValue.ImageAutoSizeFromReference, nil
+}
+
+// ResetImageAutoSizeFromReference resets all changes to the "image_auto_size_from_reference" field.
+func (m *GroupMutation) ResetImageAutoSizeFromReference() {
+	m.image_auto_size_from_reference = nil
 }
 
 // SetImageCountBilling sets the "image_count_billing" field.
@@ -26032,7 +26069,7 @@ func (m *GroupMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *GroupMutation) Fields() []string {
-	fields := make([]string, 0, 69)
+	fields := make([]string, 0, 70)
 	if m.created_at != nil {
 		fields = append(fields, group.FieldCreatedAt)
 	}
@@ -26098,6 +26135,9 @@ func (m *GroupMutation) Fields() []string {
 	}
 	if m.allow_batch_image_generation != nil {
 		fields = append(fields, group.FieldAllowBatchImageGeneration)
+	}
+	if m.image_auto_size_from_reference != nil {
+		fields = append(fields, group.FieldImageAutoSizeFromReference)
 	}
 	if m.image_count_billing != nil {
 		fields = append(fields, group.FieldImageCountBilling)
@@ -26292,6 +26332,8 @@ func (m *GroupMutation) Field(name string) (ent.Value, bool) {
 		return m.AllowImageGeneration()
 	case group.FieldAllowBatchImageGeneration:
 		return m.AllowBatchImageGeneration()
+	case group.FieldImageAutoSizeFromReference:
+		return m.ImageAutoSizeFromReference()
 	case group.FieldImageCountBilling:
 		return m.ImageCountBilling()
 	case group.FieldImageRateIndependent:
@@ -26439,6 +26481,8 @@ func (m *GroupMutation) OldField(ctx context.Context, name string) (ent.Value, e
 		return m.OldAllowImageGeneration(ctx)
 	case group.FieldAllowBatchImageGeneration:
 		return m.OldAllowBatchImageGeneration(ctx)
+	case group.FieldImageAutoSizeFromReference:
+		return m.OldImageAutoSizeFromReference(ctx)
 	case group.FieldImageCountBilling:
 		return m.OldImageCountBilling(ctx)
 	case group.FieldImageRateIndependent:
@@ -26695,6 +26739,13 @@ func (m *GroupMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetAllowBatchImageGeneration(v)
+		return nil
+	case group.FieldImageAutoSizeFromReference:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetImageAutoSizeFromReference(v)
 		return nil
 	case group.FieldImageCountBilling:
 		v, ok := value.(bool)
@@ -27601,6 +27652,9 @@ func (m *GroupMutation) ResetField(name string) error {
 		return nil
 	case group.FieldAllowBatchImageGeneration:
 		m.ResetAllowBatchImageGeneration()
+		return nil
+	case group.FieldImageAutoSizeFromReference:
+		m.ResetImageAutoSizeFromReference()
 		return nil
 	case group.FieldImageCountBilling:
 		m.ResetImageCountBilling()

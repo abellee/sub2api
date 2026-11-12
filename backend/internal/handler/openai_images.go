@@ -103,6 +103,11 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		h.openAISecurityAuditError(c, decision)
 		return
 	}
+	if err := service.ApplyOpenAIImagesReferenceSize(c.Request.Context(), apiKey.Group, parsed); err != nil {
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", err.Error())
+		return
+	}
+	body = parsed.Body
 	imageReleaseFunc, acquired := h.acquireImageGenerationSlot(c, streamStarted)
 	if !acquired {
 		return

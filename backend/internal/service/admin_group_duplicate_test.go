@@ -140,6 +140,7 @@ func TestDuplicateGroupCopiesConfigurationDeeplyAndResetsRuntimeState(t *testing
 		DefaultValidityDays:          91,
 		AllowImageGeneration:         true,
 		AllowBatchImageGeneration:    true,
+		ImageAutoSizeFromReference:   true,
 		ImageRateIndependent:         true,
 		ImageRateMultiplier:          1.4,
 		ImagePrice1K:                 groupDuplicateTestPointer(0.01),
@@ -209,6 +210,7 @@ func TestDuplicateGroupCopiesConfigurationDeeplyAndResetsRuntimeState(t *testing
 	require.Equal(t, source.RateMultiplier, duplicate.RateMultiplier)
 	require.Equal(t, source.PeakRateMultiplier, duplicate.PeakRateMultiplier)
 	require.Equal(t, source.DefaultValidityDays, duplicate.DefaultValidityDays)
+	require.True(t, duplicate.ImageAutoSizeFromReference)
 	require.Equal(t, source.ImagePrice4K, duplicate.ImagePrice4K)
 	require.Equal(t, source.VideoModelPrices, duplicate.VideoModelPrices)
 	require.Equal(t, source.WebSearchPricePerCall, duplicate.WebSearchPricePerCall)

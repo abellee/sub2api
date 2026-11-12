@@ -311,6 +311,7 @@ type CreateGroupRequest struct {
 	AllowImageGeneration            bool                          `json:"allow_image_generation"`
 	AllowBatchImageGeneration       bool                          `json:"allow_batch_image_generation"`
 	ImageCountBilling               bool                          `json:"image_count_billing"`
+	ImageAutoSizeFromReference      bool                          `json:"image_auto_size_from_reference"`
 	ImageRateIndependent            bool                          `json:"image_rate_independent"`
 	ImageRateMultiplier             *float64                      `json:"image_rate_multiplier"`
 	BatchImageDiscountMultiplier    *float64                      `json:"batch_image_discount_multiplier"`
@@ -389,6 +390,7 @@ type UpdateGroupRequest struct {
 	AllowImageGeneration            *bool                         `json:"allow_image_generation"`
 	AllowBatchImageGeneration       *bool                         `json:"allow_batch_image_generation"`
 	ImageCountBilling               *bool                         `json:"image_count_billing"`
+	ImageAutoSizeFromReference      *bool                         `json:"image_auto_size_from_reference"`
 	ImageRateIndependent            *bool                         `json:"image_rate_independent"`
 	ImageRateMultiplier             *float64                      `json:"image_rate_multiplier"`
 	BatchImageDiscountMultiplier    *float64                      `json:"batch_image_discount_multiplier"`
@@ -822,6 +824,7 @@ func (h *GroupHandler) Create(c *gin.Context) {
 		AllowImageGeneration:            req.AllowImageGeneration,
 		AllowBatchImageGeneration:       req.AllowBatchImageGeneration,
 		ImageCountBilling:               req.ImageCountBilling,
+		ImageAutoSizeFromReference:      req.ImageAutoSizeFromReference,
 		ImageRateIndependent:            req.ImageRateIndependent,
 		ImageRateMultiplier:             req.ImageRateMultiplier,
 		BatchImageDiscountMultiplier:    req.BatchImageDiscountMultiplier,
@@ -971,6 +974,7 @@ func (h *GroupHandler) Update(c *gin.Context) {
 		AllowImageGeneration:            req.AllowImageGeneration,
 		AllowBatchImageGeneration:       req.AllowBatchImageGeneration,
 		ImageCountBilling:               req.ImageCountBilling,
+		ImageAutoSizeFromReference:      req.ImageAutoSizeFromReference,
 		ImageRateIndependent:            req.ImageRateIndependent,
 		ImageRateMultiplier:             req.ImageRateMultiplier,
 		BatchImageDiscountMultiplier:    req.BatchImageDiscountMultiplier,

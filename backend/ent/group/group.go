@@ -60,6 +60,8 @@ const (
 	FieldAllowImageGeneration = "allow_image_generation"
 	// FieldAllowBatchImageGeneration holds the string denoting the allow_batch_image_generation field in the database.
 	FieldAllowBatchImageGeneration = "allow_batch_image_generation"
+	// FieldImageAutoSizeFromReference holds the string denoting the image_auto_size_from_reference field in the database.
+	FieldImageAutoSizeFromReference = "image_auto_size_from_reference"
 	// FieldImageCountBilling holds the string denoting the image_count_billing field in the database.
 	FieldImageCountBilling = "image_count_billing"
 	// FieldImageRateIndependent holds the string denoting the image_rate_independent field in the database.
@@ -251,6 +253,7 @@ var Columns = []string{
 	FieldDefaultValidityDays,
 	FieldAllowImageGeneration,
 	FieldAllowBatchImageGeneration,
+	FieldImageAutoSizeFromReference,
 	FieldImageCountBilling,
 	FieldImageRateIndependent,
 	FieldImageRateMultiplier,
@@ -373,6 +376,8 @@ var (
 	DefaultAllowImageGeneration bool
 	// DefaultAllowBatchImageGeneration holds the default value on creation for the "allow_batch_image_generation" field.
 	DefaultAllowBatchImageGeneration bool
+	// DefaultImageAutoSizeFromReference holds the default value on creation for the "image_auto_size_from_reference" field.
+	DefaultImageAutoSizeFromReference bool
 	// DefaultImageCountBilling holds the default value on creation for the "image_count_billing" field.
 	DefaultImageCountBilling bool
 	// DefaultImageRateIndependent holds the default value on creation for the "image_rate_independent" field.
@@ -562,6 +567,11 @@ func ByAllowImageGeneration(opts ...sql.OrderTermOption) OrderOption {
 // ByAllowBatchImageGeneration orders the results by the allow_batch_image_generation field.
 func ByAllowBatchImageGeneration(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldAllowBatchImageGeneration, opts...).ToFunc()
+}
+
+// ByImageAutoSizeFromReference orders the results by the image_auto_size_from_reference field.
+func ByImageAutoSizeFromReference(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldImageAutoSizeFromReference, opts...).ToFunc()
 }
 
 // ByImageCountBilling orders the results by the image_count_billing field.

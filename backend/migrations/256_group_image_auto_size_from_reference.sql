@@ -1,0 +1,2 @@
+ALTER TABLE groups
+    ADD COLUMN IF NOT EXISTS image_auto_size_from_reference BOOLEAN NOT NULL DEFAULT FALSE;

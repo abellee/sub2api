@@ -847,6 +847,8 @@ export default {
 
     // Groups
     groups: {
+      imageAutoSizeFromReference: 'Use reference dimensions for auto size',
+      imageAutoSizeFromReferenceHint: 'Applies only when size=auto is explicitly provided with exactly one reference image. Leaves the request unchanged if the image cannot be read, multiple images are supplied, or size is omitted or set to explicit dimensions.',
       title: 'Group Management',
       description: 'Manage API key groups and rate multipliers',
       recommendation: {

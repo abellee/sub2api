@@ -322,6 +322,20 @@ func (_c *GroupCreate) SetNillableAllowBatchImageGeneration(v *bool) *GroupCreat
 	return _c
 }
 
+// SetImageAutoSizeFromReference sets the "image_auto_size_from_reference" field.
+func (_c *GroupCreate) SetImageAutoSizeFromReference(v bool) *GroupCreate {
+	_c.mutation.SetImageAutoSizeFromReference(v)
+	return _c
+}
+
+// SetNillableImageAutoSizeFromReference sets the "image_auto_size_from_reference" field if the given value is not nil.
+func (_c *GroupCreate) SetNillableImageAutoSizeFromReference(v *bool) *GroupCreate {
+	if v != nil {
+		_c.SetImageAutoSizeFromReference(*v)
+	}
+	return _c
+}
+
 // SetImageCountBilling sets the "image_count_billing" field.
 func (_c *GroupCreate) SetImageCountBilling(v bool) *GroupCreate {
 	_c.mutation.SetImageCountBilling(v)
@@ -1133,6 +1147,10 @@ func (_c *GroupCreate) defaults() error {
 		v := group.DefaultAllowBatchImageGeneration
 		_c.mutation.SetAllowBatchImageGeneration(v)
 	}
+	if _, ok := _c.mutation.ImageAutoSizeFromReference(); !ok {
+		v := group.DefaultImageAutoSizeFromReference
+		_c.mutation.SetImageAutoSizeFromReference(v)
+	}
 	if _, ok := _c.mutation.ImageCountBilling(); !ok {
 		v := group.DefaultImageCountBilling
 		_c.mutation.SetImageCountBilling(v)
@@ -1344,6 +1362,9 @@ func (_c *GroupCreate) check() error {
 	}
 	if _, ok := _c.mutation.AllowBatchImageGeneration(); !ok {
 		return &ValidationError{Name: "allow_batch_image_generation", err: errors.New(`ent: missing required field "Group.allow_batch_image_generation"`)}
+	}
+	if _, ok := _c.mutation.ImageAutoSizeFromReference(); !ok {
+		return &ValidationError{Name: "image_auto_size_from_reference", err: errors.New(`ent: missing required field "Group.image_auto_size_from_reference"`)}
 	}
 	if _, ok := _c.mutation.ImageCountBilling(); !ok {
 		return &ValidationError{Name: "image_count_billing", err: errors.New(`ent: missing required field "Group.image_count_billing"`)}
@@ -1587,6 +1608,10 @@ func (_c *GroupCreate) createSpec() (*Group, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.AllowBatchImageGeneration(); ok {
 		_spec.SetField(group.FieldAllowBatchImageGeneration, field.TypeBool, value)
 		_node.AllowBatchImageGeneration = value
+	}
+	if value, ok := _c.mutation.ImageAutoSizeFromReference(); ok {
+		_spec.SetField(group.FieldImageAutoSizeFromReference, field.TypeBool, value)
+		_node.ImageAutoSizeFromReference = value
 	}
 	if value, ok := _c.mutation.ImageCountBilling(); ok {
 		_spec.SetField(group.FieldImageCountBilling, field.TypeBool, value)
@@ -2235,6 +2260,18 @@ func (u *GroupUpsert) SetAllowBatchImageGeneration(v bool) *GroupUpsert {
 // UpdateAllowBatchImageGeneration sets the "allow_batch_image_generation" field to the value that was provided on create.
 func (u *GroupUpsert) UpdateAllowBatchImageGeneration() *GroupUpsert {
 	u.SetExcluded(group.FieldAllowBatchImageGeneration)
+	return u
+}
+
+// SetImageAutoSizeFromReference sets the "image_auto_size_from_reference" field.
+func (u *GroupUpsert) SetImageAutoSizeFromReference(v bool) *GroupUpsert {
+	u.Set(group.FieldImageAutoSizeFromReference, v)
+	return u
+}
+
+// UpdateImageAutoSizeFromReference sets the "image_auto_size_from_reference" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateImageAutoSizeFromReference() *GroupUpsert {
+	u.SetExcluded(group.FieldImageAutoSizeFromReference)
 	return u
 }
 
@@ -3426,6 +3463,20 @@ func (u *GroupUpsertOne) SetAllowBatchImageGeneration(v bool) *GroupUpsertOne {
 func (u *GroupUpsertOne) UpdateAllowBatchImageGeneration() *GroupUpsertOne {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdateAllowBatchImageGeneration()
+	})
+}
+
+// SetImageAutoSizeFromReference sets the "image_auto_size_from_reference" field.
+func (u *GroupUpsertOne) SetImageAutoSizeFromReference(v bool) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetImageAutoSizeFromReference(v)
+	})
+}
+
+// UpdateImageAutoSizeFromReference sets the "image_auto_size_from_reference" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateImageAutoSizeFromReference() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateImageAutoSizeFromReference()
 	})
 }
 
@@ -4914,6 +4965,20 @@ func (u *GroupUpsertBulk) SetAllowBatchImageGeneration(v bool) *GroupUpsertBulk 
 func (u *GroupUpsertBulk) UpdateAllowBatchImageGeneration() *GroupUpsertBulk {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdateAllowBatchImageGeneration()
+	})
+}
+
+// SetImageAutoSizeFromReference sets the "image_auto_size_from_reference" field.
+func (u *GroupUpsertBulk) SetImageAutoSizeFromReference(v bool) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetImageAutoSizeFromReference(v)
+	})
+}
+
+// UpdateImageAutoSizeFromReference sets the "image_auto_size_from_reference" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateImageAutoSizeFromReference() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateImageAutoSizeFromReference()
 	})
 }
 

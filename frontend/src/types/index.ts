@@ -648,6 +648,7 @@ export interface Group {
 }
 
 export interface AdminGroup extends Group {
+  image_auto_size_from_reference?: boolean
   // 管理端的 name / description 始终是原字段，各语言译文另放在 i18n 里
   i18n?: GroupI18n
   force_openai_fast: boolean
@@ -837,6 +838,7 @@ export interface CreateGroupRequest {
   model_pricing?: import('@/api/admin/channels').ChannelModelPricing[]
   allow_image_generation?: boolean
   allow_batch_image_generation?: boolean
+  image_auto_size_from_reference?: boolean
   image_count_billing?: boolean
   image_rate_independent?: boolean
   image_rate_multiplier?: number
@@ -906,6 +908,7 @@ export interface UpdateGroupRequest {
   model_pricing?: import('@/api/admin/channels').ChannelModelPricing[]
   allow_image_generation?: boolean
   allow_batch_image_generation?: boolean
+  image_auto_size_from_reference?: boolean
   image_count_billing?: boolean
   image_rate_independent?: boolean
   image_rate_multiplier?: number

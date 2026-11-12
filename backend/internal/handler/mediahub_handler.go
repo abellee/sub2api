@@ -188,6 +188,9 @@ func (h *MediaHubRelayHandler) Relay(c *gin.Context) {
 		return
 	}
 	contentType := c.GetHeader("Content-Type")
+	if protocol := c.GetString(mediaProtocolKey); protocol == "openai" || protocol == "openai_async" {
+		body, contentType = service.ResolveOpenAIImagesReferenceSize(c.Request.Context(), apiKey.Group, body, contentType)
+	}
 	clientPath := c.Param("path")
 	metadata := body
 	if c.GetString(mediaProtocolKey) != "" {

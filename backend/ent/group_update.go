@@ -373,6 +373,20 @@ func (_u *GroupUpdate) SetNillableAllowBatchImageGeneration(v *bool) *GroupUpdat
 	return _u
 }
 
+// SetImageAutoSizeFromReference sets the "image_auto_size_from_reference" field.
+func (_u *GroupUpdate) SetImageAutoSizeFromReference(v bool) *GroupUpdate {
+	_u.mutation.SetImageAutoSizeFromReference(v)
+	return _u
+}
+
+// SetNillableImageAutoSizeFromReference sets the "image_auto_size_from_reference" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillableImageAutoSizeFromReference(v *bool) *GroupUpdate {
+	if v != nil {
+		_u.SetImageAutoSizeFromReference(*v)
+	}
+	return _u
+}
+
 // SetImageCountBilling sets the "image_count_billing" field.
 func (_u *GroupUpdate) SetImageCountBilling(v bool) *GroupUpdate {
 	_u.mutation.SetImageCountBilling(v)
@@ -1693,6 +1707,9 @@ func (_u *GroupUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.AllowBatchImageGeneration(); ok {
 		_spec.SetField(group.FieldAllowBatchImageGeneration, field.TypeBool, value)
 	}
+	if value, ok := _u.mutation.ImageAutoSizeFromReference(); ok {
+		_spec.SetField(group.FieldImageAutoSizeFromReference, field.TypeBool, value)
+	}
 	if value, ok := _u.mutation.ImageCountBilling(); ok {
 		_spec.SetField(group.FieldImageCountBilling, field.TypeBool, value)
 	}
@@ -2606,6 +2623,20 @@ func (_u *GroupUpdateOne) SetAllowBatchImageGeneration(v bool) *GroupUpdateOne {
 func (_u *GroupUpdateOne) SetNillableAllowBatchImageGeneration(v *bool) *GroupUpdateOne {
 	if v != nil {
 		_u.SetAllowBatchImageGeneration(*v)
+	}
+	return _u
+}
+
+// SetImageAutoSizeFromReference sets the "image_auto_size_from_reference" field.
+func (_u *GroupUpdateOne) SetImageAutoSizeFromReference(v bool) *GroupUpdateOne {
+	_u.mutation.SetImageAutoSizeFromReference(v)
+	return _u
+}
+
+// SetNillableImageAutoSizeFromReference sets the "image_auto_size_from_reference" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillableImageAutoSizeFromReference(v *bool) *GroupUpdateOne {
+	if v != nil {
+		_u.SetImageAutoSizeFromReference(*v)
 	}
 	return _u
 }
@@ -3959,6 +3990,9 @@ func (_u *GroupUpdateOne) sqlSave(ctx context.Context) (_node *Group, err error)
 	}
 	if value, ok := _u.mutation.AllowBatchImageGeneration(); ok {
 		_spec.SetField(group.FieldAllowBatchImageGeneration, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.ImageAutoSizeFromReference(); ok {
+		_spec.SetField(group.FieldImageAutoSizeFromReference, field.TypeBool, value)
 	}
 	if value, ok := _u.mutation.ImageCountBilling(); ok {
 		_spec.SetField(group.FieldImageCountBilling, field.TypeBool, value)

@@ -64,6 +64,8 @@ type Group struct {
 	AllowImageGeneration bool `json:"allow_image_generation,omitempty"`
 	// 是否允许该分组使用批量图片生成能力
 	AllowBatchImageGeneration bool `json:"allow_batch_image_generation,omitempty"`
+	// size=auto 且仅有一张参考图时使用该图尺寸，读取失败则保持原样
+	ImageAutoSizeFromReference bool `json:"image_auto_size_from_reference,omitempty"`
 	// 图片生成是否按实际出图张数计费
 	ImageCountBilling bool `json:"image_count_billing,omitempty"`
 	// 图片生成是否使用独立倍率；false 表示共享分组有效倍率
@@ -266,7 +268,7 @@ func (*Group) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case group.FieldI18n, group.FieldVideoModelPrices, group.FieldModelPricing, group.FieldModelRouting, group.FieldSupportedModelScopes, group.FieldMessagesDispatchModelConfig, group.FieldModelAllowlist, group.FieldAnthropicThinkingCompat, group.FieldCodexModelsManifestConfig, group.FieldReasoningEffortMappings:
 			values[i] = new([]byte)
-		case group.FieldPeakRateEnabled, group.FieldIsExclusive, group.FieldAllowImageGeneration, group.FieldAllowBatchImageGeneration, group.FieldImageCountBilling, group.FieldImageRateIndependent, group.FieldVideoRateIndependent, group.FieldLongContextPricingEnabled, group.FieldClaudeCodeOnly, group.FieldModelRoutingEnabled, group.FieldMcpXMLInject, group.FieldAllowMessagesDispatch, group.FieldAllowLive, group.FieldForceOpenaiFast, group.FieldFreeOpenaiFast, group.FieldRequireOauthOnly, group.FieldRequirePrivacySet, group.FieldProfitControlEnabled:
+		case group.FieldPeakRateEnabled, group.FieldIsExclusive, group.FieldAllowImageGeneration, group.FieldAllowBatchImageGeneration, group.FieldImageAutoSizeFromReference, group.FieldImageCountBilling, group.FieldImageRateIndependent, group.FieldVideoRateIndependent, group.FieldLongContextPricingEnabled, group.FieldClaudeCodeOnly, group.FieldModelRoutingEnabled, group.FieldMcpXMLInject, group.FieldAllowMessagesDispatch, group.FieldAllowLive, group.FieldForceOpenaiFast, group.FieldFreeOpenaiFast, group.FieldRequireOauthOnly, group.FieldRequirePrivacySet, group.FieldProfitControlEnabled:
 			values[i] = new(sql.NullBool)
 		case group.FieldRateMultiplier, group.FieldPeakRateMultiplier, group.FieldDailyLimitUsd, group.FieldWeeklyLimitUsd, group.FieldMonthlyLimitUsd, group.FieldImageRateMultiplier, group.FieldImagePrice1k, group.FieldImagePrice2k, group.FieldImagePrice4k, group.FieldBatchImageDiscountMultiplier, group.FieldBatchImageHoldMultiplier, group.FieldVideoRateMultiplier, group.FieldVideoPrice480p, group.FieldVideoPrice720p, group.FieldVideoPrice1080p, group.FieldWebSearchPricePerCall, group.FieldSearchPricePer1k, group.FieldAudioRealtimePricePerMin, group.FieldAudioTtsPricePerMillionChars, group.FieldAudioSttPricePerHour, group.FieldProfitMinMargin, group.FieldProfitSafetyBuffer:
 			values[i] = new(sql.NullFloat64)
@@ -436,6 +438,12 @@ func (_m *Group) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field allow_batch_image_generation", values[i])
 			} else if value.Valid {
 				_m.AllowBatchImageGeneration = value.Bool
+			}
+		case group.FieldImageAutoSizeFromReference:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field image_auto_size_from_reference", values[i])
+			} else if value.Valid {
+				_m.ImageAutoSizeFromReference = value.Bool
 			}
 		case group.FieldImageCountBilling:
 			if value, ok := values[i].(*sql.NullBool); !ok {
@@ -903,6 +911,9 @@ func (_m *Group) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("allow_batch_image_generation=")
 	builder.WriteString(fmt.Sprintf("%v", _m.AllowBatchImageGeneration))
+	builder.WriteString(", ")
+	builder.WriteString("image_auto_size_from_reference=")
+	builder.WriteString(fmt.Sprintf("%v", _m.ImageAutoSizeFromReference))
 	builder.WriteString(", ")
 	builder.WriteString("image_count_billing=")
 	builder.WriteString(fmt.Sprintf("%v", _m.ImageCountBilling))
