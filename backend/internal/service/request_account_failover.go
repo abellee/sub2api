@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
@@ -35,6 +36,47 @@ func (s *SettingService) IsAccountErrorFailoverEnabled(ctx context.Context) bool
 }
 
 type requestAccountFailoverKey struct{}
+type requestAccountFailoverTraceKey struct{}
+
+type RequestAccountFailoverTrace struct {
+	mu               sync.Mutex
+	Actions          []string
+	FailedAccountIDs []int64
+}
+
+func MarkRequestAccountFailoverAction(ctx context.Context, action string, accountID int64) {
+	if !RequestAccountFailoverEnabled(ctx) {
+		return
+	}
+	trace, _ := ctx.Value(requestAccountFailoverTraceKey{}).(*RequestAccountFailoverTrace)
+	if trace == nil {
+		return
+	}
+	trace.mu.Lock()
+	defer trace.mu.Unlock()
+	trace.Actions = append(trace.Actions, action)
+	if action == "switch_account" && accountID > 0 {
+		for _, existing := range trace.FailedAccountIDs {
+			if existing == accountID {
+				return
+			}
+		}
+		trace.FailedAccountIDs = append(trace.FailedAccountIDs, accountID)
+	}
+}
+
+func GetRequestAccountFailoverTrace(ctx context.Context) (actions []string, failedAccountIDs []int64) {
+	if ctx == nil {
+		return nil, nil
+	}
+	trace, _ := ctx.Value(requestAccountFailoverTraceKey{}).(*RequestAccountFailoverTrace)
+	if trace == nil {
+		return nil, nil
+	}
+	trace.mu.Lock()
+	defer trace.mu.Unlock()
+	return append([]string(nil), trace.Actions...), append([]int64(nil), trace.FailedAccountIDs...)
+}
 
 // RequestAccountFailoverEnabled keeps retries and exclusions within this request.
 func RequestAccountFailoverEnabled(ctx context.Context) bool {
@@ -52,7 +94,11 @@ func RequestAccountFailoverLimit(ctx context.Context, fallback int) int {
 
 func withRequestAccountFailoverCount(ctx context.Context, count int) context.Context {
 	// Reset the decision when a request moves to a fallback group.
-	return context.WithValue(ctx, requestAccountFailoverKey{}, count)
+	ctx = context.WithValue(ctx, requestAccountFailoverKey{}, count)
+	if count > 1 {
+		return context.WithValue(ctx, requestAccountFailoverTraceKey{}, &RequestAccountFailoverTrace{})
+	}
+	return context.WithValue(ctx, requestAccountFailoverTraceKey{}, (*RequestAccountFailoverTrace)(nil))
 }
 
 func (s *GatewayService) PrepareRequestAccountFailover(ctx context.Context, groupID *int64, model, platform string) context.Context {
@@ -152,6 +198,7 @@ func ForwardWithAccountRetries[T any](ctx context.Context, c *gin.Context, forwa
 			copy.SkipAccountCooldown = true
 			return result, &copy
 		}
+		MarkRequestAccountFailoverAction(ctx, "retry_same_account", 0)
 		timer := time.NewTimer(500 * time.Millisecond)
 		select {
 		case <-ctx.Done():

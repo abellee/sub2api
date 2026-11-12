@@ -1079,7 +1079,13 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 		originalWriter := c.Writer
 		w := acquireOpsCaptureWriter(originalWriter)
 		w.setContext(c)
+		var failoverResultStatus int
 		defer func() {
+			status := failoverResultStatus
+			if status == 0 {
+				status = c.Writer.Status()
+			}
+			logAccountErrorFailoverResult(c, status)
 			// Restore the original writer before returning so outer middlewares
 			// don't observe a pooled wrapper that has been released.
 			if c.Writer == w {
@@ -1134,7 +1140,9 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 		if status < 400 {
 			if parsed.StreamFailure {
 				status = inferStreamFailureStatus(c, parsed)
+				failoverResultStatus = status
 			} else {
+				failoverResultStatus = status
 				// A marked in-band error is a visible request failure even though its
 				// wire status is already 200. Otherwise retain recovered attempts as a
 				// provider-health row whose 2xx status keeps it outside request SLA.

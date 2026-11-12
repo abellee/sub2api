@@ -7,10 +7,52 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"go.uber.org/zap"
 )
+
+func logAccountErrorFailoverResult(c *gin.Context, status int) {
+	if c == nil || c.Request == nil {
+		return
+	}
+	actions, failedAccountIDs := service.GetRequestAccountFailoverTrace(c.Request.Context())
+	if len(actions) == 0 {
+		return
+	}
+	var finalAccountID int64
+	if value, ok := c.Get(opsAccountIDKey); ok {
+		finalAccountID, _ = value.(int64)
+	}
+	requestID, _ := c.Request.Context().Value(ctxkey.RequestID).(string)
+	clientRequestID, _ := c.Request.Context().Value(ctxkey.ClientRequestID).(string)
+	result := "failed"
+	if status < 400 {
+		result = "success"
+	}
+	var userID, groupID int64
+	if apiKey := getOpsAPIKey(c); apiKey != nil {
+		if apiKey.User != nil {
+			userID = apiKey.User.ID
+		}
+		if apiKey.GroupID != nil {
+			groupID = *apiKey.GroupID
+		}
+	}
+	logger.FromContext(c.Request.Context()).Info("gateway.account_error_failover_result",
+		zap.String("feature", "account_error_failover"),
+		zap.String("result", result),
+		zap.Int("status_code", status),
+		zap.Int64("user_id", userID),
+		zap.Int64("group_id", groupID),
+		zap.String("request_id", requestID),
+		zap.String("client_request_id", clientRequestID),
+		zap.Strings("actions", actions),
+		zap.Int64s("failed_account_ids", failedAccountIDs),
+		zap.Int64("final_account_id", finalAccountID),
+	)
+}
 
 // TempUnscheduler 用于 HandleFailoverError 中同账号重试耗尽后的临时封禁。
 // GatewayService 隐式实现此接口。
@@ -219,6 +261,7 @@ func (s *FailoverState) HandleFailoverError(
 	// 重试次数上限 retryLimit 由调用方传入（账号级 pool_mode_retry_count 配置）。
 	if sameAccountRetry {
 		s.SameAccountRetryCount[accountID]++
+		service.MarkRequestAccountFailoverAction(ctx, "retry_same_account", accountID)
 		retryDelay := sameAccountRetryDelayFor(failoverErr, s.SameAccountRetryCount[accountID])
 		logger.FromContext(ctx).Warn("gateway.failover_same_account_retry",
 			zap.Int64("account_id", accountID),
@@ -248,6 +291,7 @@ func (s *FailoverState) HandleFailoverError(
 
 	// 递增切换计数
 	s.SwitchCount++
+	service.MarkRequestAccountFailoverAction(ctx, "switch_account", accountID)
 	logger.FromContext(ctx).Warn("gateway.failover_switch_account",
 		zap.Int64("account_id", accountID),
 		zap.Int("upstream_status", failoverErr.StatusCode),

@@ -100,6 +100,23 @@ func TestRequestAccountFailoverPreservesAccountState(t *testing.T) {
 	require.Equal(t, 10, RequestAccountFailoverLimit(single, 10))
 }
 
+func TestRequestAccountFailoverTraceRecordsEnabledActions(t *testing.T) {
+	enabled := withRequestAccountFailoverCount(context.Background(), 3)
+	MarkRequestAccountFailoverAction(enabled, "retry_same_account", 12)
+	MarkRequestAccountFailoverAction(enabled, "switch_account", 12)
+	MarkRequestAccountFailoverAction(enabled, "switch_account", 12)
+
+	actions, accounts := GetRequestAccountFailoverTrace(enabled)
+	require.Equal(t, []string{"retry_same_account", "switch_account", "switch_account"}, actions)
+	require.Equal(t, []int64{12}, accounts)
+
+	disabled := withRequestAccountFailoverCount(context.Background(), 1)
+	MarkRequestAccountFailoverAction(disabled, "switch_account", 99)
+	actions, accounts = GetRequestAccountFailoverTrace(disabled)
+	require.Empty(t, actions)
+	require.Empty(t, accounts)
+}
+
 func TestAccountCredentialFailoverPreservesSingleAccount(t *testing.T) {
 	account := &Account{Type: AccountTypeAPIKey, Platform: PlatformOpenAI}
 	for _, getToken := range []func(context.Context, *Account) (string, string, error){
