@@ -48,7 +48,8 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 	return s.handleStreamingResponseWithReasoning(ctx, resp, c, account, startTime, originalModel, mappedModel, "")
 }
 
-func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.Context, resp *http.Response, c *gin.Context, account *Account, startTime time.Time, originalModel, mappedModel, reasoningEffort string) (*openaiStreamingResult, error) {
+func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.Context, resp *http.Response, c *gin.Context, account *Account, startTime time.Time, originalModel, mappedModel, reasoningEffort string) (retryResult *openaiStreamingResult, retryErr error) {
+	defer func() { finishRequestAccountStream(c, account, resp, &retryResult, &retryErr) }()
 	observer := upstreamResponseModelObserverFromContext(c)
 	if observer == nil {
 		observer = beginUpstreamResponseModelObservation(c)
@@ -973,6 +974,10 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 					SafeToFailoverAfterWrite: true,
 				}
 			}
+			if retry := requestAccountStreamFailover(c, account, resp, errors.New("stream data interval timeout")); retry != nil {
+				_ = resp.Body.Close()
+				return nil, retry
+			}
 			// Grok: short cool + account failover when no client-visible bytes
 			// were committed yet (pre-commit). After output started we keep the
 			// legacy stream_timeout path so partial SSE is not dual-written.
@@ -1673,6 +1678,9 @@ func openAICacheCreationTTLTokensFromUsage(value gjson.Result, aggregate int) (i
 func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, resp *http.Response, c *gin.Context, account *Account, originalModel, mappedModel string) (*openaiNonStreamingResult, error) {
 	body, err := ReadUpstreamResponseBody(resp.Body, s.cfg, c, openAITooLargeError)
 	if err != nil {
+		if retry := requestAccountStreamFailover(c, account, resp, err); retry != nil {
+			return nil, retry
+		}
 		return nil, err
 	}
 	observer := upstreamResponseModelObserverFromContext(c)
@@ -1718,6 +1726,9 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 	if !usageOK {
 		if bodyLooksLikeSSE {
 			return s.handleSSEToJSON(resp, c, account, body, originalModel, mappedModel)
+		}
+		if retry := requestAccountStreamFailover(c, account, resp, errors.New("upstream returned invalid JSON response")); retry != nil {
+			return nil, retry
 		}
 		return nil, fmt.Errorf("parse response: invalid json response")
 	}
@@ -1809,6 +1820,11 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 	finalResponse, ok := extractCodexFinalResponse(bodyText)
 	if !ok && terminalOK {
 		finalResponse, ok = extractOpenAINonCompletedTerminalResponse(terminalType, terminalPayload)
+	}
+	if !ok {
+		if retry := requestAccountStreamFailover(c, account, resp, errors.New("upstream stream ended without a terminal response")); retry != nil {
+			return nil, retry
+		}
 	}
 
 	usage := s.parseSSEUsageFromBody(bodyText)

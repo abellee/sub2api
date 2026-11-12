@@ -414,6 +414,11 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 	}
 
 	scanErr := scanner.Err()
+	if terminal.IsTruncated(clientOutputStarted) && scanErr != nil && !clientDisconnected {
+		if retry := requestAccountStreamFailover(c, account, resp, scanErr); retry != nil {
+			return nil, retry
+		}
+	}
 	if scanErr != nil && !errors.Is(scanErr, context.Canceled) && !errors.Is(scanErr, context.DeadlineExceeded) {
 		logger.L().Warn("openai chat_completions raw: stream read error",
 			zap.Error(scanErr),
@@ -426,6 +431,9 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 	clientAborted := clientDisconnected ||
 		errors.Is(scanErr, context.Canceled) ||
 		errors.Is(scanErr, context.DeadlineExceeded)
+	if c.Request != nil && RequestAccountFailoverEnabled(c.Request.Context()) {
+		clientAborted = clientDisconnected || c.Request.Context().Err() != nil
+	}
 
 	// 上游在任何终止信号之前结束：连接被 reset（scanErr != nil）或干净 EOF。
 	// 两者都不能再记成功——此前统一返回 nil error，把上游截断伪装成
@@ -531,6 +539,9 @@ func (s *OpenAIGatewayService) bufferRawChatCompletions(
 
 	respBody, err := ReadUpstreamResponseBody(resp.Body, s.cfg, c, openAITooLargeError)
 	if err != nil {
+		if retry := requestAccountStreamFailover(c, account, resp, err); retry != nil {
+			return nil, retry
+		}
 		if !errors.Is(err, ErrUpstreamResponseBodyTooLarge) {
 			writeChatCompletionsError(c, http.StatusBadGateway, "api_error", "Failed to read upstream response")
 		}
@@ -541,6 +552,11 @@ func (s *OpenAIGatewayService) bufferRawChatCompletions(
 		observer = beginUpstreamResponseModelObservation(c)
 	}
 	observer.ObserveOpenAI(respBody, strings.TrimSpace(gjson.GetBytes(respBody, "type").String()))
+	if !gjson.ValidBytes(respBody) {
+		if retry := requestAccountStreamFailover(c, account, resp, errors.New("upstream returned invalid JSON response")); retry != nil {
+			return nil, retry
+		}
+	}
 
 	var usage OpenAIUsage
 	if parsedUsage, ok := extractOpenAIUsageFromJSONBytes(respBody); ok {

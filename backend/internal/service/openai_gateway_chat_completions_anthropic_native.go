@@ -155,7 +155,8 @@ func (s *OpenAIGatewayService) handleCCBufferedFromNativeAnthropic(
 	upstreamModel string,
 	reasoningEffort *string,
 	startTime time.Time,
-) (*OpenAIForwardResult, error) {
+) (retryResult *OpenAIForwardResult, retryErr error) {
+	defer func() { finishRequestAccountStream(c, nil, resp, &retryResult, &retryErr) }()
 	requestID := resp.Header.Get("x-request-id")
 
 	scanner := bufio.NewScanner(resp.Body)
@@ -172,7 +173,7 @@ func (s *OpenAIGatewayService) handleCCBufferedFromNativeAnthropic(
 	// 读间隔上限：上游挂住 SSE 时中止组装（缓冲路径尚未提交响应头，可回 502）。
 	streamInterval := anthropicNativeStreamInterval(s.cfg)
 	pump := newAnthropicNativeLinePump(scanner, streamInterval, s.cfg)
-	streamStatus := &anthropicCompatStream{body: resp.Body}
+	streamStatus := &anthropicCompatStream{body: resp.Body, requireTerminal: c.Request != nil && RequestAccountFailoverEnabled(c.Request.Context())}
 	defer pump.stop()
 
 	logReadErr := func(err error) {
@@ -189,8 +190,11 @@ func (s *OpenAIGatewayService) handleCCBufferedFromNativeAnthropic(
 			zap.String("request_id", requestID),
 			zap.Duration("interval", streamInterval),
 		)
+		if retry := requestAccountStreamFailover(c, nil, resp, errAnthropicNativeStreamIdle); retry != nil {
+			return nil, retry
+		}
 		writeChatCompletionsError(c, http.StatusBadGateway, "server_error", "Upstream stream data interval timeout")
-		return nil, fmt.Errorf("stream data interval timeout")
+		return nil, errAnthropicNativeStreamIdle
 	}
 
 	for {
@@ -265,6 +269,9 @@ func (s *OpenAIGatewayService) handleCCBufferedFromNativeAnthropic(
 
 	if failure := streamStatus.failure(); failure != nil {
 		_ = resp.Body.Close()
+		if retry := requestAccountStreamFailover(c, nil, resp, failure.err); retry != nil {
+			return nil, retry
+		}
 		writeChatCompletionsError(c, http.StatusBadGateway, "server_error", failure.message)
 		return &OpenAIForwardResult{
 			RequestID: requestID, UpstreamHeaders: resp.Header, Usage: claudeUsageToOpenAIUsage(&usage),
@@ -274,6 +281,9 @@ func (s *OpenAIGatewayService) handleCCBufferedFromNativeAnthropic(
 	}
 
 	if finalResp == nil {
+		if retry := requestAccountStreamFailover(c, nil, resp, errors.New("upstream stream ended without response")); retry != nil {
+			return nil, retry
+		}
 		writeChatCompletionsError(c, http.StatusBadGateway, "server_error", "Upstream stream ended without a response")
 		return nil, fmt.Errorf("upstream stream ended without response")
 	}
@@ -326,7 +336,8 @@ func (s *OpenAIGatewayService) handleCCStreamingFromNativeAnthropic(
 	upstreamModel string,
 	reasoningEffort *string,
 	startTime time.Time,
-) (*OpenAIForwardResult, error) {
+) (retryResult *OpenAIForwardResult, retryErr error) {
+	defer func() { finishRequestAccountStream(c, nil, resp, &retryResult, &retryErr) }()
 	requestID := resp.Header.Get("x-request-id")
 
 	if s.responseHeaderFilter != nil {
@@ -378,7 +389,7 @@ func (s *OpenAIGatewayService) handleCCStreamingFromNativeAnthropic(
 	// scanner.Scan() 永久阻塞（见 anthropic native pump 文件注释）。
 	streamInterval := anthropicNativeStreamInterval(s.cfg)
 	pump := newAnthropicNativeLinePump(scanner, streamInterval, s.cfg)
-	streamStatus := &anthropicCompatStream{body: resp.Body}
+	streamStatus := &anthropicCompatStream{body: resp.Body, requireTerminal: c.Request != nil && RequestAccountFailoverEnabled(c.Request.Context())}
 	defer pump.stop()
 
 	logReadErr := func(err error) {
@@ -507,6 +518,9 @@ func (s *OpenAIGatewayService) handleCCStreamingFromNativeAnthropic(
 
 	if failure := streamStatus.failure(); failure != nil {
 		_ = resp.Body.Close()
+		if retry := requestAccountStreamFailover(c, nil, resp, failure.err); retry != nil {
+			return nil, retry
+		}
 		if !clientDisconnected {
 			writeAnthropicCompatCCStreamFailure(c, failure)
 		}

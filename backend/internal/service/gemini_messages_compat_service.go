@@ -725,10 +725,7 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 		finishGeminiSearchObservation(c, result)
 		billingDrain.finish(c, account, result)
 	}()
-	maxAttempts := s.geminiMaxAttemptsPerAccount()
-	if RequestAccountFailoverEnabled(ctx) {
-		maxAttempts = 1
-	}
+	maxAttempts := s.geminiMaxAttemptsPerAccount(ctx)
 	// 签名降级重发不占用同号重试次数：每进入一个降级阶段，循环上限随之顺延一次。
 	for attempt := 1; attempt <= maxAttempts+signatureRetryStage; attempt++ {
 		checkedPolicy = nil
@@ -1306,10 +1303,7 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 		finishGeminiSearchObservation(c, result)
 		billingDrain.finish(c, account, result)
 	}()
-	maxAttempts := s.geminiMaxAttemptsPerAccount()
-	if RequestAccountFailoverEnabled(ctx) {
-		maxAttempts = 1
-	}
+	maxAttempts := s.geminiMaxAttemptsPerAccount(ctx)
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		checkedPolicy = nil
 		if err := ctx.Err(); err != nil {
@@ -1731,7 +1725,10 @@ func (s *GeminiMessagesCompatService) cachedContentPassthroughInLoop(ctx context
 }
 
 // geminiMaxAttemptsPerAccount 返回可重试上游错误在单个账号上的最大请求次数（首次请求 + 同账号重试）。
-func (s *GeminiMessagesCompatService) geminiMaxAttemptsPerAccount() int {
+func (s *GeminiMessagesCompatService) geminiMaxAttemptsPerAccount(ctx context.Context) int {
+	if RequestAccountFailoverEnabled(ctx) {
+		return 1 // The outer request loop owns the three-attempt budget.
+	}
 	if s == nil || s.cfg == nil {
 		return geminiDefaultSameAccountRetries + 1
 	}

@@ -76,4 +76,38 @@ describe('OpsErrorDetailModal', () => {
     expect(wrapper.findAll('pre')).toHaveLength(2)
     expect(wrapper.text()).not.toContain('admin.ops.errorDetail.payloads.upstream_detail')
   })
+
+  it('shows the account on request errors and account/model on linked upstream errors', async () => {
+    mocks.getRequestErrorDetail.mockResolvedValue({
+      id: 2, phase: 'request', error_owner: 'provider',
+      created_at: '2026-11-13T00:00:00Z', status_code: 502,
+      request_id: 'request-2', user_email: 'user@example.test',
+      account_id: 305, account_name: 'gemini-ultra7', model: 'gemini-3.8-flash'
+    })
+    mocks.listRequestErrorUpstreamErrors.mockResolvedValue({ items: [{
+      id: 3, phase: 'upstream', error_owner: 'provider', status_code: 429,
+      account_id: 273, account_name: 'gemini6',
+      requested_model: 'gemini-alias', upstream_model: 'gemini-3.8-flash'
+    }, {
+      id: 4, phase: 'upstream', error_owner: 'provider', status_code: 502,
+      account_id: 400, model: 'gemini-fallback'
+    }] })
+
+    const wrapper = shallowMount(OpsErrorDetailModal, {
+      props: { show: true, errorId: 2, errorType: 'request' },
+      global: { stubs: { BaseDialog: { template: '<div><slot /></div>' }, Icon: true } }
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('user@example.test')
+    expect(wrapper.get('[data-testid="error-detail-account"]').text()).toContain('gemini-ultra7')
+    expect(wrapper.get('[data-testid="error-detail-account"]').text()).toContain('#305')
+    const accounts = wrapper.findAll('[data-testid="upstream-error-account"]')
+    expect(accounts[0].text()).toContain('gemini6')
+    expect(accounts[0].text()).toContain('#273')
+    expect(accounts[1].text()).toContain('#400')
+    expect(wrapper.findAll('[data-testid="upstream-error-model"]').map(node => node.text())).toEqual([
+      expect.stringContaining('gemini-alias → gemini-3.8-flash'), expect.stringContaining('gemini-fallback')
+    ])
+  })
 })

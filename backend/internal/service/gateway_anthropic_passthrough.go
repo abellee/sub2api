@@ -377,7 +377,8 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 	account *Account,
 	startTime time.Time,
 	model string,
-) (*streamingResult, error) {
+) (retryResult *streamingResult, retryErr error) {
+	defer func() { finishRequestAccountStream(c, account, resp, &retryResult, &retryErr) }()
 	observer := upstreamResponseModelObserverFromContext(c)
 	if observer == nil {
 		observer = beginUpstreamResponseModelObservation(c)
@@ -509,6 +510,11 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 				queueBudget.release(len(ev.line))
 			}
 			if !ok {
+				if !sawTerminalEvent && !clientDisconnected {
+					if retry := requestAccountStreamFailover(c, account, resp, errors.New("upstream stream ended without a terminal event")); retry != nil {
+						return nil, retry
+					}
+				}
 				if !clientDisconnected {
 					// 兜底补刷，确保最后一个未以空行结尾的事件也能及时送达客户端。
 					flusher.Flush()
@@ -859,7 +865,8 @@ func (s *GatewayService) handleNonStreamingResponseAnthropicAPIKeyPassthrough(
 	resp *http.Response,
 	c *gin.Context,
 	account *Account,
-) (*ClaudeUsage, error) {
+) (retryResult *ClaudeUsage, retryErr error) {
+	defer func() { finishRequestAccountStream(c, account, resp, &retryResult, &retryErr) }()
 	if s.rateLimitService != nil {
 		s.rateLimitService.UpdateSessionWindow(ctx, account, resp.Header)
 	}

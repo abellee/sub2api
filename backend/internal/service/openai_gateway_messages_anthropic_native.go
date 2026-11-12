@@ -239,7 +239,8 @@ func (s *OpenAIGatewayService) handleNativeAnthropicBufferedResponse(
 	upstreamModel string,
 	reasoningEffort *string,
 	startTime time.Time,
-) (*OpenAIForwardResult, error) {
+) (retryResult *OpenAIForwardResult, retryErr error) {
+	defer func() { finishRequestAccountStream(c, account, resp, &retryResult, &retryErr) }()
 	if s.rateLimitService != nil {
 		s.rateLimitService.UpdateSessionWindow(ctx, account, resp.Header)
 	}
@@ -302,7 +303,8 @@ func (s *OpenAIGatewayService) handleNativeAnthropicStreamingResponse(
 	upstreamModel string,
 	reasoningEffort *string,
 	startTime time.Time,
-) (*OpenAIForwardResult, error) {
+) (retryResult *OpenAIForwardResult, retryErr error) {
+	defer func() { finishRequestAccountStream(c, account, resp, &retryResult, &retryErr) }()
 	observer := upstreamResponseModelObserverFromContext(c)
 	if observer == nil {
 		observer = beginUpstreamResponseModelObservation(c)
@@ -434,6 +436,11 @@ func (s *OpenAIGatewayService) handleNativeAnthropicStreamingResponse(
 				queueBudget.release(len(ev.line))
 			}
 			if !ok {
+				if !sawTerminalEvent && !clientDisconnected {
+					if retry := requestAccountStreamFailover(c, account, resp, errors.New("upstream stream ended without a terminal event")); retry != nil {
+						return nil, retry
+					}
+				}
 				if !clientDisconnected {
 					flusher.Flush()
 				}

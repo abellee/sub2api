@@ -1925,7 +1925,8 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	startTime time.Time,
 	originalModel string,
 	mappedModel string,
-) (*openaiStreamingResultPassthrough, error) {
+) (retryResult *openaiStreamingResultPassthrough, retryErr error) {
+	defer func() { finishRequestAccountStream(c, account, resp, &retryResult, &retryErr) }()
 	observer := upstreamResponseModelObserverFromContext(c)
 	if observer == nil {
 		observer = beginUpstreamResponseModelObservation(c)
@@ -2383,6 +2384,9 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 ) (*openaiNonStreamingResultPassthrough, error) {
 	body, err := ReadUpstreamResponseBody(resp.Body, s.cfg, c, openAITooLargeError)
 	if err != nil {
+		if retry := requestAccountStreamFailover(c, account, resp, err); retry != nil {
+			return nil, retry
+		}
 		return nil, err
 	}
 	observer := upstreamResponseModelObserverFromContext(c)
@@ -2404,6 +2408,11 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 	// handleNonStreamingResponse).
 	if isEventStreamResponse(resp.Header) || (account != nil && account.Type == AccountTypeOAuth && bodyHasSSEFraming(body)) {
 		return s.handlePassthroughSSEToJSON(resp, c, account, body, originalModel, mappedModel)
+	}
+	if !gjson.ValidBytes(body) {
+		if retry := requestAccountStreamFailover(c, account, resp, errors.New("upstream returned invalid JSON response")); retry != nil {
+			return nil, retry
+		}
 	}
 
 	usage := &OpenAIUsage{}
@@ -2474,6 +2483,11 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 	finalResponse, ok := extractCodexFinalResponse(bodyText)
 	if !ok && terminalOK {
 		finalResponse, ok = extractOpenAINonCompletedTerminalResponse(terminalType, terminalPayload)
+	}
+	if !ok {
+		if retry := requestAccountStreamFailover(c, account, resp, errors.New("upstream stream ended without a terminal response")); retry != nil {
+			return nil, retry
+		}
 	}
 
 	usage := s.parseSSEUsageFromBody(bodyText)

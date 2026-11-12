@@ -39,6 +39,7 @@ type anthropicCompatStream struct {
 
 	clientDisconnected bool
 	sawMessageStart    bool
+	requireTerminal    bool
 	// sawTerminal 表示上游已发出 message_stop、带 stop_reason 的 message_delta 或 [DONE]。
 	sawTerminal bool
 	// upstreamErr* 记录上游流内的 error 事件；收到后调用方结束读取。
@@ -67,11 +68,12 @@ func newAnthropicCompatStream(cfg *config.Config, c *gin.Context, resp *http.Res
 	scanner.Buffer(make([]byte, 0, 64*1024), maxLineSize)
 	scanner.Split(newBoundedSSESplit(cfg, maxLineSize, nil))
 	stream := &anthropicCompatStream{
-		pump:        newAnthropicNativeLinePump(scanner, anthropicNativeStreamInterval(cfg), cfg),
-		body:        resp.Body,
-		maxLineSize: maxLineSize,
-		logPrefix:   logPrefix,
-		requestID:   requestID,
+		pump:            newAnthropicNativeLinePump(scanner, anthropicNativeStreamInterval(cfg), cfg),
+		body:            resp.Body,
+		maxLineSize:     maxLineSize,
+		logPrefix:       logPrefix,
+		requestID:       requestID,
+		requireTerminal: c.Request != nil && RequestAccountFailoverEnabled(c.Request.Context()),
 	}
 	if c.Request != nil {
 		stream.clientGone = c.Request.Context().Done()
@@ -171,7 +173,7 @@ func (st *anthropicCompatStream) observe(event *apicompat.AnthropicStreamEvent, 
 // failure 返回客户端在线、上游未发出结束事件即中断时的失败原因：上游流内
 // error 事件、读间隔超时、读错误，或 message_start 之后正常关闭。此时调用方不补发
 // 完成事件，而是写出协议内的终止错误。上游已发出结束事件、客户端已断开，或上游
-// 未发出 message_start 即正常关闭时返回 nil，调用方按已累计的 usage 正常收尾。
+// 未开启重试且未发出 message_start 即正常关闭时返回 nil。
 // 读间隔超时时 err 为 errAnthropicNativeStreamIdle。
 func (st *anthropicCompatStream) failure() *anthropicCompatStreamFailure {
 	if st.clientDisconnected || st.sawTerminal {
@@ -202,7 +204,7 @@ func (st *anthropicCompatStream) failure() *anthropicCompatStreamFailure {
 			errType: "stream_read_error",
 			message: "upstream stream disconnected: " + sanitizeStreamError(st.readErr),
 		}
-	case st.sawMessageStart:
+	case st.sawMessageStart || st.requireTerminal:
 		return &anthropicCompatStreamFailure{
 			err:     errors.New("stream usage incomplete: missing terminal event"),
 			errType: "stream_incomplete",
@@ -219,6 +221,9 @@ func (st *anthropicCompatStream) failure() *anthropicCompatStreamFailure {
 // handler 换号重试。其余失败写出终止错误，并带上已观测到的 usage；未观测到任何
 // usage 时结果为 nil。
 func finishAnthropicCompatStreamFailure(c *gin.Context, writerSizeBeforeStream int, failure *anthropicCompatStreamFailure, result *ForwardResult, writeFailure func()) (*ForwardResult, error) {
+	if retry := requestAccountStreamFailover(c, nil, &http.Response{Header: result.UpstreamHeaders}, failure.err); retry != nil {
+		return nil, retry
+	}
 	var sseErr *sseStreamErrorEventError
 	if errors.As(failure.err, &sseErr) {
 		if c.Writer.Size() != writerSizeBeforeStream {

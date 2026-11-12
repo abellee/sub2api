@@ -398,7 +398,7 @@ func (s *GatewayService) handleResponsesBufferedStreamingResponse(
 	// Accumulate the final Anthropic response from streaming events
 	var finalResp *apicompat.AnthropicResponse
 	var usage ClaudeUsage
-	streamStatus := &anthropicCompatStream{body: resp.Body}
+	streamStatus := &anthropicCompatStream{body: resp.Body, requireTerminal: c.Request != nil && RequestAccountFailoverEnabled(c.Request.Context())}
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -481,6 +481,9 @@ func (s *GatewayService) handleResponsesBufferedStreamingResponse(
 	streamStatus.readErr = scanner.Err()
 	if failure := streamStatus.failure(); failure != nil {
 		_ = resp.Body.Close()
+		if retry := requestAccountStreamFailover(c, nil, resp, failure.err); retry != nil {
+			return nil, retry
+		}
 		writeResponsesError(c, http.StatusBadGateway, "server_error", failure.message)
 		return &ForwardResult{
 			RequestID: requestID, UpstreamHeaders: resp.Header, Usage: usage,
@@ -490,6 +493,9 @@ func (s *GatewayService) handleResponsesBufferedStreamingResponse(
 	}
 
 	if finalResp == nil {
+		if retry := requestAccountStreamFailover(c, nil, resp, errors.New("upstream stream ended without response")); retry != nil {
+			return nil, retry
+		}
 		writeResponsesError(c, http.StatusBadGateway, "server_error", "Upstream stream ended without a response")
 		return nil, fmt.Errorf("upstream stream ended without response")
 	}
@@ -553,7 +559,8 @@ func (s *GatewayService) handleResponsesStreamingResponse(
 	reasoningEffort *string,
 	startTime time.Time,
 	clientToolMapping apicompat.ResponsesClientToolMapping,
-) (*ForwardResult, error) {
+) (retryResult *ForwardResult, retryErr error) {
+	defer func() { finishRequestAccountStream(c, nil, resp, &retryResult, &retryErr) }()
 	requestID := resp.Header.Get("x-request-id")
 
 	if s.responseHeaderFilter != nil {
