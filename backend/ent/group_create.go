@@ -294,6 +294,20 @@ func (_c *GroupCreate) SetNillableDefaultValidityDays(v *int) *GroupCreate {
 	return _c
 }
 
+// SetAccountErrorFailoverEnabled sets the "account_error_failover_enabled" field.
+func (_c *GroupCreate) SetAccountErrorFailoverEnabled(v bool) *GroupCreate {
+	_c.mutation.SetAccountErrorFailoverEnabled(v)
+	return _c
+}
+
+// SetNillableAccountErrorFailoverEnabled sets the "account_error_failover_enabled" field if the given value is not nil.
+func (_c *GroupCreate) SetNillableAccountErrorFailoverEnabled(v *bool) *GroupCreate {
+	if v != nil {
+		_c.SetAccountErrorFailoverEnabled(*v)
+	}
+	return _c
+}
+
 // SetAllowImageGeneration sets the "allow_image_generation" field.
 func (_c *GroupCreate) SetAllowImageGeneration(v bool) *GroupCreate {
 	_c.mutation.SetAllowImageGeneration(v)
@@ -1139,6 +1153,10 @@ func (_c *GroupCreate) defaults() error {
 		v := group.DefaultDefaultValidityDays
 		_c.mutation.SetDefaultValidityDays(v)
 	}
+	if _, ok := _c.mutation.AccountErrorFailoverEnabled(); !ok {
+		v := group.DefaultAccountErrorFailoverEnabled
+		_c.mutation.SetAccountErrorFailoverEnabled(v)
+	}
 	if _, ok := _c.mutation.AllowImageGeneration(); !ok {
 		v := group.DefaultAllowImageGeneration
 		_c.mutation.SetAllowImageGeneration(v)
@@ -1356,6 +1374,9 @@ func (_c *GroupCreate) check() error {
 	}
 	if _, ok := _c.mutation.DefaultValidityDays(); !ok {
 		return &ValidationError{Name: "default_validity_days", err: errors.New(`ent: missing required field "Group.default_validity_days"`)}
+	}
+	if _, ok := _c.mutation.AccountErrorFailoverEnabled(); !ok {
+		return &ValidationError{Name: "account_error_failover_enabled", err: errors.New(`ent: missing required field "Group.account_error_failover_enabled"`)}
 	}
 	if _, ok := _c.mutation.AllowImageGeneration(); !ok {
 		return &ValidationError{Name: "allow_image_generation", err: errors.New(`ent: missing required field "Group.allow_image_generation"`)}
@@ -1600,6 +1621,10 @@ func (_c *GroupCreate) createSpec() (*Group, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.DefaultValidityDays(); ok {
 		_spec.SetField(group.FieldDefaultValidityDays, field.TypeInt, value)
 		_node.DefaultValidityDays = value
+	}
+	if value, ok := _c.mutation.AccountErrorFailoverEnabled(); ok {
+		_spec.SetField(group.FieldAccountErrorFailoverEnabled, field.TypeBool, value)
+		_node.AccountErrorFailoverEnabled = value
 	}
 	if value, ok := _c.mutation.AllowImageGeneration(); ok {
 		_spec.SetField(group.FieldAllowImageGeneration, field.TypeBool, value)
@@ -2236,6 +2261,18 @@ func (u *GroupUpsert) UpdateDefaultValidityDays() *GroupUpsert {
 // AddDefaultValidityDays adds v to the "default_validity_days" field.
 func (u *GroupUpsert) AddDefaultValidityDays(v int) *GroupUpsert {
 	u.Add(group.FieldDefaultValidityDays, v)
+	return u
+}
+
+// SetAccountErrorFailoverEnabled sets the "account_error_failover_enabled" field.
+func (u *GroupUpsert) SetAccountErrorFailoverEnabled(v bool) *GroupUpsert {
+	u.Set(group.FieldAccountErrorFailoverEnabled, v)
+	return u
+}
+
+// UpdateAccountErrorFailoverEnabled sets the "account_error_failover_enabled" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateAccountErrorFailoverEnabled() *GroupUpsert {
+	u.SetExcluded(group.FieldAccountErrorFailoverEnabled)
 	return u
 }
 
@@ -3435,6 +3472,20 @@ func (u *GroupUpsertOne) AddDefaultValidityDays(v int) *GroupUpsertOne {
 func (u *GroupUpsertOne) UpdateDefaultValidityDays() *GroupUpsertOne {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdateDefaultValidityDays()
+	})
+}
+
+// SetAccountErrorFailoverEnabled sets the "account_error_failover_enabled" field.
+func (u *GroupUpsertOne) SetAccountErrorFailoverEnabled(v bool) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetAccountErrorFailoverEnabled(v)
+	})
+}
+
+// UpdateAccountErrorFailoverEnabled sets the "account_error_failover_enabled" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateAccountErrorFailoverEnabled() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateAccountErrorFailoverEnabled()
 	})
 }
 
@@ -4937,6 +4988,20 @@ func (u *GroupUpsertBulk) AddDefaultValidityDays(v int) *GroupUpsertBulk {
 func (u *GroupUpsertBulk) UpdateDefaultValidityDays() *GroupUpsertBulk {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdateDefaultValidityDays()
+	})
+}
+
+// SetAccountErrorFailoverEnabled sets the "account_error_failover_enabled" field.
+func (u *GroupUpsertBulk) SetAccountErrorFailoverEnabled(v bool) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetAccountErrorFailoverEnabled(v)
+	})
+}
+
+// UpdateAccountErrorFailoverEnabled sets the "account_error_failover_enabled" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateAccountErrorFailoverEnabled() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateAccountErrorFailoverEnabled()
 	})
 }
 

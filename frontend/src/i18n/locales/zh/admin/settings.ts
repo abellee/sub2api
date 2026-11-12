@@ -531,6 +531,8 @@ export default {
         saveFailed: '保存 OpenCode Go 用量刷新设置失败'
       },
       gatewayForwarding: {
+        accountErrorFailover: '账号报错自动重试换号',
+        accountErrorFailoverHint: '系统和分组开关都开启后，多个可用账号中，当前账号失败最多再试 2 次，仍失败就换号；一圈都失败则返回错误，不停号、不加冷却。只有一个可用账号或关闭时保持原有处理。',
         title: '请求转发行为',
         description: '控制请求转发到上游 OAuth 账号时的行为',
         grokDefaultTextModel: '默认 Grok 文本模型',

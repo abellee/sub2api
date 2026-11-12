@@ -229,7 +229,11 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 	if isGrokVideoCreateEndpoint(endpoint) {
 		videoCreateStartedAt = service.GrokVideoPendingCreatedAtNow()
 	}
-	maxAccountSwitches := h.maxAccountSwitches
+	if boundLookupAccountID == 0 {
+		requestCtx = h.gatewayService.PrepareRequestAccountFailover(requestCtx, apiKey.GroupID, apiKey.Group, routingModel, platform)
+	}
+	c.Request = c.Request.WithContext(requestCtx)
+	maxAccountSwitches := service.RequestAccountFailoverLimit(requestCtx, h.maxAccountSwitches)
 	if maxAccountSwitches <= 0 {
 		maxAccountSwitches = 3
 	}
@@ -398,9 +402,13 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		result, err := func() (*service.OpenAIForwardResult, error) {
 			defer releaseAccount()
 			if endpoint.IsSeedance() {
-				return h.gatewayService.ForwardSeedance(requestCtx, c, account, endpoint, requestID, body)
+				return service.ForwardWithAccountRetries(requestCtx, c, func() (*service.OpenAIForwardResult, error) {
+					return h.gatewayService.ForwardSeedance(requestCtx, c, account, endpoint, requestID, body)
+				})
 			}
-			return h.gatewayService.ForwardGrokMedia(requestCtx, c, account, endpoint, requestID, body, contentType)
+			return service.ForwardWithAccountRetries(requestCtx, c, func() (*service.OpenAIForwardResult, error) {
+				return h.gatewayService.ForwardGrokMedia(requestCtx, c, account, endpoint, requestID, body, contentType)
+			})
 		}()
 
 		forwardDurationMs := time.Since(forwardStart).Milliseconds()
@@ -464,7 +472,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 					return
 				}
 				switchCount++
-				if h.gatewayService.ShouldStopOpenAIOAuth429Failover(account, failoverErr.StatusCode, switchCount, &oauth429FailoverState) {
+				if !service.RequestAccountFailoverEnabled(c.Request.Context()) && h.gatewayService.ShouldStopOpenAIOAuth429Failover(account, failoverErr.StatusCode, switchCount, &oauth429FailoverState) {
 					h.handleFailoverExhausted(c, failoverErr, false)
 					return
 				}

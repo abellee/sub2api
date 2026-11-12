@@ -107,7 +107,7 @@ func TestOpenAIGatewayServiceRecordUsage_GPT61SolSubscriptionLongContext(t *test
 							require.InDelta(t, wantTotal*1.1, userRepo.lastAmount, 1e-12)
 							if groupMode != "无分组" {
 								wantStats := 0.478 * tierFactor
-								if accountType == AccountTypeAPIKey && accountEnabled {
+								if wantLong {
 									wantStats = (0.458*2 + 0.02*1.5) * tierFactor
 								}
 								require.NotNil(t, log.AccountStatsCost)

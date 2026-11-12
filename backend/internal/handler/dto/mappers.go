@@ -148,6 +148,7 @@ func GroupFromServiceAdmin(g *service.Group) *AdminGroup {
 	}
 	out := &AdminGroup{
 		ImageAutoSizeFromReference:  g.ImageAutoSizeFromReference,
+		AccountErrorFailoverEnabled: g.AccountErrorFailoverEnabled,
 		Group:                       groupFromServiceBase(g),
 		ForceOpenAIFast:             g.ForceOpenAIFast,
 		FreeOpenAIFast:              g.FreeOpenAIFast,

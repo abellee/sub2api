@@ -2017,6 +2017,9 @@ func persistGrokTransientModelCooldown(account *Account, decision GrokUpstreamFa
 }
 
 func (s *OpenAIGatewayService) handleGrokAccountUpstreamError(ctx context.Context, account *Account, statusCode int, headers http.Header, responseBody []byte) {
+	if RequestAccountFailoverEnabled(ctx) {
+		return
+	}
 	if s == nil || account == nil {
 		return
 	}
@@ -2111,6 +2114,9 @@ func isGrokSpendingLimitError(responseBody []byte) bool {
 }
 
 func (s *OpenAIGatewayService) tempUnscheduleGrok(ctx context.Context, account *Account, cooldown time.Duration, reason string) {
+	if RequestAccountFailoverEnabled(ctx) {
+		return
+	}
 	if s == nil || account == nil {
 		return
 	}

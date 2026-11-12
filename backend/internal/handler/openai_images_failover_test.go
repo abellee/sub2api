@@ -5,6 +5,7 @@ package handler
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -88,6 +89,22 @@ func (u *openAIImagesFailoverHTTPUpstream) calls() []int64 {
 }
 
 func TestOpenAIGatewayHandlerImages_ServerErrorFailsOverAndReturnsClearErrorWhenExhausted(t *testing.T) {
+	for _, count := range []int{1, 2, 3} {
+		t.Run(fmt.Sprintf("%d_accounts", count), func(t *testing.T) {
+			testImagesFailoverRound(t, count, true, true)
+		})
+	}
+}
+
+func TestOpenAIGatewayHandlerImages_DisabledAccountRetryKeepsOriginalLimit(t *testing.T) {
+	testImagesFailoverRound(t, 3, false, true)
+}
+
+func TestOpenAIGatewayHandlerImages_DisabledGroupRetryKeepsOriginalLimit(t *testing.T) {
+	testImagesFailoverRound(t, 3, true, false)
+}
+
+func testImagesFailoverRound(t *testing.T, count int, enabled, groupEnabled bool) {
 	gin.SetMode(gin.TestMode)
 	groupID := int64(3130)
 	accounts := []service.Account{
@@ -114,9 +131,26 @@ func TestOpenAIGatewayHandlerImages_ServerErrorFailsOverAndReturnsClearErrorWhen
 			Credentials: map[string]any{"access_token": "token-2"},
 		},
 	}
+	if count == 1 {
+		accounts = accounts[:1]
+	} else if count == 3 {
+		third := accounts[1]
+		third.ID = 3
+		third.Name = "image-account-3"
+		third.Priority = 2
+		accounts = append(accounts, third)
+	}
+	accounts = append(accounts,
+		service.Account{ID: 90, Platform: service.PlatformOpenAI, Type: service.AccountTypeOAuth, Status: service.StatusDisabled, Schedulable: true, Priority: -2},
+		service.Account{ID: 91, Platform: service.PlatformOpenAI, Type: service.AccountTypeOAuth, Status: service.StatusActive, Schedulable: false, Priority: -1},
+	)
 	accountRepo := openAIImagesFailoverAccountRepo{accounts: accounts}
 	upstream := &openAIImagesFailoverHTTPUpstream{}
 	cfg := &config.Config{RunMode: config.RunModeSimple}
+	var settings *service.SettingService
+	if enabled {
+		settings = newAccountErrorFailoverTestSettings()
+	}
 	gatewayService := service.NewOpenAIGatewayService(
 		accountRepo,
 		nil,
@@ -138,7 +172,7 @@ func TestOpenAIGatewayHandlerImages_ServerErrorFailsOverAndReturnsClearErrorWhen
 		nil,
 		nil,
 		nil,
-		nil,
+		settings,
 		nil,
 	)
 	billingService := service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil)
@@ -155,7 +189,7 @@ func TestOpenAIGatewayHandlerImages_ServerErrorFailsOverAndReturnsClearErrorWhen
 		nil,
 		cfg,
 	)
-	handler.maxAccountSwitches = 10
+	handler.maxAccountSwitches = 1
 
 	body := []byte(`{"model":"gpt-image-1","prompt":"draw a cat","quality":"high","size":"1536x1024"}`)
 	core, observedLogs := observer.New(zap.DebugLevel)
@@ -168,7 +202,7 @@ func TestOpenAIGatewayHandlerImages_ServerErrorFailsOverAndReturnsClearErrorWhen
 	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
 		ID:      99,
 		GroupID: &groupID,
-		Group: &service.Group{
+		Group: &service.Group{AccountErrorFailoverEnabled: groupEnabled,
 			ID:                   groupID,
 			AllowImageGeneration: true,
 		},
@@ -177,6 +211,8 @@ func TestOpenAIGatewayHandlerImages_ServerErrorFailsOverAndReturnsClearErrorWhen
 	c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: 100, Concurrency: 0})
 
 	handler.Images(c)
+	require.Equal(t, service.StatusDisabled, accounts[len(accounts)-2].Status, "manually disabled accounts must remain disabled")
+	require.False(t, accounts[len(accounts)-1].Schedulable, "manual scheduling pause must remain in place")
 
 	accountSelectingLogs := observedLogs.FilterMessage("openai.images.account_selecting").All()
 	require.NotEmpty(t, accountSelectingLogs)
@@ -188,7 +224,20 @@ func TestOpenAIGatewayHandlerImages_ServerErrorFailsOverAndReturnsClearErrorWhen
 	require.Equal(t, "1536x1024", loggedFields["img_size"])
 	require.NotContains(t, loggedFields, "prompt")
 
-	require.Equal(t, []int64{1, 2}, upstream.calls())
+	attempts := 3
+	if count == 1 || !enabled || !groupEnabled {
+		attempts = 1
+	}
+	if (!enabled || !groupEnabled) && count > 2 {
+		count = 2 // Original maximum is one account switch.
+	}
+	var expected []int64
+	for id := 1; id <= count; id++ {
+		for attempt := 0; attempt < attempts; attempt++ {
+			expected = append(expected, int64(id))
+		}
+	}
+	require.Equal(t, expected, upstream.calls())
 	require.Equal(t, http.StatusBadGateway, rec.Code)
 	require.Equal(t, "upstream_error", gjson.GetBytes(rec.Body.Bytes(), "error.type").String())
 	require.Equal(t, "Upstream service temporarily unavailable", gjson.GetBytes(rec.Body.Bytes(), "error.message").String())
@@ -197,7 +246,9 @@ func TestOpenAIGatewayHandlerImages_ServerErrorFailsOverAndReturnsClearErrorWhen
 	require.True(t, ok)
 	events, ok := rawEvents.([]*service.OpsUpstreamErrorEvent)
 	require.True(t, ok)
-	require.Len(t, events, 2)
+	require.Len(t, events, len(expected))
 	require.Equal(t, "failover", events[0].Kind)
-	require.Equal(t, "failover", events[1].Kind)
+	for _, event := range events {
+		require.Equal(t, "failover", event.Kind)
+	}
 }

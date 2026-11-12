@@ -28,7 +28,7 @@ func classifyOpenAIAPIKeyHealthFailure(err error) (int, []byte, bool) {
 	if errors.As(err, &failoverErr) {
 		// These failures already have dedicated recovery/state handling or are not
 		// attributable to the selected account.
-		if failoverErr.IsCredentialFailure() ||
+		if failoverErr.SkipAccountCooldown || failoverErr.IsCredentialFailure() ||
 			failoverErr.RequestScopedTransient ||
 			failoverErr.RetryableOnSameAccount ||
 			failoverErr.Scope == GatewayFailureScopeRequest ||
@@ -51,6 +51,9 @@ func classifyOpenAIAPIKeyHealthFailure(err error) (int, []byte, bool) {
 }
 
 func (s *RateLimitService) ObserveOpenAIAPIKeyHealthFailure(ctx context.Context, account *Account, upstreamErr error) bool {
+	if RequestAccountFailoverEnabled(ctx) {
+		return false
+	}
 	if s == nil || s.openAIAPIKeyHealth == nil || s.settingService == nil || s.accountRepo == nil || !isOpenAIAPIKeyHealthBreakerAccount(account) {
 		return false
 	}

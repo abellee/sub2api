@@ -121,7 +121,8 @@ func (h *GatewayHandler) SystemOne(c *gin.Context) {
 	}
 	defer inflightRelease()
 
-	fs := NewFailoverState(h.maxAccountSwitches, false)
+	c.Request = c.Request.WithContext(h.gatewayService.PrepareRequestAccountFailover(c.Request.Context(), apiKey.GroupID, model, service.PlatformTypeSafe))
+	fs := NewFailoverState(service.RequestAccountFailoverLimit(c.Request.Context(), h.maxAccountSwitches), false)
 	for {
 		if failoverClientGone(c) {
 			return
@@ -197,7 +198,9 @@ func (h *GatewayHandler) SystemOne(c *gin.Context) {
 		service.SetOpsUpstreamModel(c, model)
 
 		forwardStart := time.Now()
-		result, forwardErr := h.gatewayService.ForwardSystemOne(c.Request.Context(), c, account, body)
+		result, forwardErr := service.ForwardWithAccountRetries(c.Request.Context(), c, func() (*service.SystemOneForwardResult, error) {
+			return h.gatewayService.ForwardSystemOne(c.Request.Context(), c, account, body)
+		})
 		if accountRelease != nil {
 			accountRelease()
 		}

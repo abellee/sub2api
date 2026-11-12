@@ -22,9 +22,10 @@ import (
 
 // UpdateSettingsRequest 更新设置请求
 type UpdateSettingsRequest struct {
-	CostGuardEnabled         *bool   `json:"cost_guard_enabled"`
-	CostGuardErrorStatusCode *int    `json:"cost_guard_error_status_code" binding:"omitempty,gte=400,lte=599"`
-	CostGuardErrorMessage    *string `json:"cost_guard_error_message" binding:"omitempty,max=2000"`
+	AccountErrorFailoverEnabled *bool   `json:"account_error_failover_enabled"`
+	CostGuardEnabled            *bool   `json:"cost_guard_enabled"`
+	CostGuardErrorStatusCode    *int    `json:"cost_guard_error_status_code" binding:"omitempty,gte=400,lte=599"`
+	CostGuardErrorMessage       *string `json:"cost_guard_error_message" binding:"omitempty,max=2000"`
 	// 注册设置
 	RegistrationEnabled                 bool                         `json:"registration_enabled"`
 	EmailVerifyEnabled                  bool                         `json:"email_verify_enabled"`
@@ -2051,6 +2052,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.RiskControlEnabled
 		}(),
+		AccountErrorFailoverEnabled: func() bool {
+			if req.AccountErrorFailoverEnabled != nil {
+				return *req.AccountErrorFailoverEnabled
+			}
+			return previousSettings.AccountErrorFailoverEnabled
+		}(),
 		CostGuardEnabled: func() bool {
 			if req.CostGuardEnabled != nil {
 				return *req.CostGuardEnabled
@@ -2505,6 +2512,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		AffiliateEnabled: updatedSettings.AffiliateEnabled,
 
 		RiskControlEnabled:          updatedSettings.RiskControlEnabled,
+		AccountErrorFailoverEnabled: updatedSettings.AccountErrorFailoverEnabled,
 		CostGuardEnabled:            updatedSettings.CostGuardEnabled,
 		CostGuardErrorStatusCode:    updatedSettings.CostGuardErrorStatusCode,
 		CostGuardErrorMessage:       updatedSettings.CostGuardErrorMessage,

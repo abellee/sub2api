@@ -659,6 +659,7 @@ export interface SystemSettings {
   // Payment configuration
   payment_enabled: boolean;
   risk_control_enabled: boolean;
+  account_error_failover_enabled: boolean;
   cost_guard_enabled: boolean;
   cost_guard_error_status_code: number;
   cost_guard_error_message: string;
@@ -990,6 +991,7 @@ export interface UpdateSettingsRequest {
   // Payment configuration
   payment_enabled?: boolean;
   risk_control_enabled?: boolean;
+  account_error_failover_enabled?: boolean;
   cost_guard_enabled?: boolean;
   cost_guard_error_status_code?: number;
   cost_guard_error_message?: string;

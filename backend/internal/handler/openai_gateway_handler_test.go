@@ -697,7 +697,7 @@ func TestOpenAIEnsureResponsesDependencies(t *testing.T) {
 func TestResolveOpenAIMessagesDispatchMappedModel(t *testing.T) {
 	t.Run("exact_claude_model_override_wins", func(t *testing.T) {
 		apiKey := &service.APIKey{
-			Group: &service.Group{
+			Group: &service.Group{AccountErrorFailoverEnabled: true,
 				MessagesDispatchModelConfig: service.OpenAIMessagesDispatchModelConfig{
 					SonnetMappedModel: "gpt-5.2",
 					ExactModelMappings: map[string]string{
@@ -712,7 +712,7 @@ func TestResolveOpenAIMessagesDispatchMappedModel(t *testing.T) {
 	})
 
 	t.Run("uses_family_default_when_no_override", func(t *testing.T) {
-		apiKey := &service.APIKey{Group: &service.Group{}}
+		apiKey := &service.APIKey{Group: &service.Group{AccountErrorFailoverEnabled: true}}
 		require.Equal(t, "gpt-5.4", resolveOpenAIMessagesDispatchMappedModel(nil, apiKey, "claude-opus-4-6"))
 		require.Equal(t, "gpt-5.3-codex", resolveOpenAIMessagesDispatchMappedModel(nil, apiKey, "claude-sonnet-4-5-20250929"))
 		require.Equal(t, "gpt-5.4-mini", resolveOpenAIMessagesDispatchMappedModel(nil, apiKey, "claude-haiku-4-5-20251001"))
@@ -721,7 +721,7 @@ func TestResolveOpenAIMessagesDispatchMappedModel(t *testing.T) {
 	t.Run("returns_empty_for_non_claude_or_missing_group", func(t *testing.T) {
 		require.Empty(t, resolveOpenAIMessagesDispatchMappedModel(nil, nil, "claude-sonnet-4-5-20250929"))
 		require.Empty(t, resolveOpenAIMessagesDispatchMappedModel(nil, &service.APIKey{}, "claude-sonnet-4-5-20250929"))
-		require.Empty(t, resolveOpenAIMessagesDispatchMappedModel(nil, &service.APIKey{Group: &service.Group{}}, "gpt-5.4"))
+		require.Empty(t, resolveOpenAIMessagesDispatchMappedModel(nil, &service.APIKey{Group: &service.Group{AccountErrorFailoverEnabled: true}}, "gpt-5.4"))
 	})
 
 	t.Run("grok_group_maps_claude_cli_model_to_grok_default", func(t *testing.T) {
@@ -729,7 +729,7 @@ func TestResolveOpenAIMessagesDispatchMappedModel(t *testing.T) {
 		t.Cleanup(func() { xai.SetRuntimeModelMappingOptions(original) })
 		xai.SetRuntimeModelMappingOptions(xai.ModelMappingOptions{EnableCrossClientMap: true})
 		apiKey := &service.APIKey{
-			Group: &service.Group{
+			Group: &service.Group{AccountErrorFailoverEnabled: true,
 				Platform: service.PlatformGrok,
 			},
 		}
@@ -739,7 +739,7 @@ func TestResolveOpenAIMessagesDispatchMappedModel(t *testing.T) {
 
 	t.Run("does_not_fall_back_to_group_default_mapped_model", func(t *testing.T) {
 		apiKey := &service.APIKey{
-			Group: &service.Group{
+			Group: &service.Group{AccountErrorFailoverEnabled: true,
 				DefaultMappedModel: "gpt-5.4",
 			},
 		}
@@ -760,7 +760,7 @@ func TestOpenAIGatewayMessagesDispatchGateAllowsGrokGroups(t *testing.T) {
 			ID:      5101,
 			GroupID: &groupID,
 			User:    &service.User{ID: 6101},
-			Group: &service.Group{
+			Group: &service.Group{AccountErrorFailoverEnabled: true,
 				ID:                    groupID,
 				Platform:              service.PlatformOpenAI,
 				AllowMessagesDispatch: false,
@@ -785,7 +785,7 @@ func TestOpenAIGatewayMessagesDispatchGateAllowsGrokGroups(t *testing.T) {
 			ID:      5102,
 			GroupID: &groupID,
 			User:    &service.User{ID: 6102},
-			Group: &service.Group{
+			Group: &service.Group{AccountErrorFailoverEnabled: true,
 				ID:                    groupID,
 				Platform:              service.PlatformGrok,
 				AllowMessagesDispatch: false,
@@ -2253,7 +2253,7 @@ func TestOpenAIResponses_APIKeyPassthroughPool5xxRetriesThenExhaustsMaxSwitches(
 		nil,
 		nil,
 		nil,
-		nil,
+		newAccountErrorFailoverTestSettings(),
 		nil,
 	)
 	h := NewOpenAIGatewayHandler(
@@ -2275,13 +2275,13 @@ func TestOpenAIResponses_APIKeyPassthroughPool5xxRetriesThenExhaustsMaxSwitches(
 	c.Set(string(middleware.ContextKeyAPIKey), &service.APIKey{
 		ID: 1803, GroupID: &groupID,
 		User:  &service.User{ID: 1703, Status: service.StatusActive},
-		Group: &service.Group{ID: groupID, Platform: service.PlatformOpenAI, Status: service.StatusActive},
+		Group: &service.Group{AccountErrorFailoverEnabled: true, ID: groupID, Platform: service.PlatformOpenAI, Status: service.StatusActive},
 	})
 	c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 1703, Concurrency: 0})
 
 	h.Responses(c)
 
-	require.Equal(t, []int64{9910, 9910, 9911}, upstream.calls())
+	require.Equal(t, []int64{9910, 9910, 9910, 9911, 9911, 9911}, upstream.calls())
 	require.Equal(t, http.StatusBadGateway, rec.Code)
 	require.Equal(t, "upstream_error", gjson.GetBytes(rec.Body.Bytes(), "error.type").String())
 	require.Equal(t, "Upstream service temporarily unavailable", gjson.GetBytes(rec.Body.Bytes(), "error.message").String())
@@ -2354,7 +2354,7 @@ func TestOpenAIResponses_APIKeyPassthroughPoolAuthFailureRetriesThenSwitchesToHe
 				nil,
 				nil,
 				nil,
-				nil,
+				newAccountErrorFailoverTestSettings(),
 				nil,
 			)
 			h := NewOpenAIGatewayHandler(
@@ -2376,13 +2376,13 @@ func TestOpenAIResponses_APIKeyPassthroughPoolAuthFailureRetriesThenSwitchesToHe
 			c.Set(string(middleware.ContextKeyAPIKey), &service.APIKey{
 				ID: 1803, GroupID: &groupID,
 				User:  &service.User{ID: 1703, Status: service.StatusActive},
-				Group: &service.Group{ID: groupID, Platform: service.PlatformOpenAI, Status: service.StatusActive},
+				Group: &service.Group{AccountErrorFailoverEnabled: true, ID: groupID, Platform: service.PlatformOpenAI, Status: service.StatusActive},
 			})
 			c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 1703, Concurrency: 0})
 
 			h.Responses(c)
 
-			require.Equal(t, []int64{9910, 9910, 9911}, upstream.calls())
+			require.Equal(t, []int64{9910, 9910, 9910, 9911}, upstream.calls())
 			require.Equal(t, http.StatusOK, rec.Code)
 			require.Equal(t, "resp_healthy", gjson.GetBytes(rec.Body.Bytes(), "id").String())
 		})
@@ -2458,7 +2458,7 @@ func TestOpenAIResponses_APIKeyPassthroughSSERateLimitUsesConfiguredPoolRetry(t 
 	c.Set(string(middleware.ContextKeyAPIKey), &service.APIKey{
 		ID: 1804, GroupID: &groupID,
 		User:  &service.User{ID: 1704, Status: service.StatusActive},
-		Group: &service.Group{ID: groupID, Platform: service.PlatformOpenAI, Status: service.StatusActive},
+		Group: &service.Group{AccountErrorFailoverEnabled: true, ID: groupID, Platform: service.PlatformOpenAI, Status: service.StatusActive},
 	})
 	c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 1704, Concurrency: 0})
 
@@ -2502,7 +2502,7 @@ func runOpenAIResponsesWebSocketUsageLimitCase(t *testing.T, mode string, follow
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 
-	firstHitCh := make(chan []byte, len(followups)+1)
+	firstHitCh := make(chan []byte, len(followups)+3)
 	secondHitCh := make(chan []byte, 1)
 	var firstConnections atomic.Int32
 	var secondConnections atomic.Int32
@@ -2651,7 +2651,7 @@ func runOpenAIResponsesWebSocketUsageLimitCase(t *testing.T, mode string, follow
 		nil,
 		nil,
 		nil,
-		nil,
+		newAccountErrorFailoverTestSettings(),
 		nil,
 	)
 
@@ -2675,7 +2675,7 @@ func runOpenAIResponsesWebSocketUsageLimitCase(t *testing.T, mode string, follow
 		ID:      1802,
 		GroupID: &groupID,
 		User:    &service.User{ID: 1702, Status: service.StatusActive},
-		Group:   &service.Group{ID: groupID, Platform: service.PlatformOpenAI, Status: service.StatusActive},
+		Group:   &service.Group{AccountErrorFailoverEnabled: true, ID: groupID, Platform: service.PlatformOpenAI, Status: service.StatusActive},
 	}
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
@@ -2738,6 +2738,9 @@ func runOpenAIResponsesWebSocketUsageLimitCase(t *testing.T, mode string, follow
 	}
 
 	expectedFrames := len(followups) + 1
+	if len(followups) == 0 {
+		expectedFrames = 3
+	}
 	if handshakeLimit {
 		expectedFrames--
 		require.Equal(t, int32(2), firstConnections.Load(), "the same account must reject the replacement handshake")
@@ -2753,13 +2756,13 @@ func runOpenAIResponsesWebSocketUsageLimitCase(t *testing.T, mode string, follow
 			t.Fatal("等待第二个上游收到重放首帧超时")
 		}
 	}
-	require.Equal(t, []int64{int64(9902)}, accountRepo.rateLimitedIDs)
+	require.Empty(t, accountRepo.rateLimitedIDs)
 }
 
 func TestOpenAIResponsesWebSocket_FirstOutputTimeoutWithoutDownstreamReusesClientForOneFailover(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	firstHitCh := make(chan []byte, 1)
+	firstHitCh := make(chan []byte, 3)
 	secondHitCh := make(chan []byte, 1)
 	var firstConnections atomic.Int32
 	var secondConnections atomic.Int32
@@ -2875,7 +2878,7 @@ func TestOpenAIResponsesWebSocket_FirstOutputTimeoutWithoutDownstreamReusesClien
 	gatewaySvc := service.NewOpenAIGatewayService(
 		accountRepo, nil, nil, nil, nil, nil, nil, cfg, nil, nil,
 		service.NewBillingService(cfg, nil), rateLimitSvc, billingCacheSvc,
-		nil, &service.DeferredService{}, nil, nil, nil, nil, nil, nil, nil,
+		nil, &service.DeferredService{}, nil, nil, nil, nil, nil, newAccountErrorFailoverTestSettings(), nil,
 	)
 	cache := &concurrencyCacheMock{
 		acquireUserSlotFn: func(context.Context, int64, int, string) (bool, error) { return true, nil },
@@ -2895,7 +2898,7 @@ func TestOpenAIResponsesWebSocket_FirstOutputTimeoutWithoutDownstreamReusesClien
 		ID:      1812,
 		GroupID: &groupID,
 		User:    &service.User{ID: 1712, Status: service.StatusActive},
-		Group:   &service.Group{ID: groupID, Platform: service.PlatformOpenAI, Status: service.StatusActive},
+		Group:   &service.Group{AccountErrorFailoverEnabled: true, ID: groupID, Platform: service.PlatformOpenAI, Status: service.StatusActive},
 	}
 	handlerDone := make(chan struct{})
 	router := gin.New()
@@ -2957,7 +2960,7 @@ func TestOpenAIResponsesWebSocket_FirstOutputTimeoutWithoutDownstreamReusesClien
 	case <-time.After(3 * time.Second):
 		t.Fatal("second upstream did not receive replayed request")
 	}
-	require.Equal(t, int32(1), firstConnections.Load())
+	require.Equal(t, int32(3), firstConnections.Load())
 	require.Equal(t, int32(1), secondConnections.Load())
 	require.NotContains(t, accountRepo.rateLimitedIDs, int64(9913), "healthy failover account must not be penalized")
 }

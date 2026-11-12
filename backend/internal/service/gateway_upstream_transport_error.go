@@ -95,6 +95,9 @@ func (s *GatewayService) tempUnscheduleTransportError(ctx context.Context, accou
 // shared by every forward path whose scheduler reads the persisted
 // temp-unschedulable state (Anthropic/Bedrock and Gemini).
 func tempUnscheduleAccountForTransportError(ctx context.Context, repo AccountRepository, account *Account, safeErr string) {
+	if RequestAccountFailoverEnabled(ctx) {
+		return
+	}
 	if account == nil || repo == nil {
 		return
 	}

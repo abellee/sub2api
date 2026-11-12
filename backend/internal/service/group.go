@@ -47,6 +47,7 @@ type Group struct {
 	AllowBatchImageGeneration    bool
 	ImageCountBilling            bool
 	ImageAutoSizeFromReference   bool
+	AccountErrorFailoverEnabled  bool
 	ImageRateIndependent         bool
 	ImageRateMultiplier          float64
 	ImagePrice1K                 *float64

@@ -150,6 +150,11 @@ func DefaultValidityDays(v int) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldDefaultValidityDays, v))
 }
 
+// AccountErrorFailoverEnabled applies equality check predicate on the "account_error_failover_enabled" field. It's identical to AccountErrorFailoverEnabledEQ.
+func AccountErrorFailoverEnabled(v bool) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldAccountErrorFailoverEnabled, v))
+}
+
 // AllowImageGeneration applies equality check predicate on the "allow_image_generation" field. It's identical to AllowImageGenerationEQ.
 func AllowImageGeneration(v bool) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldAllowImageGeneration, v))
@@ -1313,6 +1318,16 @@ func DefaultValidityDaysLT(v int) predicate.Group {
 // DefaultValidityDaysLTE applies the LTE predicate on the "default_validity_days" field.
 func DefaultValidityDaysLTE(v int) predicate.Group {
 	return predicate.Group(sql.FieldLTE(FieldDefaultValidityDays, v))
+}
+
+// AccountErrorFailoverEnabledEQ applies the EQ predicate on the "account_error_failover_enabled" field.
+func AccountErrorFailoverEnabledEQ(v bool) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldAccountErrorFailoverEnabled, v))
+}
+
+// AccountErrorFailoverEnabledNEQ applies the NEQ predicate on the "account_error_failover_enabled" field.
+func AccountErrorFailoverEnabledNEQ(v bool) predicate.Group {
+	return predicate.Group(sql.FieldNEQ(FieldAccountErrorFailoverEnabled, v))
 }
 
 // AllowImageGenerationEQ applies the EQ predicate on the "allow_image_generation" field.

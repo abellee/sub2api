@@ -234,7 +234,7 @@ func newGrokMediaSlotHandler(t *testing.T, oauth, mismatch bool, platforms ...st
 		_, err := provider.GetAccessToken(context.Background(), &accounts[1])
 		require.NoError(t, err)
 	}
-	gateway := service.NewOpenAIGatewayService(repo, nil, nil, nil, nil, nil, bindings, cfg, nil, concurrency, nil, nil, nil, upstream, nil, nil, provider, nil, nil, nil, nil, nil)
+	gateway := service.NewOpenAIGatewayService(repo, nil, nil, nil, nil, nil, bindings, cfg, nil, concurrency, nil, nil, nil, upstream, nil, nil, provider, nil, nil, nil, newAccountErrorFailoverTestSettings(), nil)
 	groupID := int64(24)
 	require.NoError(t, gateway.BindGrokMediaVideoRequestAccount(context.Background(), &groupID, "task", 10, 20, 1))
 	bindings.writes = 0
@@ -260,7 +260,7 @@ func grokMediaSlotContext(ctx context.Context, generation bool) (*gin.Context, *
 	c.Request = req
 	c.Params = gin.Params{{Key: "request_id", Value: "task"}}
 	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{ID: 20, UserID: 10, GroupID: &groupID,
-		Group: &service.Group{ID: groupID, Platform: service.PlatformGrok, AllowImageGeneration: true}, User: &service.User{ID: 10}})
+		Group: &service.Group{AccountErrorFailoverEnabled: true, ID: groupID, Platform: service.PlatformGrok, AllowImageGeneration: true}, User: &service.User{ID: 10}})
 	c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: 10, Concurrency: 5})
 	return c, w
 }
@@ -366,7 +366,7 @@ func TestGrokMediaEligibilityReleasesBeforeSwitch(t *testing.T) {
 			}
 			if scenario == "exhausted" {
 				require.Equal(t, 503, w.Code)
-				require.Equal(t, 2, slots.released)
+				require.Equal(t, 3, slots.released, "visit all three candidate accounts once")
 				require.Zero(t, upstream.calls)
 			}
 		})

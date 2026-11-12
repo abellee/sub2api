@@ -847,6 +847,8 @@ export default {
 
     // Groups
     groups: {
+      accountErrorFailover: 'Retry and switch accounts on errors',
+      accountErrorFailoverHint: 'Requires the matching system setting to be enabled. With multiple enabled, available accounts, retry failures up to twice, then switch; return an error after one full round. Manually disabled accounts are excluded.',
       imageAutoSizeFromReference: 'Use reference dimensions for auto size',
       imageAutoSizeFromReferenceHint: 'Applies only when size=auto is explicitly provided with exactly one reference image. Leaves the request unchanged if the image cannot be read, multiple images are supplied, or size is omitted or set to explicit dimensions.',
       title: 'Group Management',

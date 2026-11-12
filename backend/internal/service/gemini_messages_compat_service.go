@@ -726,6 +726,9 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 		billingDrain.finish(c, account, result)
 	}()
 	maxAttempts := s.geminiMaxAttemptsPerAccount()
+	if RequestAccountFailoverEnabled(ctx) {
+		maxAttempts = 1
+	}
 	// 签名降级重发不占用同号重试次数：每进入一个降级阶段，循环上限随之顺延一次。
 	for attempt := 1; attempt <= maxAttempts+signatureRetryStage; attempt++ {
 		checkedPolicy = nil
@@ -1304,6 +1307,9 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 		billingDrain.finish(c, account, result)
 	}()
 	maxAttempts := s.geminiMaxAttemptsPerAccount()
+	if RequestAccountFailoverEnabled(ctx) {
+		maxAttempts = 1
+	}
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		checkedPolicy = nil
 		if err := ctx.Err(); err != nil {
@@ -3238,6 +3244,9 @@ func asInt(v any) (int, bool) {
 }
 
 func (s *GeminiMessagesCompatService) handleGeminiUpstreamError(ctx context.Context, account *Account, statusCode int, headers http.Header, body []byte) {
+	if RequestAccountFailoverEnabled(ctx) {
+		return
+	}
 	// 遵守自定义错误码策略：未命中则跳过所有限流处理
 	if !account.ShouldHandleErrorCode(statusCode) {
 		return

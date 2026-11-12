@@ -88,7 +88,7 @@ func newAstraProFailoverContext(t *testing.T, body string) (*gin.Context, *httpt
 	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
 		ID:      99,
 		GroupID: &groupID,
-		Group: &service.Group{
+		Group: &service.Group{AccountErrorFailoverEnabled: true,
 			ID:       groupID,
 			Platform: service.PlatformOpenAI,
 		},
@@ -129,20 +129,12 @@ func assertAstraProWire(t *testing.T, urls []string, bodies [][]byte) {
 	}
 }
 
-// assertAstraProAccountSwitch: the failover loop must have actually touched both
-// distinct OAuth fixture accounts (IDs 1 and 2), not replayed the same one.
-func assertAstraProAccountSwitch(t *testing.T, accountIDs []int64) {
-	t.Helper()
-	require.Len(t, accountIDs, 2, "failover must attempt two accounts")
-	require.ElementsMatch(t, []int64{1, 2}, accountIDs, "both OAuth accounts must be reached")
-}
-
 // 403 then a second OAuth account succeeding: wire bodies keep pro+max/model and the
 // winning account's structured reasoning.mode=pro reaches the client unchanged.
 func TestOpenAIGatewayHandlerResponses_AstraProFirst403SecondSucceeds(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	upstream := newAstraProCapturedUpstream(astra403(), astra200())
+	upstream := newAstraProCapturedUpstream(astra403(), astra403(), astra403(), astra200())
 	handler := newOpenAIResponsesFailoverTestHandler(t, upstream)
 	c, rec := newAstraProFailoverContext(t, astraProRequestBody)
 
@@ -150,7 +142,7 @@ func TestOpenAIGatewayHandlerResponses_AstraProFirst403SecondSucceeds(t *testing
 
 	urls, accountIDs, bodies := upstream.snapshot()
 	assertAstraProWire(t, urls, bodies)
-	assertAstraProAccountSwitch(t, accountIDs)
+	require.Equal(t, []int64{1, 1, 1, 2}, accountIDs)
 	require.Equal(t, http.StatusOK, rec.Code, "winning account must yield a 200 to the client")
 	require.Equal(t, "completed", gjson.GetBytes(rec.Body.Bytes(), "status").String())
 	require.Equal(t, "pro", gjson.GetBytes(rec.Body.Bytes(), "reasoning.mode").String(), "client must keep the winning response's mode=pro")
@@ -162,7 +154,7 @@ func TestOpenAIGatewayHandlerResponses_AstraProFirst403SecondSucceeds(t *testing
 func TestOpenAIGatewayHandlerResponses_AstraProBoth403NoDowngrade(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	upstream := newAstraProCapturedUpstream(astra403(), astra403())
+	upstream := newAstraProCapturedUpstream(astra403(), astra403(), astra403(), astra403(), astra403(), astra403())
 	handler := newOpenAIResponsesFailoverTestHandler(t, upstream)
 	c, rec := newAstraProFailoverContext(t, astraProRequestBody)
 
@@ -170,7 +162,7 @@ func TestOpenAIGatewayHandlerResponses_AstraProBoth403NoDowngrade(t *testing.T) 
 
 	urls, accountIDs, bodies := upstream.snapshot()
 	assertAstraProWire(t, urls, bodies)
-	assertAstraProAccountSwitch(t, accountIDs)
+	require.Equal(t, []int64{1, 1, 1, 2, 2, 2}, accountIDs)
 	require.NotEqual(t, http.StatusOK, rec.Code, "all-403 must never surface a 200 to the client")
 	require.Equal(t, http.StatusBadGateway, rec.Code)
 	require.Equal(t, "upstream_error", gjson.GetBytes(rec.Body.Bytes(), "error.type").String())

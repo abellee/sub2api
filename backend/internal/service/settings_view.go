@@ -12,6 +12,7 @@ func firstNonEmpty(values ...string) string {
 }
 
 type SystemSettings struct {
+	AccountErrorFailoverEnabled         bool
 	CostGuardEnabled                    bool
 	CostGuardErrorStatusCode            int
 	CostGuardErrorMessage               string

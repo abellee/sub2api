@@ -187,7 +187,9 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 	sessionHash := h.gatewayService.GenerateSessionHash(parsedReq)
 
 	// 3. Account selection + failover loop
-	fs := NewFailoverState(h.maxAccountSwitches, false)
+	requestCtx = h.gatewayService.PrepareRequestAccountFailover(requestCtx, apiKey.GroupID, reqModel, effectiveAPIKeyPlatform(c, apiKey))
+	c.Request = c.Request.WithContext(requestCtx)
+	fs := NewFailoverState(service.RequestAccountFailoverLimit(requestCtx, h.maxAccountSwitches), false)
 
 	for {
 		if failoverClientGone(c) {
@@ -296,9 +298,13 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 				return
 			}
 			setActualUpstreamEndpoint(c, EndpointAntigravityGenerateContent)
-			result, err = h.antigravityGatewayService.ForwardAsResponses(requestCtx, c, account, forwardBody, parsedReq)
+			result, err = service.ForwardWithAccountRetries(requestCtx, c, func() (*service.ForwardResult, error) {
+				return h.antigravityGatewayService.ForwardAsResponses(requestCtx, c, account, forwardBody, parsedReq)
+			})
 		} else {
-			result, err = h.gatewayService.ForwardAsResponses(requestCtx, c, account, forwardBody, parsedReq)
+			result, err = service.ForwardWithAccountRetries(requestCtx, c, func() (*service.ForwardResult, error) {
+				return h.gatewayService.ForwardAsResponses(requestCtx, c, account, forwardBody, parsedReq)
+			})
 		}
 
 		if accountReleaseFunc != nil {

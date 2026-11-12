@@ -22107,6 +22107,7 @@ type GroupMutation struct {
 	addmonthly_limit_usd                    *float64
 	default_validity_days                   *int
 	adddefault_validity_days                *int
+	account_error_failover_enabled          *bool
 	allow_image_generation                  *bool
 	allow_batch_image_generation            *bool
 	image_auto_size_from_reference          *bool
@@ -23222,6 +23223,42 @@ func (m *GroupMutation) AddedDefaultValidityDays() (r int, exists bool) {
 func (m *GroupMutation) ResetDefaultValidityDays() {
 	m.default_validity_days = nil
 	m.adddefault_validity_days = nil
+}
+
+// SetAccountErrorFailoverEnabled sets the "account_error_failover_enabled" field.
+func (m *GroupMutation) SetAccountErrorFailoverEnabled(b bool) {
+	m.account_error_failover_enabled = &b
+}
+
+// AccountErrorFailoverEnabled returns the value of the "account_error_failover_enabled" field in the mutation.
+func (m *GroupMutation) AccountErrorFailoverEnabled() (r bool, exists bool) {
+	v := m.account_error_failover_enabled
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAccountErrorFailoverEnabled returns the old "account_error_failover_enabled" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldAccountErrorFailoverEnabled(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAccountErrorFailoverEnabled is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAccountErrorFailoverEnabled requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAccountErrorFailoverEnabled: %w", err)
+	}
+	return oldValue.AccountErrorFailoverEnabled, nil
+}
+
+// ResetAccountErrorFailoverEnabled resets all changes to the "account_error_failover_enabled" field.
+func (m *GroupMutation) ResetAccountErrorFailoverEnabled() {
+	m.account_error_failover_enabled = nil
 }
 
 // SetAllowImageGeneration sets the "allow_image_generation" field.
@@ -26069,7 +26106,7 @@ func (m *GroupMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *GroupMutation) Fields() []string {
-	fields := make([]string, 0, 70)
+	fields := make([]string, 0, 71)
 	if m.created_at != nil {
 		fields = append(fields, group.FieldCreatedAt)
 	}
@@ -26129,6 +26166,9 @@ func (m *GroupMutation) Fields() []string {
 	}
 	if m.default_validity_days != nil {
 		fields = append(fields, group.FieldDefaultValidityDays)
+	}
+	if m.account_error_failover_enabled != nil {
+		fields = append(fields, group.FieldAccountErrorFailoverEnabled)
 	}
 	if m.allow_image_generation != nil {
 		fields = append(fields, group.FieldAllowImageGeneration)
@@ -26328,6 +26368,8 @@ func (m *GroupMutation) Field(name string) (ent.Value, bool) {
 		return m.MonthlyLimitUsd()
 	case group.FieldDefaultValidityDays:
 		return m.DefaultValidityDays()
+	case group.FieldAccountErrorFailoverEnabled:
+		return m.AccountErrorFailoverEnabled()
 	case group.FieldAllowImageGeneration:
 		return m.AllowImageGeneration()
 	case group.FieldAllowBatchImageGeneration:
@@ -26477,6 +26519,8 @@ func (m *GroupMutation) OldField(ctx context.Context, name string) (ent.Value, e
 		return m.OldMonthlyLimitUsd(ctx)
 	case group.FieldDefaultValidityDays:
 		return m.OldDefaultValidityDays(ctx)
+	case group.FieldAccountErrorFailoverEnabled:
+		return m.OldAccountErrorFailoverEnabled(ctx)
 	case group.FieldAllowImageGeneration:
 		return m.OldAllowImageGeneration(ctx)
 	case group.FieldAllowBatchImageGeneration:
@@ -26725,6 +26769,13 @@ func (m *GroupMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetDefaultValidityDays(v)
+		return nil
+	case group.FieldAccountErrorFailoverEnabled:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAccountErrorFailoverEnabled(v)
 		return nil
 	case group.FieldAllowImageGeneration:
 		v, ok := value.(bool)
@@ -27646,6 +27697,9 @@ func (m *GroupMutation) ResetField(name string) error {
 		return nil
 	case group.FieldDefaultValidityDays:
 		m.ResetDefaultValidityDays()
+		return nil
+	case group.FieldAccountErrorFailoverEnabled:
+		m.ResetAccountErrorFailoverEnabled()
 		return nil
 	case group.FieldAllowImageGeneration:
 		m.ResetAllowImageGeneration()

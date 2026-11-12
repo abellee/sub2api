@@ -344,7 +344,8 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 	hasBoundSession := sessionKey != "" && sessionBoundAccountID > 0
 
 	if platform == service.PlatformGemini {
-		fs := NewFailoverState(h.maxAccountSwitchesGemini, hasBoundSession)
+		c.Request = c.Request.WithContext(h.gatewayService.PrepareRequestAccountFailover(c.Request.Context(), apiKey.GroupID, reqModel, platform))
+		fs := NewFailoverState(service.RequestAccountFailoverLimit(c.Request.Context(), h.maxAccountSwitchesGemini), hasBoundSession)
 
 		// 单账号分组首次 503 就不设模型限流标记，避免设 29s 限流导致后续请求连续快速失败；
 		// 是否单账号分组在 antigravity 账号遇到 503 或模型限流预检查时才判定。
@@ -510,19 +511,23 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			// 记录 Forward 前已写入字节数，Forward 后若增加则说明 SSE 内容已发，禁止 failover
 			writerSizeBeforeForward := c.Writer.Size()
 			if account.Platform == service.PlatformAntigravity {
-				result, err = h.antigravityGatewayService.ForwardGemini(
-					requestCtx,
-					c,
-					account,
-					reqModel,
-					"generateContent",
-					reqStream,
-					body,
-					hasBoundSession,
-					service.WithForwardGeminiSession(derefGroupID(apiKey.GroupID), sessionKey),
-				)
+				result, err = service.ForwardWithAccountRetries(requestCtx, c, func() (*service.ForwardResult, error) {
+					return h.antigravityGatewayService.ForwardGemini(
+						requestCtx,
+						c,
+						account,
+						reqModel,
+						"generateContent",
+						reqStream,
+						body,
+						hasBoundSession,
+						service.WithForwardGeminiSession(derefGroupID(apiKey.GroupID), sessionKey),
+					)
+				})
 			} else {
-				result, err = h.geminiCompatService.Forward(requestCtx, c, account, body)
+				result, err = service.ForwardWithAccountRetries(requestCtx, c, func() (*service.ForwardResult, error) {
+					return h.geminiCompatService.Forward(requestCtx, c, account, body)
+				})
 			}
 			if accountReleaseFunc != nil {
 				accountReleaseFunc()
@@ -677,7 +682,8 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 	}()
 
 	for {
-		fs := NewFailoverState(h.maxAccountSwitches, hasBoundSession)
+		c.Request = c.Request.WithContext(h.gatewayService.PrepareRequestAccountFailover(c.Request.Context(), currentAPIKey.GroupID, reqModel, platform))
+		fs := NewFailoverState(service.RequestAccountFailoverLimit(c.Request.Context(), h.maxAccountSwitches), hasBoundSession)
 		retryWithFallback := false
 
 		for {
@@ -932,9 +938,13 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			// 记录 Forward 前已写入字节数，Forward 后若增加则说明 SSE 内容已发，禁止 failover
 			writerSizeBeforeForward := c.Writer.Size()
 			if account.Platform == service.PlatformAntigravity && account.Type != service.AccountTypeAPIKey {
-				result, err = h.antigravityGatewayService.Forward(requestCtx, c, account, attemptBody, hasBoundSession)
+				result, err = service.ForwardWithAccountRetries(requestCtx, c, func() (*service.ForwardResult, error) {
+					return h.antigravityGatewayService.Forward(requestCtx, c, account, attemptBody, hasBoundSession)
+				})
 			} else {
-				result, err = h.gatewayService.Forward(requestCtx, c, account, attemptParsedReq)
+				result, err = service.ForwardWithAccountRetries(requestCtx, c, func() (*service.ForwardResult, error) {
+					return h.gatewayService.Forward(requestCtx, c, account, attemptParsedReq)
+				})
 			}
 
 			// 兜底释放串行锁（正常情况已通过回调提前释放）

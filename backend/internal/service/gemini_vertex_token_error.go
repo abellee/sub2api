@@ -34,7 +34,7 @@ func (s *GeminiMessagesCompatService) handleVertexServiceAccountNotFound(ctx con
 	defer cancel()
 	if s.rateLimitService != nil {
 		s.rateLimitService.handleAuthError(stateCtx, account, msg)
-	} else if s.accountRepo != nil {
+	} else if s.accountRepo != nil && !RequestAccountFailoverEnabled(ctx) {
 		if setErr := s.accountRepo.SetError(stateCtx, account.ID, msg); setErr != nil {
 			slog.Warn("account_set_error_failed", "account_id", account.ID, "error", setErr)
 		}

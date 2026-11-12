@@ -451,6 +451,7 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 
 	// 风控中心功能开关
 	updates[SettingKeyRiskControlEnabled] = strconv.FormatBool(settings.RiskControlEnabled)
+	updates[SettingKeyAccountErrorFailoverEnabled] = strconv.FormatBool(settings.AccountErrorFailoverEnabled)
 	updates[SettingKeyCostGuardEnabled] = strconv.FormatBool(settings.CostGuardEnabled)
 	if settings.CostGuardErrorStatusCode != 0 && (settings.CostGuardErrorStatusCode < 400 || settings.CostGuardErrorStatusCode > 599) {
 		return nil, infraerrors.BadRequest("INVALID_COST_GUARD_STATUS", "cost precheck HTTP status code must be between 400 and 599")
@@ -717,6 +718,10 @@ func (s *SettingService) refreshCachedSettings(settings *SystemSettings) {
 	if settings == nil {
 		return
 	}
+	s.accountErrorFailoverMu.Lock()
+	s.accountErrorFailoverEnabled = settings.AccountErrorFailoverEnabled
+	s.accountErrorFailoverExpiresAt = time.Now().Add(gatewayForwardingCacheTTL)
+	s.accountErrorFailoverMu.Unlock()
 	s.costGuardMu.Lock()
 	s.costGuardErrorResponse.Store(normalizedCostGuardErrorResponse(settings.CostGuardErrorStatusCode, settings.CostGuardErrorMessage))
 	s.costGuardEnabled.Store(settings.CostGuardEnabled)

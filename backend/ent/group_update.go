@@ -345,6 +345,20 @@ func (_u *GroupUpdate) AddDefaultValidityDays(v int) *GroupUpdate {
 	return _u
 }
 
+// SetAccountErrorFailoverEnabled sets the "account_error_failover_enabled" field.
+func (_u *GroupUpdate) SetAccountErrorFailoverEnabled(v bool) *GroupUpdate {
+	_u.mutation.SetAccountErrorFailoverEnabled(v)
+	return _u
+}
+
+// SetNillableAccountErrorFailoverEnabled sets the "account_error_failover_enabled" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillableAccountErrorFailoverEnabled(v *bool) *GroupUpdate {
+	if v != nil {
+		_u.SetAccountErrorFailoverEnabled(*v)
+	}
+	return _u
+}
+
 // SetAllowImageGeneration sets the "allow_image_generation" field.
 func (_u *GroupUpdate) SetAllowImageGeneration(v bool) *GroupUpdate {
 	_u.mutation.SetAllowImageGeneration(v)
@@ -1701,6 +1715,9 @@ func (_u *GroupUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.AddedDefaultValidityDays(); ok {
 		_spec.AddField(group.FieldDefaultValidityDays, field.TypeInt, value)
 	}
+	if value, ok := _u.mutation.AccountErrorFailoverEnabled(); ok {
+		_spec.SetField(group.FieldAccountErrorFailoverEnabled, field.TypeBool, value)
+	}
 	if value, ok := _u.mutation.AllowImageGeneration(); ok {
 		_spec.SetField(group.FieldAllowImageGeneration, field.TypeBool, value)
 	}
@@ -2596,6 +2613,20 @@ func (_u *GroupUpdateOne) SetNillableDefaultValidityDays(v *int) *GroupUpdateOne
 // AddDefaultValidityDays adds value to the "default_validity_days" field.
 func (_u *GroupUpdateOne) AddDefaultValidityDays(v int) *GroupUpdateOne {
 	_u.mutation.AddDefaultValidityDays(v)
+	return _u
+}
+
+// SetAccountErrorFailoverEnabled sets the "account_error_failover_enabled" field.
+func (_u *GroupUpdateOne) SetAccountErrorFailoverEnabled(v bool) *GroupUpdateOne {
+	_u.mutation.SetAccountErrorFailoverEnabled(v)
+	return _u
+}
+
+// SetNillableAccountErrorFailoverEnabled sets the "account_error_failover_enabled" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillableAccountErrorFailoverEnabled(v *bool) *GroupUpdateOne {
+	if v != nil {
+		_u.SetAccountErrorFailoverEnabled(*v)
+	}
 	return _u
 }
 
@@ -3984,6 +4015,9 @@ func (_u *GroupUpdateOne) sqlSave(ctx context.Context) (_node *Group, err error)
 	}
 	if value, ok := _u.mutation.AddedDefaultValidityDays(); ok {
 		_spec.AddField(group.FieldDefaultValidityDays, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AccountErrorFailoverEnabled(); ok {
+		_spec.SetField(group.FieldAccountErrorFailoverEnabled, field.TypeBool, value)
 	}
 	if value, ok := _u.mutation.AllowImageGeneration(); ok {
 		_spec.SetField(group.FieldAllowImageGeneration, field.TypeBool, value)

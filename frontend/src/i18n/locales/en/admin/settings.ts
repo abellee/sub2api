@@ -538,6 +538,8 @@ export default {
         saveFailed: 'Failed to save OpenCode Go usage refresh settings'
       },
       gatewayForwarding: {
+        accountErrorFailover: 'Retry and switch accounts on errors',
+        accountErrorFailoverHint: 'When both system and group switches are enabled with multiple available accounts, retry a failed account up to twice, then switch. Return an error after one full round, without disabling accounts or adding cooldowns. A single account or a disabled switch keeps existing behavior.',
         title: 'Request Forwarding',
         description: 'Control how requests are forwarded to upstream OAuth accounts',
         grokDefaultTextModel: 'Default Grok text model',

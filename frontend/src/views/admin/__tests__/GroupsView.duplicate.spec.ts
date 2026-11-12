@@ -259,6 +259,40 @@ describe('GroupsView duplicate action', () => {
     wrapper.unmount()
   })
 
+  it.each([false, true])('loads and saves group retry when the saved switch is %s', async (enabled) => {
+    const group = { ...sourceGroup, account_error_failover_enabled: enabled }
+    listGroups.mockResolvedValue({ items: [group], total: 1, page: 1, page_size: 20, pages: 1 })
+    updateGroup.mockResolvedValue(group)
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.findAll('button').find(button => button.text() === 'common.edit')!.trigger('click')
+    await flushPromises()
+    const toggle = wrapper.get('[data-testid="edit-group-account-error-failover"]')
+    expect(toggle.attributes('aria-checked')).toBe(String(enabled))
+    await toggle.trigger('click')
+    await wrapper.get('#edit-group-form').trigger('submit')
+    await flushPromises()
+    expect(updateGroup).toHaveBeenCalledWith(42, expect.objectContaining({ account_error_failover_enabled: !enabled }))
+    wrapper.unmount()
+  })
+
+  it.each([false, true])('defaults new group retries to off and saves in simple mode %s', async (simpleMode) => {
+    authState.isSimpleMode = simpleMode
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.findAll('button').find(button => button.text().includes('admin.groups.createGroup'))!.trigger('click')
+    await flushPromises()
+    const toggle = wrapper.get('[data-testid="create-group-account-error-failover"]')
+    expect(toggle.attributes('aria-checked')).toBe('false')
+    await toggle.trigger('click')
+    const form = wrapper.get('#create-group-form')
+    await form.get('input[type="text"]').setValue('Retry group')
+    await form.trigger('submit')
+    await flushPromises()
+    expect(adminAPI.groups.create).toHaveBeenCalledWith(expect.objectContaining({ account_error_failover_enabled: true }))
+    wrapper.unmount()
+  })
+
   it.each([false, true])('loads and saves reference sizing when the saved switch is %s', async (enabled) => {
     const group = { ...sourceGroup, allow_image_generation: true, image_auto_size_from_reference: enabled }
     listGroups.mockResolvedValue({ items: [group], total: 1, page: 1, page_size: 20, pages: 1 })

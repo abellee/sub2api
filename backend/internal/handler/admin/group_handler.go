@@ -246,11 +246,12 @@ func (h *GroupHandler) rejectUnsupportedSimpleModeOperation(c *gin.Context, oper
 }
 
 type simpleModeGroupResponse struct {
-	ID          int64  `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Platform    string `json:"platform"`
-	Status      string `json:"status"`
+	AccountErrorFailoverEnabled bool   `json:"account_error_failover_enabled"`
+	ID                          int64  `json:"id"`
+	Name                        string `json:"name"`
+	Description                 string `json:"description"`
+	Platform                    string `json:"platform"`
+	Status                      string `json:"status"`
 
 	I18n service.GroupI18n `json:"i18n,omitempty"`
 
@@ -267,7 +268,8 @@ func groupForSimpleMode(group *service.Group) *simpleModeGroupResponse {
 		return nil
 	}
 	return &simpleModeGroupResponse{
-		ID: group.ID, Name: group.Name, Description: group.Description, Platform: group.Platform,
+		AccountErrorFailoverEnabled: group.AccountErrorFailoverEnabled,
+		ID:                          group.ID, Name: group.Name, Description: group.Description, Platform: group.Platform,
 		Status:             group.Status,
 		I18n:               group.I18n,
 		AccountCount:       group.AccountCount,
@@ -280,7 +282,7 @@ func sanitizeCreateGroupRequestForSimpleMode(req *CreateGroupRequest) {
 	if req == nil {
 		return
 	}
-	allowed := CreateGroupRequest{Name: req.Name, Description: req.Description, I18n: req.I18n, Platform: req.Platform}
+	allowed := CreateGroupRequest{Name: req.Name, Description: req.Description, I18n: req.I18n, Platform: req.Platform, AccountErrorFailoverEnabled: req.AccountErrorFailoverEnabled}
 	allowed.RateMultiplier = 1
 	allowed.SubscriptionType = service.SubscriptionTypeStandard
 	*req = allowed
@@ -290,7 +292,7 @@ func sanitizeUpdateGroupRequestForSimpleMode(req *UpdateGroupRequest) {
 	if req == nil {
 		return
 	}
-	*req = UpdateGroupRequest{Name: req.Name, Description: req.Description, I18n: req.I18n}
+	*req = UpdateGroupRequest{Name: req.Name, Description: req.Description, I18n: req.I18n, AccountErrorFailoverEnabled: req.AccountErrorFailoverEnabled}
 }
 
 // CreateGroupRequest represents create group request
@@ -312,6 +314,7 @@ type CreateGroupRequest struct {
 	AllowBatchImageGeneration       bool                          `json:"allow_batch_image_generation"`
 	ImageCountBilling               bool                          `json:"image_count_billing"`
 	ImageAutoSizeFromReference      bool                          `json:"image_auto_size_from_reference"`
+	AccountErrorFailoverEnabled     bool                          `json:"account_error_failover_enabled"`
 	ImageRateIndependent            bool                          `json:"image_rate_independent"`
 	ImageRateMultiplier             *float64                      `json:"image_rate_multiplier"`
 	BatchImageDiscountMultiplier    *float64                      `json:"batch_image_discount_multiplier"`
@@ -391,6 +394,7 @@ type UpdateGroupRequest struct {
 	AllowBatchImageGeneration       *bool                         `json:"allow_batch_image_generation"`
 	ImageCountBilling               *bool                         `json:"image_count_billing"`
 	ImageAutoSizeFromReference      *bool                         `json:"image_auto_size_from_reference"`
+	AccountErrorFailoverEnabled     *bool                         `json:"account_error_failover_enabled"`
 	ImageRateIndependent            *bool                         `json:"image_rate_independent"`
 	ImageRateMultiplier             *float64                      `json:"image_rate_multiplier"`
 	BatchImageDiscountMultiplier    *float64                      `json:"batch_image_discount_multiplier"`
@@ -825,6 +829,7 @@ func (h *GroupHandler) Create(c *gin.Context) {
 		AllowBatchImageGeneration:       req.AllowBatchImageGeneration,
 		ImageCountBilling:               req.ImageCountBilling,
 		ImageAutoSizeFromReference:      req.ImageAutoSizeFromReference,
+		AccountErrorFailoverEnabled:     req.AccountErrorFailoverEnabled,
 		ImageRateIndependent:            req.ImageRateIndependent,
 		ImageRateMultiplier:             req.ImageRateMultiplier,
 		BatchImageDiscountMultiplier:    req.BatchImageDiscountMultiplier,
@@ -975,6 +980,7 @@ func (h *GroupHandler) Update(c *gin.Context) {
 		AllowBatchImageGeneration:       req.AllowBatchImageGeneration,
 		ImageCountBilling:               req.ImageCountBilling,
 		ImageAutoSizeFromReference:      req.ImageAutoSizeFromReference,
+		AccountErrorFailoverEnabled:     req.AccountErrorFailoverEnabled,
 		ImageRateIndependent:            req.ImageRateIndependent,
 		ImageRateMultiplier:             req.ImageRateMultiplier,
 		BatchImageDiscountMultiplier:    req.BatchImageDiscountMultiplier,

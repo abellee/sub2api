@@ -521,6 +521,15 @@
         @submit.prevent="handleCreateGroup"
         class="space-y-5"
       >
+        <div class="flex items-center justify-between gap-4">
+          <div>
+            <label for="create-group-account-error-failover" class="input-label">
+              {{ t("admin.groups.accountErrorFailover") }}
+            </label>
+            <p class="input-hint">{{ t("admin.groups.accountErrorFailoverHint") }}</p>
+          </div>
+          <Toggle id="create-group-account-error-failover" v-model="createForm.account_error_failover_enabled" data-testid="create-group-account-error-failover" />
+        </div>
         <div>
           <GroupI18nField
             v-model="createForm.name"
@@ -2200,6 +2209,15 @@
         @submit.prevent="handleUpdateGroup"
         class="space-y-5"
       >
+        <div class="flex items-center justify-between gap-4">
+          <div>
+            <label for="edit-group-account-error-failover" class="input-label">
+              {{ t("admin.groups.accountErrorFailover") }}
+            </label>
+            <p class="input-hint">{{ t("admin.groups.accountErrorFailoverHint") }}</p>
+          </div>
+          <Toggle id="edit-group-account-error-failover" v-model="editForm.account_error_failover_enabled" data-testid="edit-group-account-error-failover" />
+        </div>
         <div>
           <GroupI18nField
             v-model="editForm.name"
@@ -5254,6 +5272,7 @@ const createForm = reactive({
   allow_image_generation: false,
   allow_batch_image_generation: false,
   image_auto_size_from_reference: false,
+  account_error_failover_enabled: false,
   image_count_billing: false,
   image_rate_independent: false,
   image_rate_multiplier: 1,
@@ -5622,6 +5641,7 @@ const editForm = reactive({
   allow_image_generation: false,
   allow_batch_image_generation: false,
   image_auto_size_from_reference: false,
+  account_error_failover_enabled: false,
   image_count_billing: false,
   image_rate_independent: false,
   image_rate_multiplier: 1,
@@ -6237,6 +6257,7 @@ const closeCreateModal = () => {
   createForm.allow_batch_image_generation = false;
   createForm.image_count_billing = false;
   createForm.image_auto_size_from_reference = false;
+  createForm.account_error_failover_enabled = false;
   createForm.image_rate_independent = false;
   createForm.image_rate_multiplier = 1;
   createForm.batch_image_discount_multiplier = 0.5;
@@ -6495,6 +6516,7 @@ const handleCreateGroup = async () => {
           description: createForm.description,
           i18n: createForm.i18n,
           platform: createForm.platform,
+          account_error_failover_enabled: createForm.account_error_failover_enabled,
         }
       : requestData;
     await adminAPI.groups.create(payload);
@@ -6544,6 +6566,7 @@ const handleEdit = async (group: AdminGroup) => {
     group.allow_batch_image_generation ?? false;
   editForm.image_count_billing = group.image_count_billing ?? false;
   editForm.image_auto_size_from_reference = group.image_auto_size_from_reference ?? false;
+  editForm.account_error_failover_enabled = group.account_error_failover_enabled ?? false;
   editForm.image_rate_independent = group.image_rate_independent ?? false;
   editForm.image_rate_multiplier = group.image_rate_multiplier ?? 1;
   editForm.batch_image_discount_multiplier =
@@ -6870,6 +6893,7 @@ const handleUpdateGroup = async () => {
           name: editForm.name,
           description: editForm.description,
           i18n: editForm.i18n,
+          account_error_failover_enabled: editForm.account_error_failover_enabled,
         }
       : payload;
     await adminAPI.groups.update(editingGroup.value.id, requestData);

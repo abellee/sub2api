@@ -19,8 +19,8 @@ import (
 // totalCost 是本次请求的客户计费（倍率前），用于优先级 2。
 // serviceTier 是最终参与用户计费的 OpenAI 服务层级，用于优先级 3。
 // pricingAt 与本次客户计费使用同一时刻，避免跨峰谷请求的成本与售价错位。
-// longContextPricingEnabled 表示上游是否对本次请求收取长上下文费率，用于优先级 3；
-// 由 accountStatsLongContextPricingEnabled 按账号开关得出，不受分组售价开关影响。
+// longContextPricingEnabled 表示上游是否对本次请求收取长上下文费率，用于优先级 1、3；
+// 由 accountStatsLongContextPricingEnabled 按分组和账号开关得出。
 // reasoningEffort 是最终转发等级；按账号统计定价中配置的等级倍率计费。
 func resolveAccountStatsCost(
 	ctx context.Context,
@@ -52,7 +52,7 @@ func resolveAccountStatsCost(
 	platform := channelService.GetGroupPlatform(ctx, groupID)
 
 	// 优先级 1：自定义规则（始终尝试）
-	if cost := tryCustomRules(channel, accountID, groupID, platform, upstreamModel, tokens, requestCount, reasoningEffort); cost != nil {
+	if cost := tryCustomRules(channel, accountID, groupID, platform, upstreamModel, tokens, requestCount, billingService, longContextPricingEnabled, reasoningEffort); cost != nil {
 		return cost
 	}
 
@@ -108,6 +108,7 @@ func tryModelFilePricing(billingService *BillingService, model string, tokens Us
 func tryCustomRules(
 	channel *Channel, accountID, groupID int64,
 	platform, model string, tokens UsageTokens, requestCount int,
+	billingService *BillingService, longContextPricingEnabled bool,
 	reasoningEfforts ...string,
 ) *float64 {
 	reasoningEffort := ""
@@ -122,6 +123,25 @@ func tryCustomRules(
 		pricing := findPricingForModel(rule.Pricing, platform, modelLower)
 		if pricing == nil {
 			continue // 规则匹配但模型不在规则定价中，继续下一条
+		}
+		// 自定义基础成本价也需叠加模型长上下文倍率；区间价已含分层，不再叠加。
+		if billingService != nil && longContextPricingEnabled && len(pricing.Intervals) == 0 &&
+			(pricing.BillingMode == "" || pricing.BillingMode == BillingModeToken) {
+			if modelPricing, err := billingService.GetModelPricing(model); err == nil &&
+				billingService.shouldApplySessionLongContextPricing(tokens, modelPricing) {
+				adjusted := *pricing
+				for _, price := range []**float64{&adjusted.InputPrice, &adjusted.CacheWritePrice, &adjusted.CacheWrite1hPrice, &adjusted.CacheReadPrice} {
+					if *price != nil {
+						value := **price * longContextMultiplierOrOne(modelPricing.LongContextInputMultiplier)
+						*price = &value
+					}
+				}
+				if adjusted.OutputPrice != nil {
+					value := *adjusted.OutputPrice * longContextMultiplierOrOne(modelPricing.LongContextOutputMultiplier)
+					adjusted.OutputPrice = &value
+				}
+				pricing = &adjusted
+			}
 		}
 		cost := calculateStatsCost(pricing, tokens, requestCount)
 		if cost != nil {
@@ -300,9 +320,8 @@ func applyAccountStatsCost(
 }
 
 // accountStatsLongContextPricingEnabled 判断账号统计成本是否计入长上下文阶梯。
-// 账号统计成本反映上游实际成本：OpenAI 账号由开关声明上游是否收取长上下文费率；
-// 其它平台没有该开关（accountGate 为 nil），按官方阶梯计。分组开关只决定客户售价，
-// 不参与成本判断。
-func accountStatsLongContextPricingEnabled(accountGate *bool) bool {
-	return accountGate == nil || *accountGate
+// 分组开启时同步计算长上下文成本，避免被页面已隐藏的账号旧值挡住。
+// 保留账号单独开启的兼容逻辑；其它平台没有账号开关，按模型阶梯计。
+func accountStatsLongContextPricingEnabled(accountGate *bool, group *Group) bool {
+	return accountGate == nil || *accountGate || (group != nil && group.LongContextPricingEnabled)
 }

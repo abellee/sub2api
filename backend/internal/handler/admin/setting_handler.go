@@ -265,6 +265,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		DefaultConcurrency:                                     settings.DefaultConcurrency,
 		DefaultBalance:                                         settings.DefaultBalance,
 		RiskControlEnabled:                                     settings.RiskControlEnabled,
+		AccountErrorFailoverEnabled:                            settings.AccountErrorFailoverEnabled,
 		CostGuardEnabled:                                       settings.CostGuardEnabled,
 		CostGuardErrorStatusCode:                               settings.CostGuardErrorStatusCode,
 		CostGuardErrorMessage:                                  settings.CostGuardErrorMessage,

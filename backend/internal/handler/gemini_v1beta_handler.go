@@ -570,7 +570,10 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 	hasBoundSession := sessionKey != "" && sessionBoundAccountID > 0
 	cleanedForUnknownBinding := false
 
-	maxAccountSwitches := h.maxAccountSwitchesGemini
+	if cachedContentBinding == nil {
+		c.Request = c.Request.WithContext(h.gatewayService.PrepareRequestAccountFailover(c.Request.Context(), apiKey.GroupID, modelName, service.PlatformGemini))
+	}
+	maxAccountSwitches := service.RequestAccountFailoverLimit(c.Request.Context(), h.maxAccountSwitchesGemini)
 	var cachedContentExclusions map[int64]struct{}
 	if cachedContentBinding != nil {
 		// 缓存只存在于绑定账号：排除分组内其余账号，失败不换号。
@@ -769,19 +772,23 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 		}
 		sessionGroupID := derefGroupID(apiKey.GroupID)
 		if account.Platform == service.PlatformAntigravity && account.Type != service.AccountTypeAPIKey {
-			result, err = h.antigravityGatewayService.ForwardGemini(
-				requestCtx,
-				c,
-				account,
-				modelName,
-				action,
-				stream,
-				body,
-				hasBoundSession,
-				service.WithForwardGeminiSession(sessionGroupID, sessionKey),
-			)
+			result, err = service.ForwardWithAccountRetries(requestCtx, c, func() (*service.ForwardResult, error) {
+				return h.antigravityGatewayService.ForwardGemini(
+					requestCtx,
+					c,
+					account,
+					modelName,
+					action,
+					stream,
+					body,
+					hasBoundSession,
+					service.WithForwardGeminiSession(sessionGroupID, sessionKey),
+				)
+			})
 		} else {
-			result, err = h.geminiCompatService.ForwardNative(requestCtx, c, account, modelName, action, stream, body)
+			result, err = service.ForwardWithAccountRetries(requestCtx, c, func() (*service.ForwardResult, error) {
+				return h.geminiCompatService.ForwardNative(requestCtx, c, account, modelName, action, stream, body)
+			})
 		}
 		if accountReleaseFunc != nil {
 			accountReleaseFunc()

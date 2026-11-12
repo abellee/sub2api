@@ -1246,6 +1246,22 @@ describe("admin SettingsView payment visible method controls", () => {
     );
   });
 
+  it("loads and saves the account retry switch in both directions", async () => {
+    getSettings.mockResolvedValueOnce({ ...baseSettingsResponse, account_error_failover_enabled: true });
+    const wrapper = mountView();
+    await flushPromises();
+    await openGatewayTab(wrapper);
+    const control = wrapper.get('[data-testid="account-error-failover-enabled"]');
+    expect((control.element as HTMLInputElement).checked).toBe(true);
+    for (const enabled of [false, true]) {
+      await control.setValue(enabled);
+      await wrapper.find("form").trigger("submit.prevent");
+      await flushPromises();
+      expect(updateSettings).toHaveBeenLastCalledWith(expect.objectContaining({ account_error_failover_enabled: enabled }));
+    }
+    wrapper.unmount();
+  });
+
   it("submits Anthropic cache TTL injection gateway setting", async () => {
     getSettings.mockResolvedValueOnce({
       ...baseSettingsResponse,

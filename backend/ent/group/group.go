@@ -56,6 +56,8 @@ const (
 	FieldMonthlyLimitUsd = "monthly_limit_usd"
 	// FieldDefaultValidityDays holds the string denoting the default_validity_days field in the database.
 	FieldDefaultValidityDays = "default_validity_days"
+	// FieldAccountErrorFailoverEnabled holds the string denoting the account_error_failover_enabled field in the database.
+	FieldAccountErrorFailoverEnabled = "account_error_failover_enabled"
 	// FieldAllowImageGeneration holds the string denoting the allow_image_generation field in the database.
 	FieldAllowImageGeneration = "allow_image_generation"
 	// FieldAllowBatchImageGeneration holds the string denoting the allow_batch_image_generation field in the database.
@@ -251,6 +253,7 @@ var Columns = []string{
 	FieldWeeklyLimitUsd,
 	FieldMonthlyLimitUsd,
 	FieldDefaultValidityDays,
+	FieldAccountErrorFailoverEnabled,
 	FieldAllowImageGeneration,
 	FieldAllowBatchImageGeneration,
 	FieldImageAutoSizeFromReference,
@@ -372,6 +375,8 @@ var (
 	SubscriptionTypeValidator func(string) error
 	// DefaultDefaultValidityDays holds the default value on creation for the "default_validity_days" field.
 	DefaultDefaultValidityDays int
+	// DefaultAccountErrorFailoverEnabled holds the default value on creation for the "account_error_failover_enabled" field.
+	DefaultAccountErrorFailoverEnabled bool
 	// DefaultAllowImageGeneration holds the default value on creation for the "allow_image_generation" field.
 	DefaultAllowImageGeneration bool
 	// DefaultAllowBatchImageGeneration holds the default value on creation for the "allow_batch_image_generation" field.
@@ -557,6 +562,11 @@ func ByMonthlyLimitUsd(opts ...sql.OrderTermOption) OrderOption {
 // ByDefaultValidityDays orders the results by the default_validity_days field.
 func ByDefaultValidityDays(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldDefaultValidityDays, opts...).ToFunc()
+}
+
+// ByAccountErrorFailoverEnabled orders the results by the account_error_failover_enabled field.
+func ByAccountErrorFailoverEnabled(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldAccountErrorFailoverEnabled, opts...).ToFunc()
 }
 
 // ByAllowImageGeneration orders the results by the allow_image_generation field.

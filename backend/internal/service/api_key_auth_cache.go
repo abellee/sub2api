@@ -74,6 +74,7 @@ type APIKeyAuthGroupSnapshot struct {
 	AllowBatchImageGeneration       bool                          `json:"allow_batch_image_generation"`
 	ImageCountBilling               bool                          `json:"image_count_billing"`
 	ImageAutoSizeFromReference      bool                          `json:"image_auto_size_from_reference"`
+	AccountErrorFailoverEnabled     bool                          `json:"account_error_failover_enabled"`
 	ImageRateIndependent            bool                          `json:"image_rate_independent"`
 	ImageRateMultiplier             float64                       `json:"image_rate_multiplier"`
 	ImagePrice1K                    *float64                      `json:"image_price_1k,omitempty"`

@@ -98,7 +98,7 @@ func newOpenAIResponsesFailoverTestHandler(t *testing.T, upstream service.HTTPUp
 		nil,
 		nil,
 		nil,
-		nil,
+		newAccountErrorFailoverTestSettings(),
 		nil,
 	)
 	billingService := service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil)
@@ -134,7 +134,7 @@ func newOpenAIResponsesFailoverTestContext(t *testing.T, ctx context.Context) (*
 	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
 		ID:      99,
 		GroupID: &groupID,
-		Group: &service.Group{
+		Group: &service.Group{AccountErrorFailoverEnabled: true,
 			ID:       groupID,
 			Platform: service.PlatformOpenAI,
 		},
@@ -188,7 +188,7 @@ func TestOpenAIGatewayHandlerResponses_FailoverContinuesForConnectedClient(t *te
 
 	handler.Responses(c)
 
-	require.Equal(t, []int64{1, 2}, upstream.calls(), "在线客户端应正常切换账号")
+	require.Equal(t, []int64{1, 1, 1, 2, 2, 2}, upstream.calls(), "在线客户端应正常切换账号")
 	require.Equal(t, http.StatusBadGateway, rec.Code)
 	require.Equal(t, "upstream_error", gjson.GetBytes(rec.Body.Bytes(), "error.type").String())
 }

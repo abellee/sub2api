@@ -28,6 +28,7 @@ type CustomEndpoint struct {
 
 // SystemSettings represents the admin settings API response payload.
 type SystemSettings struct {
+	AccountErrorFailoverEnabled         bool                     `json:"account_error_failover_enabled"`
 	CostGuardEnabled                    bool                     `json:"cost_guard_enabled"`
 	CostGuardErrorStatusCode            int                      `json:"cost_guard_error_status_code"`
 	CostGuardErrorMessage               string                   `json:"cost_guard_error_message"`

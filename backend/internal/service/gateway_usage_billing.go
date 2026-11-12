@@ -862,7 +862,7 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 				ImageOutputTokens:   result.Usage.ImageOutputTokens,
 			},
 			cost.TotalCost-cacheStorageCost-cost.SearchCost, pricingAt,
-			accountStatsLongContextPricingEnabled(nil),
+			accountStatsLongContextPricingEnabled(nil, apiKey.Group),
 		)
 		addCacheStorageToAccountStatsCost(usageLog, cacheStorageCost+cost.SearchCost)
 	}

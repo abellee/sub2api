@@ -5340,6 +5340,18 @@
                 </p>
               </div>
 
+              <div class="flex items-center justify-between gap-4 md:col-span-2">
+                <div>
+                  <label for="account-error-failover-enabled" class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    {{ t("admin.settings.gatewayForwarding.accountErrorFailover") }}
+                  </label>
+                  <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{ t("admin.settings.gatewayForwarding.accountErrorFailoverHint") }}
+                  </p>
+                </div>
+                <Toggle id="account-error-failover-enabled" v-model="form.account_error_failover_enabled" data-testid="account-error-failover-enabled" />
+              </div>
+
               <!-- Fingerprint Unification -->
               <div class="flex items-center justify-between">
                 <div>
@@ -9834,6 +9846,7 @@ const form = reactive<SettingsForm>({
   hide_ccs_import_button: false,
   payment_enabled: false,
   risk_control_enabled: false,
+  account_error_failover_enabled: false,
   cost_guard_enabled: false,
   cost_guard_error_status_code: 403,
   cost_guard_error_message: "Insufficient balance for the estimated request cost.",
@@ -11722,6 +11735,7 @@ async function saveSettings() {
       // Payment configuration
       payment_enabled: form.payment_enabled,
       risk_control_enabled: form.risk_control_enabled,
+      account_error_failover_enabled: form.account_error_failover_enabled,
       cost_guard_enabled: form.cost_guard_enabled,
       cost_guard_error_status_code: Number(form.cost_guard_error_status_code),
       cost_guard_error_message: form.cost_guard_error_message,

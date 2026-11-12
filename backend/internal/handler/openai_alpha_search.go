@@ -136,7 +136,7 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 	// 分组利润控制：alpha search 文本入口请求级装门并固定 pricingAt
 	//（记录路径经 service.OpenAIPricingAtFromContext 从请求 ctx 回读）。
 	asPricingCtx, _ := h.gatewayService.WithOpenAIRequestPricingContext(c.Request.Context(), apiKey.GroupID)
-	c.Request = c.Request.WithContext(asPricingCtx)
+	c.Request = c.Request.WithContext(h.gatewayService.PrepareRequestAccountFailover(asPricingCtx, apiKey.GroupID, apiKey.Group, requestedModel, service.PlatformOpenAI))
 
 	for {
 		selection, _, err := h.gatewayService.SelectAccountWithSchedulerForCapability(
@@ -196,7 +196,9 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 			if accountRelease != nil {
 				defer accountRelease()
 			}
-			return h.gatewayService.ForwardAlphaSearch(c.Request.Context(), c, account, forwardBody)
+			return service.ForwardWithAccountRetries(c.Request.Context(), c, func() (*service.OpenAIForwardResult, error) {
+				return h.gatewayService.ForwardAlphaSearch(c.Request.Context(), c, account, forwardBody)
+			})
 		}()
 		service.SetOpsLatencyMs(c, service.OpsResponseLatencyMsKey, time.Since(forwardStart).Milliseconds())
 
@@ -257,12 +259,12 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 		h.gatewayService.RecordOpenAIAccountSwitch()
 		failedAccountIDs[account.ID] = struct{}{}
 		lastFailoverErr = failoverErr
-		if switchCount >= h.maxAccountSwitches {
+		if switchCount >= service.RequestAccountFailoverLimit(c.Request.Context(), h.maxAccountSwitches) {
 			h.handleFailoverExhausted(c, failoverErr, false)
 			return
 		}
 		switchCount++
-		if h.gatewayService.ShouldStopOpenAIOAuth429Failover(account, failoverErr.StatusCode, switchCount, &oauth429FailoverState) {
+		if !service.RequestAccountFailoverEnabled(c.Request.Context()) && h.gatewayService.ShouldStopOpenAIOAuth429Failover(account, failoverErr.StatusCode, switchCount, &oauth429FailoverState) {
 			h.handleFailoverExhausted(c, failoverErr, false)
 			return
 		}
