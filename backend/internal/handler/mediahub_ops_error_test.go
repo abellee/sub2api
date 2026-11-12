@@ -24,6 +24,7 @@ func TestMediaFailurePersistsPrivateUpstreamDiagnostics(t *testing.T) {
 		upstream, clientStatus                            int
 	}{
 		{"sync edits", "POST", "/v1/images/edits", "openai", "failed", `{"error":{"message":"` + invalidSize + `","api_key":"sk-private-token"}}`, requestMessage, 400, 400},
+		{"sync edits invalid upstream route", "POST", "/v1/images/edits", "openai", "failed", `{"error":{"message":"Invalid URL (POST /v1/v1/images/edits)"}}`, genericMessage, 404, 502},
 		{"sync generation mapped status", "POST", "/v1/images/generations", "openai", "failed", `{"error":{"message":"account forbidden"}}`, genericMessage, 403, 502},
 		{"sync gemini", "POST", "/v1beta/models/test:generateContent", "gemini", "failed", `{"error":{"message":"` + invalidSize + `"}}`, requestMessage, 400, 400},
 		{"image polling", "GET", "/v1/images/tasks/mtask_diagnostic", "", "failed", `{"error":{"message":"account forbidden"}}`, genericMessage, 403, 502},
@@ -45,10 +46,18 @@ func TestMediaFailurePersistsPrivateUpstreamDiagnostics(t *testing.T) {
 				switch r.URL.Query().Get("response_format") {
 				case "error_context":
 					diagnosticRequests++
+					if r.URL.Query().Get("wait") == "true" {
+						w.WriteHeader(http.StatusBadRequest)
+						_, _ = w.Write([]byte(`{"error":{"type":"invalid_format","message":"unsupported result format"}}`))
+						return
+					}
 					_ = json.NewEncoder(w).Encode(gin.H{"status_code": tc.upstream, "message": "upstream request failed", "body": tc.raw})
 				case "state", "":
 					_ = json.NewEncoder(w).Encode(gin.H{"status": tc.state, "error_message": "Generation failed.", "files_acknowledged": true})
 				default:
+					if tc.protocol != "" {
+						require.Equal(t, "true", r.URL.Query().Get("wait"), "synchronous results must still wait")
+					}
 					w.WriteHeader(tc.clientStatus)
 					_ = json.NewEncoder(w).Encode(gin.H{"task_id": "mtask_diagnostic", "error": gin.H{"type": "generation_failed", "message": tc.message}})
 				}
