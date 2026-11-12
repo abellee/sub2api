@@ -433,7 +433,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 				if failoverErr.ShouldReportAccountScheduleFailure() {
 					h.gatewayService.ReportOpenAIAccountScheduleResult(account, grokMediaScheduleModel(account, routingModel, nil), false, nil)
 				}
-				if c.Writer.Size() != writerSizeBeforeForward {
+				if c.Writer.Size() != writerSizeBeforeForward && !failoverErr.SafeToFailoverAfterWrite {
 					h.handleFailoverExhausted(c, failoverErr, true)
 					return
 				}
@@ -447,7 +447,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 				}
 				if failoverErr.RetryableOnSameAccount {
 					retryLimit := effectiveSameAccountRetryLimit(failoverErr, account)
-					if sameAccountRetryAllowed(failoverErr, sameAccountRetryCount[account.ID], retryLimit) {
+					if sameAccountRetryAllowed(c.Request.Context(), failoverErr, sameAccountRetryCount[account.ID], retryLimit) {
 						sameAccountRetryCount[account.ID]++
 						markAccountErrorFailoverAction(c, "retry_same_account", account.ID)
 						retryDelay := sameAccountRetryDelayFor(failoverErr, sameAccountRetryCount[account.ID])

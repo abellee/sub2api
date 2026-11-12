@@ -2738,9 +2738,6 @@ func runOpenAIResponsesWebSocketUsageLimitCase(t *testing.T, mode string, follow
 	}
 
 	expectedFrames := len(followups) + 1
-	if len(followups) == 0 {
-		expectedFrames = 3
-	}
 	if handshakeLimit {
 		expectedFrames--
 		require.Equal(t, int32(2), firstConnections.Load(), "the same account must reject the replacement handshake")
@@ -2960,7 +2957,7 @@ func TestOpenAIResponsesWebSocket_FirstOutputTimeoutWithoutDownstreamReusesClien
 	case <-time.After(3 * time.Second):
 		t.Fatal("second upstream did not receive replayed request")
 	}
-	require.Equal(t, int32(3), firstConnections.Load())
+	require.Equal(t, int32(1), firstConnections.Load())
 	require.Equal(t, int32(1), secondConnections.Load())
 	require.NotContains(t, accountRepo.rateLimitedIDs, int64(9913), "healthy failover account must not be penalized")
 }

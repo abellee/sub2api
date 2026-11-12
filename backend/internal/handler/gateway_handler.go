@@ -532,11 +532,79 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			if accountReleaseFunc != nil {
 				accountReleaseFunc()
 			}
+			submitForwardUsage := func(result *service.ForwardResult) {
+				if result == nil {
+					return
+				}
+				// 捕获请求信息（用于异步记录，避免在 goroutine 中访问 gin.Context）
+				userAgent := c.GetHeader("User-Agent")
+				clientIP := ip.GetClientIP(c)
+				requestPayloadHash := service.HashUsageRequestPayload(body)
+				inboundEndpoint := GetInboundEndpoint(c)
+				upstreamEndpoint := result.UpstreamEndpoint
+				if upstreamEndpoint == "" {
+					upstreamEndpoint = GetUpstreamEndpoint(c, account.Platform)
+				}
+
+				stampForwardRequestedReasoningEffort(result, service.NormalizeClaudeOutputEffort(parsedReq.OutputEffort))
+				if result.ReasoningEffort == nil {
+					result.ReasoningEffort = service.NormalizeClaudeOutputEffort(parsedReq.OutputEffort)
+				}
+				// 国产模型 thinking-enabled 默认 effort 填充：Kimi/GLM/MiniMax 这些不支持 effort 档位的
+				// passback-required 上游，仅要 thinking 启用且 OutputEffort 未明确传递时，在 usage_log 写 "high"
+				// 避免该字段长期为 NULL（详见 DefaultEffortForThinkingEnabled 文档）。
+				if result.ReasoningEffort == nil && parsedReq.ThinkingEnabled {
+					protocolModel := result.UpstreamModel
+					if protocolModel == "" {
+						protocolModel = result.Model
+					}
+					result.ReasoningEffort = service.DefaultEffortForThinkingEnabled(protocolModel)
+				}
+
+				// 使用量记录通过有界 worker 池提交，避免请求热路径创建无界 goroutine。
+				// ForceCacheBilling 提前拍成标量，避免 worker 闭包保活 failover 状态里的响应体。
+				forceCacheBilling := fs.ForceCacheBilling
+				quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
+				sessionID := service.ExtractClientSessionID(c)
+				usageFields := clientRequestedUsageFields(c, channelMapping, reqModel, result.UpstreamModel)
+				h.submitUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
+					if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
+						Result:             result,
+						QuotaPlatform:      quotaPlatform,
+						APIKey:             apiKey,
+						User:               apiKey.User,
+						Account:            account,
+						Subscription:       subscription,
+						PricingAt:          pricingAt,
+						InboundEndpoint:    inboundEndpoint,
+						UpstreamEndpoint:   upstreamEndpoint,
+						UserAgent:          userAgent,
+						IPAddress:          clientIP,
+						SessionID:          sessionID,
+						RequestPayloadHash: requestPayloadHash,
+						ForceCacheBilling:  forceCacheBilling,
+						APIKeyService:      h.apiKeyService,
+						ChannelUsageFields: usageFields,
+					}); err != nil {
+						logger.L().With(
+							zap.String("component", "handler.gateway.messages"),
+							zap.Int64("user_id", subject.UserID),
+							zap.Int64("api_key_id", apiKey.ID),
+							zap.Any("group_id", apiKey.GroupID),
+							zap.String("model", reqModel),
+							zap.Int64("account_id", account.ID),
+						).Error("gateway.record_usage_failed", zap.Error(err))
+					}
+				})
+			}
 			if err != nil {
+				if result.HasObservedUsage() {
+					submitForwardUsage(result)
+				}
 				var failoverErr *service.UpstreamFailoverError
 				if errors.As(err, &failoverErr) {
-					// 流式内容已写入客户端，无法撤销，禁止 failover 以防止流拼接腐化
-					if c.Writer.Size() != writerSizeBeforeForward {
+					// 只有明确可重试的流中断才允许在部分输出后继续换号
+					if c.Writer.Size() != writerSizeBeforeForward && !failoverErr.SafeToFailoverAfterWrite {
 						h.handleFailoverExhausted(c, failoverErr, service.PlatformGemini, true)
 						return
 					}
@@ -588,66 +656,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				}
 			}
 
-			// 捕获请求信息（用于异步记录，避免在 goroutine 中访问 gin.Context）
-			userAgent := c.GetHeader("User-Agent")
-			clientIP := ip.GetClientIP(c)
-			requestPayloadHash := service.HashUsageRequestPayload(body)
-			inboundEndpoint := GetInboundEndpoint(c)
-			upstreamEndpoint := result.UpstreamEndpoint
-			if upstreamEndpoint == "" {
-				upstreamEndpoint = GetUpstreamEndpoint(c, account.Platform)
-			}
-
-			stampForwardRequestedReasoningEffort(result, service.NormalizeClaudeOutputEffort(parsedReq.OutputEffort))
-			if result.ReasoningEffort == nil {
-				result.ReasoningEffort = service.NormalizeClaudeOutputEffort(parsedReq.OutputEffort)
-			}
-			// 国产模型 thinking-enabled 默认 effort 填充：Kimi/GLM/MiniMax 这些不支持 effort 档位的
-			// passback-required 上游，仅要 thinking 启用且 OutputEffort 未明确传递时，在 usage_log 写 "high"
-			// 避免该字段长期为 NULL（详见 DefaultEffortForThinkingEnabled 文档）。
-			if result.ReasoningEffort == nil && parsedReq.ThinkingEnabled {
-				protocolModel := result.UpstreamModel
-				if protocolModel == "" {
-					protocolModel = result.Model
-				}
-				result.ReasoningEffort = service.DefaultEffortForThinkingEnabled(protocolModel)
-			}
-
-			// 使用量记录通过有界 worker 池提交，避免请求热路径创建无界 goroutine。
-			// ForceCacheBilling 提前拍成标量，避免 worker 闭包保活 failover 状态里的响应体。
-			forceCacheBilling := fs.ForceCacheBilling
-			quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
-			sessionID := service.ExtractClientSessionID(c)
-			channelUsageFields := clientRequestedUsageFields(c, channelMapping, reqModel, result.UpstreamModel)
-			h.submitUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
-				if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
-					Result:             result,
-					QuotaPlatform:      quotaPlatform,
-					APIKey:             apiKey,
-					User:               apiKey.User,
-					Account:            account,
-					Subscription:       subscription,
-					PricingAt:          pricingAt,
-					InboundEndpoint:    inboundEndpoint,
-					UpstreamEndpoint:   upstreamEndpoint,
-					UserAgent:          userAgent,
-					IPAddress:          clientIP,
-					SessionID:          sessionID,
-					RequestPayloadHash: requestPayloadHash,
-					ForceCacheBilling:  forceCacheBilling,
-					APIKeyService:      h.apiKeyService,
-					ChannelUsageFields: channelUsageFields,
-				}); err != nil {
-					logger.L().With(
-						zap.String("component", "handler.gateway.messages"),
-						zap.Int64("user_id", subject.UserID),
-						zap.Int64("api_key_id", apiKey.ID),
-						zap.Any("group_id", apiKey.GroupID),
-						zap.String("model", reqModel),
-						zap.Int64("account_id", account.ID),
-					).Error("gateway.record_usage_failed", zap.Error(err))
-				}
-			})
+			submitForwardUsage(result)
 			return
 		}
 	}
@@ -990,7 +999,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				forceCacheBilling := fs.ForceCacheBilling
 				quotaPlatform := service.QuotaPlatform(c.Request.Context(), currentAPIKey)
 				sessionID := service.ExtractClientSessionID(c)
-				channelUsageFields := clientRequestedUsageFields(c, channelMapping, reqModel, result.UpstreamModel)
+				usageFields := clientRequestedUsageFields(c, channelMapping, reqModel, result.UpstreamModel)
 				h.submitUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
 					if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
 						Result:             result,
@@ -1008,7 +1017,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 						RequestPayloadHash: requestPayloadHash,
 						ForceCacheBilling:  forceCacheBilling,
 						APIKeyService:      h.apiKeyService,
-						ChannelUsageFields: channelUsageFields,
+						ChannelUsageFields: usageFields,
 					}); err != nil {
 						logger.L().With(
 							zap.String("component", "handler.gateway.messages"),
@@ -1084,8 +1093,14 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				}
 				var failoverErr *service.UpstreamFailoverError
 				if errors.As(err, &failoverErr) {
-					// 流式内容已写入客户端，无法撤销，禁止 failover 以防止流拼接腐化
-					if c.Writer.Size() != writerSizeBeforeForward {
+					if failoverErr.SafeToFailoverAfterWrite && c.Writer.Written() {
+						streamStarted = true
+					}
+					if result.HasObservedUsage() {
+						submitForwardUsage(result)
+					}
+					// Missing terminal events remain retryable after partial stream output.
+					if c.Writer.Size() != writerSizeBeforeForward && !failoverErr.SafeToFailoverAfterWrite {
 						h.handleFailoverExhausted(c, failoverErr, account.Platform, true)
 						return
 					}
@@ -1129,7 +1144,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				}
 				reqLog.Error("gateway.forward_failed", forwardFailedFields...)
 				// Forward 与错误一起返回的部分结果：流中断前上游已计量的 usage 照常入账，
-				// 避免上游已产生消耗的请求完全漏记（#5148）。failover 错误恒定 result=nil，
+				// 避免上游已产生消耗的请求完全漏记（#5148）。切号前单独记录已观测用量，
 				// 不会走到这里重复计费。
 				if result != nil {
 					submitForwardUsage(result)

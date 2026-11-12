@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strconv"
 	"strings"
 	"time"
 
@@ -235,6 +236,14 @@ func resolveUsageBillingRequestID(ctx context.Context, upstreamRequestID string)
 		return requestID
 	}
 	return "generated:" + generateRequestID()
+}
+
+// Keep each consumed account attempt distinct under the same client request ID.
+func accountAttemptUsageBillingRequestID(ctx context.Context, requestID string, accountID int64) string {
+	if !RequestAccountFailoverEnabled(ctx) || isForcedUsageBillingRequestID(requestID) {
+		return requestID
+	}
+	return requestID + ":account:" + strconv.FormatInt(accountID, 10)
 }
 
 func isForcedUsageBillingRequestID(requestID string) bool {
@@ -1331,7 +1340,7 @@ func (s *GatewayService) buildRecordUsageLog(
 	cost *CostBreakdown,
 ) *UsageLog {
 	durationMs := int(result.Duration.Milliseconds())
-	requestID := resolveUsageBillingRequestID(ctx, result.RequestID)
+	requestID := accountAttemptUsageBillingRequestID(ctx, resolveUsageBillingRequestID(ctx, result.RequestID), account.ID)
 	sentModel := upstreamSentModel(result.Model, result.UpstreamModel)
 	if result.UpstreamResponseModelConflict {
 		slog.Warn("upstream_response_model_conflict",

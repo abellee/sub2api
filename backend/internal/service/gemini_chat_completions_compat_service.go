@@ -274,11 +274,13 @@ func (s *GeminiMessagesCompatService) forwardClaudeBodyAsChatCompletions(
 	var firstTokenMs *int
 	clientDisconnect := false
 	streamFinished := false
+	var streamErr error
 	if clientStream {
 		streamRes, err := s.handleChatCompletionsStreamingResponseFromGemini(c, resp, startTime, originalModel, account.Type == AccountTypeOAuth, includeUsage)
-		if err != nil {
+		if err != nil && streamRes == nil {
 			return nil, err
 		}
+		streamErr = err
 		usage = streamRes.usage
 		firstTokenMs = streamRes.firstTokenMs
 		clientDisconnect = streamRes.clientDisconnect
@@ -334,7 +336,7 @@ func (s *GeminiMessagesCompatService) forwardClaudeBodyAsChatCompletions(
 		ImageSize:        imageSize,
 		ImageInputSize:   imageInputSize,
 		ClientDisconnect: clientDisconnect,
-	}, nil
+	}, streamErr
 }
 
 func (s *GeminiMessagesCompatService) buildGeminiChatCompletionsUpstreamRequestFunc(
@@ -566,6 +568,7 @@ func (s *GeminiMessagesCompatService) handleChatCompletionsStreamingResponseFrom
 	var firstTokenMs *int
 	firstChunk := true
 	finishReason := ""
+	sawRejection := false
 	clientDisconnect := false
 	streamResult := func() *geminiStreamResult {
 		return &geminiStreamResult{usage: &usage, firstTokenMs: firstTokenMs, clientDisconnect: clientDisconnect, finished: finishReason != ""}
@@ -658,6 +661,9 @@ func (s *GeminiMessagesCompatService) handleChatCompletionsStreamingResponseFrom
 						}
 					}
 
+					if sig, ok := detectGeminiResponseSignal(rawBytes); ok && (sig.Kind == geminiSignalPromptBlocked || sig.Kind == geminiSignalError) {
+						sawRejection = true
+					}
 					observeGeminiSearch(c, rawBytes)
 					var geminiResp map[string]any
 					if err := json.Unmarshal(rawBytes, &geminiResp); err == nil {
@@ -822,8 +828,12 @@ func (s *GeminiMessagesCompatService) handleChatCompletionsStreamingResponseFrom
 				clientDisconnect = true
 				return streamResult(), nil
 			}
-			return nil, fmt.Errorf("stream read error: %w", err)
+			return streamResult(), upstreamStreamReadError(err)
 		}
+	}
+
+	if requestAccountFailoverEnabled(c) && !sawRejection && finishReason == "" && !clientDisconnect {
+		return streamResult(), errUpstreamStreamMissingTerminal
 	}
 
 	if closeOpenBlock() {

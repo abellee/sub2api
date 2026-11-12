@@ -340,7 +340,7 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 		}
 
 		// 提交 usage 记录。成功路径与"流中断但 Forward 已观测到 usage 的部分结果"
-		// 错误路径共用；failover 错误恒定 result=nil，不会重复计费。
+		// 错误路径共用；切号前单独提交已观测用量，每次尝试只提交一次。
 		submitForwardUsage := func(result *service.ForwardResult) {
 			userAgent := c.GetHeader("User-Agent")
 			clientIP := ip.GetClientIP(c)
@@ -351,7 +351,7 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 			quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
 			sessionID := service.ExtractClientSessionID(c)
 			stampForwardRequestedReasoningEffort(result, service.RequestedReasoningEffortFromContext(c.Request.Context()))
-			channelUsageFields := clientRequestedUsageFields(c, channelMapping, reqModel, result.UpstreamModel)
+			usageFields := clientRequestedUsageFields(c, channelMapping, reqModel, result.UpstreamModel)
 			h.submitUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
 				if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
 					Result:             result,
@@ -368,7 +368,7 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 					RequestPayloadHash: requestPayloadHash,
 					APIKeyService:      h.apiKeyService,
 					SessionID:          sessionID,
-					ChannelUsageFields: channelUsageFields,
+					ChannelUsageFields: usageFields,
 				}); err != nil {
 					reqLog.Error("gateway.cc.record_usage_failed",
 						zap.Int64("account_id", account.ID),
@@ -381,7 +381,13 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 		if err != nil {
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) {
-				if c.Writer.Size() != writerSizeBeforeForward {
+				if failoverErr.SafeToFailoverAfterWrite && c.Writer.Written() {
+					streamStarted = true
+				}
+				if result.HasObservedUsage() {
+					submitForwardUsage(result)
+				}
+				if c.Writer.Size() != writerSizeBeforeForward && !failoverErr.SafeToFailoverAfterWrite {
 					h.handleCCFailoverExhausted(c, failoverErr, true)
 					return
 				}

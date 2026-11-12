@@ -443,7 +443,7 @@ func (s *AntigravityGatewayService) consumeAntigravityCompatResponse(
 		c.Header("x-request-id", requestID)
 	}
 	streamResult, err := s.consumeAntigravityCompatSuccess(c, call, resp)
-	if err != nil {
+	if err != nil && streamResult == nil {
 		return nil, err
 	}
 	if streamResult.usage == nil {
@@ -463,7 +463,7 @@ func (s *AntigravityGatewayService) consumeAntigravityCompatResponse(
 		FirstTokenMs:                  streamResult.firstTokenMs,
 		ReasoningEffort:               call.request.reasoningEffort,
 		ClientDisconnect:              streamResult.clientDisconnect,
-	}, nil
+	}, err
 }
 
 func (s *AntigravityGatewayService) consumeAntigravityCompatSuccess(

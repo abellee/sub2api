@@ -437,8 +437,8 @@ func (s *OpenAIGatewayService) handleNativeAnthropicStreamingResponse(
 			}
 			if !ok {
 				if !sawTerminalEvent && !clientDisconnected {
-					if retry := requestAccountStreamFailover(c, account, resp, errors.New("upstream stream ended without a terminal event")); retry != nil {
-						return nil, retry
+					if retry := requestAccountStreamFailover(c, account, resp, errUpstreamStreamMissingTerminal); retry != nil {
+						return s.nativeAnthropicStreamResult(c, resp, usage, firstTokenMs, clientDisconnected, originalModel, billingModel, upstreamModel, reasoningEffort, startTime), retry
 					}
 				}
 				if !clientDisconnected {
@@ -446,7 +446,7 @@ func (s *OpenAIGatewayService) handleNativeAnthropicStreamingResponse(
 				}
 				if !sawTerminalEvent {
 					return s.nativeAnthropicStreamResult(c, resp, usage, firstTokenMs, clientDisconnected, originalModel, billingModel, upstreamModel, reasoningEffort, startTime),
-						fmt.Errorf("stream usage incomplete: missing terminal event")
+						errUpstreamStreamMissingTerminal
 				}
 				return s.nativeAnthropicStreamResult(c, resp, usage, firstTokenMs, clientDisconnected, originalModel, billingModel, upstreamModel, reasoningEffort, startTime), nil
 			}
@@ -467,7 +467,7 @@ func (s *OpenAIGatewayService) handleNativeAnthropicStreamingResponse(
 					return s.nativeAnthropicStreamResult(c, resp, usage, firstTokenMs, clientDisconnected, originalModel, billingModel, upstreamModel, reasoningEffort, startTime), ev.err
 				}
 				return s.nativeAnthropicStreamResult(c, resp, usage, firstTokenMs, clientDisconnected, originalModel, billingModel, upstreamModel, reasoningEffort, startTime),
-					fmt.Errorf("stream read error: %w", ev.err)
+					upstreamStreamReadError(ev.err)
 			}
 
 			line := ev.line

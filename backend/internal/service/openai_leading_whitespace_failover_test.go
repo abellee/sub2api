@@ -132,8 +132,8 @@ func TestOpenAIStreamIdleTimeoutRetriesOnlyBeforeOutput(t *testing.T) {
 		enabled, output, keepalive bool
 		wantCalls                  int
 	}{
-		{name: "whitespace only retries", enabled: true, wantCalls: 3},
-		{name: "heartbeat allows retry", enabled: true, keepalive: true, wantCalls: 3},
+		{name: "whitespace only retries", enabled: true, wantCalls: 1},
+		{name: "heartbeat allows retry", enabled: true, keepalive: true, wantCalls: 1},
 		{name: "real output never replayed", enabled: true, output: true, wantCalls: 1},
 		{name: "disabled unchanged", wantCalls: 1},
 	} {

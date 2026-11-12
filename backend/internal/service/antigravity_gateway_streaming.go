@@ -232,6 +232,7 @@ func (s *AntigravityGatewayService) handleGeminiStreamingResponse(c *gin.Context
 		flusher.Flush()
 	}
 
+	sawTerminal := false
 	for {
 		select {
 		case ev, ok := <-events:
@@ -239,6 +240,9 @@ func (s *AntigravityGatewayService) handleGeminiStreamingResponse(c *gin.Context
 				queueBudget.release(len(ev.line))
 			}
 			if !ok {
+				if requestAccountFailoverEnabled(c) && !cw.Disconnected() && !sawTerminal {
+					return &antigravityStreamResult{usage: usage, firstTokenMs: firstTokenMs}, errUpstreamStreamMissingTerminal
+				}
 				return &antigravityStreamResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: cw.Disconnected()}, nil
 			}
 			if ev.err != nil {
@@ -250,8 +254,10 @@ func (s *AntigravityGatewayService) handleGeminiStreamingResponse(c *gin.Context
 					sendErrorEvent("response_too_large")
 					return &antigravityStreamResult{usage: usage, firstTokenMs: firstTokenMs}, ev.err
 				}
-				sendErrorEvent("stream_read_error")
-				return nil, ev.err
+				if !requestAccountFailoverEnabled(c) {
+					sendErrorEvent("stream_read_error")
+				}
+				return &antigravityStreamResult{usage: usage, firstTokenMs: firstTokenMs}, upstreamStreamReadError(ev.err)
 			}
 
 			lastDataAt = time.Now()
@@ -262,6 +268,9 @@ func (s *AntigravityGatewayService) handleGeminiStreamingResponse(c *gin.Context
 			if strings.HasPrefix(trimmed, "data:") {
 				payload := strings.TrimSpace(strings.TrimPrefix(trimmed, "data:"))
 				if payload == "" || payload == "[DONE]" {
+					if payload == "[DONE]" {
+						sawTerminal = true
+					}
 					cw.Fprintf("%s\n", line)
 					continue
 				}
@@ -278,6 +287,9 @@ func (s *AntigravityGatewayService) handleGeminiStreamingResponse(c *gin.Context
 				}
 				var parsed map[string]any
 				if json.Unmarshal(inner, &parsed) == nil {
+					if extractGeminiFinishReason(parsed) != "" {
+						sawTerminal = true
+					}
 					// Check for MALFORMED_FUNCTION_CALL
 					if candidates, ok := parsed["candidates"].([]any); ok && len(candidates) > 0 {
 						if cand, ok := candidates[0].(map[string]any); ok {
@@ -1115,6 +1127,9 @@ func (s *AntigravityGatewayService) handleClaudeStreamingResponse(c *gin.Context
 				queueBudget.release(len(ev.line))
 			}
 			if !ok {
+				if requestAccountFailoverEnabled(c) && !cw.Disconnected() && !processor.TerminalReceived() {
+					return &antigravityStreamResult{usage: finishUsage(), firstTokenMs: firstTokenMs}, errUpstreamStreamMissingTerminal
+				}
 				// 上游完成，发送结束事件
 				finalEvents, agUsage := processor.Finish()
 				if len(finalEvents) > 0 {
@@ -1141,7 +1156,7 @@ func (s *AntigravityGatewayService) handleClaudeStreamingResponse(c *gin.Context
 					return &antigravityStreamResult{usage: convertUsage(nil), firstTokenMs: firstTokenMs}, ev.err
 				}
 				sendErrorEvent("stream_read_error")
-				return nil, fmt.Errorf("stream read error: %w", ev.err)
+				return nil, upstreamStreamReadError(ev.err)
 			}
 
 			lastDataAt = time.Now()

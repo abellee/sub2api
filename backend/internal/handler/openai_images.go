@@ -333,9 +333,13 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 						)
 						return
 					}
+					if !failoverErr.ShouldRetryNextAccount() {
+						h.handleFailoverExhausted(c, failoverErr, c.Writer.Written())
+						return
+					}
 					if failoverErr.RetryableOnSameAccount {
 						retryLimit := effectiveSameAccountRetryLimit(failoverErr, account)
-						if sameAccountRetryAllowed(failoverErr, sameAccountRetryCount[account.ID], retryLimit) {
+						if sameAccountRetryAllowed(c.Request.Context(), failoverErr, sameAccountRetryCount[account.ID], retryLimit) {
 							sameAccountRetryCount[account.ID]++
 							markAccountErrorFailoverAction(c, "retry_same_account", account.ID)
 							retryDelay := sameAccountRetryDelayFor(failoverErr, sameAccountRetryCount[account.ID])

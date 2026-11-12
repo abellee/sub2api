@@ -618,7 +618,11 @@ func (s *OpenAIGatewayService) handleAnthropicBufferedStreamingResponse(
 	finalResponse, usage, acc, prior, err := s.readOpenAICompatBufferedTerminal(resp, c, account, "openai messages buffered", requestID)
 	if err != nil {
 		if retry := requestAccountStreamFailover(c, account, resp, err); retry != nil {
-			return nil, retry
+			return &OpenAIForwardResult{
+				RequestID: requestID, UpstreamHeaders: resp.Header, Usage: usage,
+				Model: originalModel, BillingModel: billingModel, UpstreamModel: upstreamModel,
+				Duration: time.Since(startTime),
+			}, retry
 		}
 		var readErr *openAICompatBufferedReadError
 		if errors.As(err, &readErr) && readErr != nil {
@@ -629,7 +633,11 @@ func (s *OpenAIGatewayService) handleAnthropicBufferedStreamingResponse(
 
 	if finalResponse == nil {
 		if retry := requestAccountStreamFailover(c, account, resp, errors.New("upstream stream ended without a terminal response")); retry != nil {
-			return nil, retry
+			return &OpenAIForwardResult{
+				RequestID: requestID, UpstreamHeaders: resp.Header, Usage: usage,
+				Model: originalModel, BillingModel: billingModel, UpstreamModel: upstreamModel,
+				Duration: time.Since(startTime),
+			}, retry
 		}
 		writeAnthropicError(c, http.StatusBadGateway, "api_error", "Upstream stream ended without a terminal response event")
 		return nil, fmt.Errorf("upstream stream ended without terminal event")
@@ -1266,14 +1274,14 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 	missingTerminalErr := func() (*OpenAIForwardResult, error) {
 		result := resultWithUsage()
 		if clientDisconnected {
-			return result, fmt.Errorf("stream usage incomplete: missing terminal event")
+			return result, errUpstreamStreamMissingTerminal
 		}
 		message := "OpenAI messages stream ended before a terminal event"
 		if !clientOutputStarted {
 			return result, s.newOpenAIStreamFailoverError(c, account, false, requestID, nil, message)
 		}
 		s.recordOpenAIMessagesStreamUpstreamError(c, account, requestID, "stream_missing_terminal", message)
-		return result, fmt.Errorf("stream usage incomplete: missing terminal event")
+		return result, errUpstreamStreamMissingTerminal
 	}
 	processFrame := func(frame openAICompatSSEFrame) bool {
 		payload := openAICompatPayloadWithEventType(frame.Data, frame.EventType)

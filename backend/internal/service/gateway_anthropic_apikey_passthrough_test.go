@@ -1156,6 +1156,36 @@ func TestGatewayService_AnthropicAPIKeyPassthrough_MissingTerminalEventReturnsEr
 	require.NotNil(t, result)
 }
 
+func TestGatewayService_AnthropicAPIKeyPassthrough_MissingTerminalEventRequestsFailover(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	ctx := withRequestAccountFailoverCount(context.Background(), 2)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil).WithContext(ctx)
+	upstream := &anthropicHTTPUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body: io.NopCloser(strings.NewReader(strings.Join([]string{
+			`data: {"type":"message_start","message":{"usage":{"input_tokens":11}}}`,
+			"",
+			`data: {"type":"message_delta","usage":{"output_tokens":5}}`,
+			"",
+		}, "\n"))),
+	}}
+	svc := &GatewayService{
+		cfg:          &config.Config{Gateway: config.GatewayConfig{MaxLineSize: defaultMaxLineSize}},
+		httpUpstream: upstream,
+	}
+
+	result, err := svc.forwardAnthropicAPIKeyPassthrough(ctx, c, newAnthropicAPIKeyAccountForTest(), []byte(`{"model":"claude-3-5-sonnet-latest","stream":true}`), "claude-3-5-sonnet-latest", "claude-3-5-sonnet-latest", true, time.Now())
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, http.StatusBadGateway, failoverErr.StatusCode)
+	require.True(t, failoverErr.SafeToFailoverAfterWrite)
+	require.NotNil(t, result)
+	require.Contains(t, rec.Body.String(), `"type":"message_delta"`)
+}
+
 func TestGatewayService_AnthropicAPIKeyPassthrough_ForwardDirect_NonStreamingSuccess(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()

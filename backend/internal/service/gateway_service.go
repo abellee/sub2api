@@ -700,6 +700,7 @@ type GatewayFailureReason string
 // trigger account failover. Additive metadata keeps existing composite literals
 // source-compatible and preserves their legacy retry-next-account behavior.
 type UpstreamFailoverError struct {
+	Cause                    error // Original stream failure; retained for diagnostics and errors.Is.
 	StatusCode               int
 	ResponseBody             []byte        // 上游响应体，用于错误透传规则匹配
 	ResponseHeaders          http.Header   // 上游响应头，用于透传 cf-ray/cf-mitigated/content-type 等诊断信息
@@ -720,7 +721,12 @@ type UpstreamFailoverError struct {
 	ClientMessage            string
 }
 
+func (e *UpstreamFailoverError) Unwrap() error { return e.Cause }
+
 func (e *UpstreamFailoverError) Error() string {
+	if e != nil && e.Cause != nil {
+		return e.Cause.Error()
+	}
 	if e != nil && e.Stage == GatewayFailureStageAccountAuth {
 		return fmt.Sprintf("credential failure: %s (failover)", e.Reason)
 	}

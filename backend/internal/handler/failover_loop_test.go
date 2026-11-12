@@ -70,20 +70,20 @@ func TestSameAccountRetryAllowedUsesDeadlineInsteadOfPoolCount(t *testing.T) {
 		RetryableOnSameAccount:   true,
 		SameAccountRetryDeadline: time.Now().Add(time.Minute),
 	}
-	require.True(t, sameAccountRetryAllowed(err, 100, 0))
-	require.True(t, sameAccountRetryAllowed(err, 100, maxSameAccountRetries))
+	require.True(t, sameAccountRetryAllowed(context.Background(), err, 100, 0))
+	require.True(t, sameAccountRetryAllowed(context.Background(), err, 100, maxSameAccountRetries))
 	err.SameAccountRetryDeadline = time.Now().Add(-time.Second)
-	require.False(t, sameAccountRetryAllowed(err, 0, 100))
+	require.False(t, sameAccountRetryAllowed(context.Background(), err, 0, 100))
 }
 
 func TestSameAccountRetryAllowedRequiresOptInAndDefaultsToCountLimit(t *testing.T) {
 	err := &service.UpstreamFailoverError{SameAccountRetryDeadline: time.Now().Add(time.Minute)}
-	require.False(t, sameAccountRetryAllowed(err, 0, maxSameAccountRetries))
+	require.False(t, sameAccountRetryAllowed(context.Background(), err, 0, maxSameAccountRetries))
 
 	err.RetryableOnSameAccount = true
 	err.SameAccountRetryDeadline = time.Time{}
-	require.True(t, sameAccountRetryAllowed(err, maxSameAccountRetries-1, maxSameAccountRetries))
-	require.False(t, sameAccountRetryAllowed(err, maxSameAccountRetries, maxSameAccountRetries))
+	require.True(t, sameAccountRetryAllowed(context.Background(), err, maxSameAccountRetries-1, maxSameAccountRetries))
+	require.False(t, sameAccountRetryAllowed(context.Background(), err, maxSameAccountRetries, maxSameAccountRetries))
 }
 
 func TestSameAccountRetryAllowedHonorsErrorMaxBeforeDeadline(t *testing.T) {
@@ -92,9 +92,9 @@ func TestSameAccountRetryAllowedHonorsErrorMaxBeforeDeadline(t *testing.T) {
 		SameAccountRetryDeadline: time.Now().Add(time.Minute),
 		SameAccountRetryMax:      1,
 	}
-	require.True(t, sameAccountRetryAllowed(err, 0, maxSameAccountRetries))
-	require.False(t, sameAccountRetryAllowed(err, 1, maxSameAccountRetries))
-	require.False(t, sameAccountRetryAllowed(err, 0, 0), "an explicit zero retry budget remains disabled")
+	require.True(t, sameAccountRetryAllowed(context.Background(), err, 0, maxSameAccountRetries))
+	require.False(t, sameAccountRetryAllowed(context.Background(), err, 1, maxSameAccountRetries))
+	require.False(t, sameAccountRetryAllowed(context.Background(), err, 0, 0), "an explicit zero retry budget remains disabled")
 }
 
 func TestSameAccountRetryDeadlineAllows(t *testing.T) {

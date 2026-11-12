@@ -14,9 +14,10 @@ import (
 )
 
 func markAccountErrorFailoverAction(c *gin.Context, action string, accountID int64) {
-	if c != nil && c.Request != nil {
-		service.MarkRequestAccountFailoverAction(c.Request.Context(), action, accountID)
+	if c == nil || c.Request == nil {
+		return
 	}
+	service.MarkRequestAccountFailoverAction(c.Request.Context(), action, accountID)
 }
 
 func logAccountErrorFailoverResult(c *gin.Context, status int) {
@@ -124,8 +125,8 @@ func sameAccountRetryDelayFor(failoverErr *service.UpstreamFailoverError, retryC
 	return delay
 }
 
-func sameAccountRetryAllowed(failoverErr *service.UpstreamFailoverError, retryCount, retryLimit int) bool {
-	if failoverErr == nil || !failoverErr.RetryableOnSameAccount {
+func sameAccountRetryAllowed(ctx context.Context, failoverErr *service.UpstreamFailoverError, retryCount, retryLimit int) bool {
+	if service.RequestAccountFailoverEnabled(ctx) || failoverErr == nil || !failoverErr.ShouldRetryNextAccount() || !failoverErr.RetryableOnSameAccount {
 		return false
 	}
 	if !sameAccountRetryDeadlineAllows(failoverErr) {
@@ -258,7 +259,9 @@ func (s *FailoverState) HandleFailoverError(
 
 	// 同账号重试不算切换账号，粘性会话仅在实际切换时强制缓存计费。
 	retryCount := s.SameAccountRetryCount[accountID]
-	sameAccountRetry := sameAccountRetryAllowed(failoverErr, retryCount, retryLimit)
+	// Group-level failover tries each eligible account once; pool-mode retries
+	// would repeat an account before moving to the next candidate.
+	sameAccountRetry := sameAccountRetryAllowed(ctx, failoverErr, retryCount, retryLimit)
 	if needForceCacheBilling(s.hasBoundSession, failoverErr, sameAccountRetry) {
 		s.ForceCacheBilling = true
 	}
@@ -306,7 +309,7 @@ func (s *FailoverState) HandleFailoverError(
 	)
 
 	// Antigravity 平台换号线性递增延时
-	if platform == service.PlatformAntigravity {
+	if !service.RequestAccountFailoverEnabled(ctx) && platform == service.PlatformAntigravity {
 		delay := time.Duration(s.SwitchCount-1) * time.Second
 		if !sleepWithContext(ctx, delay) {
 			return FailoverCanceled

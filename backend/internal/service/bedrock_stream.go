@@ -109,6 +109,7 @@ func (s *GatewayService) handleBedrockStreamingResponse(
 		intervalCh = intervalTicker.C
 	}
 
+	sawTerminal := false
 	for {
 		select {
 		case ev, ok := <-events:
@@ -116,6 +117,9 @@ func (s *GatewayService) handleBedrockStreamingResponse(
 				queueBudget.release(len(ev.payload))
 			}
 			if !ok {
+				if RequestAccountFailoverEnabled(ctx) && !sawTerminal && !clientDisconnected {
+					return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, errUpstreamStreamMissingTerminal
+				}
 				if !clientDisconnected {
 					flusher.Flush()
 				}
@@ -128,7 +132,7 @@ func (s *GatewayService) handleBedrockStreamingResponse(
 				if errors.Is(ev.err, context.Canceled) || errors.Is(ev.err, context.DeadlineExceeded) {
 					return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: true}, nil
 				}
-				return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, fmt.Errorf("bedrock stream read error: %w", ev.err)
+				return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, upstreamStreamReadError(ev.err)
 			}
 
 			// payload 是 JSON，提取 chunk.bytes（base64 编码的 Claude SSE 事件数据）
@@ -151,6 +155,9 @@ func (s *GatewayService) handleBedrockStreamingResponse(
 
 			// 确定 SSE event type
 			eventType := gjson.GetBytes(sseData, "type").String()
+			if anthropicStreamEventIsTerminal(eventType, string(sseData)) {
+				sawTerminal = true
+			}
 
 			// 写入标准 SSE 格式
 			if !clientDisconnected {

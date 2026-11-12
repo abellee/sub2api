@@ -409,7 +409,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			if openAIStreamClientOutputStarted(c, clientOutputStarted) && !clientDisconnected {
 				s.recordOpenAIProxyStreamDisconnect(account, errors.New("stream ended before terminal event"), upstreamRequestID)
 			}
-			return resultWithUsage(), fmt.Errorf("stream usage incomplete: missing terminal event")
+			return resultWithUsage(), errUpstreamStreamMissingTerminal
 		}
 		if sawFailedEvent {
 			return resultWithUsage(), fmt.Errorf("upstream response failed: %s", failedMessage)
@@ -481,9 +481,11 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			return resultWithUsage(), fmt.Errorf("stream usage incomplete after disconnect: %w", scanErr), true
 		}
 		s.recordOpenAIProxyStreamDisconnect(account, scanErr, upstreamRequestID)
-		code, message := classifyOpenAIUpstreamStreamReadError(scanErr)
-		sendErrorEvent(code, message)
-		return resultWithUsage(), fmt.Errorf("stream read error: %w", scanErr), true
+		if !RequestAccountFailoverEnabled(ctx) {
+			code, message := classifyOpenAIUpstreamStreamReadError(scanErr)
+			sendErrorEvent(code, message)
+		}
+		return resultWithUsage(), upstreamStreamReadError(scanErr), true
 	}
 	processSSELine := func(line string, queueDrained bool) {
 		if streamEarlyErr != nil {
@@ -976,7 +978,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			}
 			if retry := requestAccountStreamFailover(c, account, resp, errors.New("stream data interval timeout")); retry != nil {
 				_ = resp.Body.Close()
-				return nil, retry
+				return resultWithUsage(), retry
 			}
 			// Grok: short cool + account failover when no client-visible bytes
 			// were committed yet (pre-commit). After output started we keep the
@@ -1822,8 +1824,8 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 		finalResponse, ok = extractOpenAINonCompletedTerminalResponse(terminalType, terminalPayload)
 	}
 	if !ok {
-		if retry := requestAccountStreamFailover(c, account, resp, errors.New("upstream stream ended without a terminal response")); retry != nil {
-			return nil, retry
+		if retry := requestAccountStreamFailover(c, account, resp, errUpstreamStreamMissingTerminal); retry != nil {
+			return &openaiNonStreamingResult{usage: s.parseSSEUsageFromBody(bodyText)}, retry
 		}
 	}
 

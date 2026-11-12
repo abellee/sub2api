@@ -225,7 +225,7 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 		}
 
 		h.gatewayService.ReportOpenAIAccountScheduleResult(account, openAIAccountScheduleModel(c, account, requestedModel, false, result), false, nil, err)
-		if c.Writer.Size() != writerSizeBeforeForward {
+		if c.Writer.Size() != writerSizeBeforeForward && !failoverErr.SafeToFailoverAfterWrite {
 			h.handleFailoverExhausted(c, failoverErr, true)
 			return
 		}
@@ -236,9 +236,13 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 			)
 			return
 		}
+		if !failoverErr.ShouldRetryNextAccount() {
+			h.handleFailoverExhausted(c, failoverErr, c.Writer.Written())
+			return
+		}
 		if failoverErr.RetryableOnSameAccount {
 			retryLimit := account.GetPoolModeRetryCount()
-			if sameAccountRetryAllowed(failoverErr, sameAccountRetryCount[account.ID], retryLimit) {
+			if sameAccountRetryAllowed(c.Request.Context(), failoverErr, sameAccountRetryCount[account.ID], retryLimit) {
 				sameAccountRetryCount[account.ID]++
 				markAccountErrorFailoverAction(c, "retry_same_account", account.ID)
 				retryDelay := sameAccountRetryDelayFor(failoverErr, sameAccountRetryCount[account.ID])

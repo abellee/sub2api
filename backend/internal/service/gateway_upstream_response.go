@@ -680,14 +680,13 @@ func (u *ClaudeUsage) hasObservedTokens() bool {
 // input/cache token 就已计量，直接丢弃会让请求完全漏记漏计费（issue #5148）。
 // 无已观测 usage 时返回 nil。
 //
-// 不变式：UpstreamFailoverError 必须保持 result=nil——failover 重试成功后按成功请求
-// 计费，若同时返回部分 usage 会造成双重计费，此处显式拦截兜底。
+// 多账号切换按尝试分别记账；未开启时保留原有 failover 规则。
 func partialStreamUsageResult(c *gin.Context, resp *http.Response, streamResult *streamingResult, model, upstreamModel string, startTime time.Time, err error) *ForwardResult {
 	if streamResult == nil || !streamResult.usage.hasObservedTokens() {
 		return nil
 	}
 	var failoverErr *UpstreamFailoverError
-	if errors.As(err, &failoverErr) {
+	if errors.As(err, &failoverErr) && !requestAccountFailoverEnabled(c) {
 		return nil
 	}
 	return &ForwardResult{
@@ -1035,7 +1034,7 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 			if !ok {
 				// 上游完成，返回结果
 				if !sawTerminalEvent {
-					return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: clientDisconnected}, fmt.Errorf("stream usage incomplete: missing terminal event")
+					return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: clientDisconnected}, errUpstreamStreamMissingTerminal
 				}
 				return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: clientDisconnected}, nil
 			}
@@ -1054,7 +1053,7 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 				// 客户端未断开，正常的错误处理
 				if errors.Is(ev.err, bufio.ErrTooLong) {
 					if retry := requestAccountStreamFailover(c, account, resp, ev.err); retry != nil {
-						return nil, retry
+						return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, retry
 					}
 					logger.LegacyPrintf("service.gateway", "SSE line too long: account=%d max_size=%d error=%v", account.ID, maxLineSize, ev.err)
 					sendErrorEvent("response_too_large", fmt.Sprintf("upstream SSE line exceeded %d bytes", maxLineSize))
@@ -1082,8 +1081,10 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 						RetryableOnSameAccount: true,
 					}
 				}
-				sendErrorEvent("stream_read_error", disconnectMsg)
-				return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, fmt.Errorf("stream read error: %w", ev.err)
+				if !RequestAccountFailoverEnabled(ctx) {
+					sendErrorEvent("stream_read_error", disconnectMsg)
+				}
+				return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, upstreamStreamReadError(ev.err)
 			}
 			line := ev.line
 			trimmed := strings.TrimSpace(line)
@@ -1144,7 +1145,7 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 			logger.LegacyPrintf("service.gateway", "Stream data interval timeout: account=%d model=%s interval=%s", account.ID, originalModel, streamInterval)
 			if retry := requestAccountStreamFailover(c, account, resp, errors.New("stream data interval timeout")); retry != nil {
 				_ = resp.Body.Close()
-				return nil, retry
+				return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, retry
 			}
 			// 处理流超时，可能标记账户为临时不可调度或错误状态
 			if s.rateLimitService != nil {

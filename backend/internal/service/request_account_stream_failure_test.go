@@ -175,7 +175,7 @@ func TestAccountStreamFailuresRetryBeforeOutput(t *testing.T) {
 					}
 					return nil, err
 				})
-				require.Equal(t, 3, calls)
+				require.Equal(t, 1, calls)
 				var retry *UpstreamFailoverError
 				require.ErrorAs(t, err, &retry)
 				require.True(t, retry.SkipAccountCooldown)
@@ -186,7 +186,7 @@ func TestAccountStreamFailuresRetryBeforeOutput(t *testing.T) {
 	}
 }
 
-func TestAccountStreamBufferedPartialUsageCanRecover(t *testing.T) {
+func TestAccountStreamBufferedPartialUsageReturnsForNextAccount(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	for name, handle := range accountRetryStreamHandlers() {
 		if !strings.Contains(name, "buffered") || strings.HasPrefix(name, "openai") {
@@ -214,8 +214,9 @@ func TestAccountStreamBufferedPartialUsageCanRecover(t *testing.T) {
 				}
 				return nil, err
 			})
-			require.NoError(t, err)
-			require.Equal(t, 3, calls)
+			var retry *UpstreamFailoverError
+			require.ErrorAs(t, err, &retry)
+			require.Equal(t, 1, calls)
 			require.NotContains(t, rec.Body.String(), `"error"`)
 		})
 	}
@@ -276,7 +277,7 @@ func TestAccountStreamIdleRetriesBeforeOutput(t *testing.T) {
 			var retry *UpstreamFailoverError
 			require.ErrorAs(t, err, &retry)
 			require.Equal(t, http.StatusGatewayTimeout, retry.StatusCode)
-			require.Equal(t, 3, calls)
+			require.Equal(t, 1, calls)
 			require.False(t, c.Writer.Written())
 		})
 	}
@@ -310,4 +311,20 @@ func TestAccountStreamRawUpstreamTimeoutAfterOutputIsFailure(t *testing.T) {
 	require.Error(t, err)
 	require.Equal(t, 1, calls)
 	require.True(t, c.Writer.Written())
+}
+
+func TestAccountStreamPartialUsageSurvivesFailover(t *testing.T) {
+	ctx := withRequestAccountFailoverCount(context.Background(), 2)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil).WithContext(ctx)
+	_, _ = c.Writer.WriteString("data: partial answer\n\n")
+	result := &ForwardResult{Usage: ClaudeUsage{InputTokens: 23}}
+	original := result
+	err := error(errUpstreamStreamMissingTerminal)
+	finishRequestAccountStream(c, nil, nil, &result, &err)
+	var failure *UpstreamFailoverError
+	require.ErrorAs(t, err, &failure)
+	require.True(t, failure.SafeToFailoverAfterWrite)
+	require.Same(t, original, result)
+	require.Equal(t, 23, result.Usage.InputTokens)
 }

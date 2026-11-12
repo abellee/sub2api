@@ -482,7 +482,11 @@ func (s *GatewayService) handleResponsesBufferedStreamingResponse(
 	if failure := streamStatus.failure(); failure != nil {
 		_ = resp.Body.Close()
 		if retry := requestAccountStreamFailover(c, nil, resp, failure.err); retry != nil {
-			return nil, retry
+			return &ForwardResult{
+				RequestID: requestID, UpstreamHeaders: resp.Header, Usage: usage,
+				Model: originalModel, UpstreamModel: mappedModel, ReasoningEffort: reasoningEffort,
+				Duration: time.Since(startTime),
+			}, retry
 		}
 		writeResponsesError(c, http.StatusBadGateway, "server_error", failure.message)
 		return &ForwardResult{
@@ -494,7 +498,11 @@ func (s *GatewayService) handleResponsesBufferedStreamingResponse(
 
 	if finalResp == nil {
 		if retry := requestAccountStreamFailover(c, nil, resp, errors.New("upstream stream ended without response")); retry != nil {
-			return nil, retry
+			return &ForwardResult{
+				RequestID: requestID, UpstreamHeaders: resp.Header, Usage: usage,
+				Model: originalModel, UpstreamModel: mappedModel, ReasoningEffort: reasoningEffort,
+				Duration: time.Since(startTime),
+			}, retry
 		}
 		writeResponsesError(c, http.StatusBadGateway, "server_error", "Upstream stream ended without a response")
 		return nil, fmt.Errorf("upstream stream ended without response")

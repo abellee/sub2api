@@ -573,7 +573,7 @@ func TestResponsesGrok429FailoverIsBounded(t *testing.T) {
 
 		require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
 		require.Contains(t, recorder.Body.String(), "resp_healthy")
-		require.Equal(t, []int64{801, 801, 801, 802}, upstream.accountHits())
+		require.Equal(t, []int64{801, 802}, upstream.accountHits())
 		require.Empty(t, repo.rateLimitedAccountIDs())
 	})
 
@@ -587,7 +587,7 @@ func TestResponsesGrok429FailoverIsBounded(t *testing.T) {
 		router.ServeHTTP(recorder, req)
 
 		require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
-		require.Equal(t, []int64{801, 801, 801, 802, 802, 802, 803}, upstream.accountHits())
+		require.Equal(t, []int64{801, 802, 803}, upstream.accountHits())
 		require.Empty(t, repo.rateLimitedAccountIDs())
 		require.NotContains(t, recorder.Body.String(), "expired")
 		require.NotContains(t, recorder.Body.String(), "healthy-access")
@@ -607,7 +607,7 @@ func TestResponsesGrok402FailoverWithoutCooldown(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
 	require.Contains(t, recorder.Body.String(), "resp_healthy")
-	require.Equal(t, []int64{801, 801, 801, 802}, upstream.accountHits())
+	require.Equal(t, []int64{801, 802}, upstream.accountHits())
 	require.Empty(t, repo.setTempIDs)
 	before := repo.selectorCalls()
 
@@ -618,7 +618,7 @@ func TestResponsesGrok402FailoverWithoutCooldown(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, second.Code, second.Body.String())
 	require.Equal(t, before+3, repo.selectorCalls())
-	require.Equal(t, []int64{801, 801, 801, 802, 801, 801, 801, 802}, upstream.accountHits(), "later requests may select the failed account again")
+	require.Equal(t, []int64{801, 802, 801, 802}, upstream.accountHits(), "later requests may select the failed account again")
 }
 
 func TestResponsesGrok429FailoverHandlesMixedStatuses(t *testing.T) {
@@ -634,7 +634,7 @@ func TestResponsesGrok429FailoverHandlesMixedStatuses(t *testing.T) {
 		router.ServeHTTP(recorder, req)
 
 		require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
-		require.Equal(t, []int64{801, 801, 801, 802, 802, 802, 803}, upstream.accountHits())
+		require.Equal(t, []int64{801, 802, 803}, upstream.accountHits())
 		require.NotContains(t, recorder.Body.String(), "upstream unavailable")
 	})
 
@@ -648,7 +648,7 @@ func TestResponsesGrok429FailoverHandlesMixedStatuses(t *testing.T) {
 		router.ServeHTTP(recorder, req)
 
 		require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
-		require.Equal(t, []int64{801, 801, 801, 802, 802, 802, 803}, upstream.accountHits())
+		require.Equal(t, []int64{801, 802, 803}, upstream.accountHits())
 	})
 
 	t.Run("OAuth 429 then API-key failure continues to the healthy account", func(t *testing.T) {
@@ -661,7 +661,7 @@ func TestResponsesGrok429FailoverHandlesMixedStatuses(t *testing.T) {
 		router.ServeHTTP(recorder, req)
 
 		require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
-		require.Equal(t, []int64{801, 801, 801, 802, 802, 802, 803}, upstream.accountHits())
+		require.Equal(t, []int64{801, 802, 803}, upstream.accountHits())
 	})
 }
 
@@ -678,10 +678,10 @@ func TestGrokMedia429FailoverIsBounded(t *testing.T) {
 		router.ServeHTTP(recorder, req)
 
 		require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
-		require.Equal(t, []int64{801, 801, 801, 802}, upstream.accountHits())
+		require.Equal(t, []int64{801, 802}, upstream.accountHits())
 	})
 
-	t.Run("second 429 retries then reaches the healthy third account", func(t *testing.T) {
+	t.Run("second 429 switches directly to the healthy third account", func(t *testing.T) {
 		_, _, upstream, router, cleanup := newGrokCredentialFailoverHandler(t, "all_429")
 		defer cleanup()
 		recorder := httptest.NewRecorder()
@@ -691,7 +691,7 @@ func TestGrokMedia429FailoverIsBounded(t *testing.T) {
 		router.ServeHTTP(recorder, req)
 
 		require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
-		require.Equal(t, []int64{801, 801, 801, 802, 802, 802, 803}, upstream.accountHits())
+		require.Equal(t, []int64{801, 802, 803}, upstream.accountHits())
 		require.NotContains(t, recorder.Body.String(), "rate limited")
 	})
 }

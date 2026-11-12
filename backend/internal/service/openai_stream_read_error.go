@@ -33,7 +33,7 @@ func (e *openAIUpstreamStreamReadError) Error() string {
 	return fmt.Sprintf("stream usage incomplete: %v", e.cause)
 }
 
-func (e *openAIUpstreamStreamReadError) Unwrap() error { return e.cause }
+func (e *openAIUpstreamStreamReadError) Unwrap() error { return &upstreamStreamError{cause: e.cause} }
 
 func newOpenAIUpstreamStreamReadError(err error) error {
 	code, message := classifyOpenAIUpstreamStreamReadError(err)

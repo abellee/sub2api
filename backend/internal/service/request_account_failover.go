@@ -169,44 +169,39 @@ func (s *OpenAIGatewayService) PrepareRequestAccountFailover(ctx context.Context
 	return withRequestAccountFailoverCount(ctx, count)
 }
 
-// ForwardWithAccountRetries holds the selected account/slot for the original
-// attempt and two retries. A partial result or response is never replayed.
+// ForwardWithAccountRetries leaves retries to the handler's account-selection
+// loop so an enabled failover request advances to the next account immediately.
 func ForwardWithAccountRetries[T any](ctx context.Context, c *gin.Context, forward func() (*T, error)) (*T, error) {
 	if !RequestAccountFailoverEnabled(ctx) {
 		return forward()
 	}
-	for retry := 0; ; retry++ {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		compactSize := OpenAICompactKeepaliveAdjustedWrittenSize(c)
-		imageSize := OpenAIImagesJSONKeepaliveAdjustedWrittenSize(c)
-		result, err := forward()
-		var failure *UpstreamFailoverError
-		if result != nil || !errors.As(err, &failure) || !failure.ShouldRetryNextAccount() {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	result, err := forward()
+	if ctx.Err() != nil {
+		return result, ctx.Err()
+	}
+	switch partial := any(result).(type) {
+	case *ForwardResult:
+		if partial != nil && partial.ClientDisconnect {
 			return result, err
 		}
-		if OpenAICompactKeepaliveAdjustedWrittenSize(c) != compactSize && OpenAIImagesJSONKeepaliveAdjustedWrittenSize(c) != imageSize {
+	case *OpenAIForwardResult:
+		if partial != nil && partial.ClientDisconnect {
 			return result, err
-		}
-		if retry == 2 {
-			// The outer loop only switches accounts; it must not start another
-			// retry budget or persist a cooldown after these three attempts.
-			copy := *failure
-			copy.RetryableOnSameAccount = false
-			copy.SameAccountRetryDeadline = time.Time{}
-			copy.SkipAccountCooldown = true
-			return result, &copy
-		}
-		MarkRequestAccountFailoverAction(ctx, "retry_same_account", 0)
-		timer := time.NewTimer(500 * time.Millisecond)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return nil, ctx.Err()
-		case <-timer.C:
 		}
 	}
+	err = requestAccountFailoverError(ctx, err)
+	var failure *UpstreamFailoverError
+	if RequestAccountFailoverEnabled(ctx) && errors.As(err, &failure) && failure.ShouldRetryNextAccount() {
+		copy := *failure
+		copy.RetryableOnSameAccount = false
+		copy.SameAccountRetryDeadline = time.Time{}
+		copy.SkipAccountCooldown = true
+		err = &copy
+	}
+	return result, err
 }
 
 // Credential errors remain local to the request; never expose token-provider details.
@@ -230,4 +225,8 @@ func requestAccountCredentialError(ctx context.Context, err error) error {
 		ClientStatusCode:  http.StatusServiceUnavailable,
 		ClientMessage:     "No healthy account credentials are currently available",
 	}
+}
+
+func requestAccountFailoverEnabled(c *gin.Context) bool {
+	return c != nil && c.Request != nil && RequestAccountFailoverEnabled(c.Request.Context())
 }

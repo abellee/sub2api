@@ -350,6 +350,9 @@ func (s *AntigravityGatewayService) handleAntigravityCompatStreamWithKeepaliveIn
 				if !session.hasMeaningfulData() && !writer.Disconnected() {
 					return handleAntigravityCompatEmptyStream(c, session)
 				}
+				if requestAccountFailoverEnabled(c) && !session.writer.Disconnected() && !session.processor.TerminalReceived() {
+					return session.collectResult(false), errUpstreamStreamMissingTerminal
+				}
 				return session.finish()
 			}
 			if event.err != nil {
@@ -487,10 +490,13 @@ func (s *AntigravityGatewayService) handleAntigravityCompatReadError(
 	maxLineSize int,
 	prefix string,
 ) (*antigravityStreamResult, error) {
+	if requestAccountFailoverEnabled(c) && !session.writer.Disconnected() && !errors.Is(err, bufio.ErrTooLong) {
+		return session.collectResult(false), upstreamStreamReadError(err)
+	}
 	if !session.hasMeaningfulData() && !session.writer.Disconnected() {
 		if session.preContentKeepaliveSent {
 			writeAntigravityCompatStreamError(c, session.adapter, session.writer, "stream_read_error")
-			return session.collectResult(false), fmt.Errorf("stream read error: %w", err)
+			return session.collectResult(false), upstreamStreamReadError(err)
 		}
 		return nil, antigravityCompatEmptyStreamError()
 	}
@@ -503,7 +509,7 @@ func (s *AntigravityGatewayService) handleAntigravityCompatReadError(
 		return session.result(false), err
 	}
 	writeAntigravityCompatStreamError(c, session.adapter, session.writer, "stream_read_error")
-	return nil, fmt.Errorf("stream read error: %w", err)
+	return nil, upstreamStreamReadError(err)
 }
 
 func writeAntigravityCompatStreamError(

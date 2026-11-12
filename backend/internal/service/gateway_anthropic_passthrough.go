@@ -25,6 +25,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+var errAnthropicStreamMissingTerminalEvent = errUpstreamStreamMissingTerminal
+
 type anthropicPassthroughForwardInput struct {
 	Body          []byte
 	Parsed        *ParsedRequest
@@ -256,12 +258,11 @@ func (s *GatewayService) forwardAnthropicAPIKeyPassthroughWithInput(
 	if input.RequestStream {
 		streamResult, err := s.handleStreamingResponseAnthropicAPIKeyPassthrough(ctx, resp, c, account, input.StartTime, input.RequestModel)
 		if err != nil {
-			// 流中断时保留已观测到的 usage 与错误一起返回，避免上游已计量的请求
-			// 完全漏记漏计费（issue #5148）。
-			if partial := partialStreamUsageResult(c, resp, streamResult, input.OriginalModel, input.RequestModel, input.StartTime, err); partial != nil {
-				return partial, err
+			partial := partialStreamUsageResult(c, resp, streamResult, input.OriginalModel, input.RequestModel, input.StartTime, err)
+			if streamResult == nil || !streamResult.clientDisconnect {
+				err = requestAccountFailoverError(ctx, err)
 			}
-			return nil, err
+			return partial, err
 		}
 		usage = streamResult.usage
 		firstTokenMs = streamResult.firstTokenMs
@@ -511,8 +512,8 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 			}
 			if !ok {
 				if !sawTerminalEvent && !clientDisconnected {
-					if retry := requestAccountStreamFailover(c, account, resp, errors.New("upstream stream ended without a terminal event")); retry != nil {
-						return nil, retry
+					if retry := requestAccountStreamFailover(c, account, resp, errUpstreamStreamMissingTerminal); retry != nil {
+						return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: clientDisconnected}, retry
 					}
 				}
 				if !clientDisconnected {
@@ -526,7 +527,7 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 							return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: true}, fmt.Errorf("stream usage incomplete after timeout")
 						}
 					}
-					return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: clientDisconnected}, fmt.Errorf("stream usage incomplete: missing terminal event")
+					return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: clientDisconnected}, errUpstreamStreamMissingTerminal
 				}
 				return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: clientDisconnected}, nil
 			}
@@ -544,7 +545,7 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 					logger.LegacyPrintf("service.gateway", "[Anthropic passthrough] SSE line too long: account=%d max_size=%d error=%v", account.ID, maxLineSize, ev.err)
 					return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, ev.err
 				}
-				return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, fmt.Errorf("stream read error: %w", ev.err)
+				return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, upstreamStreamReadError(ev.err)
 			}
 
 			line := ev.line

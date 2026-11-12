@@ -682,14 +682,22 @@ func (s *OpenAIGatewayService) handleChatBufferedStreamingResponse(
 	finalResponse, usage, acc, priorModels, err := s.readOpenAICompatBufferedTerminal(resp, c, account, "openai chat_completions buffered", requestID)
 	if err != nil {
 		if retry := requestAccountStreamFailover(c, account, resp, err); retry != nil {
-			return nil, retry
+			return &OpenAIForwardResult{
+				RequestID: requestID, UpstreamHeaders: resp.Header, Usage: usage,
+				Model: originalModel, BillingModel: billingModel, UpstreamModel: upstreamModel,
+				Duration: time.Since(startTime),
+			}, retry
 		}
 		return nil, s.newOpenAICompatBufferedReadFailoverError(c, account, resp, requestID, err)
 	}
 
 	if finalResponse == nil {
 		if retry := requestAccountStreamFailover(c, account, resp, errors.New("upstream stream ended without a terminal response")); retry != nil {
-			return nil, retry
+			return &OpenAIForwardResult{
+				RequestID: requestID, UpstreamHeaders: resp.Header, Usage: usage,
+				Model: originalModel, BillingModel: billingModel, UpstreamModel: upstreamModel,
+				Duration: time.Since(startTime),
+			}, retry
 		}
 		writeChatCompletionsError(c, http.StatusBadGateway, "api_error", "Upstream stream ended without a terminal response event")
 		return nil, fmt.Errorf("upstream stream ended without terminal event")
@@ -1162,7 +1170,7 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 		}
 	}
 	missingTerminalErr := func() (*OpenAIForwardResult, error) {
-		return resultWithUsage(), fmt.Errorf("stream usage incomplete: missing terminal event")
+		return resultWithUsage(), errUpstreamStreamMissingTerminal
 	}
 	processFrame := func(frame openAICompatSSEFrame) bool {
 		payload := openAICompatPayloadWithEventType(frame.Data, frame.EventType)

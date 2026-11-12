@@ -188,7 +188,7 @@ func (st *anthropicCompatStream) failure() *anthropicCompatStreamFailure {
 		}
 	case errors.Is(st.readErr, errAnthropicNativeStreamIdle):
 		return &anthropicCompatStreamFailure{
-			err:     errAnthropicNativeStreamIdle,
+			err:     upstreamStreamReadError(errAnthropicNativeStreamIdle),
 			errType: "stream_timeout",
 			message: fmt.Sprintf("upstream stream idle for %s", st.pump.interval),
 		}
@@ -200,13 +200,13 @@ func (st *anthropicCompatStream) failure() *anthropicCompatStreamFailure {
 		}
 	case st.readErr != nil && !errors.Is(st.readErr, io.EOF):
 		return &anthropicCompatStreamFailure{
-			err:     fmt.Errorf("stream usage incomplete: %w", st.readErr),
+			err:     upstreamStreamReadError(st.readErr),
 			errType: "stream_read_error",
 			message: "upstream stream disconnected: " + sanitizeStreamError(st.readErr),
 		}
 	case st.sawMessageStart || st.requireTerminal:
 		return &anthropicCompatStreamFailure{
-			err:     errors.New("stream usage incomplete: missing terminal event"),
+			err:     errUpstreamStreamMissingTerminal,
 			errType: "stream_incomplete",
 			message: "upstream stream ended without a terminal event",
 		}
@@ -222,7 +222,7 @@ func (st *anthropicCompatStream) failure() *anthropicCompatStreamFailure {
 // usage 时结果为 nil。
 func finishAnthropicCompatStreamFailure(c *gin.Context, writerSizeBeforeStream int, failure *anthropicCompatStreamFailure, result *ForwardResult, writeFailure func()) (*ForwardResult, error) {
 	if retry := requestAccountStreamFailover(c, nil, &http.Response{Header: result.UpstreamHeaders}, failure.err); retry != nil {
-		return nil, retry
+		return result, retry
 	}
 	var sseErr *sseStreamErrorEventError
 	if errors.As(failure.err, &sseErr) {
@@ -230,6 +230,16 @@ func finishAnthropicCompatStreamFailure(c *gin.Context, writerSizeBeforeStream i
 			writeFailure()
 		}
 		return nil, failure.err
+	}
+	ctx := context.Background()
+	if c != nil && c.Request != nil {
+		ctx = c.Request.Context()
+	}
+	if retryErr, ok := requestAccountFailoverError(ctx, failure.err).(*UpstreamFailoverError); ok {
+		if !result.Usage.hasObservedTokens() {
+			return nil, retryErr
+		}
+		return result, retryErr
 	}
 	writeFailure()
 	if !result.Usage.hasObservedTokens() {

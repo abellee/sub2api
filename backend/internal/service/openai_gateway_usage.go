@@ -346,6 +346,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 			requestID = upstreamRequestID
 		}
 	}
+	requestID = accountAttemptUsageBillingRequestID(ctx, requestID, account.ID)
 	// Async Grok video: always use the stable task id for dedup (status + content polls
 	// share one bill). Context-local client/local IDs would otherwise create a new row
 	// per poll if Redis claim is lost.

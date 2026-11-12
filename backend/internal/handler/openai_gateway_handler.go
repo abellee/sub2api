@@ -847,7 +847,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			service.SetOpsLatencyMs(c, service.OpsTimeToFirstTokenMsKey, int64(*result.FirstTokenMs))
 		}
 		// #5148 对齐：错误返回携带的部分 result（流中断前上游已计量的 usage）照常
-		// 入账；failover 错误恒定 result=nil，不会重复计费。
+		// 入账；切号前单独提交已观测用量，每次尝试只提交一次。
 		submitResponsesUsage := func(res *service.OpenAIForwardResult) {
 			if res == nil {
 				return
@@ -861,7 +861,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
 			sessionID := service.ExtractClientSessionID(c)
 			cyberBlocked := service.GetOpsCyberPolicy(c) != nil
-			channelUsageFields := clientRequestedUsageFields(c, channelMapping, reqModel, res.UpstreamModel)
+			usageFields := clientRequestedUsageFields(c, channelMapping, reqModel, res.UpstreamModel)
 			h.submitOpenAIUsageRecordTask(c.Request.Context(), res, func(ctx context.Context) {
 				if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
 					Result:             res,
@@ -877,7 +877,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					APIKeyService:      h.apiKeyService,
 					QuotaPlatform:      quotaPlatform,
 					SessionID:          sessionID,
-					ChannelUsageFields: channelUsageFields,
+					ChannelUsageFields: usageFields,
 					PricingAt:          pricingAt,
 					CyberBlocked:       cyberBlocked,
 					NativeCompactionV2: nativeV2,
@@ -919,6 +919,12 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			} else {
 				var failoverErr *service.UpstreamFailoverError
 				if errors.As(err, &failoverErr) {
+					if failoverErr.SafeToFailoverAfterWrite && c.Writer.Written() {
+						streamStarted = true
+					}
+					if result.HasObservedUsage() {
+						submitResponsesUsage(result)
+					}
 					if failoverClientGone(c) {
 						reqLog.Info("openai.failover_aborted_client_disconnected",
 							zap.Int64("account_id", account.ID),
@@ -950,7 +956,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					// 池模式：同账号重试
 					if failoverErr.RetryableOnSameAccount {
 						retryLimit := effectiveSameAccountRetryLimit(failoverErr, account)
-						if sameAccountRetryAllowed(failoverErr, sameAccountRetryCount[account.ID], retryLimit) {
+						if sameAccountRetryAllowed(c.Request.Context(), failoverErr, sameAccountRetryCount[account.ID], retryLimit) {
 							sameAccountRetryCount[account.ID]++
 							markAccountErrorFailoverAction(c, "retry_same_account", account.ID)
 							retryDelay := sameAccountRetryDelayFor(failoverErr, sameAccountRetryCount[account.ID])
@@ -1447,7 +1453,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		}
 		// Forward 与错误一起返回的部分结果：流中断/客户端断开排水前上游已计量的
 		// usage 照常入账，避免上游已产生消耗的请求完全漏记（#5148，对齐 anthropic
-		// 网关同名修复）。failover 错误恒定 result=nil，不会重复计费。
+		// 网关同名修复）。切号前单独提交已观测用量，每次尝试只提交一次。
 		submitMessagesUsage := func(res *service.OpenAIForwardResult) {
 			if res == nil {
 				return
@@ -1461,7 +1467,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
 			sessionID := service.ExtractClientSessionID(c)
 			cyberBlocked := service.GetOpsCyberPolicy(c) != nil
-			channelUsageFields := clientRequestedUsageFields(c, channelMappingMsg, reqModel, res.UpstreamModel)
+			usageFields := clientRequestedUsageFields(c, channelMappingMsg, reqModel, res.UpstreamModel)
 			h.submitOpenAIUsageRecordTask(c.Request.Context(), res, func(ctx context.Context) {
 				if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
 					Result:             res,
@@ -1477,7 +1483,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 					APIKeyService:      h.apiKeyService,
 					QuotaPlatform:      quotaPlatform,
 					SessionID:          sessionID,
-					ChannelUsageFields: channelUsageFields,
+					ChannelUsageFields: usageFields,
 					PricingAt:          pricingAt,
 					CyberBlocked:       cyberBlocked,
 				}); err != nil {
@@ -1502,6 +1508,12 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			} else {
 				var failoverErr *service.UpstreamFailoverError
 				if errors.As(err, &failoverErr) {
+					if failoverErr.SafeToFailoverAfterWrite && c.Writer.Written() {
+						streamStarted = true
+					}
+					if result.HasObservedUsage() {
+						submitMessagesUsage(result)
+					}
 					if failoverClientGone(c) {
 						reqLog.Info("openai_messages.failover_aborted_client_disconnected",
 							zap.Int64("account_id", account.ID),
@@ -1509,7 +1521,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 						)
 						return
 					}
-					if c.Writer.Size() != writerSizeBeforeForward {
+					if c.Writer.Size() != writerSizeBeforeForward && !failoverErr.SafeToFailoverAfterWrite {
 						h.gatewayService.ObserveOpenAIAccountHealthFailure(c.Request.Context(), account, err)
 						h.handleAnthropicFailoverExhausted(c, failoverErr, true)
 						return
@@ -1524,7 +1536,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 					// 池模式：同账号重试
 					if failoverErr.RetryableOnSameAccount {
 						retryLimit := effectiveSameAccountRetryLimit(failoverErr, account)
-						if sameAccountRetryAllowed(failoverErr, sameAccountRetryCount[account.ID], retryLimit) {
+						if sameAccountRetryAllowed(c.Request.Context(), failoverErr, sameAccountRetryCount[account.ID], retryLimit) {
 							sameAccountRetryCount[account.ID]++
 							markAccountErrorFailoverAction(c, "retry_same_account", account.ID)
 							retryDelay := sameAccountRetryDelayFor(failoverErr, sameAccountRetryCount[account.ID])
@@ -2806,25 +2818,16 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		if account == nil || failoverErr == nil || !failoverErr.ShouldRetryNextAccount() {
 			return false
 		}
-		if service.RequestAccountFailoverEnabled(ctx) {
-			if sameAccountRetryCount[account.ID] >= 2 {
-				return false
-			}
-		} else {
-			if failoverErr.StatusCode != http.StatusTooManyRequests || failoverErr.SameAccountRetryDeadline.IsZero() {
-				return false
-			}
-			retryLimit := effectiveSameAccountRetryLimit(failoverErr, account)
-			if !sameAccountRetryAllowed(failoverErr, sameAccountRetryCount[account.ID], retryLimit) {
-				return false
-			}
+		if service.RequestAccountFailoverEnabled(ctx) || failoverErr.StatusCode != http.StatusTooManyRequests || failoverErr.SameAccountRetryDeadline.IsZero() {
+			return false
+		}
+		retryLimit := effectiveSameAccountRetryLimit(failoverErr, account)
+		if !sameAccountRetryAllowed(ctx, failoverErr, sameAccountRetryCount[account.ID], retryLimit) {
+			return false
 		}
 		sameAccountRetryCount[account.ID]++
 		markAccountErrorFailoverAction(c, "retry_same_account", account.ID)
 		retryDelay := sameAccountRetryDelayFor(failoverErr, sameAccountRetryCount[account.ID])
-		if service.RequestAccountFailoverEnabled(ctx) {
-			retryDelay = sameAccountRetryDelay
-		}
 		reqLog.Warn("openai.websocket.same_account_retry",
 			zap.Int64("account_id", account.ID),
 			zap.Int("upstream_status", failoverErr.StatusCode),

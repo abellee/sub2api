@@ -186,6 +186,9 @@ func (p *StreamingProcessor) MessageStartSent() bool {
 	return p.messageStartSent
 }
 
+// TerminalReceived reports completion before Finish synthesizes closing events.
+func (p *StreamingProcessor) TerminalReceived() bool { return p.messageStopSent }
+
 // HasContent reports whether any substantive text, thinking, or tool calls were emitted.
 func (p *StreamingProcessor) HasContent() bool {
 	return p.hasContent

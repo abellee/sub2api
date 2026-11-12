@@ -353,6 +353,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	rejectedFieldRetryState := openAIResponsesRejectedFieldRetryStateForRequest(c, body)
 	var resp *http.Response
 	var usage *OpenAIUsage
+	var forwardErr error
 	var firstTokenMs *int
 	responseID := ""
 	imageCount := 0
@@ -465,7 +466,10 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 					return nil, s.handleErrorResponsePassthrough(ctx, compactResp, c, account, body, compactBody)
 				}
 				_ = resp.Body.Close()
-				return nil, handleErr
+				if !RequestAccountFailoverEnabled(ctx) || result == nil || result.usage == nil {
+					return nil, handleErr
+				}
+				forwardErr = handleErr
 			}
 			usage = result.usage
 			firstTokenMs = result.firstTokenMs
@@ -492,7 +496,10 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 					return nil, s.handleErrorResponsePassthrough(ctx, compactResp, c, account, body, compactBody)
 				}
 				_ = resp.Body.Close()
-				return nil, handleErr
+				if !RequestAccountFailoverEnabled(ctx) || result == nil || result.usage == nil {
+					return nil, handleErr
+				}
+				forwardErr = handleErr
 			}
 			usage = result.usage
 			responseID = strings.TrimSpace(result.responseID)
@@ -503,7 +510,9 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	}
 	defer func() { _ = resp.Body.Close() }()
 	serviceTier := extractOpenAIServiceTierFromBody(body)
-	s.bindHTTPResponseAccount(ctx, c, account, responseID)
+	if forwardErr == nil {
+		s.bindHTTPResponseAccount(ctx, c, account, responseID)
+	}
 
 	// 排除 spark 影子:其 codex_* 仅由 QueryUsage(/wham/usage bengalfox)更新(外审第7轮 P1)。
 	if !account.IsShadow() {
@@ -542,7 +551,10 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		forwardResult.ImageOutputSizes = imageOutputSizes
 		forwardResult.BillingModel = imageBillingModel
 	}
-	return forwardResult, nil
+	if forwardErr != nil && !forwardResult.HasObservedUsage() {
+		return nil, forwardErr
+	}
+	return forwardResult, forwardErr
 }
 
 func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
@@ -2348,7 +2360,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			upstreamRequestID,
 			err,
 		)
-		return resultWithUsage(), fmt.Errorf("stream read error: %w", err)
+		return resultWithUsage(), upstreamStreamReadError(err)
 	}
 	if sawFailedEvent {
 		return resultWithUsage(), fmt.Errorf("upstream response failed: %s", failedMessage)
@@ -2364,7 +2376,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 				s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, nil, "OpenAI stream ended before a terminal event")
 		}
 		s.recordOpenAIProxyStreamDisconnect(account, errors.New("stream ended before terminal event"), upstreamRequestID)
-		return resultWithUsage(), errors.New("stream usage incomplete: missing terminal event")
+		return resultWithUsage(), errUpstreamStreamMissingTerminal
 	}
 	if (sawDone || sawTerminalEvent) && !sawFailedEvent {
 		s.clearOpenAIProxyStreamDisconnect(account)
@@ -2485,8 +2497,8 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 		finalResponse, ok = extractOpenAINonCompletedTerminalResponse(terminalType, terminalPayload)
 	}
 	if !ok {
-		if retry := requestAccountStreamFailover(c, account, resp, errors.New("upstream stream ended without a terminal response")); retry != nil {
-			return nil, retry
+		if retry := requestAccountStreamFailover(c, account, resp, errUpstreamStreamMissingTerminal); retry != nil {
+			return &openaiNonStreamingResultPassthrough{usage: s.parseSSEUsageFromBody(bodyText)}, retry
 		}
 	}
 

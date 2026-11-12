@@ -193,7 +193,11 @@ func (s *OpenAIGatewayService) handleResponsesBufferedFromNativeAnthropic(
 			zap.Duration("interval", streamInterval),
 		)
 		if retry := requestAccountStreamFailover(c, nil, resp, errAnthropicNativeStreamIdle); retry != nil {
-			return nil, retry
+			return &OpenAIForwardResult{
+				RequestID: requestID, UpstreamHeaders: resp.Header, Usage: claudeUsageToOpenAIUsage(&usage),
+				Model: originalModel, BillingModel: billingModel, UpstreamModel: upstreamModel,
+				UpstreamEndpoint: "/v1/messages", ReasoningEffort: reasoningEffort, Duration: time.Since(startTime),
+			}, retry
 		}
 		writeResponsesError(c, http.StatusBadGateway, "server_error", "Upstream stream data interval timeout")
 		return nil, errAnthropicNativeStreamIdle
@@ -273,7 +277,11 @@ func (s *OpenAIGatewayService) handleResponsesBufferedFromNativeAnthropic(
 	if failure := streamStatus.failure(); failure != nil {
 		_ = resp.Body.Close()
 		if retry := requestAccountStreamFailover(c, nil, resp, failure.err); retry != nil {
-			return nil, retry
+			return &OpenAIForwardResult{
+				RequestID: requestID, UpstreamHeaders: resp.Header, Usage: claudeUsageToOpenAIUsage(&usage),
+				Model: originalModel, BillingModel: billingModel, UpstreamModel: upstreamModel,
+				UpstreamEndpoint: "/v1/messages", ReasoningEffort: reasoningEffort, Duration: time.Since(startTime),
+			}, retry
 		}
 		writeResponsesError(c, http.StatusBadGateway, "server_error", failure.message)
 		return &OpenAIForwardResult{
@@ -285,7 +293,11 @@ func (s *OpenAIGatewayService) handleResponsesBufferedFromNativeAnthropic(
 
 	if finalResp == nil {
 		if retry := requestAccountStreamFailover(c, nil, resp, errors.New("upstream stream ended without response")); retry != nil {
-			return nil, retry
+			return &OpenAIForwardResult{
+				RequestID: requestID, UpstreamHeaders: resp.Header, Usage: claudeUsageToOpenAIUsage(&usage),
+				Model: originalModel, BillingModel: billingModel, UpstreamModel: upstreamModel,
+				UpstreamEndpoint: "/v1/messages", ReasoningEffort: reasoningEffort, Duration: time.Since(startTime),
+			}, retry
 		}
 		writeResponsesError(c, http.StatusBadGateway, "server_error", "Upstream stream ended without a response")
 		return nil, fmt.Errorf("upstream stream ended without response")
@@ -515,7 +527,7 @@ func (s *OpenAIGatewayService) handleResponsesStreamingFromNativeAnthropic(
 	if failure := streamStatus.failure(); failure != nil {
 		_ = resp.Body.Close()
 		if retry := requestAccountStreamFailover(c, nil, resp, failure.err); retry != nil {
-			return nil, retry
+			return resultWithUsage(), retry
 		}
 		if !clientDisconnected {
 			writeAnthropicCompatResponsesStreamFailure(c, state, clientToolRestorer, failure)

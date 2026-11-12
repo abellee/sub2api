@@ -415,8 +415,8 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 
 	scanErr := scanner.Err()
 	if terminal.IsTruncated(clientOutputStarted) && scanErr != nil && !clientDisconnected {
-		if retry := requestAccountStreamFailover(c, account, resp, scanErr); retry != nil {
-			return nil, retry
+		if retry := requestAccountStreamFailover(c, account, resp, upstreamStreamReadError(scanErr)); retry != nil {
+			return resultWithUsage(), retry
 		}
 	}
 	if scanErr != nil && !errors.Is(scanErr, context.Canceled) && !errors.Is(scanErr, context.DeadlineExceeded) {

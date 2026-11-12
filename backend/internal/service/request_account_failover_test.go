@@ -22,12 +22,12 @@ func TestForwardWithAccountRetries(t *testing.T) {
 		stop      bool
 		wantCalls int
 	}{
-		{name: "single account unchanged", accounts: 1, wantCalls: 1},
-		{name: "two retries then switch", accounts: 2, wantCalls: 3},
-		{name: "success stops retries", accounts: 2, succeedAt: 3, wantCalls: 3},
-		{name: "partial result never replayed", accounts: 2, partial: true, wantCalls: 1},
-		{name: "written response never replayed", accounts: 2, write: true, wantCalls: 1},
-		{name: "request or provider stop preserved", accounts: 2, stop: true, wantCalls: 1},
+		{name: "single account", accounts: 1, wantCalls: 1},
+		{name: "failure advances in handler", accounts: 2, wantCalls: 1},
+		{name: "success returns", accounts: 2, succeedAt: 1, wantCalls: 1},
+		{name: "partial result returns", accounts: 2, partial: true, wantCalls: 1},
+		{name: "written response returns", accounts: 2, write: true, wantCalls: 1},
+		{name: "stop preserved", accounts: 2, stop: true, wantCalls: 1},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := withRequestAccountFailoverCount(context.Background(), tt.accounts)
@@ -58,10 +58,6 @@ func TestForwardWithAccountRetries(t *testing.T) {
 			} else {
 				var failure *UpstreamFailoverError
 				require.ErrorAs(t, err, &failure)
-				if calls == 3 {
-					require.False(t, failure.RetryableOnSameAccount, "outer loop must only switch accounts")
-					require.True(t, failure.SkipAccountCooldown, "exhaustion must not cool the account")
-				}
 			}
 			require.True(t, original.RetryableOnSameAccount, "shared errors must not be mutated")
 		})

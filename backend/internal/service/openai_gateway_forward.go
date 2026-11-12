@@ -1293,6 +1293,27 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 					}
 					return s.handleErrorResponse(ctx, compactResp, c, account, body, resolveOpenAIErrorSchedulingModel(billingModel, upstreamModel))
 				}
+				if RequestAccountFailoverEnabled(ctx) && streamResult != nil && streamResult.usage != nil {
+					partial := &OpenAIForwardResult{
+						RequestID: resp.Header.Get("x-request-id"), UpstreamHeaders: resp.Header,
+						ResponseID: streamResult.responseID, Usage: *streamResult.usage,
+						Model: originalModel, BillingModel: billingModel, UpstreamModel: upstreamModel,
+						UpstreamResponseModel:         observedUpstreamResponseModel(c),
+						UpstreamResponseModelConflict: observedUpstreamResponseModelConflict(c),
+						UpstreamResponseServiceTier:   observedUpstreamResponseServiceTier(c),
+						ServiceTier:                   resolvedOpenAIUpstreamServiceTier(c, serviceTier), ReasoningEffort: reasoningEffort,
+						Stream: true, Duration: time.Since(startTime), FirstTokenMs: streamResult.firstTokenMs,
+						ImageCount: streamResult.imageCount, ImageOutputSizes: streamResult.imageOutputSizes,
+						ImageSize: imageSizeTier, ImageInputSize: imageInputSize, SearchCount: streamResult.searchCount,
+					}
+					if partial.ImageCount > 0 {
+						partial.BillingModel = imageBillingModel
+					}
+					stampOpenAIResponsesUpstreamEndpoint(c, partial)
+					if partial.HasObservedUsage() {
+						return partial, err
+					}
+				}
 				return nil, err
 			}
 			usage = streamResult.usage
@@ -1315,6 +1336,18 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 						compactModelFallbackRetried = true
 						SetOpsUpstreamModel(c, fallbackModel)
 						continue
+					}
+				}
+				if RequestAccountFailoverEnabled(ctx) && nonStreamResult != nil && nonStreamResult.usage != nil {
+					partial := &OpenAIForwardResult{
+						RequestID: resp.Header.Get("x-request-id"), UpstreamHeaders: resp.Header,
+						Usage: *nonStreamResult.usage, Model: originalModel, BillingModel: billingModel, UpstreamModel: upstreamModel,
+						ServiceTier: resolvedOpenAIUpstreamServiceTier(c, serviceTier), ReasoningEffort: reasoningEffort,
+						Duration: time.Since(startTime),
+					}
+					stampOpenAIResponsesUpstreamEndpoint(c, partial)
+					if partial.HasObservedUsage() {
+						return partial, err
 					}
 				}
 				return nil, err

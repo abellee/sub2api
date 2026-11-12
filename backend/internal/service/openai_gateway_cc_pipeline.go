@@ -287,6 +287,7 @@ func (s *OpenAIGatewayService) scanCCStream(
 	emit func(*apicompat.ChatCompletionsChunk),
 ) ccStreamScanState {
 	var st ccStreamScanState
+	sawTerminal := false
 
 	scanner := s.newUpstreamSSEScanner(resp.Body)
 	for scanner.Scan() {
@@ -326,6 +327,11 @@ func (s *OpenAIGatewayService) scanCCStream(
 			ms := int(time.Since(startTime).Milliseconds())
 			st.FirstTokenMs = &ms
 		}
+		for _, choice := range chunk.Choices {
+			if choice.FinishReason != nil && *choice.FinishReason != "" {
+				sawTerminal = true
+			}
+		}
 		emit(&chunk)
 	}
 
@@ -336,7 +342,10 @@ func (s *OpenAIGatewayService) scanCCStream(
 				zap.String("request_id", requestID),
 			)
 		}
-		st.Err = err
+		st.Err = upstreamStreamReadError(err)
+	}
+	if st.Err == nil && !st.SawDone && !sawTerminal && requestAccountFailoverEnabled(c) {
+		st.Err = errUpstreamStreamMissingTerminal
 	}
 	return st
 }

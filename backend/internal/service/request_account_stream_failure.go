@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -15,7 +16,7 @@ import (
 // validation and explicit upstream stop decisions must not become retries.
 func requestAccountStreamFailover(c *gin.Context, account *Account, resp *http.Response, err error) *UpstreamFailoverError {
 	if err == nil || c == nil || c.Request == nil || !RequestAccountFailoverEnabled(c.Request.Context()) ||
-		c.Request.Context().Err() != nil || c.Writer.Written() {
+		c.Request.Context().Err() != nil || errors.Is(err, bufio.ErrTooLong) || errors.Is(err, ErrUpstreamResponseBodyTooLarge) {
 		return nil
 	}
 	var failure *UpstreamFailoverError
@@ -27,6 +28,10 @@ func requestAccountStreamFailover(c *gin.Context, account *Account, resp *http.R
 		if !openAIStreamFailedEventShouldFailover([]byte(eventErr.RawData), extractUpstreamErrorMessage([]byte(eventErr.RawData))) {
 			return nil
 		}
+	}
+	classified, _ := requestAccountFailoverError(c.Request.Context(), err).(*UpstreamFailoverError)
+	if c.Writer.Written() && (classified == nil || !classified.SafeToFailoverAfterWrite) {
+		return nil
 	}
 	status := http.StatusBadGateway
 	if errors.Is(err, errAnthropicNativeStreamIdle) || errors.Is(err, context.DeadlineExceeded) || strings.Contains(err.Error(), "stream data interval timeout") {
@@ -47,18 +52,12 @@ func requestAccountStreamFailover(c *gin.Context, account *Account, resp *http.R
 		event.UpstreamRequestID = resp.Header.Get("x-request-id")
 	}
 	appendOpsUpstreamError(c, event)
-	return &UpstreamFailoverError{StatusCode: status, ResponseBody: body, SkipAccountCooldown: true}
+	return &UpstreamFailoverError{Cause: err, StatusCode: status, ResponseBody: body, SkipAccountCooldown: true, SafeToFailoverAfterWrite: classified != nil && classified.SafeToFailoverAfterWrite}
 }
 
-// A failed attempt without client output must not return partial usage as a
-// result: that stops retry and would charge the same request twice on recovery.
+// Keep reported usage for per-account billing, including failed attempts.
 func finishRequestAccountStream[T any](c *gin.Context, account *Account, resp *http.Response, result **T, err *error) {
 	if failure := requestAccountStreamFailover(c, account, resp, *err); failure != nil {
-		*result, *err = nil, failure
-	}
-	var failure *UpstreamFailoverError
-	if c != nil && c.Request != nil && RequestAccountFailoverEnabled(c.Request.Context()) &&
-		!c.Writer.Written() && errors.As(*err, &failure) && failure.ShouldRetryNextAccount() {
-		*result = nil
+		*err = failure
 	}
 }
