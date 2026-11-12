@@ -15,7 +15,11 @@ import (
 // validation and explicit upstream stop decisions must not become retries.
 func requestAccountStreamFailover(c *gin.Context, account *Account, resp *http.Response, err error) *UpstreamFailoverError {
 	if err == nil || c == nil || c.Request == nil || !RequestAccountFailoverEnabled(c.Request.Context()) ||
-		c.Request.Context().Err() != nil || c.Writer.Written() {
+		c.Request.Context().Err() != nil {
+		return nil
+	}
+	missingTerminalEvent := strings.Contains(err.Error(), "terminal event")
+	if c.Writer.Written() && !missingTerminalEvent {
 		return nil
 	}
 	var failure *UpstreamFailoverError
@@ -47,7 +51,10 @@ func requestAccountStreamFailover(c *gin.Context, account *Account, resp *http.R
 		event.UpstreamRequestID = resp.Header.Get("x-request-id")
 	}
 	appendOpsUpstreamError(c, event)
-	return &UpstreamFailoverError{StatusCode: status, ResponseBody: body, SkipAccountCooldown: true}
+	return &UpstreamFailoverError{
+		StatusCode: status, ResponseBody: body, SkipAccountCooldown: true,
+		SafeToFailoverAfterWrite: c.Writer.Written() && missingTerminalEvent,
+	}
 }
 
 // A failed attempt without client output must not return partial usage as a

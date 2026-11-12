@@ -250,6 +250,22 @@ func TestAccountStreamFailureRespectsClientAndOutput(t *testing.T) {
 	}
 }
 
+func TestMissingTerminalEventCanFailoverAfterOutput(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil).WithContext(
+		withRequestAccountFailoverCount(context.Background(), 2),
+	)
+	_, _ = c.Writer.WriteString("event: content_block_delta\\ndata: partial\\n\\n")
+
+	failure := requestAccountStreamFailover(c, nil, nil, errors.New("upstream stream ended without a terminal event"))
+	require.NotNil(t, failure)
+	require.True(t, failure.SafeToFailoverAfterWrite)
+
+	otherFailure := requestAccountStreamFailover(c, nil, nil, errors.New("stream data interval timeout"))
+	require.Nil(t, otherFailure)
+}
+
 func TestAccountStreamIdleRetriesBeforeOutput(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	for name, handle := range accountRetryStreamHandlers(1) {
