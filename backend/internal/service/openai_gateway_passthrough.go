@@ -1177,6 +1177,59 @@ func openAIStreamDataStartsClientOutput(data, eventType string) bool {
 	return !openAIStreamEventIsMetadata(eventType)
 }
 
+// Keep leading whitespace private until useful output arrives, so an enabled
+// request can retry a failed attempt without replaying bytes to the client.
+func openAIStreamDataStartsRequestOutput(ctx context.Context, data, eventType string) bool {
+	if RequestAccountFailoverEnabled(ctx) && openAIStreamDataIsLeadingWhitespace(data, eventType) {
+		return false
+	}
+	return openAIStreamDataStartsClientOutput(data, eventType)
+}
+
+func openAIStreamDataIsLeadingWhitespace(data, eventType string) bool {
+	if !gjson.Valid(data) {
+		return false
+	}
+	blank := func(value gjson.Result) bool {
+		return value.Type == gjson.String && strings.TrimSpace(value.String()) == ""
+	}
+	switch strings.TrimSpace(eventType) {
+	case "response.output_text.delta", "response.reasoning_summary_text.delta", "response.reasoning_text.delta":
+		return blank(gjson.Get(data, "delta"))
+	case "response.output_text.done", "response.reasoning_summary_text.done", "response.reasoning_text.done":
+		return blank(gjson.Get(data, "text"))
+	case "response.content_part.added", "response.content_part.done", "response.reasoning_summary_part.added", "response.reasoning_summary_part.done":
+		part := gjson.Get(data, "part")
+		kind := part.Get("type").String()
+		return (kind == "output_text" || kind == "summary_text") && blank(part.Get("text"))
+	case "response.output_item.added", "response.output_item.done":
+		item := gjson.Get(data, "item")
+		path := "content"
+		switch item.Get("type").String() {
+		case "message":
+		case "reasoning":
+			if item.Get("encrypted_content").String() != "" {
+				return false
+			}
+			path = "summary"
+		default:
+			return false
+		}
+		parts := item.Get(path)
+		if !parts.IsArray() {
+			return false
+		}
+		for _, part := range parts.Array() {
+			kind := part.Get("type").String()
+			if (kind != "output_text" && kind != "summary_text") || !blank(part.Get("text")) {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
 func openAIStreamItemHasVisibleOutput(item gjson.Result) bool {
 	if item.Get("arguments").String() != "" || item.Get("input").String() != "" || item.Get("result").String() != "" {
 		return true
@@ -1922,6 +1975,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	upstreamRequestID := strings.TrimSpace(resp.Header.Get("x-request-id"))
 	// pendingLines 在首个可见输出前保留前导事件，确保无输出失败仍可安全 failover。
 	pendingLines := make([]string, 0, 8)
+	pendingLineBytes := 0
 
 	// ── 首个可见输出之前的下游 keepalive ──────────────────────────────────
 	//
@@ -1980,6 +2034,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			}
 		}
 		pendingLines = pendingLines[:0]
+		pendingLineBytes = 0
 		return true
 	}
 	ensureResponseFailedTerminal := func() {
@@ -2187,7 +2242,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 				trimmedData = strings.TrimSpace(string(sanitizedData))
 				line = "data: " + string(sanitizedData)
 			}
-			lineStartsClientOutput = forceFlushFailedEvent || openAIStreamDataStartsClientOutput(trimmedData, eventType)
+			lineStartsClientOutput = forceFlushFailedEvent || openAIStreamDataStartsRequestOutput(ctx, trimmedData, eventType)
 			if lineStartsClientOutput && trimmedData != "[DONE]" && !openAIStreamEventTypeIsTerminal(eventType) {
 				semanticOutputSeen = true
 			}
@@ -2217,7 +2272,11 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 
 		if !clientDisconnected && !failureDelivered && !suppressCurrentEvent {
 			if !clientOutputStarted && !lineStartsClientOutput {
+				if RequestAccountFailoverEnabled(ctx) && pendingLineBytes+len(line)+1 > openAIFirstOutputStageMaxBytes {
+					return resultWithUsage(), s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, nil, "OpenAI first-output staging limit exceeded", resp.Header)
+				}
 				pendingLines = append(pendingLines, line)
+				pendingLineBytes += len(line) + 1
 				continue
 			}
 			// 真实输出开始，心跳的使命结束。停拍是幂等的，且会与心跳 goroutine

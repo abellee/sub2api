@@ -688,9 +688,12 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			if needModelReplace {
 				line = s.replaceModelInSSELine(line, mappedModel, originalModel)
 			}
-			startsClientOutput := forceFlushFailedEvent || openAIStreamDataStartsClientOutput(data, eventType)
+			startsClientOutput := forceFlushFailedEvent || openAIStreamDataStartsRequestOutput(ctx, data, eventType)
 			startsVisibleOutput := openAIStreamDataStartsVisibleOutput(data, eventType)
 			startsTTFTOutput := openAIStreamDataStartsTTFT(data, eventType, forceFlushFailedEvent, ttftMode)
+			if RequestAccountFailoverEnabled(ctx) && openAIStreamDataIsLeadingWhitespace(data, eventType) {
+				startsVisibleOutput, startsTTFTOutput = false, false
+			}
 			if stageFirstOutput {
 				eventStartsClientOutput = eventStartsClientOutput || startsClientOutput
 				eventStartsTTFTOutput = eventStartsTTFTOutput || startsTTFTOutput
@@ -947,10 +950,28 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			if clientDisconnected {
 				return resultWithUsage(), fmt.Errorf("stream usage incomplete after timeout")
 			}
+			if err := ctx.Err(); err != nil {
+				return resultWithUsage(), err
+			}
 			logger.LegacyPrintf("service.openai_gateway", "Stream data interval timeout: account=%d model=%s interval=%s", account.ID, originalModel, streamInterval)
 			// 处理流超时，可能标记账户为临时不可调度或错误状态
 			if s.rateLimitService != nil {
 				s.rateLimitService.HandleStreamTimeout(ctx, account, originalModel)
+			}
+			if account != nil && account.Platform == PlatformOpenAI && RequestAccountFailoverEnabled(ctx) &&
+				!openAIStreamClientOutputStarted(c, clientOutputStarted) && !eventShouldFlush {
+				_ = resp.Body.Close()
+				appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+					ProxyID: opsUpstreamProxyID(account), ProxyName: opsUpstreamProxyName(account),
+					Platform: account.Platform, AccountID: account.ID, AccountName: account.Name,
+					UpstreamStatusCode: http.StatusGatewayTimeout, UpstreamRequestID: upstreamRequestID,
+					Kind: "stream_timeout", Message: "Upstream response stream timed out before output",
+				})
+				return resultWithUsage(), &UpstreamFailoverError{
+					StatusCode: http.StatusGatewayTimeout, ResponseHeaders: resp.Header.Clone(),
+					ResponseBody:             []byte(`{"error":{"type":"stream_timeout","message":"Upstream response stream timed out"}}`),
+					SafeToFailoverAfterWrite: true,
+				}
 			}
 			// Grok: short cool + account failover when no client-visible bytes
 			// were committed yet (pre-commit). After output started we keep the
