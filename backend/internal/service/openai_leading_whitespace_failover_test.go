@@ -68,7 +68,7 @@ func TestOpenAILeadingWhitespaceFailureRetriesBeforeOutput(t *testing.T) {
 	}
 }
 
-func TestOpenAILeadingWhitespacePreservesSuccessfulOutputAndStopsReplay(t *testing.T) {
+func TestOpenAILeadingWhitespacePreservesOutputAndAllowsFailureSwitch(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	for _, passthrough := range []bool{false, true} {
 		for _, terminal := range []string{"response.completed", "response.failed"} {
@@ -105,7 +105,9 @@ func TestOpenAILeadingWhitespacePreservesSuccessfulOutputAndStopsReplay(t *testi
 					} else {
 						require.Error(t, err)
 						var failure *UpstreamFailoverError
-						require.False(t, errors.As(err, &failure))
+						require.ErrorAs(t, err, &failure)
+						require.True(t, failure.SafeToFailoverAfterWrite)
+						require.False(t, failure.RetryableOnSameAccount)
 					}
 					var deltas []string
 					for _, line := range strings.Split(rec.Body.String(), "\n") {
@@ -125,7 +127,7 @@ func TestOpenAILeadingWhitespacePreservesSuccessfulOutputAndStopsReplay(t *testi
 	}
 }
 
-func TestOpenAIStreamIdleTimeoutRetriesOnlyBeforeOutput(t *testing.T) {
+func TestOpenAIStreamIdleTimeoutAllowsAccountSwitchAfterOutput(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	for _, tt := range []struct {
 		name                       string
@@ -134,7 +136,7 @@ func TestOpenAIStreamIdleTimeoutRetriesOnlyBeforeOutput(t *testing.T) {
 	}{
 		{name: "whitespace only retries", enabled: true, wantCalls: 1},
 		{name: "heartbeat allows retry", enabled: true, keepalive: true, wantCalls: 1},
-		{name: "real output never replayed", enabled: true, output: true, wantCalls: 1},
+		{name: "partial output allows account switch", enabled: true, output: true, wantCalls: 1},
 		{name: "disabled unchanged", wantCalls: 1},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -187,12 +189,17 @@ func TestOpenAIStreamIdleTimeoutRetriesOnlyBeforeOutput(t *testing.T) {
 			})
 			require.Equal(t, tt.wantCalls, calls)
 			var failure *UpstreamFailoverError
-			if tt.enabled && !tt.output {
+			if tt.enabled {
 				require.ErrorAs(t, err, &failure)
 				require.Equal(t, http.StatusGatewayTimeout, failure.StatusCode)
 				require.True(t, failure.SkipAccountCooldown)
 				require.True(t, failure.SafeToFailoverAfterWrite)
-				require.NotContains(t, rec.Body.String(), "data:")
+				if tt.output {
+					require.Contains(t, rec.Body.String(), "hello")
+				} else {
+					require.NotContains(t, rec.Body.String(), "data:")
+				}
+				require.NotContains(t, rec.Body.String(), "stream_timeout")
 			} else {
 				require.Error(t, err)
 				require.False(t, errors.As(err, &failure))

@@ -424,8 +424,8 @@ func TestResponsesCredentialFailoverLoop(t *testing.T) {
 		require.Equal(t, []string{"Bearer healthy-access"}, authorization)
 	})
 
-	t.Run("provider configuration stops before healthy account", func(t *testing.T) {
-		h, repo, upstream, router, cleanup := newGrokCredentialFailoverHandler(t, "provider")
+	t.Run("provider configuration failure selects healthy account", func(t *testing.T) {
+		_, repo, upstream, router, cleanup := newGrokCredentialFailoverHandler(t, "provider")
 		defer cleanup()
 
 		recorder := httptest.NewRecorder()
@@ -433,13 +433,11 @@ func TestResponsesCredentialFailoverLoop(t *testing.T) {
 		req.Header.Set("Content-Type", "application/json")
 		router.ServeHTTP(recorder, req)
 
-		require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
-		require.Contains(t, recorder.Body.String(), service.GrokCredentialUnavailableClientMessage)
+		require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+		require.Contains(t, recorder.Body.String(), "resp_healthy")
 		require.Empty(t, repo.errorIDs())
-		require.Empty(t, upstream.accountHits())
-		require.Equal(t, 2, repo.selectorCalls())
-		require.Zero(t, h.gatewayService.SnapshotOpenAIAccountSchedulerMetrics().RuntimeStatsAccountCount,
-			"provider-scoped auth failure must not penalize the selected account")
+		require.Equal(t, []int64{802}, upstream.accountHits())
+		require.Equal(t, 3, repo.selectorCalls())
 	})
 
 	t.Run("parent cancellation stops before healthy account", func(t *testing.T) {
@@ -542,7 +540,7 @@ func TestResponsesCredentialFailoverLoop(t *testing.T) {
 		}
 	})
 
-	t.Run("missing credential provider stops before upstream or reselection", func(t *testing.T) {
+	t.Run("missing credential provider exhausts accounts without upstream calls", func(t *testing.T) {
 		_, repo, upstream, router, cleanup := newGrokCredentialFailoverHandler(t, "nil_provider")
 		defer cleanup()
 		recorder := httptest.NewRecorder()
@@ -553,7 +551,7 @@ func TestResponsesCredentialFailoverLoop(t *testing.T) {
 
 		require.Equal(t, http.StatusServiceUnavailable, recorder.Code, recorder.Body.String())
 		require.Contains(t, recorder.Body.String(), service.GrokCredentialUnavailableClientMessage)
-		require.Equal(t, 2, repo.selectorCalls())
+		require.Equal(t, 3, repo.selectorCalls())
 		require.Empty(t, upstream.accountHits())
 		require.Empty(t, repo.errorIDs())
 	})
@@ -798,7 +796,7 @@ func TestResponsesWebSocketCredentialFailoverLoop(t *testing.T) {
 		require.Equal(t, []int64{802}, upstream.accountHits())
 	})
 
-	t.Run("provider configuration stops", func(t *testing.T) {
+	t.Run("provider configuration failure selects healthy account", func(t *testing.T) {
 		_, repo, upstream, router, cleanup := newGrokCredentialFailoverHandler(t, "provider")
 		defer cleanup()
 		conn, closeConn := dial(t, router)
@@ -806,13 +804,13 @@ func TestResponsesWebSocketCredentialFailoverLoop(t *testing.T) {
 		writeFirst(t, conn)
 
 		readCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		_, _, err := conn.Read(readCtx)
+		_, payload, err := conn.Read(readCtx)
 		cancel()
-		var closeErr coderws.CloseError
-		require.ErrorAs(t, err, &closeErr)
-		require.Contains(t, closeErr.Reason, service.GrokCredentialUnavailableClientMessage)
-		require.Equal(t, 2, repo.selectorCalls())
-		require.Empty(t, upstream.accountHits())
+		require.NoError(t, err)
+		require.Contains(t, string(payload), "resp_healthy")
+		require.Equal(t, 3, repo.selectorCalls())
+		require.Equal(t, []int64{802}, upstream.accountHits())
+		require.Empty(t, repo.errorIDs())
 	})
 
 	t.Run("parent cancellation prevents reselection", func(t *testing.T) {
