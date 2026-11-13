@@ -316,6 +316,9 @@ export default {
       },
       // Error Detail Modal
       errorDetail: {
+        failoverResult: '换号最终结果',
+        successAccount: '成功账号',
+        failoverOutcome: { success: '成功', failed: '失败', canceled: '客户端断开或请求超时' },
         title: '错误详情',
         titleWithId: '错误 #{id}',
         noErrorSelected: '未选择错误。',

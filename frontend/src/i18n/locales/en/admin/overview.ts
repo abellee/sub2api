@@ -848,7 +848,7 @@ export default {
     // Groups
     groups: {
       accountErrorFailover: 'Retry and switch accounts on errors',
-      accountErrorFailoverHint: 'Requires the matching system setting. With multiple available accounts, retryable upstream errors switch accounts immediately. Try each account once, then return an error if all fail. Disabled accounts are excluded. With one available account, existing pool retry rules apply.',
+      accountErrorFailoverHint: 'Requires the matching system setting. With multiple available accounts, upstream errors switch accounts immediately, including 404 and provider credit failures. Try each available account once, without a six-attempt cap. Local user balance, invalid input, and content refusals are not retried. Disabled accounts are excluded; with one account, existing rules apply.',
       imageAutoSizeFromReference: 'Use reference dimensions for auto size',
       imageAutoSizeFromReferenceHint: 'Applies only when size=auto is explicitly provided with exactly one reference image. Leaves the request unchanged if the image cannot be read, multiple images are supplied, or size is omitted or set to explicit dimensions.',
       title: 'Group Management',

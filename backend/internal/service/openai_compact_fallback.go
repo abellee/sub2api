@@ -252,7 +252,7 @@ func (s *OpenAIGatewayService) prepareOpenAICompactFallbackRetry(
 	upstreamBody []byte,
 	alreadyRetried bool,
 ) ([]byte, string, bool) {
-	if alreadyRetried || !isExplicitOpenAICompactRequest(c, currentBody) ||
+	if requestAccountFailoverEnabled(c) || alreadyRetried || !isExplicitOpenAICompactRequest(c, currentBody) ||
 		!isOpenAICompactModelFailure(statusCode, upstreamMsg, upstreamBody) {
 		return currentBody, "", false
 	}

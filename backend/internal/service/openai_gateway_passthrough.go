@@ -391,12 +391,12 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 			}
 			if retryBody, reason, changed, retryErr := normalizeOpenAIResponsesRejectedFieldRetryBody(resp.StatusCode, body, probeBody); retryErr != nil {
 				return nil, fmt.Errorf("normalize passthrough rejected Responses field retry body: %w", retryErr)
-			} else if changed && rejectedFieldRetryState.Allow(retryBody) {
+			} else if changed && !RequestAccountFailoverEnabled(ctx) && rejectedFieldRetryState.Allow(retryBody) {
 				body = retryBody
 				logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Retrying passthrough request after %s (account: %s)", reason, account.Name)
 				continue
 			}
-			if !agentTaskRecoveryTried && s.isAgentIdentityAccount(ctx, account) && isAgentIdentityTaskInvalidHTTPResponse(resp.StatusCode, probeBody) {
+			if !RequestAccountFailoverEnabled(ctx) && !agentTaskRecoveryTried && s.isAgentIdentityAccount(ctx, account) && isAgentIdentityTaskInvalidHTTPResponse(resp.StatusCode, probeBody) {
 				agentTaskRecoveryTried = true
 				expectedTaskID := account.GetCredential("task_id")
 				if recoveryErr := s.recoverAgentIdentityTask(ctx, account, expectedTaskID); recoveryErr != nil {
@@ -425,7 +425,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 			// 透传模式默认保持原样代理；容量错误以及 API-key 上游的瞬时
 			// 5xx 应先触发多账号 failover，且此时尚未写入下游响应。
 			// probeBody 已在上方任务探测时读取过一次，直接复用避免重复读取。
-			if shouldFailoverOpenAIPassthroughResponse(account, resp.StatusCode, probeBody) {
+			if shouldFailoverOpenAIPassthroughResponse(account, resp.StatusCode, probeBody, ctx) {
 				return nil, s.handleFailoverErrorResponsePassthrough(ctx, resp, c, account, body, probeBody)
 			}
 			return nil, s.handleErrorResponsePassthrough(ctx, resp, c, account, body, probeBody)
@@ -460,7 +460,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 				if signal, ok := asOpenAICompactFallbackSignal(handleErr); ok {
 					_ = resp.Body.Close()
 					compactResp, compactBody := openAICompactFallbackErrorResponse(resp, signal)
-					if shouldFailoverOpenAIPassthroughResponse(account, compactResp.StatusCode, compactBody) {
+					if shouldFailoverOpenAIPassthroughResponse(account, compactResp.StatusCode, compactBody, ctx) {
 						return nil, s.handleFailoverErrorResponsePassthrough(ctx, compactResp, c, account, body, compactBody)
 					}
 					return nil, s.handleErrorResponsePassthrough(ctx, compactResp, c, account, body, compactBody)
@@ -490,7 +490,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 				if signal, ok := asOpenAICompactFallbackSignal(handleErr); ok {
 					_ = resp.Body.Close()
 					compactResp, compactBody := openAICompactFallbackErrorResponse(resp, signal)
-					if shouldFailoverOpenAIPassthroughResponse(account, compactResp.StatusCode, compactBody) {
+					if shouldFailoverOpenAIPassthroughResponse(account, compactResp.StatusCode, compactBody, ctx) {
 						return nil, s.handleFailoverErrorResponsePassthrough(ctx, compactResp, c, account, body, compactBody)
 					}
 					return nil, s.handleErrorResponsePassthrough(ctx, compactResp, c, account, body, compactBody)
@@ -751,7 +751,11 @@ func stripOpenAILegacyResponsesBeta(headers http.Header) {
 	}
 }
 
-func shouldFailoverOpenAIPassthroughResponse(account *Account, statusCode int, responseBody []byte) bool {
+func shouldFailoverOpenAIPassthroughResponse(account *Account, statusCode int, responseBody []byte, contexts ...context.Context) bool {
+	if len(contexts) > 0 && RequestAccountFailoverEnabled(contexts[0]) {
+		return accountErrorShouldFailover(statusCode, responseBody)
+	}
+
 	if hit, _, _ := detectOpenAICyberPolicy(responseBody); hit {
 		return false
 	}
@@ -1154,7 +1158,7 @@ func openAIStreamAddedEventStartsClientOutput(payload []byte, eventType string) 
 	}
 }
 
-func openAIStreamDataStartsClientOutput(data, eventType string) bool {
+func openAIStreamDataStartsClientOutput(data, eventType string, contexts ...context.Context) bool {
 	trimmed := strings.TrimSpace(data)
 	if trimmed == "" {
 		return false
@@ -1170,7 +1174,7 @@ func openAIStreamDataStartsClientOutput(data, eventType string) bool {
 		// failover 分支，只能把致命错误原样转发给客户端。不可重试类
 		// （content_policy / invalid_request 等）维持原样转发，保留上游错误细节。
 		payload := []byte(trimmed)
-		return !openAIStreamFailedEventShouldFailover(payload, extractOpenAISSEErrorMessage(payload))
+		return !openAIStreamFailedEventShouldFailover(payload, extractOpenAISSEErrorMessage(payload), contexts...)
 	case "response.output_item.added", "response.content_part.added", "response.reasoning_summary_part.added",
 		"response.content_part.done", "response.reasoning_summary_part.done":
 		return openAIStreamAddedEventStartsClientOutput([]byte(trimmed), eventType)
@@ -1195,7 +1199,7 @@ func openAIStreamDataStartsRequestOutput(ctx context.Context, data, eventType st
 	if RequestAccountFailoverEnabled(ctx) && openAIStreamDataIsLeadingWhitespace(data, eventType) {
 		return false
 	}
-	return openAIStreamDataStartsClientOutput(data, eventType)
+	return openAIStreamDataStartsClientOutput(data, eventType, ctx)
 }
 
 func openAIStreamDataIsLeadingWhitespace(data, eventType string) bool {
@@ -1301,7 +1305,7 @@ func openAIStreamDataStartsVisibleOutput(data, eventType string) bool {
 
 // openAIStreamDataStartsSemanticTTFT 保留 900194fab 之前的 first_token_ms
 // 口径：跳过 Responses preamble 后，首个语义 SSE 事件即视为首 token。
-func openAIStreamDataStartsSemanticTTFT(data, eventType string) bool {
+func openAIStreamDataStartsSemanticTTFT(data, eventType string, contexts ...context.Context) bool {
 	trimmed := strings.TrimSpace(data)
 	if trimmed == "" || trimmed == "[DONE]" {
 		return false
@@ -1315,7 +1319,7 @@ func openAIStreamDataStartsSemanticTTFT(data, eventType string) bool {
 		return false
 	case "error":
 		payload := []byte(trimmed)
-		return !openAIStreamFailedEventShouldFailover(payload, extractOpenAISSEErrorMessage(payload))
+		return !openAIStreamFailedEventShouldFailover(payload, extractOpenAISSEErrorMessage(payload), contexts...)
 	default:
 		return !openAIStreamEventIsMetadata(eventType)
 	}
@@ -1625,7 +1629,11 @@ func applyOpenAIStreamFailedErrorPassthroughRule(
 	)
 }
 
-func openAIStreamFailedEventShouldFailover(payload []byte, message string) bool {
+func openAIStreamFailedEventShouldFailover(payload []byte, message string, contexts ...context.Context) bool {
+	if len(contexts) > 0 && RequestAccountFailoverEnabled(contexts[0]) {
+		return accountErrorShouldFailover(openAIStreamFailedEventSemanticStatus(payload, message), payload)
+	}
+
 	if hit, _, _ := detectOpenAICyberPolicy(payload); hit {
 		return false
 	}
@@ -1677,7 +1685,11 @@ func openAIStreamFailedEventShouldFailover(payload []byte, message string) bool 
 	return true
 }
 
-func openAIStreamErrorEventShouldFailover(payload []byte, message string) bool {
+func openAIStreamErrorEventShouldFailover(payload []byte, message string, contexts ...context.Context) bool {
+	if len(contexts) > 0 && RequestAccountFailoverEnabled(contexts[0]) {
+		return accountErrorShouldFailover(openAIStreamFailedEventSemanticStatus(payload, message), payload)
+	}
+
 	if hit, _, _ := detectOpenAICyberPolicy(payload); hit {
 		return false
 	}
@@ -1913,9 +1925,9 @@ func (s *OpenAIGatewayService) nonStreamingTerminalFailureFailover(
 	if account == nil || IsResponseCommitted(c) {
 		return nil
 	}
-	shouldFailover := openAIStreamFailedEventShouldFailover(payload, message)
+	shouldFailover := openAIStreamFailedEventShouldFailover(payload, message, accountFailoverContext(c))
 	if terminalType == "error" {
-		shouldFailover = openAIStreamErrorEventShouldFailover(payload, message)
+		shouldFailover = openAIStreamErrorEventShouldFailover(payload, message, accountFailoverContext(c))
 	}
 	if !shouldFailover {
 		return nil
@@ -2203,9 +2215,9 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 					shouldFailover := false
 					if !cyberHit {
 						if eventType == "error" {
-							shouldFailover = openAIStreamErrorEventShouldFailover(dataBytes, failedMessage)
+							shouldFailover = openAIStreamErrorEventShouldFailover(dataBytes, failedMessage, accountFailoverContext(c))
 						} else {
-							shouldFailover = openAIStreamFailedEventShouldFailover(dataBytes, failedMessage)
+							shouldFailover = openAIStreamFailedEventShouldFailover(dataBytes, failedMessage, accountFailoverContext(c))
 						}
 					}
 					if shouldFailover {

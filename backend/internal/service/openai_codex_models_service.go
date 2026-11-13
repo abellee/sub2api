@@ -1521,9 +1521,15 @@ func (e *codexModelsManifestUpstreamError) Unwrap() error { return e.err }
 // already validated locally). Custom API key upstreams keep the no-failover 401
 // behavior because their /models auth semantics are not authoritative for the
 // account.
-func IsRetryableCodexModelsManifestError(err error) bool {
+func IsRetryableCodexModelsManifestError(err error, contexts ...context.Context) bool {
 	var upstreamErr *codexModelsManifestUpstreamError
-	return errors.As(err, &upstreamErr) && upstreamErr.retryable
+	if !errors.As(err, &upstreamErr) {
+		return false
+	}
+	if len(contexts) > 0 && RequestAccountFailoverEnabled(contexts[0]) && upstreamErr.statusCode >= 400 {
+		return accountErrorShouldFailover(upstreamErr.statusCode, upstreamErr.body)
+	}
+	return upstreamErr.retryable
 }
 
 func isRetryableCodexModelsManifestStatus(statusCode int, useAPIKeyUpstream bool) bool {

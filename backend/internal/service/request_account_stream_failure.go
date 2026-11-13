@@ -25,12 +25,12 @@ func requestAccountStreamFailover(c *gin.Context, account *Account, resp *http.R
 		return nil // Keep existing HTTP error classification and stop rules.
 	}
 	if errors.As(err, &eventErr) {
-		if !openAIStreamFailedEventShouldFailover([]byte(eventErr.RawData), extractUpstreamErrorMessage([]byte(eventErr.RawData))) {
+		if !openAIStreamFailedEventShouldFailover([]byte(eventErr.RawData), extractUpstreamErrorMessage([]byte(eventErr.RawData)), accountFailoverContext(c)) {
 			return nil
 		}
 	}
 	classified, _ := requestAccountFailoverError(c.Request.Context(), err).(*UpstreamFailoverError)
-	if c.Writer.Written() && (classified == nil || !classified.SafeToFailoverAfterWrite) {
+	if accountAttemptWroteResponse(c) && (classified == nil || !classified.SafeToFailoverAfterWrite) {
 		return nil
 	}
 	status := http.StatusBadGateway

@@ -169,7 +169,7 @@ func (s *OpenAIGatewayService) forwardGrokResponses(
 			upstreamMsg = fmt.Sprintf("xAI upstream returned status %d", resp.StatusCode)
 		}
 		kind := "http_error"
-		if s.shouldFailoverGrokUpstreamError(resp.StatusCode, respBody) {
+		if s.shouldFailoverGrokUpstreamError(resp.StatusCode, respBody, ctx) {
 			kind = "failover"
 		}
 		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
@@ -190,7 +190,7 @@ func (s *OpenAIGatewayService) forwardGrokResponses(
 		if shouldMarkGrokTeamModelRateLimit(resp.StatusCode, respBody) {
 			markGrokTeamModelRateLimit(account, upstreamModel, resolveGrokTeamRateLimitUntil(time.Now().Add(grokTeamRateLimitDefaultTTL), time.Now()))
 		}
-		if s.shouldFailoverGrokUpstreamError(resp.StatusCode, respBody) {
+		if s.shouldFailoverGrokUpstreamError(resp.StatusCode, respBody, ctx) {
 			retryable, retryDelay, retryDeadline, retryMax := grokSameAccountRetryMetadata(account, resp.StatusCode, respBody)
 			return nil, &UpstreamFailoverError{
 				StatusCode:               resp.StatusCode,
@@ -1427,7 +1427,7 @@ func (s *OpenAIGatewayService) describeGrokComposerImage(
 			upstreamMsg = fmt.Sprintf("xAI image bridge upstream returned status %d", resp.StatusCode)
 		}
 		kind := "http_error"
-		if s.shouldFailoverGrokUpstreamError(resp.StatusCode, respBody) {
+		if s.shouldFailoverGrokUpstreamError(resp.StatusCode, respBody, ctx) {
 			kind = "failover"
 		}
 		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
@@ -1442,7 +1442,7 @@ func (s *OpenAIGatewayService) describeGrokComposerImage(
 			Message:            upstreamMsg,
 		})
 		s.handleGrokAccountUpstreamError(withGrokTeamRateLimitModel(ctx, grokComposerImageBridgeVisionModel), account, resp.StatusCode, resp.Header, respBody)
-		if s.shouldFailoverGrokUpstreamError(resp.StatusCode, respBody) {
+		if s.shouldFailoverGrokUpstreamError(resp.StatusCode, respBody, ctx) {
 			retryable, retryDelay, retryDeadline, retryMax := grokSameAccountRetryMetadata(account, resp.StatusCode, respBody)
 			return "", OpenAIUsage{}, &UpstreamFailoverError{
 				StatusCode:               resp.StatusCode,

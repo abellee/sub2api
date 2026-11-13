@@ -126,6 +126,16 @@
 
       </div>
 
+      <div v-if="failoverOutcome" class="rounded-xl bg-gray-50 p-4 dark:bg-dark-900" data-testid="failover-outcome">
+        <div class="text-xs font-bold text-gray-500">{{ t('admin.ops.errorDetail.failoverResult') }}</div>
+        <div class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+          {{ t(`admin.ops.errorDetail.failoverOutcome.${failoverOutcome.result}`) }}
+          <span v-if="failoverOutcome.final_account_id" class="ml-2">
+            {{ t('admin.ops.errorDetail.successAccount') }} #{{ failoverOutcome.final_account_id }}
+          </span>
+        </div>
+      </div>
+
       <div v-if="rootCauseMessage" class="rounded-xl bg-amber-50 p-6 dark:bg-amber-900/10">
         <h3 class="text-sm font-black uppercase tracking-wider text-amber-900 dark:text-amber-200">{{ t('admin.ops.errorDetail.rootCause') }}</h3>
         <div class="mt-3 break-words text-sm font-medium text-amber-900 dark:text-amber-100">{{ rootCauseMessage }}</div>
@@ -244,6 +254,7 @@ import { useAppStore } from '@/stores'
 import { opsAPI, type OpsErrorDetail } from '@/api/admin/ops'
 import { formatDateTime } from '@/utils/format'
 import { resolveUpstreamPayload } from '../utils/errorDetailResponse'
+import { accountFailoverOutcome } from '../utils/accountFailoverOutcome'
 
 interface Props {
   show: boolean
@@ -265,6 +276,7 @@ const appStore = useAppStore()
 
 const loading = ref(false)
 const detail = ref<OpsErrorDetail | null>(null)
+const failoverOutcome = computed(() => accountFailoverOutcome(detail.value?.upstream_errors))
 
 const showUpstreamList = computed(() => props.errorType === 'request')
 

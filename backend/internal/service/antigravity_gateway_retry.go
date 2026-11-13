@@ -574,7 +574,7 @@ urlFallbackLoop:
 			if resp.StatusCode >= 400 {
 				respBody := s.readUpstreamErrorBody(resp)
 				_ = resp.Body.Close()
-				if RequestAccountFailoverEnabled(p.ctx) && shouldRetryAntigravityError(resp.StatusCode) {
+				if RequestAccountFailoverEnabled(p.ctx) {
 					resp.Body = io.NopCloser(bytes.NewReader(respBody))
 					break urlFallbackLoop
 				}

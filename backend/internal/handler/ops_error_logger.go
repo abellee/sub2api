@@ -1137,6 +1137,17 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 				parsed.Code = code
 			}
 		}
+		// A previous attempt may already have committed 200 before the final
+		// attempt fails or the client disconnects. Record the actual outcome.
+		if status < 400 && !parsed.StreamFailure {
+			switch service.RequestAccountFailoverResult(c) {
+			case "failed":
+				status = http.StatusBadGateway
+			case "canceled":
+				status = statusClientClosedRequest
+			}
+		}
+		failoverResultStatus = status
 		if status < 400 {
 			if parsed.StreamFailure {
 				status = inferStreamFailureStatus(c, parsed)
@@ -1731,6 +1742,32 @@ func applyOpsUpstreamFieldsFromContext(c *gin.Context, entry *service.OpsInsertE
 	if v, ok := c.Get(service.OpsUpstreamErrorsKey); ok {
 		if events, ok := v.([]*service.OpsUpstreamErrorEvent); ok && len(events) > 0 {
 			applyOpsUpstreamErrorEvents(entry, events)
+			attachOpsAccountFailoverOutcome(c, entry)
+		}
+	}
+}
+
+func attachOpsAccountFailoverOutcome(c *gin.Context, entry *service.OpsInsertErrorLogInput) {
+	result := service.RequestAccountFailoverResult(c)
+	if result == "" {
+		return
+	}
+	if entry.StatusCode >= 400 && result == "success" {
+		result = "failed"
+	}
+	outcome := &service.AccountFailoverOutcome{Result: result}
+	if result == "success" {
+		if id, ok := c.Get(opsAccountIDKey); ok {
+			outcome.FinalAccountID, _ = id.(int64)
+		}
+	}
+	for i := len(entry.UpstreamErrors) - 1; i >= 0; i-- {
+		if event := entry.UpstreamErrors[i]; event != nil && !event.SkipMonitoring {
+			entry.UpstreamErrors = append([]*service.OpsUpstreamErrorEvent(nil), entry.UpstreamErrors...)
+			copy := *event
+			copy.FailoverResult = outcome
+			entry.UpstreamErrors[i] = &copy
+			return
 		}
 	}
 }

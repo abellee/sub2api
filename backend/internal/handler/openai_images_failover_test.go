@@ -224,10 +224,7 @@ func testImagesFailoverRound(t *testing.T, count int, enabled, groupEnabled bool
 	require.Equal(t, "1536x1024", loggedFields["img_size"])
 	require.NotContains(t, loggedFields, "prompt")
 
-	attempts := 3
-	if count == 1 || !enabled || !groupEnabled {
-		attempts = 1
-	}
+	attempts := 1
 	if (!enabled || !groupEnabled) && count > 2 {
 		count = 2 // Original maximum is one account switch.
 	}

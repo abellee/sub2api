@@ -845,7 +845,7 @@ export default {
     // Groups Management
     groups: {
       accountErrorFailover: '账号报错自动重试换号',
-      accountErrorFailoverHint: '需同时开启系统设置中的同名开关。多个可用账号时，可重试的上游错误直接换号，每个账号只试一次，全部失败后返回错误；手动关闭的账号不参与。只有一个可用账号时走原有号池逻辑。',
+      accountErrorFailoverHint: '需同时开启系统设置中的同名开关。多个可用账号时，上游错误直接换号，包括 404 和上游账号欠费；每个可用账号只试一次，不限六次。本站用户余额不足、参数或内容错误不重试。手动关闭的账号不参与；只有一个可用账号时保持原有逻辑。',
       imageAutoSizeFromReference: 'auto 尺寸跟随参考图',
       imageAutoSizeFromReferenceHint: '仅在明确传入 size=auto 且只有一张参考图时生效；读取失败、多图、未传 size 或指定尺寸时保持原样。',
       title: '分组管理',

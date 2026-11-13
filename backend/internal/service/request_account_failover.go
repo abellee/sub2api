@@ -13,6 +13,9 @@ import (
 
 const SettingKeyAccountErrorFailoverEnabled = "account_error_failover_enabled"
 
+const OpsAccountFailoverResultKey = "ops_account_failover_result"
+const accountAttemptWriterSizeKey = "account_attempt_writer_size"
+
 // IsAccountErrorFailoverEnabled caches the switch per service and defaults to off.
 func (s *SettingService) IsAccountErrorFailoverEnabled(ctx context.Context) bool {
 	if s == nil || s.settingRepo == nil {
@@ -178,6 +181,11 @@ func ForwardWithAccountRetries[T any](ctx context.Context, c *gin.Context, forwa
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	if c != nil {
+		c.Set(accountAttemptWriterSizeKey, c.Writer.Size())
+		c.Set(ResponseCommittedKey, false)
+		c.Set(OpsAccountFailoverResultKey, "failed")
+	}
 	result, err := forward()
 	if ctx.Err() != nil {
 		return result, ctx.Err()
@@ -185,14 +193,23 @@ func ForwardWithAccountRetries[T any](ctx context.Context, c *gin.Context, forwa
 	switch partial := any(result).(type) {
 	case *ForwardResult:
 		if partial != nil && partial.ClientDisconnect {
+			if c != nil {
+				c.Set(OpsAccountFailoverResultKey, "canceled")
+			}
 			return result, err
 		}
 	case *OpenAIForwardResult:
 		if partial != nil && partial.ClientDisconnect {
+			if c != nil {
+				c.Set(OpsAccountFailoverResultKey, "canceled")
+			}
 			return result, err
 		}
 	}
 	err = requestAccountFailoverError(ctx, err)
+	if c != nil && err == nil && result != nil {
+		c.Set(OpsAccountFailoverResultKey, "success")
+	}
 	var failure *UpstreamFailoverError
 	if RequestAccountFailoverEnabled(ctx) && errors.As(err, &failure) && failure.ShouldRetryNextAccount() {
 		copy := *failure
@@ -202,6 +219,24 @@ func ForwardWithAccountRetries[T any](ctx context.Context, c *gin.Context, forwa
 		err = &copy
 	}
 	return result, err
+}
+
+func accountAttemptWroteResponse(c *gin.Context) bool {
+	if size, ok := c.Get(accountAttemptWriterSizeKey); ok {
+		return c.Writer.Size() != size.(int)
+	}
+	return c.Writer.Written()
+}
+
+// An HTTP 200 or partial usage from an earlier account is not proof of success.
+func RequestAccountFailoverResult(c *gin.Context) string {
+	if c == nil || c.Request == nil || !RequestAccountFailoverEnabled(c.Request.Context()) {
+		return ""
+	}
+	if c.Request.Context().Err() != nil {
+		return "canceled"
+	}
+	return c.GetString(OpsAccountFailoverResultKey)
 }
 
 // Credential errors remain local to the request; never expose token-provider details.
@@ -229,4 +264,11 @@ func requestAccountCredentialError(ctx context.Context, err error) error {
 
 func requestAccountFailoverEnabled(c *gin.Context) bool {
 	return c != nil && c.Request != nil && RequestAccountFailoverEnabled(c.Request.Context())
+}
+
+func accountFailoverContext(c *gin.Context) context.Context {
+	if c == nil || c.Request == nil {
+		return nil
+	}
+	return c.Request.Context()
 }

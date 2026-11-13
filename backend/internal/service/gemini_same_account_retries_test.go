@@ -74,7 +74,7 @@ func TestGeminiForward_RequestAccountRetriesDoNotMultiply(t *testing.T) {
 				})
 				var failure *UpstreamFailoverError
 				require.ErrorAs(t, err, &failure)
-				require.Equal(t, 3, upstream.calls, "three upstream calls total, not 3 x 5")
+				require.Equal(t, 1, upstream.calls, "advance to the next account without repeating this account")
 				require.False(t, failure.RetryableOnSameAccount)
 				require.True(t, failure.SkipAccountCooldown)
 				require.False(t, c.Writer.Written())

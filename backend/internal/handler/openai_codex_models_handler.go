@@ -91,7 +91,8 @@ func (h *OpenAIGatewayHandler) CodexModels(c *gin.Context) {
 		}
 	}
 
-	maxAccountSwitches := h.maxAccountSwitches
+	c.Request = c.Request.WithContext(h.gatewayService.PrepareRequestAccountFailover(c.Request.Context(), apiKey.GroupID, apiKey.Group, "", service.PlatformOpenAI))
+	maxAccountSwitches := service.RequestAccountFailoverLimit(c.Request.Context(), h.maxAccountSwitches)
 	if maxAccountSwitches <= 0 {
 		maxAccountSwitches = 3
 	}
@@ -122,7 +123,7 @@ func (h *OpenAIGatewayHandler) CodexModels(c *gin.Context) {
 			if c.Request.Context().Err() != nil {
 				return
 			}
-			if service.IsRetryableCodexModelsManifestError(err) && switchCount < maxAccountSwitches {
+			if service.IsRetryableCodexModelsManifestError(err, c.Request.Context()) && switchCount < maxAccountSwitches {
 				failedAccountIDs[account.ID] = struct{}{}
 				switchCount++
 				lastUpstreamErr = err

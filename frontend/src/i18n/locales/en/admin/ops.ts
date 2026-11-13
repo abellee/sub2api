@@ -316,6 +316,9 @@ export default {
       },
       // Error Detail Modal
       errorDetail: {
+        failoverResult: 'Final failover result',
+        successAccount: 'Successful account',
+        failoverOutcome: { success: 'Succeeded', failed: 'Failed', canceled: 'Client disconnected or request timed out' },
         title: 'Error Detail',
         titleWithId: 'Error #{id}',
         noErrorSelected: 'No error selected.',

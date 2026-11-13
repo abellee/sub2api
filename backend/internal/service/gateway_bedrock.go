@@ -213,7 +213,7 @@ func (s *GatewayService) executeBedrockUpstream(
 		}
 
 		if resp.StatusCode >= 400 && resp.StatusCode != 400 && s.shouldRetryUpstreamError(account, resp.StatusCode) {
-			if attempt < maxRetryAttempts {
+			if attempt < maxRetryAttempts && !RequestAccountFailoverEnabled(ctx) {
 				elapsed := time.Since(retryStart)
 				if elapsed >= maxRetryElapsed {
 					break
@@ -275,8 +275,8 @@ func (s *GatewayService) handleBedrockUpstreamErrors(
 	modelKey string,
 ) (*ForwardResult, error) {
 	// retry exhausted + failover
-	if s.shouldRetryUpstreamError(account, resp.StatusCode) {
-		if s.shouldFailoverUpstreamError(resp.StatusCode) {
+	if !RequestAccountFailoverEnabled(ctx) && s.shouldRetryUpstreamError(account, resp.StatusCode) {
+		if shouldFailoverAccountResponse(ctx, resp, s.shouldFailoverUpstreamError(resp.StatusCode)) {
 			respBody, _ := s.readUpstreamErrorBody(resp)
 			_ = resp.Body.Close()
 			resp.Body = io.NopCloser(bytes.NewReader(respBody))
@@ -305,7 +305,7 @@ func (s *GatewayService) handleBedrockUpstreamErrors(
 	}
 
 	// non-retryable failover
-	if s.shouldFailoverUpstreamError(resp.StatusCode) {
+	if shouldFailoverAccountResponse(ctx, resp, s.shouldFailoverUpstreamError(resp.StatusCode)) {
 		respBody, _ := s.readUpstreamErrorBody(resp)
 		_ = resp.Body.Close()
 		resp.Body = io.NopCloser(bytes.NewReader(respBody))

@@ -532,7 +532,7 @@ export default {
       },
       gatewayForwarding: {
         accountErrorFailover: '账号报错自动重试换号',
-        accountErrorFailoverHint: '系统和分组开关都开启且有多个可用账号时，可重试的上游错误直接换号，每个账号只试一次；全部失败后返回错误，不停号、不加冷却。余额不足、普通参数错误不重试。只有一个可用账号或关闭时走原有逻辑，由号池决定是否重试。',
+        accountErrorFailoverHint: '系统和分组开关都开启且有多个可用账号时，上游错误直接换号，包括 404 和上游账号欠费；每个可用账号只试一次，不限六次，不停号、不加冷却。本站用户余额不足、参数或内容错误不重试。客户端断开或请求超时就停止。只有一个可用账号或关闭时保持原有逻辑。',
         title: '请求转发行为',
         description: '控制请求转发到上游 OAuth 账号时的行为',
         grokDefaultTextModel: '默认 Grok 文本模型',

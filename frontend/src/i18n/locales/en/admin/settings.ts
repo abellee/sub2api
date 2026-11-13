@@ -539,7 +539,7 @@ export default {
       },
       gatewayForwarding: {
         accountErrorFailover: 'Retry and switch accounts on errors',
-        accountErrorFailoverHint: 'When both switches are enabled with multiple available accounts, retryable upstream errors switch accounts immediately. Try each account once, then return an error if all fail, without disabling accounts or adding cooldowns. Balance and ordinary parameter errors are not retried. With one available account or a disabled switch, existing pool retry rules apply.',
+        accountErrorFailoverHint: 'With both switches enabled and multiple available accounts, upstream errors switch accounts immediately, including 404 and provider account credit failures. Try each available account once, without a six-attempt cap, disabling accounts, or cooldowns. Local user balance, invalid input, and content refusals are not retried. Stop when the client disconnects or the request times out. With one account or a disabled switch, existing rules apply.',
         title: 'Request Forwarding',
         description: 'Control how requests are forwarded to upstream OAuth accounts',
         grokDefaultTextModel: 'Default Grok text model',

@@ -160,7 +160,7 @@ func (s *GatewayService) ForwardAsChatCompletions(
 		if s.rateLimitService != nil {
 			shouldDisable = s.rateLimitService.HandleUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody, mappedModel)
 		}
-		if shouldDisable || s.shouldFailoverUpstreamError(resp.StatusCode) {
+		if shouldFailoverAccountError(ctx, resp.StatusCode, respBody, shouldDisable || s.shouldFailoverUpstreamError(resp.StatusCode)) {
 			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
 				ProxyID:            opsUpstreamProxyID(account),
 				ProxyName:          opsUpstreamProxyName(account),

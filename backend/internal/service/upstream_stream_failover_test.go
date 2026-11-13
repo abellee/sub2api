@@ -30,8 +30,8 @@ func TestAccountFailoverStreamErrorPolicy(t *testing.T) {
 			{"balance", errors.New("insufficient balance"), false},
 			{"parameters", errors.New("invalid parameter"), false},
 			{"untyped text is not a classifier", errors.New("stream usage incomplete: missing terminal event"), false},
-			{"canceled", upstreamStreamReadError(context.Canceled), false},
-			{"deadline", upstreamStreamReadError(context.DeadlineExceeded), false},
+			{"upstream canceled while request is live", upstreamStreamReadError(context.Canceled), true},
+			{"upstream timeout while request is live", upstreamStreamReadError(context.DeadlineExceeded), true},
 			{"size limit", upstreamStreamReadError(bufio.ErrTooLong), false},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
@@ -47,6 +47,14 @@ func TestAccountFailoverStreamErrorPolicy(t *testing.T) {
 		}
 	}
 	ctx := withRequestAccountFailoverCount(context.Background(), 3)
+	canceled, cancel := context.WithCancel(ctx)
+	cancel()
+	expired, cancelDeadline := context.WithDeadline(ctx, time.Now().Add(-time.Second))
+	defer cancelDeadline()
+	for _, stopped := range []context.Context{canceled, expired} {
+		failure := upstreamStreamReadError(stopped.Err())
+		require.Same(t, failure, requestAccountFailoverError(stopped, failure), "request cancellation must stop failover")
+	}
 	stop := &UpstreamFailoverError{Cause: errUpstreamStreamMissingTerminal, NextAccountAction: NextAccountStop}
 	require.Same(t, stop, requestAccountFailoverError(ctx, stop))
 	require.False(t, stop.ShouldRetryNextAccount())

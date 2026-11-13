@@ -53,7 +53,7 @@ func TestOpenAILeadingWhitespaceFailureRetriesBeforeOutput(t *testing.T) {
 				var failure *UpstreamFailoverError
 				if enabled {
 					require.ErrorAs(t, err, &failure)
-					require.Equal(t, 3, calls)
+					require.Equal(t, 1, calls)
 					require.True(t, failure.SkipAccountCooldown)
 					require.False(t, failure.RetryableOnSameAccount)
 					require.Empty(t, rec.Body.String(), "failed attempts must remain private")

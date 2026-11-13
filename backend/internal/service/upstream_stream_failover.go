@@ -36,7 +36,6 @@ func (r *OpenAIForwardResult) HasObservedUsage() bool {
 
 func requestAccountFailoverError(ctx context.Context, err error) error {
 	if err == nil || !RequestAccountFailoverEnabled(ctx) || ctx.Err() != nil ||
-		errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) ||
 		errors.Is(err, bufio.ErrTooLong) || errors.Is(err, ErrUpstreamResponseBodyTooLarge) {
 		return err
 	}

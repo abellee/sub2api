@@ -134,7 +134,7 @@ func assertAstraProWire(t *testing.T, urls []string, bodies [][]byte) {
 func TestOpenAIGatewayHandlerResponses_AstraProFirst403SecondSucceeds(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	upstream := newAstraProCapturedUpstream(astra403(), astra403(), astra403(), astra200())
+	upstream := newAstraProCapturedUpstream(astra403(), astra200())
 	handler := newOpenAIResponsesFailoverTestHandler(t, upstream)
 	c, rec := newAstraProFailoverContext(t, astraProRequestBody)
 
@@ -142,7 +142,7 @@ func TestOpenAIGatewayHandlerResponses_AstraProFirst403SecondSucceeds(t *testing
 
 	urls, accountIDs, bodies := upstream.snapshot()
 	assertAstraProWire(t, urls, bodies)
-	require.Equal(t, []int64{1, 1, 1, 2}, accountIDs)
+	require.Equal(t, []int64{1, 2}, accountIDs)
 	require.Equal(t, http.StatusOK, rec.Code, "winning account must yield a 200 to the client")
 	require.Equal(t, "completed", gjson.GetBytes(rec.Body.Bytes(), "status").String())
 	require.Equal(t, "pro", gjson.GetBytes(rec.Body.Bytes(), "reasoning.mode").String(), "client must keep the winning response's mode=pro")
@@ -154,7 +154,7 @@ func TestOpenAIGatewayHandlerResponses_AstraProFirst403SecondSucceeds(t *testing
 func TestOpenAIGatewayHandlerResponses_AstraProBoth403NoDowngrade(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	upstream := newAstraProCapturedUpstream(astra403(), astra403(), astra403(), astra403(), astra403(), astra403())
+	upstream := newAstraProCapturedUpstream(astra403(), astra403())
 	handler := newOpenAIResponsesFailoverTestHandler(t, upstream)
 	c, rec := newAstraProFailoverContext(t, astraProRequestBody)
 
@@ -162,7 +162,7 @@ func TestOpenAIGatewayHandlerResponses_AstraProBoth403NoDowngrade(t *testing.T) 
 
 	urls, accountIDs, bodies := upstream.snapshot()
 	assertAstraProWire(t, urls, bodies)
-	require.Equal(t, []int64{1, 1, 1, 2, 2, 2}, accountIDs)
+	require.Equal(t, []int64{1, 2}, accountIDs)
 	require.NotEqual(t, http.StatusOK, rec.Code, "all-403 must never surface a 200 to the client")
 	require.Equal(t, http.StatusBadGateway, rec.Code)
 	require.Equal(t, "upstream_error", gjson.GetBytes(rec.Body.Bytes(), "error.type").String())

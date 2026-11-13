@@ -629,9 +629,9 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 		if upstreamMsg == "" {
 			upstreamMsg = http.StatusText(resp.StatusCode)
 		}
-		shouldFailover := s.shouldFailoverOpenAIUpstreamResponse(account, resp.StatusCode, upstreamMsg, respBody)
+		shouldFailover := s.shouldFailoverOpenAIUpstreamResponse(account, resp.StatusCode, upstreamMsg, respBody, ctx)
 		if account.Platform == PlatformGrok {
-			shouldFailover = s.shouldFailoverGrokUpstreamError(resp.StatusCode, respBody)
+			shouldFailover = s.shouldFailoverGrokUpstreamError(resp.StatusCode, respBody, ctx)
 			s.handleGrokAccountUpstreamError(withGrokTeamRateLimitModel(ctx, resolveGrokWSUpstreamModel(account, body, originalModel)), account, resp.StatusCode, resp.Header, respBody)
 			if shouldFailover && (turn == 1 || resp.StatusCode == http.StatusTooManyRequests) {
 				return nil, newOpenAIUpstreamFailoverError(resp.StatusCode, resp.Header, respBody, upstreamMsg, false)
@@ -852,10 +852,10 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 				errMessage = "upstream error event"
 			}
 			statusCode := openAIStreamFailureStatus(upstreamMessage, errMessage)
-			shouldFailover := openAIStreamFailedEventShouldFailover(upstreamMessage, errMessage)
+			shouldFailover := openAIStreamFailedEventShouldFailover(upstreamMessage, errMessage, accountFailoverContext(c))
 			if eventType == "error" {
 				errCodeRaw, errTypeRaw, _ := parseOpenAIWSErrorEventFields(upstreamMessage)
-				shouldFailover = openAIStreamErrorEventShouldFailover(upstreamMessage, errMessage)
+				shouldFailover = openAIStreamErrorEventShouldFailover(upstreamMessage, errMessage, accountFailoverContext(c))
 				if account.Platform == PlatformGrok {
 					statusCode = openAIWSErrorHTTPStatusFromRaw(errCodeRaw, errTypeRaw)
 				}
@@ -874,7 +874,7 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 				if isGrokContentPolicyRejection(http.StatusForbidden, upstreamMessage) {
 					shouldFailover = false
 				} else {
-					shouldFailover = s.shouldFailoverGrokUpstreamError(statusCode, upstreamMessage)
+					shouldFailover = s.shouldFailoverGrokUpstreamError(statusCode, upstreamMessage, ctx)
 					s.handleGrokAccountUpstreamError(ctx, account, statusCode, resp.Header, upstreamMessage)
 				}
 			}

@@ -148,7 +148,10 @@ func (s *OpenAIGatewayService) CreateLiveCall(
 	// 防御性装门按文本 D 过滤 Live 账号池且门与计费时刻不同源。
 	ctx = WithOpenAIProfitControlSuppressed(ctx)
 	var lastErr error
-	for attempt := 0; attempt <= 3; attempt++ {
+	for attempt := 0; attempt <= RequestAccountFailoverLimit(ctx, 3); attempt++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		selection, _, selectErr := s.SelectAccountWithSchedulerForCapability(
 			ctx,
 			identity.GroupID,
@@ -199,7 +202,7 @@ func (s *OpenAIGatewayService) CreateLiveCall(
 		selection.ReleaseFunc()
 		if createErr != nil {
 			s.releaseLiveLease(account.ID, identity.UserID, identity.APIKeyID, leaseID)
-			if !s.shouldFailoverLiveCreateError(account, createErr) {
+			if !s.shouldFailoverLiveCreateError(account, createErr, ctx) {
 				return nil, createErr
 			}
 			excluded[account.ID] = struct{}{}
@@ -245,7 +248,7 @@ func (s *OpenAIGatewayService) CreateLiveCall(
 	return nil, ErrLiveUnavailable
 }
 
-func (s *OpenAIGatewayService) shouldFailoverLiveCreateError(account *Account, err error) bool {
+func (s *OpenAIGatewayService) shouldFailoverLiveCreateError(account *Account, err error, contexts ...context.Context) bool {
 	var upstreamErr *UpstreamFailoverError
 	if !errors.As(err, &upstreamErr) {
 		// 凭证读取和网络传输错误都可能只影响当前账号或代理。
@@ -255,6 +258,7 @@ func (s *OpenAIGatewayService) shouldFailoverLiveCreateError(account *Account, e
 		upstreamErr.StatusCode,
 		"",
 		upstreamErr.ResponseBody,
+		contexts...,
 	)
 }
 

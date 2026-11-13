@@ -197,7 +197,11 @@ func grokContentPolicyClientMessage(responseBody []byte) string {
 // account and be returned to the caller instead of consuming the account pool.
 // Free-usage / empty-output / billing bodies also failover even when the HTTP
 // status alone would not (e.g. 400 with free-usage-exhausted).
-func (s *OpenAIGatewayService) shouldFailoverGrokUpstreamError(statusCode int, responseBody []byte) bool {
+func (s *OpenAIGatewayService) shouldFailoverGrokUpstreamError(statusCode int, responseBody []byte, contexts ...context.Context) bool {
+	if len(contexts) > 0 && RequestAccountFailoverEnabled(contexts[0]) {
+		return accountErrorShouldFailover(statusCode, responseBody)
+	}
+
 	if isGrokContentPolicyRejection(statusCode, responseBody) {
 		return false
 	}

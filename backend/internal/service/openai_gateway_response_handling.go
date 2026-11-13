@@ -591,9 +591,9 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 					shouldFailover := false
 					if !cyberHit {
 						if eventType == "error" {
-							shouldFailover = openAIStreamErrorEventShouldFailover(dataBytes, failedMessage)
+							shouldFailover = openAIStreamErrorEventShouldFailover(dataBytes, failedMessage, accountFailoverContext(c))
 						} else {
-							shouldFailover = openAIStreamFailedEventShouldFailover(dataBytes, failedMessage)
+							shouldFailover = openAIStreamFailedEventShouldFailover(dataBytes, failedMessage, accountFailoverContext(c))
 						}
 					}
 					if shouldFailover {
