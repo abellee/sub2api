@@ -98,3 +98,41 @@ func TestErrorContextOnlyAvailableForTerminalErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestAsyncFailurePreservesPollResponseAfterRestart(t *testing.T) {
+	const failure = `{"data":{"status":"failed","error":{"message":"generation timed out"}}}`
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Error("must only query the existing task")
+		}
+		_, _ = w.Write([]byte(failure))
+	}))
+	defer upstream.Close()
+	root := filepath.Join(t.TempDir(), "tasks")
+	store, err := NewDiskStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema := testSchema()
+	schema.Response.ErrorMessage = "data.error.message"
+	task := &Task{ID: "mtask_poll_failure", UserID: "2", KeyID: "7", Schema: schema, SchemaID: schema.ID,
+		Status: StatusProcessing, UpstreamURL: upstream.URL, UpstreamTaskID: "task_accepted",
+		Response: []byte(`{"request_id":"task_accepted"}`)}
+	if err := store.Create(task); err != nil {
+		t.Fatal(err)
+	}
+	tracker := NewTracker(store, nil, upstream.Client(), nil)
+	defer tracker.Stop()
+	tracker.trackLoop(task.ID)
+	restarted, err := NewDiskStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved, ok := restarted.Get(task.ID)
+	if !ok || saved.Status != StatusFailed || saved.ErrorMessage != "generation timed out" || string(saved.ErrorBody) != failure {
+		t.Fatalf("failure response not preserved: %+v", saved)
+	}
+	if len(saved.Response) != 0 || saved.Usage != nil || !saved.FilesAcknowledged {
+		t.Fatal("failure cleanup or billing behavior changed")
+	}
+}

@@ -216,6 +216,7 @@ func (t *Tracker) trackLoop(taskID string) {
 				t.complete(task, StatusSucceeded, usageOut, ExtractResult(schema, body), "")
 				return
 			case "failed":
+				task.Response = append([]byte(nil), body...)
 				t.complete(task, StatusFailed, nil, ExtractResult(schema, body),
 					firstNonEmpty(ExtractErrorMessage(schema, body), "upstream task failed"))
 				return
