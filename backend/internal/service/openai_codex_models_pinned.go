@@ -169,7 +169,16 @@ func (s *OpenAIGatewayService) fetchPinnedOpenAIModels(ctx context.Context, grou
 		return nil, ErrNoPinnedCodexModelsAccounts
 	}
 
-	members, err := s.accountRepo.ListByGroup(ctx, group.ID)
+	members, matched, err := listAccountMatchingAccounts(ctx, s.accountRepo, PlatformOpenAI, false)
+	if !matched {
+		members, err = s.accountRepo.ListByGroup(ctx, group.ID)
+	}
+	if matched {
+		cfg.AccountIDs = make([]int64, 0, len(members))
+		for _, account := range members {
+			cfg.AccountIDs = append(cfg.AccountIDs, account.ID)
+		}
+	}
 	if err != nil {
 		return nil, fmt.Errorf("load pinned codex models manifest accounts: %w", err)
 	}

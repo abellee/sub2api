@@ -11,6 +11,9 @@ func TestAccountMatchingGatewayRoutingStickyAndFailover(t *testing.T) {
 	for _, loadAware := range []bool{false, true} {
 		f := newLoadAwareRestrictionFixture(t, false, map[string]int64{"sticky": 1}, map[string][]int64{"claude-fable-5-1": {1, 2}})
 		f.svc.cfg.Gateway.Scheduling.LoadBatchEnabled = loadAware
+		repo := f.svc.accountRepo.(*mockAccountRepoForPlatform)
+		repo.accountsByID[2].GroupIDs = []int64{55}
+		repo.accountsByID[2].AccountGroups = []AccountGroup{{GroupID: 55}}
 		ctx := withAccountMatching(f.ctx, []int64{2})
 		selection, err := f.svc.SelectAccountWithLoadAwareness(ctx, &f.groupID, "sticky", "claude-fable-5-1", nil, "", 2)
 		require.NoError(t, err)

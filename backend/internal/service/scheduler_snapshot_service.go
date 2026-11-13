@@ -210,6 +210,10 @@ func (s *SchedulerSnapshotService) Stop() {
 
 func (s *SchedulerSnapshotService) ListSchedulableAccounts(ctx context.Context, groupID *int64, platform string, hasForcePlatform bool) ([]Account, bool, error) {
 	useMixed := (platform == PlatformAnthropic || platform == PlatformGemini) && !hasForcePlatform
+	if accounts, matched, err := listAccountMatchingAccounts(ctx, s.accountRepo, platform, useMixed); matched {
+		return accounts, useMixed, err
+	}
+
 	mode := s.resolveMode(platform, hasForcePlatform)
 	bucket := s.bucketFor(groupID, platform, mode)
 	var writeToken SchedulerBucketWriteToken

@@ -462,6 +462,10 @@ func (s *GeminiMessagesCompatService) hydrateSelectedAccount(ctx context.Context
 }
 
 func (s *GeminiMessagesCompatService) listSchedulableAccountsOnce(ctx context.Context, groupID *int64, platform string, hasForcePlatform bool) ([]Account, error) {
+	if accounts, matched, err := listAccountMatchingAccounts(ctx, s.accountRepo, platform, platform == PlatformGemini && !hasForcePlatform); matched {
+		return accounts, err
+	}
+
 	if s.schedulerSnapshot != nil {
 		accounts, _, err := s.schedulerSnapshot.ListSchedulableAccounts(ctx, groupID, platform, hasForcePlatform)
 		return accounts, err

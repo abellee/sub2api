@@ -968,8 +968,16 @@ func (s *BatchImagePublicService) selectProviderAndAccount(ctx context.Context, 
 }
 
 func (s *BatchImagePublicService) listCandidateAccounts(ctx context.Context, groupID *int64, platform string) ([]Account, error) {
+
 	if s.AccountRepo == nil {
 		return nil, ErrBatchImageNoAccountAvailable
+	}
+	if _, matched := ctx.Value(accountMatchingContextKey{}).(map[int64]struct{}); matched {
+		accounts, err := s.AccountRepo.ListSchedulableByPlatform(ctx, platform)
+		if err != nil {
+			return nil, err
+		}
+		return filterAccountMatching(ctx, accounts), nil
 	}
 	if groupID != nil && *groupID > 0 {
 		return s.AccountRepo.ListSchedulableByGroupIDAndPlatform(ctx, *groupID, platform)

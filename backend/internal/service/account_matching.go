@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"sort"
 	"time"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
@@ -80,4 +81,48 @@ func (s *APIKeyService) WithAccountMatching(ctx context.Context, userID int64, g
 		return ctx, err
 	}
 	return withAccountMatching(ctx, ids), nil
+}
+
+// Matching rules define a request-local account pool, independent of normal group membership.
+// Never publish this pool into shared group snapshots.
+func listAccountMatchingAccounts(ctx context.Context, repo AccountRepository, platform string, mixed bool) ([]Account, bool, error) {
+	allowed, restricted := ctx.Value(accountMatchingContextKey{}).(map[int64]struct{})
+	if !restricted {
+		return nil, false, nil
+	}
+	accounts := make([]Account, 0, len(allowed))
+	if len(allowed) == 0 {
+		return accounts, true, nil
+	}
+	if repo == nil {
+		return nil, true, ErrNoAvailableAccounts
+	}
+	ids := make([]int64, 0, len(allowed))
+	for id := range allowed {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	loaded, err := repo.GetByIDs(ctx, ids)
+	if err != nil {
+		return nil, true, err
+	}
+	for _, account := range loaded {
+		if account == nil || !AccountMatchingAllows(ctx, account.ID) || !account.IsSchedulable() {
+			continue
+		}
+		if account.Platform != platform && !(mixed && account.Platform == PlatformAntigravity && account.IsMixedSchedulingEnabled()) {
+			continue
+		}
+		accounts = append(accounts, *account)
+	}
+	return accounts, true, nil
+}
+
+func accountMatchingOverridesMembership(ctx context.Context, account *Account) (bool, bool) {
+	allowed, restricted := ctx.Value(accountMatchingContextKey{}).(map[int64]struct{})
+	if !restricted || account == nil {
+		return false, restricted
+	}
+	_, ok := allowed[account.ID]
+	return ok, true
 }

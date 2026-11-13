@@ -1,7 +1,7 @@
 export default {
   accountMatching: {
     title: 'Account matching',
-    description: 'Requests by this user to the selected groups may only use the selected accounts. Accounts must still belong to the group and be available.',
+    description: 'Requests to the selected groups use only the selected accounts, even when they belong to other groups. Accounts must be enabled, available, and support the requested platform and model.',
     add: 'Add account matching',
     edit: 'Edit account matching',
     user: 'Registered email',

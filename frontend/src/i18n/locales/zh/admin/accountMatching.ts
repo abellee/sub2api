@@ -1,7 +1,7 @@
 export default {
   accountMatching: {
     title: '账号匹配',
-    description: '用户请求指定分组时，仅使用限定账号。账号仍需属于该分组并且可用。',
+    description: '用户请求指定分组时，仅使用限定账号，无需将账号绑定到该分组。账号仍需开启、可用，并支持请求的平台和模型。',
     add: '添加账号匹配',
     edit: '编辑账号匹配',
     user: '注册邮箱',
