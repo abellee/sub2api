@@ -3013,7 +3013,7 @@ func (s *GeminiMessagesCompatService) handleNativeStreamingResponse(c *gin.Conte
 		wireLine := line
 		if requestAccountFailoverEnabled(c) {
 			// Hold one bounded event so multiline errors never reach the client before retry.
-			pending.WriteString(line)
+			_, _ = pending.WriteString(line)
 			if err == nil && strings.TrimSpace(line) != "" {
 				continue
 			}
