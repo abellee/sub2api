@@ -909,6 +909,9 @@ func (s *GeminiCachedContentService) BoundAccount(ctx context.Context, record *G
 // boundAccount 返回持有缓存的账号：账号已删除返回 nil；账号存在但当前不支持显式缓存返回
 // errGeminiCachedContentAccountUnsupported，调用方据此区分"永久不可用"与"暂时不可用"。
 func (s *GeminiCachedContentService) boundAccount(ctx context.Context, record *GeminiCachedContent) (*Account, error) {
+	if !AccountMatchingAllows(ctx, record.AccountID) {
+		return nil, nil
+	}
 	if s.compat == nil || s.compat.accountRepo == nil {
 		return nil, errors.New("account repository not configured")
 	}

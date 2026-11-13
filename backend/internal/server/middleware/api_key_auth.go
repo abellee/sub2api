@@ -172,6 +172,11 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 			return
 		}
 		ctx := context.WithValue(c.Request.Context(), ctxkey.UserID, apiKey.User.ID)
+		ctx, matchingErr := apiKeyService.WithAccountMatching(ctx, apiKey.User.ID, apiKey.GroupID)
+		if matchingErr != nil {
+			AbortWithError(c, http.StatusServiceUnavailable, "ACCOUNT_MATCHING_UNAVAILABLE", "Unable to load account matching rules")
+			return
+		}
 		c.Request = c.Request.WithContext(ctx)
 		billingInfoRequest := c.Request.URL.Path == "/v1/sub2api/billing"
 		// Async image task polling only reads data that already belongs to the

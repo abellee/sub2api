@@ -1,4 +1,5 @@
 import overview from './overview'
+import accountMatching from './accountMatching'
 import channels from './channels'
 import accounts from './accounts'
 import resources from './resources'
@@ -15,6 +16,7 @@ import pushNotifications from './pushNotifications'
 import menuManagement from './menuManagement'
 
 export default {
+  ...accountMatching,
   ...overview,
   ...channels,
   ...accounts,

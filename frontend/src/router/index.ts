@@ -501,6 +501,12 @@ const routes: RouteRecordRaw[] = [
 
   // ==================== Admin Routes ====================
   {
+    path: '/admin/account-matching',
+    name: 'AdminAccountMatching',
+    component: () => import('@/views/admin/AccountMatchingView.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true, title: '账号匹配', titleKey: 'admin.accountMatching.title' }
+  },
+  {
     path: '/admin/menu-management',
     name: 'AdminMenuManagement',
     component: () => import('@/views/admin/MenuManagementView.vue'),

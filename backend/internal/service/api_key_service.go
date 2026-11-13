@@ -289,6 +289,7 @@ type RateLimitCacheInvalidator interface {
 }
 
 type APIKeyService struct {
+	accountMatching           AccountMatchingRepository
 	apiKeyRepo                APIKeyRepository
 	userRepo                  UserRepository
 	groupRepo                 GroupRepository

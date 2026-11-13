@@ -435,6 +435,9 @@ func (s *GeminiMessagesCompatService) GetAntigravityGatewayService() *Antigravit
 }
 
 func (s *GeminiMessagesCompatService) getSchedulableAccount(ctx context.Context, accountID int64) (*Account, error) {
+	if !AccountMatchingAllows(ctx, accountID) {
+		return nil, ErrNoAvailableAccounts
+	}
 	if s.schedulerSnapshot != nil {
 		return s.schedulerSnapshot.GetAccount(ctx, accountID)
 	}
@@ -442,6 +445,9 @@ func (s *GeminiMessagesCompatService) getSchedulableAccount(ctx context.Context,
 }
 
 func (s *GeminiMessagesCompatService) hydrateSelectedAccount(ctx context.Context, account *Account) (*Account, error) {
+	if account != nil && !AccountMatchingAllows(ctx, account.ID) {
+		return nil, ErrNoAvailableAccounts
+	}
 	if account == nil || s.schedulerSnapshot == nil {
 		return account, nil
 	}

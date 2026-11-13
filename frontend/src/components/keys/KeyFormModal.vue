@@ -126,27 +126,28 @@
                           {{ option.recommendationReason }}
                         </p>
                       </div>
-                      <div v-if="option.requiredProtocol || option.blockedClients?.length" class="flex flex-wrap gap-1.5" data-test="group-policy-tags">
-                        <span v-if="option.requiredProtocol" class="rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
-                          {{ t('keys.requiredProtocolTag', { protocol: protocolNames[option.requiredProtocol] }) }}
-                        </span>
-                        <span v-for="client in option.blockedClients" :key="client" class="break-all rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300" :title="t('keys.blockedClientTagHint')">
-                          {{ t('keys.blockedClientTag', { client }) }}
-                        </span>
-                      </div>
-                      <!-- 底部：上限倍率(左) | 模型价格入口(右) -->
+                      <!-- 底部：上限倍率与使用限制(左) | 模型价格入口(右) -->
                       <div class="group-row-footer">
-                        <span
-                          v-if="capFor(option.value) != null"
-                          class="group-cap-tag"
-                          :title="t('keys.capRateHint')"
-                        >
-                          {{ t('keys.capRateTag', { rate: formatCapRate(capFor(option.value)!) }) }}
-                        </span>
-                        <span v-else />
+                        <div class="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+                          <span
+                            v-if="capFor(option.value) != null"
+                            class="group-cap-tag"
+                            :title="t('keys.capRateHint')"
+                          >
+                            {{ t('keys.capRateTag', { rate: formatCapRate(capFor(option.value)!) }) }}
+                          </span>
+                          <div v-if="option.requiredProtocol || option.blockedClients?.length" class="contents" data-test="group-policy-tags">
+                            <span v-if="option.requiredProtocol" class="inline-flex flex-none cursor-help items-center whitespace-nowrap rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300" :title="t('keys.requiredProtocolTagHint', { protocol: protocolNames[option.requiredProtocol] })">
+                              {{ t('keys.requiredProtocolTag', { protocol: protocolNames[option.requiredProtocol] }) }}
+                            </span>
+                            <span v-for="client in option.blockedClients" :key="client" class="inline-flex flex-none cursor-help items-center whitespace-nowrap rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300" :title="t('keys.blockedClientTagHint', { client })">
+                              {{ t('keys.blockedClientTag', { client }) }}
+                            </span>
+                          </div>
+                        </div>
                         <button
                           type="button"
-                          class="group-pricing-link ml-auto"
+                          class="group-pricing-link ml-auto shrink-0"
                           @click.stop="openModelPricing(option.value)"
                         >
                           <Icon name="chart" size="xs" />
@@ -1024,16 +1025,16 @@ const recommendationStarEmoji = (rating: number | undefined, index: number) => {
 }
 
 .group-row {
-  @apply block min-h-[5.5rem] w-full rounded-lg border border-gray-100 bg-white px-3 py-2.5 text-left transition-colors hover:border-primary-300 hover:bg-primary-50/60 dark:border-dark-700 dark:bg-dark-800 dark:hover:border-primary-500 dark:hover:bg-primary-900/20;
+  @apply flex min-h-[5.5rem] w-full flex-col rounded-lg border border-gray-100 bg-white px-3 pt-2.5 text-left transition-colors hover:border-primary-300 hover:bg-primary-50/60 dark:border-dark-700 dark:bg-dark-800 dark:hover:border-primary-500 dark:hover:bg-primary-900/20;
 }
 
 .group-row-selected {
   @apply bg-primary-50/80 ring-1 ring-inset ring-primary-500/30 dark:bg-primary-900/30;
 }
 
-/* 条目底部：上限倍率(左) | 时间格子(中) | 模型价格入口(右) */
+/* 条目底部：上限倍率与使用限制(左) | 模型价格入口(右) */
 .group-row-footer {
-  @apply mt-2 flex items-center gap-2 border-t border-gray-100 pt-1.5 dark:border-dark-700/60;
+  @apply mt-2 flex flex-1 items-center gap-2 border-t border-gray-100 py-2 dark:border-dark-700/60;
 }
 
 .group-cap-tag {

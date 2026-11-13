@@ -1524,6 +1524,9 @@ func (s *GatewayService) ReleaseAccountSession(ctx context.Context, account *Acc
 }
 
 func (s *GatewayService) getSchedulableAccount(ctx context.Context, accountID int64) (*Account, error) {
+	if !AccountMatchingAllows(ctx, accountID) {
+		return nil, ErrNoAvailableAccounts
+	}
 	var (
 		account *Account
 		err     error
@@ -1549,6 +1552,7 @@ func (s *GatewayService) getSchedulableAccount(ctx context.Context, accountID in
 }
 
 func (s *GatewayService) filterAccountsBySchedulingThreshold(ctx context.Context, accounts []Account) []Account {
+	accounts = filterAccountMatching(ctx, accounts)
 	if len(accounts) == 0 {
 		return accounts
 	}
@@ -1571,6 +1575,9 @@ func (s *GatewayService) isAccountBlockedBySchedulingThreshold(ctx context.Conte
 }
 
 func (s *GatewayService) hydrateSelectedAccount(ctx context.Context, account *Account) (*Account, error) {
+	if account != nil && !AccountMatchingAllows(ctx, account.ID) {
+		return nil, ErrNoAvailableAccounts
+	}
 	if account == nil || s.schedulerSnapshot == nil {
 		return account, nil
 	}

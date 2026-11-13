@@ -62,6 +62,15 @@ func RegisterAdminRoutes(
 		// 账号管理
 		registerAccountRoutes(admin, h, stepUpAuth)
 
+		if h.Admin.AccountMatching != nil {
+			matching := admin.Group("/account-matching")
+			matching.GET("", h.Admin.AccountMatching.List)
+			matching.GET("/users", h.Admin.AccountMatching.SearchUsers)
+			matching.POST("", h.Admin.AccountMatching.Save)
+			matching.PUT("/:id", h.Admin.AccountMatching.Save)
+			matching.DELETE("/:id", h.Admin.AccountMatching.Delete)
+		}
+
 		// 公告管理
 		registerAnnouncementRoutes(admin, h)
 

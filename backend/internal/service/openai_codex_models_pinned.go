@@ -181,6 +181,9 @@ func (s *OpenAIGatewayService) fetchPinnedOpenAIModels(ctx context.Context, grou
 	// 按配置顺序筛选可用账号；已解绑/已删除的 ID 直接跳过。
 	usable := make([]Account, 0, len(cfg.AccountIDs))
 	for _, id := range cfg.AccountIDs {
+		if !AccountMatchingAllows(ctx, id) {
+			continue
+		}
 		member, ok := memberByID[id]
 		if !ok || member.Platform != PlatformOpenAI {
 			continue
