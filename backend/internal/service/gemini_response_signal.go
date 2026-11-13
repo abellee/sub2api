@@ -11,7 +11,7 @@ import (
 )
 
 // geminiResponseSignalKind 区分 Gemini 2xx 响应事件里携带的带内信号。
-// 这些信号都承载在 HTTP 2xx 之上，客户端字节原样透传，只影响 ops 记录。
+// These signals arrive inside HTTP 2xx; provider errors may trigger account failover.
 // 数值越大优先级越高：同一响应出现多个信号时只登记优先级最高的一个。
 type geminiResponseSignalKind int
 
@@ -338,6 +338,38 @@ func (s *GeminiMessagesCompatService) markGeminiResponseSignal(c *gin.Context, a
 		return
 	}
 
+	s.recordGeminiUpstreamSignal(c, account, sig, stream, upstreamRequestID)
+	MarkOpsStreamErrorValue(c, OpsStreamError{
+		ErrType:         geminiSignalOpsErrorType(sig.Status),
+		Code:            sig.Reason,
+		Message:         message,
+		IntendedStatus:  sig.Status,
+		CountTowardsSLA: true,
+		NonStream:       !stream,
+	})
+}
+
+// Retried errors stay private; only an exhausted request emits a terminal error.
+func (s *GeminiMessagesCompatService) geminiResponseSignalFailover(c *gin.Context, account *Account, sig geminiResponseSignal, stream bool, requestID string) *UpstreamFailoverError {
+	if !requestAccountFailoverEnabled(c) || c.Request.Context().Err() != nil ||
+		(sig.Kind != geminiSignalError && sig.Kind != geminiSignalAbnormalStop) {
+		return nil
+	}
+	body := []byte(sig.Detail)
+	if !accountErrorShouldFailover(sig.Status, body) {
+		return nil
+	}
+	s.recordGeminiUpstreamSignal(c, account, sig, stream, requestID)
+	return &UpstreamFailoverError{
+		StatusCode: sig.Status, ResponseBody: body,
+		ClientStatusCode: sig.Status, ClientMessage: sig.Message,
+		SafeToFailoverAfterWrite: true, SkipAccountCooldown: true,
+		NextAccountAction: NextAccountRetry,
+	}
+}
+
+func (s *GeminiMessagesCompatService) recordGeminiUpstreamSignal(c *gin.Context, account *Account, sig geminiResponseSignal, stream bool, upstreamRequestID string) {
+	message := sanitizeUpstreamErrorMessage(strings.TrimSpace(sig.Message))
 	detail := ""
 	if sig.Detail != "" && s != nil && s.cfg != nil && s.cfg.Gateway.LogUpstreamErrorBody {
 		maxBytes := s.cfg.Gateway.LogUpstreamErrorBodyMaxBytes
@@ -367,14 +399,6 @@ func (s *GeminiMessagesCompatService) markGeminiResponseSignal(c *gin.Context, a
 		event.AccountName = account.Name
 	}
 	appendOpsUpstreamError(c, event)
-	MarkOpsStreamErrorValue(c, OpsStreamError{
-		ErrType:         geminiSignalOpsErrorType(sig.Status),
-		Code:            sig.Reason,
-		Message:         message,
-		IntendedStatus:  sig.Status,
-		CountTowardsSLA: true,
-		NonStream:       !stream,
-	})
 }
 
 // markGeminiEmptyResponse 登记"上游 2xx 但没有任何响应内容"的结果：流式指整段 body 没有 data 事件
@@ -397,24 +421,22 @@ func (s *GeminiMessagesCompatService) markGeminiEmptyResponse(c *gin.Context, ac
 // finalizeGeminiSSESignal 在上游 SSE 读完后做最终登记：优先登记流中优先级最高的信号；
 // 没有任何 data 事件时，兜底内容超限则放弃判定，为空登记空响应，是非 SSE 的 JSON 则对整段
 // 判定一次，整段没有信号但没有任何响应内容同样登记空响应。
-func (s *GeminiMessagesCompatService) finalizeGeminiSSESignal(c *gin.Context, account *Account, stream bool, upstreamRequestID string, best geminiResponseSignal, sawDataEvent bool, fallback *geminiSSEFallbackBody) {
-	if best.Kind != geminiSignalNone {
-		s.markGeminiResponseSignal(c, account, best, stream, upstreamRequestID)
-		return
+func (s *GeminiMessagesCompatService) finalizeGeminiSSESignal(c *gin.Context, account *Account, stream bool, upstreamRequestID string, best geminiResponseSignal, sawDataEvent bool, fallback *geminiSSEFallbackBody) *UpstreamFailoverError {
+	if best.Kind == geminiSignalNone {
+		if sawDataEvent || fallback.Truncated() {
+			return nil
+		}
+		body := fallback.Bytes()
+		if sig, ok := detectGeminiResponseSignalInBody(body); ok {
+			best = sig
+		} else if isGeminiEmptyResponseBody(body) {
+			best = geminiResponseSignal{Kind: geminiSignalAbnormalStop, Status: http.StatusBadGateway,
+				Reason: geminiSignalEmptyStreamReason, Message: "Gemini upstream returned an empty stream body"}
+		}
 	}
-	if sawDataEvent || fallback.Truncated() {
-		return
+	if failure := s.geminiResponseSignalFailover(c, account, best, stream, upstreamRequestID); failure != nil {
+		return failure
 	}
-	body := fallback.Bytes()
-	if len(bytes.TrimSpace(body)) == 0 {
-		s.markGeminiEmptyResponse(c, account, stream, upstreamRequestID)
-		return
-	}
-	if sig, ok := detectGeminiResponseSignalInBody(body); ok {
-		s.markGeminiResponseSignal(c, account, sig, stream, upstreamRequestID)
-		return
-	}
-	if isGeminiEmptyResponseBody(body) {
-		s.markGeminiEmptyResponse(c, account, stream, upstreamRequestID)
-	}
+	s.markGeminiResponseSignal(c, account, best, stream, upstreamRequestID)
+	return nil
 }

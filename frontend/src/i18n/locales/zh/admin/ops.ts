@@ -316,9 +316,12 @@ export default {
       },
       // Error Detail Modal
       errorDetail: {
-        failoverResult: '换号最终结果',
+        failoverResult: '请求最终结果',
         successAccount: '成功账号',
         finalAccount: '最终账号',
+        lastAttemptAccount: '最后尝试账号',
+        noAccountSwitch: '仅尝试同一账号，未切号',
+        accountSwitched: '已切换账号，尝试顺序如下',
         failoverChain: '账号尝试顺序',
         incompleteFailoverChain: '历史链路不完整，无法还原全部账号尝试',
         failoverOutcome: { success: '成功', failed: '失败', canceled: '客户端断开或请求超时' },

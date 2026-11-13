@@ -54,11 +54,31 @@ describe('OpsErrorDetailModal', () => {
     await flushPromises()
     const rows = wrapper.findAll('[data-testid="failover-chain"] li')
     expect(rows).toHaveLength(2)
+    expect(wrapper.get('[data-testid="account-switch-summary"]').text()).toContain('admin.ops.errorDetail.accountSwitched')
     expect(rows[0].text()).toContain('#31')
     expect(rows[0].text()).toContain('Upstream unavailable')
     expect(rows[1].text()).toContain('#37')
     expect(rows[1].text()).toContain('admin.ops.errorDetail.failoverOutcome.success')
-    expect(wrapper.find('[data-testid="failover-outcome"]').text()).toContain('admin.ops.errorDetail.finalAccount')
+    expect(wrapper.find('[data-testid="failover-outcome"]').text()).toContain('admin.ops.errorDetail.successAccount')
+  })
+
+  it.each([false, true])('shows an unswitched failure even with same-account retries (%s)', async (sameAccountRetry) => {
+    const attempt = { account_id: 403, result: 'failed', status_code: 502 }
+    mocks.getRequestErrorDetail.mockResolvedValue({
+      id: 22, phase: 'request', status_code: 502,
+      upstream_errors: JSON.stringify([{ account_id: 403, failover_result: {
+        result: 'failed', final_account_id: 403,
+        attempts: sameAccountRetry ? [attempt, attempt] : [attempt]
+      } }])
+    })
+    const wrapper = shallowMount(OpsErrorDetailModal, {
+      props: { show: true, errorId: 22, errorType: 'request' },
+      global: { stubs: { BaseDialog: { template: '<div><slot /></div>' }, Icon: true } }
+    })
+    await flushPromises()
+    expect(wrapper.get('[data-testid="account-switch-summary"]').text()).toContain('admin.ops.errorDetail.noAccountSwitch')
+    expect(wrapper.get('[data-testid="failover-outcome"]').text()).toContain('admin.ops.errorDetail.lastAttemptAccount')
+    expect(wrapper.get('[data-testid="failover-outcome"]').text()).not.toContain('admin.ops.errorDetail.successAccount')
   })
 
   it('marks old traces incomplete rather than inventing missing attempts', async () => {

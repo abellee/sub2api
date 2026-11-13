@@ -34,6 +34,15 @@ export function accountFailoverOutcome(raw?: string): AccountFailoverOutcome | n
           ['success', 'failed', 'canceled'].includes(attempt.result)
         )
       }
+      const last = parsed.attempts?.[parsed.attempts.length - 1]
+      const event = events[i]
+      if (parsed.result !== 'success' && last?.result === 'success' &&
+          last.account_id === parsed.final_account_id && event.account_id === last.account_id &&
+          Number.isInteger(event.upstream_status_code) && event.upstream_status_code >= 400) {
+        last.result = parsed.result
+        last.status_code = parsed.result === 'canceled' ? 499 : event.upstream_status_code
+        last.message = typeof event.message === 'string' ? event.message : undefined
+      }
       return parsed
     }
   } catch {

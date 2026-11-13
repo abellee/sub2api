@@ -316,9 +316,12 @@ export default {
       },
       // Error Detail Modal
       errorDetail: {
-        failoverResult: 'Final failover result',
+        failoverResult: 'Final request result',
         successAccount: 'Successful account',
         finalAccount: 'Final account',
+        lastAttemptAccount: 'Last attempted account',
+        noAccountSwitch: 'Only one account was tried; no account switch',
+        accountSwitched: 'Accounts were switched in the order below',
         failoverChain: 'Account attempts in order',
         incompleteFailoverChain: 'Historical trace is incomplete; not all account attempts can be reconstructed',
         failoverOutcome: { success: 'Succeeded', failed: 'Failed', canceled: 'Client disconnected or request timed out' },

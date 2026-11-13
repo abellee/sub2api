@@ -89,6 +89,12 @@ func recordAccountFailoverAttempt(ctx context.Context, c *gin.Context, attempt A
 		}
 	}
 	if c != nil {
+		if terminal, ok := GetOpsStreamError(c); ok && attempt.Result == "success" &&
+			(terminal.AccountID == 0 || terminal.AccountID == attempt.AccountID) {
+			attempt.Result, attempt.StatusCode = "failed", terminal.IntendedStatus
+			attempt.Message = truncateString(sanitizeUpstreamErrorMessage(terminal.Message), 512)
+			c.Set(OpsAccountFailoverResultKey, "failed")
+		}
 		if raw, ok := c.Get(OpsUpstreamErrorsKey); ok {
 			if events, ok := raw.([]*OpsUpstreamErrorEvent); ok {
 				for i := len(events) - 1; i >= 0; i-- {

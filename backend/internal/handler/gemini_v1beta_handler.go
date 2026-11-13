@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"regexp"
 	"slices"
@@ -993,13 +994,17 @@ func googlePlatformError(c *gin.Context, status int, message string) {
 // 与 Claude / OpenAI 格式错误同口径分类；errType 为空时不登记。
 func googleErrorWithType(c *gin.Context, status int, errType, code, message string) {
 	service.SetOpsLocalErrorType(c, errType, code)
-	c.JSON(status, gin.H{
-		"error": gin.H{
-			"code":    status,
-			"message": message,
-			"status":  googleapi.HTTPStatusToGoogleStatus(status),
-		},
-	})
+	body := gin.H{"error": gin.H{
+		"code": status, "message": message, "status": googleapi.HTTPStatusToGoogleStatus(status),
+	}}
+	if c.Writer.Written() && strings.Contains(c.Writer.Header().Get("Content-Type"), "text/event-stream") {
+		service.MarkOpsStreamError(c, errType, message, status)
+		payload, _ := json.Marshal(body)
+		_, _ = fmt.Fprintf(c.Writer, "\ndata: %s\n\n", payload)
+		c.Writer.Flush()
+		return
+	}
+	c.JSON(status, body)
 }
 
 // googleClientErrorType 返回客户端请求类 4xx 状态码对应的 ops 错误类型；其余状态码返回空串。

@@ -131,8 +131,11 @@
         <div class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
           {{ t(`admin.ops.errorDetail.failoverOutcome.${failoverOutcome.result}`) }}
           <span v-if="failoverOutcome.final_account_id" class="ml-2">
-            {{ t('admin.ops.errorDetail.finalAccount') }} #{{ failoverOutcome.final_account_id }}
+            {{ t(failoverOutcome.result === 'success' ? 'admin.ops.errorDetail.successAccount' : 'admin.ops.errorDetail.lastAttemptAccount') }} #{{ failoverOutcome.final_account_id }}
           </span>
+        </div>
+        <div v-if="failoverOutcome.attempts?.length" class="mt-2 text-xs text-gray-500" data-testid="account-switch-summary">
+          {{ t(accountWasSwitched ? 'admin.ops.errorDetail.accountSwitched' : 'admin.ops.errorDetail.noAccountSwitch') }}
         </div>
         <div class="mt-3 text-xs font-bold text-gray-500">{{ t('admin.ops.errorDetail.failoverChain') }}</div>
         <ol v-if="failoverOutcome.attempts?.length" class="mt-2 space-y-2" data-testid="failover-chain">
@@ -293,6 +296,7 @@ const appStore = useAppStore()
 const loading = ref(false)
 const detail = ref<OpsErrorDetail | null>(null)
 const failoverOutcome = computed(() => accountFailoverOutcome(detail.value?.upstream_errors))
+const accountWasSwitched = computed(() => new Set(failoverOutcome.value?.attempts?.map(attempt => attempt.account_id)).size > 1)
 
 const showUpstreamList = computed(() => props.errorType === 'request')
 
