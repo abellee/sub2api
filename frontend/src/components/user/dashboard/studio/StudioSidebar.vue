@@ -1,18 +1,13 @@
 <template>
   <aside
-    ref="sidebarRoot"
     class="sidebar"
-    @mouseenter="cancelHoverLeave"
-    @mouseleave="scheduleHoverLeave"
-    @focusin="handleFocusIn"
-    @focusout="focused = !!sidebarRoot?.contains($event.relatedTarget as Node)"
     :class="[
       sidebarCollapsed ? 'w-[72px]' : 'w-64',
       { '-translate-x-full lg:translate-x-0': !mobileOpen, 'studio-sidebar-expanded': expanded }
     ]"
   >
     <!-- Logo/Brand -->
-    <div class="sidebar-header" :class="{ 'sidebar-header-collapsed': sidebarCollapsed, 'sidebar-header-home-brand': useHomepageBrand }" @mouseenter="hovered = true">
+    <div class="sidebar-header" :class="{ 'sidebar-header-collapsed': sidebarCollapsed, 'sidebar-header-home-brand': useHomepageBrand }">
       <div v-if="useHomepageBrand" class="sidebar-home-brand">
         <router-link
           :to="homePath"
@@ -53,7 +48,7 @@
     </div>
 
     <!-- Navigation -->
-    <nav ref="sidebarNavRef" class="sidebar-nav scrollbar-hide" @mouseenter="hovered = true">
+    <nav ref="sidebarNavRef" class="sidebar-nav scrollbar-hide">
       <!-- Admin View: Admin menu first, then personal menu -->
       <template v-if="isAdmin">
         <!-- Admin Section -->
@@ -198,7 +193,7 @@
         aria-hidden="true"
       ></div>
 
-      <StudioAccountMenu :expanded="expanded" @hold-open="forcedOpen = $event" />
+      <StudioAccountMenu :expanded="expanded" />
     </div>
   </aside>
 
@@ -217,7 +212,6 @@ import { computed, h, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'v
 import { storeToRefs } from 'pinia'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { useMediaQuery } from '@vueuse/core'
 import { useAdminSettingsStore, useAppStore, useAuthStore, useOnboardingStore, useRemoteWidgetsStore } from '@/stores'
 import StudioAccountMenu from './StudioAccountMenu.vue'
 import VersionBadge from '@/components/common/VersionBadge.vue'
@@ -279,23 +273,8 @@ const onboardingStore = useOnboardingStore()
 const adminSettingsStore = useAdminSettingsStore()
 const remoteWidgetsStore = useRemoteWidgetsStore()
 const userMenuStore = useUserMenuStore()
-const sidebarRoot = ref<HTMLElement | null>(null)
-const hovered = ref(false)
-let hoverLeaveTimer: ReturnType<typeof setTimeout> | undefined
-function cancelHoverLeave() { clearTimeout(hoverLeaveTimer) }
-function scheduleHoverLeave() {
-  cancelHoverLeave()
-  hoverLeaveTimer = setTimeout(() => { hovered.value = false }, 180)
-}
-const focused = ref(false)
-const forcedOpen = ref(false)
-const desktop = useMediaQuery('(min-width: 1024px)')
-const expanded = computed(() => !desktop.value || hovered.value || focused.value || forcedOpen.value)
-const sidebarCollapsed = computed(() => !expanded.value)
-function handleFocusIn(event: FocusEvent) {
-  // Keep the collapsed utility buttons in place when they receive focus.
-  if (expanded.value || (event.target as HTMLElement).closest('.sidebar-nav, .sidebar-header')) focused.value = true
-}
+const expanded = true
+const sidebarCollapsed = false
 const mobileOpen = computed(() => appStore.mobileOpen)
 const isAdmin = computed(() => authStore.isAdmin)
 const sidebarNavRef = ref<HTMLElement | null>(null)
@@ -980,13 +959,11 @@ function toggleGroup(item: NavItem) {
 
 /**
  * Click handler for collapsible parent items.
- * - When sidebar is collapsed: do nothing (children are not visible).
  * - When `expandOnly` is true: only toggle expand state.
  * - Otherwise (default, e.g. /admin/orders): navigate to the parent path
  *   (router-link semantics) and ensure the group is expanded.
  */
 function handleGroupClick(item: NavItem) {
-  if (sidebarCollapsed.value) return
   if (item.expandOnly) {
     toggleGroup(item)
     return
@@ -1054,7 +1031,6 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  cancelHoverLeave()
   if (sidebarNavRef.value) {
     appStore.sidebarScrollTop = sidebarNavRef.value.scrollTop
   }
