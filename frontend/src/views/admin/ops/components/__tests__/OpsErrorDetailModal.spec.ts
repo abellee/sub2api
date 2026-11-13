@@ -34,6 +34,47 @@ describe('OpsErrorDetailModal', () => {
     mocks.listRequestErrorUpstreamErrors.mockResolvedValue({ items: [] })
   })
 
+  it('shows every attempted account and the final outcome', async () => {
+    mocks.getRequestErrorDetail.mockResolvedValue({
+      id: 19, phase: 'request', status_code: 200,
+      upstream_errors: JSON.stringify([{
+        account_id: 31, failover_result: {
+          result: 'success', final_account_id: 37,
+          attempts: [
+            { account_id: 31, account_name: 'First account', result: 'failed', status_code: 502, message: 'Upstream unavailable' },
+            { account_id: 37, result: 'success', status_code: 200 }
+          ]
+        }
+      }])
+    })
+    const wrapper = shallowMount(OpsErrorDetailModal, {
+      props: { show: true, errorId: 19, errorType: 'request' },
+      global: { stubs: { BaseDialog: { template: '<div><slot /></div>' }, Icon: true } }
+    })
+    await flushPromises()
+    const rows = wrapper.findAll('[data-testid="failover-chain"] li')
+    expect(rows).toHaveLength(2)
+    expect(rows[0].text()).toContain('#31')
+    expect(rows[0].text()).toContain('Upstream unavailable')
+    expect(rows[1].text()).toContain('#37')
+    expect(rows[1].text()).toContain('admin.ops.errorDetail.failoverOutcome.success')
+    expect(wrapper.find('[data-testid="failover-outcome"]').text()).toContain('admin.ops.errorDetail.finalAccount')
+  })
+
+  it('marks old traces incomplete rather than inventing missing attempts', async () => {
+    mocks.getRequestErrorDetail.mockResolvedValue({
+      id: 20, phase: 'request', status_code: 502,
+      upstream_errors: JSON.stringify([{ account_id: 31, failover_result: { result: 'failed' } }])
+    })
+    const wrapper = shallowMount(OpsErrorDetailModal, {
+      props: { show: true, errorId: 20, errorType: 'request' },
+      global: { stubs: { BaseDialog: { template: '<div><slot /></div>' }, Icon: true } }
+    })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="incomplete-failover-chain"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="failover-chain"]').exists()).toBe(false)
+  })
+
   it('prioritizes upstream root cause and deduplicates diagnostic payloads', async () => {
     mocks.getRequestErrorDetail.mockResolvedValue({
       id: 1,

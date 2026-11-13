@@ -131,9 +131,25 @@
         <div class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
           {{ t(`admin.ops.errorDetail.failoverOutcome.${failoverOutcome.result}`) }}
           <span v-if="failoverOutcome.final_account_id" class="ml-2">
-            {{ t('admin.ops.errorDetail.successAccount') }} #{{ failoverOutcome.final_account_id }}
+            {{ t('admin.ops.errorDetail.finalAccount') }} #{{ failoverOutcome.final_account_id }}
           </span>
         </div>
+        <div class="mt-3 text-xs font-bold text-gray-500">{{ t('admin.ops.errorDetail.failoverChain') }}</div>
+        <ol v-if="failoverOutcome.attempts?.length" class="mt-2 space-y-2" data-testid="failover-chain">
+          <li v-for="(attempt, index) in failoverOutcome.attempts" :key="index" class="rounded-lg border border-gray-200 p-3 text-sm dark:border-dark-700">
+            <div class="flex flex-wrap items-center gap-2">
+              <span>{{ index + 1 }}.</span>
+              <span class="font-medium">{{ attempt.account_name || '' }} #{{ attempt.account_id }}</span>
+              <span>{{ t(`admin.ops.errorDetail.failoverOutcome.${attempt.result}`) }}</span>
+              <span v-if="attempt.status_code" class="font-mono text-xs">{{ attempt.status_code }}</span>
+              <span v-if="attempt.started_at_unix_ms && attempt.finished_at_unix_ms" class="text-xs text-gray-500">
+                {{ ((attempt.finished_at_unix_ms - attempt.started_at_unix_ms) / 1000).toFixed(2) }} s
+              </span>
+            </div>
+            <div v-if="attempt.message" class="mt-1 break-words text-xs text-gray-500">{{ attempt.message }}</div>
+          </li>
+        </ol>
+        <div v-else class="mt-2 text-xs text-gray-500" data-testid="incomplete-failover-chain">{{ t('admin.ops.errorDetail.incompleteFailoverChain') }}</div>
       </div>
 
       <div v-if="rootCauseMessage" class="rounded-xl bg-amber-50 p-6 dark:bg-amber-900/10">

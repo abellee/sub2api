@@ -1048,6 +1048,9 @@ func (s *GatewayService) sseStreamErrorEventFailover(ctx context.Context, c *gin
 	upstreamMsg := sanitizeUpstreamErrorMessage(
 		strings.TrimSpace(extractUpstreamErrorMessage(body)),
 	)
+	if RequestAccountFailoverEnabled(ctx) {
+		semanticStatus = openAIStreamFailedEventSemanticStatus(body, upstreamMsg)
+	}
 
 	upstreamDetail := ""
 	if s.cfg != nil && s.cfg.Gateway.LogUpstreamErrorBody {
@@ -1077,8 +1080,18 @@ func (s *GatewayService) sseStreamErrorEventFailover(ctx context.Context, c *gin
 		truncateString(rawData, 1000),
 	)
 
-	return &UpstreamFailoverError{
+	failure := &UpstreamFailoverError{
 		StatusCode:   semanticStatus,
 		ResponseBody: body,
 	}
+	if RequestAccountFailoverEnabled(ctx) {
+		failure.SkipAccountCooldown = true
+		failure.NextAccountAction = NextAccountStop
+		// A ping may have committed HTTP 200 without committing model output.
+		if !outputStarted && accountErrorShouldFailover(semanticStatus, body) {
+			failure.NextAccountAction = NextAccountRetry
+			failure.SafeToFailoverAfterWrite = true
+		}
+	}
+	return failure
 }

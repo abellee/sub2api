@@ -11,10 +11,18 @@ describe('account failover outcome', () => {
       expect(accountFailoverOutcome(raw)).toBeNull()
     }
   })
-  it('does not label a failed or canceled account as successful', () => {
+  it('preserves the final account separately from the outcome', () => {
     for (const result of ['failed', 'canceled']) {
       expect(accountFailoverOutcome(JSON.stringify([{ failover_result: { result, final_account_id: 404 } }])))
-        .toEqual({ result, final_account_id: undefined })
+        .toEqual({ result, final_account_id: 404 })
     }
+  })
+  it('preserves ordered attempts, including the successful final account', () => {
+    const attempts = [
+      { account_id: 31, result: 'failed', status_code: 502 },
+      { account_id: 37, result: 'success', status_code: 200 }
+    ]
+    expect(accountFailoverOutcome(JSON.stringify([{ failover_result: { result: 'success', final_account_id: 37, attempts: [null, ...attempts] } }]))?.attempts)
+      .toEqual(attempts)
   })
 })

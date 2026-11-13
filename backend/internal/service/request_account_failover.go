@@ -45,6 +45,70 @@ type RequestAccountFailoverTrace struct {
 	mu               sync.Mutex
 	Actions          []string
 	FailedAccountIDs []int64
+	Attempts         []AccountFailoverAttempt
+}
+
+type AccountFailoverAttempt struct {
+	AccountID   int64  `json:"account_id"`
+	AccountName string `json:"account_name,omitempty"`
+	StartedAt   int64  `json:"started_at_unix_ms"`
+	FinishedAt  int64  `json:"finished_at_unix_ms"`
+	Result      string `json:"result"`
+	StatusCode  int    `json:"status_code,omitempty"`
+	Message     string `json:"message,omitempty"`
+}
+
+func GetRequestAccountFailoverAttempts(ctx context.Context) []AccountFailoverAttempt {
+	if ctx == nil {
+		return nil
+	}
+	trace, _ := ctx.Value(requestAccountFailoverTraceKey{}).(*RequestAccountFailoverTrace)
+	if trace == nil {
+		return nil
+	}
+	trace.mu.Lock()
+	defer trace.mu.Unlock()
+	return append([]AccountFailoverAttempt(nil), trace.Attempts...)
+}
+
+func recordAccountFailoverAttempt(ctx context.Context, c *gin.Context, attempt AccountFailoverAttempt, err error, succeeded bool, disconnected bool) {
+	trace, _ := ctx.Value(requestAccountFailoverTraceKey{}).(*RequestAccountFailoverTrace)
+	if trace == nil || attempt.AccountID <= 0 {
+		return
+	}
+	attempt.FinishedAt = time.Now().UnixMilli()
+	attempt.Result = "failed"
+	switch {
+	case ctx.Err() != nil || disconnected:
+		attempt.Result, attempt.StatusCode = "canceled", 499
+	case err == nil && succeeded:
+		attempt.Result, attempt.StatusCode = "success", http.StatusOK
+	default:
+		var failure *UpstreamFailoverError
+		if errors.As(err, &failure) {
+			attempt.StatusCode = failure.StatusCode
+		}
+	}
+	if c != nil {
+		if raw, ok := c.Get(OpsUpstreamErrorsKey); ok {
+			if events, ok := raw.([]*OpsUpstreamErrorEvent); ok {
+				for i := len(events) - 1; i >= 0; i-- {
+					e := events[i]
+					if e != nil && e.AccountID == attempt.AccountID && e.AtUnixMs >= attempt.StartedAt {
+						attempt.AccountName = e.AccountName
+						if attempt.Result == "failed" {
+							attempt.StatusCode = e.UpstreamStatusCode
+							attempt.Message = truncateString(sanitizeUpstreamErrorMessage(e.Message), 512)
+						}
+						break
+					}
+				}
+			}
+		}
+	}
+	trace.mu.Lock()
+	trace.Attempts = append(trace.Attempts, attempt)
+	trace.mu.Unlock()
 }
 
 func MarkRequestAccountFailoverAction(ctx context.Context, action string, accountID int64) {
@@ -93,6 +157,16 @@ func RequestAccountFailoverLimit(ctx context.Context, fallback int) int {
 		}
 	}
 	return fallback
+}
+
+// Copy only the billing discriminator, without retaining request traces or bodies.
+func CopyAccountFailoverBillingContext(parent, base context.Context) context.Context {
+	if parent != nil {
+		if count, ok := parent.Value(requestAccountFailoverKey{}).(int); ok && count > 1 {
+			return context.WithValue(base, requestAccountFailoverKey{}, count)
+		}
+	}
+	return base
 }
 
 func withRequestAccountFailoverCount(ctx context.Context, count int) context.Context {
@@ -174,13 +248,22 @@ func (s *OpenAIGatewayService) PrepareRequestAccountFailover(ctx context.Context
 
 // ForwardWithAccountRetries leaves retries to the handler's account-selection
 // loop so an enabled failover request advances to the next account immediately.
-func ForwardWithAccountRetries[T any](ctx context.Context, c *gin.Context, forward func() (*T, error)) (*T, error) {
+func ForwardWithAccountRetries[T any](ctx context.Context, c *gin.Context, forward func() (*T, error)) (out *T, forwardErr error) {
 	if !RequestAccountFailoverEnabled(ctx) {
 		return forward()
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	accountID, _ := ctx.Value(ctxkey.AccountID).(int64)
+	if c != nil && c.Request != nil {
+		accountID, _ = c.Request.Context().Value(ctxkey.AccountID).(int64)
+	}
+	attempt := AccountFailoverAttempt{AccountID: accountID, StartedAt: time.Now().UnixMilli()}
+	disconnected := false
+	defer func() {
+		recordAccountFailoverAttempt(ctx, c, attempt, forwardErr, out != nil, disconnected)
+	}()
 	if c != nil {
 		c.Set(accountAttemptWriterSizeKey, c.Writer.Size())
 		c.Set(ResponseCommittedKey, false)
@@ -193,6 +276,7 @@ func ForwardWithAccountRetries[T any](ctx context.Context, c *gin.Context, forwa
 	switch partial := any(result).(type) {
 	case *ForwardResult:
 		if partial != nil && partial.ClientDisconnect {
+			disconnected = true
 			if c != nil {
 				c.Set(OpsAccountFailoverResultKey, "canceled")
 			}
@@ -200,6 +284,7 @@ func ForwardWithAccountRetries[T any](ctx context.Context, c *gin.Context, forwa
 		}
 	case *OpenAIForwardResult:
 		if partial != nil && partial.ClientDisconnect {
+			disconnected = true
 			if c != nil {
 				c.Set(OpsAccountFailoverResultKey, "canceled")
 			}

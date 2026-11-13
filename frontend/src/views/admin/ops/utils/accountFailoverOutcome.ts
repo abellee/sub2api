@@ -1,6 +1,17 @@
 export interface AccountFailoverOutcome {
   result: 'success' | 'failed' | 'canceled'
   final_account_id?: number
+  attempts?: AccountFailoverAttempt[]
+}
+
+export interface AccountFailoverAttempt {
+  account_id: number
+  account_name?: string
+  result: 'success' | 'failed' | 'canceled'
+  status_code?: number
+  message?: string
+  started_at_unix_ms?: number
+  finished_at_unix_ms?: number
 }
 
 // Historical rows have no confirmed final outcome; never infer it from HTTP 200.
@@ -12,11 +23,18 @@ export function accountFailoverOutcome(raw?: string): AccountFailoverOutcome | n
     for (let i = events.length - 1; i >= 0; i--) {
       const outcome = events[i]?.failover_result
       if (!outcome || !['success', 'failed', 'canceled'].includes(outcome.result)) continue
-      return {
+      const parsed: AccountFailoverOutcome = {
         result: outcome.result,
-        final_account_id: outcome.result === 'success' && Number.isSafeInteger(outcome.final_account_id) && outcome.final_account_id > 0
+        final_account_id: Number.isSafeInteger(outcome.final_account_id) && outcome.final_account_id > 0
           ? outcome.final_account_id : undefined
       }
+      if (Array.isArray(outcome.attempts)) {
+        parsed.attempts = outcome.attempts.filter((attempt: AccountFailoverAttempt | null) =>
+          attempt && Number.isSafeInteger(attempt.account_id) && attempt.account_id > 0 &&
+          ['success', 'failed', 'canceled'].includes(attempt.result)
+        )
+      }
+      return parsed
     }
   } catch {
     // Old diagnostics can contain plain text or truncated JSON.

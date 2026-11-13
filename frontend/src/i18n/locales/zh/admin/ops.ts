@@ -318,6 +318,9 @@ export default {
       errorDetail: {
         failoverResult: '换号最终结果',
         successAccount: '成功账号',
+        finalAccount: '最终账号',
+        failoverChain: '账号尝试顺序',
+        incompleteFailoverChain: '历史链路不完整，无法还原全部账号尝试',
         failoverOutcome: { success: '成功', failed: '失败', canceled: '客户端断开或请求超时' },
         title: '错误详情',
         titleWithId: '错误 #{id}',

@@ -1755,11 +1755,12 @@ func attachOpsAccountFailoverOutcome(c *gin.Context, entry *service.OpsInsertErr
 	if entry.StatusCode >= 400 && result == "success" {
 		result = "failed"
 	}
-	outcome := &service.AccountFailoverOutcome{Result: result}
-	if result == "success" {
-		if id, ok := c.Get(opsAccountIDKey); ok {
-			outcome.FinalAccountID, _ = id.(int64)
-		}
+	outcome := &service.AccountFailoverOutcome{
+		Result:   result,
+		Attempts: service.GetRequestAccountFailoverAttempts(c.Request.Context()),
+	}
+	if id, ok := c.Get(opsAccountIDKey); ok {
+		outcome.FinalAccountID, _ = id.(int64)
 	}
 	for i := len(entry.UpstreamErrors) - 1; i >= 0; i-- {
 		if event := entry.UpstreamErrors[i]; event != nil && !event.SkipMonitoring {

@@ -475,8 +475,9 @@ type OpsUpstreamErrorEvent struct {
 }
 
 type AccountFailoverOutcome struct {
-	Result         string `json:"result"`
-	FinalAccountID int64  `json:"final_account_id,omitempty"`
+	Result         string                   `json:"result"`
+	FinalAccountID int64                    `json:"final_account_id,omitempty"`
+	Attempts       []AccountFailoverAttempt `json:"attempts,omitempty"`
 }
 
 const (

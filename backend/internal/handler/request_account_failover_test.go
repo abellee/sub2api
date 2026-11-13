@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/stretchr/testify/require"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -52,11 +54,7 @@ func TestOpsFailoverOutcomeDoesNotUseHTTP200AsSuccess(t *testing.T) {
 			result := entry.UpstreamErrors[0].FailoverResult
 			require.NotNil(t, result)
 			require.Equal(t, outcome, result.Result)
-			if outcome == "success" {
-				require.EqualValues(t, 12, result.FinalAccountID)
-			} else {
-				require.Zero(t, result.FinalAccountID)
-			}
+			require.EqualValues(t, 12, result.FinalAccountID)
 			require.EqualValues(t, 333, entry.UpstreamErrors[0].AccountID, "preserve attribution of failed upstream")
 			require.Nil(t, event.FailoverResult, "never mutate shared attempt data")
 		})
@@ -163,5 +161,73 @@ func TestAccountFailoverPriorityAndExhaustion(t *testing.T) {
 		stop := &service.UpstreamFailoverError{StatusCode: 400, NextAccountAction: service.NextAccountStop, RetryableOnSameAccount: true}
 		require.False(t, sameAccountRetryAllowed(ctx, stop, 0, 3))
 		require.Equal(t, FailoverExhausted, NewFailoverState(10, false).HandleFailoverError(ctx, unscheduler, 1, service.PlatformOpenAI, 3, stop))
+	}
+}
+
+func TestOpsPersistsCompleteFailoverChainAndFinalOutcome(t *testing.T) {
+	for _, success := range []bool{true, false} {
+		t.Run(fmt.Sprint(success), func(t *testing.T) {
+			setupOpsErrorLogTestQueue(t, 2)
+			svc := service.NewOpenAIGatewayService(failoverPriorityAccountRepo{count: 3}, nil, nil, nil, nil, nil, nil, &config.Config{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, newAccountErrorFailoverTestSettings(), nil)
+			group := &service.Group{ID: 1, Platform: service.PlatformOpenAI, AccountErrorFailoverEnabled: true}
+			ctx := svc.PrepareRequestAccountFailover(context.Background(), &group.ID, group, "", service.PlatformOpenAI)
+			router := gin.New()
+			router.Use(OpsErrorLoggerMiddleware(service.NewOpsService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)))
+			router.POST("/v1/messages", func(c *gin.Context) {
+				fs := NewFailoverState(2, false)
+				for id := int64(1); id <= 3; id++ {
+					setOpsSelectedAccount(c, id, service.PlatformAnthropic)
+					_, err := service.ForwardWithAccountRetries(c.Request.Context(), c, func() (*service.ForwardResult, error) {
+						if success && id == 3 {
+							c.Header("Content-Type", "text/event-stream")
+							_, _ = c.Writer.WriteString("event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n")
+							return &service.ForwardResult{}, nil
+						}
+						raw, _ := c.Get(service.OpsUpstreamErrorsKey)
+						events, _ := raw.([]*service.OpsUpstreamErrorEvent)
+						c.Set(service.OpsUpstreamErrorsKey, append(events, &service.OpsUpstreamErrorEvent{
+							AtUnixMs: time.Now().UnixMilli(), AccountID: id, Kind: "failover",
+							UpstreamStatusCode: 502, Message: "upstream unavailable",
+						}))
+						return nil, &service.UpstreamFailoverError{StatusCode: 502, ResponseBody: []byte(`{"error":{"message":"upstream unavailable"}}`)}
+					})
+					if err == nil {
+						return
+					}
+					var failure *service.UpstreamFailoverError
+					require.ErrorAs(t, err, &failure)
+					if fs.HandleFailoverError(c.Request.Context(), &mockTempUnscheduler{}, id, service.PlatformAnthropic, 0, failure) == FailoverExhausted {
+						(&GatewayHandler{}).handleFailoverExhausted(c, failure, service.PlatformAnthropic, false)
+						return
+					}
+					require.False(t, c.Writer.Written(), "intermediate failures must remain internal")
+				}
+			})
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/messages", nil).WithContext(ctx))
+			if success {
+				require.NotContains(t, rec.Body.String(), "error")
+			} else {
+				require.Equal(t, 1, strings.Count(rec.Body.String(), `"error":`))
+			}
+			require.EqualValues(t, 1, OpsErrorLogQueueLength())
+			job := <-opsErrorLogQueue
+			require.NotNil(t, job.entry.UpstreamErrorsJSON)
+			var events []*service.OpsUpstreamErrorEvent
+			require.NoError(t, json.Unmarshal([]byte(*job.entry.UpstreamErrorsJSON), &events))
+			outcome := events[len(events)-1].FailoverResult
+			require.NotNil(t, outcome)
+			require.EqualValues(t, 3, outcome.FinalAccountID)
+			require.Len(t, outcome.Attempts, 3)
+			want := "failed"
+			if success {
+				want = "success"
+			}
+			require.Equal(t, want, outcome.Result)
+			require.Equal(t, want, outcome.Attempts[2].Result)
+			require.Equal(t, "failed", outcome.Attempts[0].Result)
+			require.EqualValues(t, 1, outcome.Attempts[0].AccountID)
+			require.EqualValues(t, 2, outcome.Attempts[1].AccountID)
+		})
 	}
 }

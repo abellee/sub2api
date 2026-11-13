@@ -318,6 +318,9 @@ export default {
       errorDetail: {
         failoverResult: 'Final failover result',
         successAccount: 'Successful account',
+        finalAccount: 'Final account',
+        failoverChain: 'Account attempts in order',
+        incompleteFailoverChain: 'Historical trace is incomplete; not all account attempts can be reconstructed',
         failoverOutcome: { success: 'Succeeded', failed: 'Failed', canceled: 'Client disconnected or request timed out' },
         title: 'Error Detail',
         titleWithId: 'Error #{id}',

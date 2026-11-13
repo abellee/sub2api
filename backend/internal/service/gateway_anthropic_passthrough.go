@@ -488,6 +488,10 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 		keepaliveCh = keepaliveTimer.C
 	}
 	lastDataAt := time.Now()
+	var failoverEvents *anthropicFailoverEvents
+	if RequestAccountFailoverEnabled(ctx) {
+		failoverEvents = &anthropicFailoverEvents{maxBytes: maxLineSize}
+	}
 	resetKeepaliveTimer := func() {
 		if keepaliveTimer == nil {
 			return
@@ -507,6 +511,10 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 		case ev, ok := <-events:
 			if ok {
 				queueBudget.release(len(ev.line))
+			}
+			if !ok && failoverEvents != nil && len(failoverEvents.lines) > 0 {
+				// An EOF can delimit the final event, including message_stop.
+				ok, ev = true, scanEvent{line: ""}
 			}
 			if !ok {
 				if !sawTerminalEvent && !clientDisconnected {
@@ -546,41 +554,55 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 				return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, upstreamStreamReadError(ev.err)
 			}
 
-			line := ev.line
-			if data, ok := extractAnthropicSSEDataLine(line); ok {
-				trimmed := strings.TrimSpace(data)
-				observer.ObserveAnthropic([]byte(trimmed))
-				if anthropicStreamEventIsTerminal("", trimmed) {
-					sawTerminalEvent = true
+			lines := []string{ev.line}
+			if failoverEvents != nil {
+				// Account for usage even when a failed preamble is withheld.
+				if data, ok := extractAnthropicSSEDataLine(ev.line); ok {
+					parseSSEUsagePassthrough(data, usage)
 				}
-				if firstTokenMs == nil && trimmed != "" && trimmed != "[DONE]" {
-					ms := int(time.Since(startTime).Milliseconds())
-					firstTokenMs = &ms
-				}
-				parseSSEUsagePassthrough(data, usage)
-			} else {
-				trimmed := strings.TrimSpace(line)
-				if strings.HasPrefix(trimmed, "event:") && anthropicStreamEventIsTerminal(strings.TrimSpace(strings.TrimPrefix(trimmed, "event:")), "") {
-					sawTerminalEvent = true
+				var eventErr *sseStreamErrorEventError
+				lines, eventErr = failoverEvents.push(ev.line)
+				if eventErr != nil {
+					failure := s.sseStreamErrorEventFailover(ctx, c, account, resp, eventErr.RawData, model, failoverEvents.outputStarted)
+					return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: clientDisconnected}, failure
 				}
 			}
-
-			if !clientDisconnected {
-				restored := string(reverseToolNamesIfPresent(c, []byte(line)))
-				if _, err := io.WriteString(w, restored); err != nil {
-					clientDisconnected = true
-					logger.LegacyPrintf("service.gateway", "[Anthropic passthrough] Client disconnected during streaming, continue draining upstream for usage: account=%d", account.ID)
-				} else if _, err := io.WriteString(w, "\n"); err != nil {
-					clientDisconnected = true
-					logger.LegacyPrintf("service.gateway", "[Anthropic passthrough] Client disconnected during streaming, continue draining upstream for usage: account=%d", account.ID)
-				} else if line == "" {
-					// 按 SSE 事件边界刷出，减少每行 flush 带来的 syscall 开销。
-					flusher.Flush()
-					lastDataAt = time.Now()
-					resetKeepaliveTimer()
-					inPartialEvent = false
+			for _, line := range lines {
+				if data, ok := extractAnthropicSSEDataLine(line); ok {
+					trimmed := strings.TrimSpace(data)
+					observer.ObserveAnthropic([]byte(trimmed))
+					if anthropicStreamEventIsTerminal("", trimmed) {
+						sawTerminalEvent = true
+					}
+					if firstTokenMs == nil && trimmed != "" && trimmed != "[DONE]" {
+						ms := int(time.Since(startTime).Milliseconds())
+						firstTokenMs = &ms
+					}
+					parseSSEUsagePassthrough(data, usage)
 				} else {
-					inPartialEvent = true
+					trimmed := strings.TrimSpace(line)
+					if strings.HasPrefix(trimmed, "event:") && anthropicStreamEventIsTerminal(strings.TrimSpace(strings.TrimPrefix(trimmed, "event:")), "") {
+						sawTerminalEvent = true
+					}
+				}
+
+				if !clientDisconnected {
+					restored := string(reverseToolNamesIfPresent(c, []byte(line)))
+					if _, err := io.WriteString(w, restored); err != nil {
+						clientDisconnected = true
+						logger.LegacyPrintf("service.gateway", "[Anthropic passthrough] Client disconnected during streaming, continue draining upstream for usage: account=%d", account.ID)
+					} else if _, err := io.WriteString(w, "\n"); err != nil {
+						clientDisconnected = true
+						logger.LegacyPrintf("service.gateway", "[Anthropic passthrough] Client disconnected during streaming, continue draining upstream for usage: account=%d", account.ID)
+					} else if line == "" {
+						// 按 SSE 事件边界刷出，减少每行 flush 带来的 syscall 开销。
+						flusher.Flush()
+						lastDataAt = time.Now()
+						resetKeepaliveTimer()
+						inPartialEvent = false
+					} else {
+						inPartialEvent = true
+					}
 				}
 			}
 
