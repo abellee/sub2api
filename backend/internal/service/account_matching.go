@@ -110,7 +110,7 @@ func listAccountMatchingAccounts(ctx context.Context, repo AccountRepository, pl
 		if account == nil || !AccountMatchingAllows(ctx, account.ID) || !account.IsSchedulable() {
 			continue
 		}
-		if account.Platform != platform && !(mixed && account.Platform == PlatformAntigravity && account.IsMixedSchedulingEnabled()) {
+		if account.Platform != platform && (!mixed || account.Platform != PlatformAntigravity || !account.IsMixedSchedulingEnabled()) {
 			continue
 		}
 		accounts = append(accounts, *account)
