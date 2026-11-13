@@ -222,8 +222,8 @@ func ForwardWithAccountRetries[T any](ctx context.Context, c *gin.Context, forwa
 }
 
 func accountAttemptWroteResponse(c *gin.Context) bool {
-	if size, ok := c.Get(accountAttemptWriterSizeKey); ok {
-		return c.Writer.Size() != size.(int)
+	if _, ok := c.Get(accountAttemptWriterSizeKey); ok {
+		return c.Writer.Size() != c.GetInt(accountAttemptWriterSizeKey)
 	}
 	return c.Writer.Written()
 }
