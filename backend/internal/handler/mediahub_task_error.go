@@ -27,6 +27,7 @@ func (h *MediaHubRelayHandler) taskFailureContext(c *gin.Context, ctx context.Co
 	taskStatus := gjson.GetBytes(state, "status").String()
 	upstreamStatus := int(gjson.GetBytes(state, "response_status").Int())
 	matchBody := []byte(gjson.GetBytes(state, "error_message").String())
+	var diagnosticBody []byte
 	if upstreamStatus == 0 {
 		_, _ = fmt.Sscanf(string(matchBody), "upstream HTTP %d", &upstreamStatus)
 	}
@@ -37,6 +38,13 @@ func (h *MediaHubRelayHandler) taskFailureContext(c *gin.Context, ctx context.Co
 		}
 		if raw := gjson.GetBytes(details.Body, "body").String(); raw != "" {
 			matchBody = []byte(raw)
+			diagnosticBody = matchBody
+			// Older async tasks saved the acceptance response instead of the failure.
+			if mediaTaskErrorMessage(matchBody) == "" {
+				if summary := strings.TrimSpace(gjson.GetBytes(details.Body, "message").String()); summary != "" {
+					matchBody = []byte(summary)
+				}
+			}
 		} else if summary := gjson.GetBytes(details.Body, "message").String(); summary != "" {
 			matchBody = []byte(summary)
 		}
@@ -47,8 +55,12 @@ func (h *MediaHubRelayHandler) taskFailureContext(c *gin.Context, ctx context.Co
 		}
 	}
 	if upstreamStatus > 0 || len(matchBody) > 0 {
-		detail, _ := service.SanitizeOpsErrorBodyForQueue(string(matchBody))
-		service.SetOpsUpstreamError(c, upstreamStatus, parseOpsErrorResponse([]byte(detail)).Message, detail)
+		if len(diagnosticBody) == 0 {
+			diagnosticBody = matchBody
+		}
+		detail, _ := service.SanitizeOpsErrorBodyForQueue(string(diagnosticBody))
+		message, _ := service.SanitizeOpsErrorBodyForQueue(string(matchBody))
+		service.SetOpsUpstreamError(c, upstreamStatus, parseOpsErrorResponse([]byte(message)).Message, detail)
 	}
 	return upstreamStatus, matchBody
 }

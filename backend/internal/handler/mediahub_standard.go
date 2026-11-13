@@ -9,9 +9,11 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/mediahub"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	middleware "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
+	"go.uber.org/zap"
 )
 
 const mediaProtocolKey = "mediahub.standard_protocol"
@@ -125,7 +127,8 @@ func (h *MediaHubController) TryStandardGemini(c *gin.Context) bool {
 	return true
 }
 
-func mediaStandardError(c *gin.Context, status int, message string) {
+func mediaStandardError(c *gin.Context, status int, message string, taskID ...string) {
+	response := gin.H{}
 	if strings.HasPrefix(c.GetString(mediaProtocolKey), "gemini") {
 		code := "INTERNAL"
 		switch status {
@@ -134,10 +137,16 @@ func mediaStandardError(c *gin.Context, status int, message string) {
 		case 504:
 			code = "DEADLINE_EXCEEDED"
 		}
-		c.JSON(status, gin.H{"error": gin.H{"code": status, "message": message, "status": code}})
+		response["error"] = gin.H{"code": status, "message": message, "status": code}
 	} else {
-		c.JSON(status, gin.H{"error": gin.H{"type": "api_error", "message": message}})
+		response["error"] = gin.H{"type": "api_error", "message": message}
 	}
+	if len(taskID) > 0 && taskID[0] != "" {
+		response["task_id"] = taskID[0]
+		response["poll_url"] = "/v1/images/tasks/" + taskID[0]
+		c.Header("X-Task-Id", taskID[0])
+	}
+	c.JSON(status, response)
 }
 
 func (h *MediaHubRelayHandler) standardFetch(ctx context.Context, in mediahub.ForwardInput, id, format string) (*mediahub.ForwardResponse, error) {
@@ -189,7 +198,10 @@ func (h *MediaHubRelayHandler) finishStandard(c *gin.Context, accepted *mediahub
 	in.Wait = true
 	response, err := mediahub.OpenTaskResult(ctx, h.client, in, id)
 	if err != nil {
-		mediaStandardError(c, 502, "media result unavailable; task continues in background")
+		_ = c.Error(err)
+		logger.L().Warn("mediahub: result wait failed", zap.String("task_id", id),
+			zap.Int64("user_id", userID), zap.Int64("group_id", groupID), zap.Error(err))
+		mediaStandardError(c, 502, "media result unavailable; task continues in background", id)
 		return
 	}
 	defer func() { _ = response.Body.Close() }()

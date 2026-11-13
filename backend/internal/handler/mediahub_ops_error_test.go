@@ -133,3 +133,20 @@ func TestMediaFailureUnavailableDiagnosticsPreservesClientResponse(t *testing.T)
 	_, recorded := c.Get(service.OpsUpstreamStatusCodeKey)
 	require.False(t, recorded, "a failed diagnostic lookup must not be attributed to the provider")
 }
+
+func TestMediaOldAcceptanceBodyKeepsSummaryAndRawDiagnostics(t *testing.T) {
+	const summary = "已自动选择方案，但 240 秒后仍无结果，停止等待"
+	const raw = `{"request_id":"task_old"}`
+	media := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(gin.H{"message": summary, "body": raw})
+	}))
+	defer media.Close()
+	relay := &MediaHubRelayHandler{cfg: MediaHubConfig{MediadBaseURL: media.URL}, client: media.Client()}
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest("GET", "/v1/videos/mtask_old", nil)
+	status, body := relay.taskFailureContext(c, c.Request.Context(), mediahub.ForwardInput{MediadBaseURL: media.URL}, "mtask_old", nil)
+	require.Zero(t, status)
+	require.Equal(t, summary, string(body))
+	require.Equal(t, summary, c.GetString(service.OpsUpstreamErrorMessageKey))
+	require.JSONEq(t, raw, c.GetString(service.OpsUpstreamErrorDetailKey))
+}

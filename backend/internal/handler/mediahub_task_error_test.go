@@ -28,6 +28,7 @@ func TestMediaTaskFailureRulesAndPrivacy(t *testing.T) {
 		{name: "private keyword", status: "failed", raw: "account FROZEN " + private, upstream: 400, wantCode: 502, wantMessage: custom, skip: true},
 		{name: "metadata must not match", status: "failed", raw: `{"error":{"message":"invalid size","type":"api_error"},"url":"https://provider.example","account":"frozen"}`, upstream: 400, wantCode: 400, wantMessage: "invalid size"},
 		{name: "top level message", status: "failed", raw: `{"message":"invalid size","type":"api_error"}`, upstream: 400, wantCode: 400, wantMessage: "invalid size"},
+		{name: "old acceptance body uses failure summary", status: "failed", raw: `{"request_id":"task_old"}`, summary: "account frozen", wantCode: 502, wantMessage: custom},
 		{name: "missing message", status: "failed", raw: `{"error":{"type":"api_error"},"detail":"account frozen"}`, upstream: 400, wantCode: 400, wantMessage: "Generation failed. Please check the request and try again."},
 		{name: "object message ignored", status: "failed", raw: `{"error":{"message":{"type":"api_error"}},"message":"invalid size"}`, upstream: 400, wantCode: 400, wantMessage: "invalid size"},
 		{name: "message keyword overrides metadata", status: "failed", raw: `{"error":{"message":"account FROZEN","type":"api_error"}}`, upstream: 400, wantCode: 502, wantMessage: custom},

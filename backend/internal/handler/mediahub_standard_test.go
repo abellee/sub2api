@@ -3,7 +3,9 @@ package handler
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -227,5 +229,45 @@ func TestMediaStandardStreamFailure(t *testing.T) {
 	h.finishStandard(c, &mediahub.ForwardResponse{StatusCode: 202, Body: []byte(`{"task_id":"mtask_error"}`)}, []byte(`{"stream":true}`), 42, 7, 3)
 	if !strings.Contains(w.Body.String(), "event: error") || !strings.Contains(w.Body.String(), "content_policy_violation") {
 		t.Fatal(w.Body.String())
+	}
+}
+
+type mediaResultErrorTransport struct{ err error }
+
+func (tr mediaResultErrorTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, tr.err
+}
+
+func TestMediaResultWaitFailureReturnsRecoveryTask(t *testing.T) {
+	for _, protocol := range []string{"openai", "gemini", "grok_image"} {
+		for _, cause := range []error{context.DeadlineExceeded, context.Canceled, errors.New("connection reset by peer")} {
+			t.Run(protocol+"/"+cause.Error(), func(t *testing.T) {
+				w := httptest.NewRecorder()
+				c, _ := gin.CreateTestContext(w)
+				c.Request = httptest.NewRequest("POST", "/v1/images/generations", nil)
+				c.Set(mediaProtocolKey, protocol)
+				relay := &MediaHubRelayHandler{
+					cfg:    MediaHubConfig{MediadBaseURL: "http://private-media.example", ForwardTimeout: time.Second},
+					client: &http.Client{Transport: mediaResultErrorTransport{cause}},
+				}
+				relay.finishStandard(c, &mediahub.ForwardResponse{StatusCode: 202, Body: []byte(`{"task_id":"mtask_wait"}`)}, nil, 2, 7, 3)
+				body := w.Body.String()
+				if w.Code != 502 || w.Header().Get("X-Task-Id") != "mtask_wait" || gjson.Get(body, "task_id").String() != "mtask_wait" || gjson.Get(body, "poll_url").String() != "/v1/images/tasks/mtask_wait" {
+					t.Fatalf("missing recovery information: %d %s", w.Code, body)
+				}
+				if gjson.Get(body, "error.message").String() != "media result unavailable; task continues in background" {
+					t.Fatal("lost public error", body)
+				}
+				if protocol == "gemini" && (gjson.Get(body, "error.code").Int() != 502 || gjson.Get(body, "error.status").String() != "INTERNAL") {
+					t.Fatal("lost Gemini error format", body)
+				}
+				if len(c.Errors) != 1 || !errors.Is(c.Errors[0].Err, cause) {
+					t.Fatal("lost underlying connection error", c.Errors)
+				}
+				if strings.Contains(body, cause.Error()) || strings.Contains(body, "private-media.example") {
+					t.Fatal("private connection detail leaked", body)
+				}
+			})
+		}
 	}
 }
