@@ -262,7 +262,14 @@ func (s *OpenAIGatewayService) SelectGrokMediaAccount(ctx context.Context, group
 // SelectAccountForModelWithExclusions selects an account supporting the requested model while excluding specified accounts.
 // SelectAccountForModelWithExclusions 选择支持指定模型的账号，同时排除指定的账号。
 func (s *OpenAIGatewayService) SelectAccountForModelWithExclusions(ctx context.Context, groupID *int64, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}) (*Account, error) {
-	return s.selectAccountForModelWithExclusions(s.withOpenAIQuotaAutoPauseContext(ctx), groupID, PlatformOpenAI, sessionHash, requestedModel, excludedIDs, false, 0, "", false)
+	selection, err := selectAccountByFailoverUpstream(ctx, excludedIDs, func(ctx context.Context, excluded map[int64]struct{}) (*AccountSelectionResult, error) {
+		account, err := s.selectAccountForModelWithExclusions(s.withOpenAIQuotaAutoPauseContext(ctx), groupID, PlatformOpenAI, sessionHash, requestedModel, excluded, false, 0, "", false)
+		return &AccountSelectionResult{Account: account}, err
+	})
+	if selection == nil {
+		return nil, err
+	}
+	return selection.Account, err
 }
 
 // SelectAccountForTokenCount selects an account for a non-billable token-count
@@ -1145,7 +1152,9 @@ func (s *OpenAIGatewayService) SelectAccountWithLoadAwareness(ctx context.Contex
 	// 分组利润控制：legacy 公共入口同样装门，保证不经
 	// selectAccountWithScheduler 的调用方也无法绕过利润准入。
 	ctx = s.withOpenAIProfitControlGate(ctx, groupID)
-	return s.selectAccountWithLoadAwareness(ctx, groupID, PlatformOpenAI, sessionHash, requestedModel, excludedIDs, false, "", true)
+	return selectAccountByFailoverUpstream(ctx, excludedIDs, func(ctx context.Context, excluded map[int64]struct{}) (*AccountSelectionResult, error) {
+		return s.selectAccountWithLoadAwareness(ctx, groupID, PlatformOpenAI, sessionHash, requestedModel, excluded, false, "", true)
+	})
 }
 
 func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Context, groupID *int64, platform string, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}, requireCompact bool, requiredCapability OpenAIEndpointCapability, useUpstreamTokenCost bool) (*AccountSelectionResult, error) {

@@ -575,7 +575,7 @@ func TestResponsesGrok429FailoverIsBounded(t *testing.T) {
 		require.Empty(t, repo.rateLimitedAccountIDs())
 	})
 
-	t.Run("two rate limited accounts retry then reach the healthy third account", func(t *testing.T) {
+	t.Run("two rate limited accounts exhaust the same upstream", func(t *testing.T) {
 		_, repo, upstream, router, cleanup := newGrokCredentialFailoverHandler(t, "all_429")
 		defer cleanup()
 		recorder := httptest.NewRecorder()
@@ -584,8 +584,8 @@ func TestResponsesGrok429FailoverIsBounded(t *testing.T) {
 
 		router.ServeHTTP(recorder, req)
 
-		require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
-		require.Equal(t, []int64{801, 802, 803}, upstream.accountHits())
+		require.Equal(t, http.StatusTooManyRequests, recorder.Code, recorder.Body.String())
+		require.Equal(t, []int64{801, 802}, upstream.accountHits())
 		require.Empty(t, repo.rateLimitedAccountIDs())
 		require.NotContains(t, recorder.Body.String(), "expired")
 		require.NotContains(t, recorder.Body.String(), "healthy-access")
@@ -622,7 +622,7 @@ func TestResponsesGrok402FailoverWithoutCooldown(t *testing.T) {
 func TestResponsesGrok429FailoverHandlesMixedStatuses(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	t.Run("429 then 500 retries both accounts before the healthy followup", func(t *testing.T) {
+	t.Run("429 then 500 stops after the final same upstream attempt", func(t *testing.T) {
 		_, _, upstream, router, cleanup := newGrokCredentialFailoverHandler(t, "mixed_429_500")
 		defer cleanup()
 		recorder := httptest.NewRecorder()
@@ -631,12 +631,12 @@ func TestResponsesGrok429FailoverHandlesMixedStatuses(t *testing.T) {
 
 		router.ServeHTTP(recorder, req)
 
-		require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
-		require.Equal(t, []int64{801, 802, 803}, upstream.accountHits())
+		require.Equal(t, http.StatusBadGateway, recorder.Code, recorder.Body.String())
+		require.Equal(t, []int64{801, 802}, upstream.accountHits())
 		require.NotContains(t, recorder.Body.String(), "upstream unavailable")
 	})
 
-	t.Run("500 then 429 permits one healthy followup", func(t *testing.T) {
+	t.Run("500 then 429 stops after the final same upstream attempt", func(t *testing.T) {
 		_, _, upstream, router, cleanup := newGrokCredentialFailoverHandler(t, "mixed_500_429")
 		defer cleanup()
 		recorder := httptest.NewRecorder()
@@ -645,8 +645,8 @@ func TestResponsesGrok429FailoverHandlesMixedStatuses(t *testing.T) {
 
 		router.ServeHTTP(recorder, req)
 
-		require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
-		require.Equal(t, []int64{801, 802, 803}, upstream.accountHits())
+		require.Equal(t, http.StatusTooManyRequests, recorder.Code, recorder.Body.String())
+		require.Equal(t, []int64{801, 802}, upstream.accountHits())
 	})
 
 	t.Run("OAuth 429 then API-key failure continues to the healthy account", func(t *testing.T) {
@@ -679,7 +679,7 @@ func TestGrokMedia429FailoverIsBounded(t *testing.T) {
 		require.Equal(t, []int64{801, 802}, upstream.accountHits())
 	})
 
-	t.Run("second 429 switches directly to the healthy third account", func(t *testing.T) {
+	t.Run("second 429 stops instead of repeating the same upstream", func(t *testing.T) {
 		_, _, upstream, router, cleanup := newGrokCredentialFailoverHandler(t, "all_429")
 		defer cleanup()
 		recorder := httptest.NewRecorder()
@@ -688,8 +688,8 @@ func TestGrokMedia429FailoverIsBounded(t *testing.T) {
 
 		router.ServeHTTP(recorder, req)
 
-		require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
-		require.Equal(t, []int64{801, 802, 803}, upstream.accountHits())
+		require.Equal(t, http.StatusTooManyRequests, recorder.Code, recorder.Body.String())
+		require.Equal(t, []int64{801, 802}, upstream.accountHits())
 		require.NotContains(t, recorder.Body.String(), "rate limited")
 	})
 }

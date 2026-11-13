@@ -2225,7 +2225,12 @@ func (s *OpenAIGatewayService) selectAccountWithSchedulerBySize(
 		}
 	}
 	return selectOpenAIAccountByImageSizePasses(ctx, func(passCtx context.Context) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
-		selection, decision, err := s.selectAccountWithSchedulerOnce(passCtx, groupID, previousResponseID, sessionHash, requestedModel, excludedIDs, requiredTransport, requiredCapability, requiredImageCapability, requireCompact, platform, previousResponseCanMove, useUpstreamTokenCost)
+		var decision OpenAIAccountScheduleDecision
+		selection, err := selectAccountByFailoverUpstream(passCtx, excludedIDs, func(selectionCtx context.Context, excluded map[int64]struct{}) (*AccountSelectionResult, error) {
+			selection, selectedDecision, err := s.selectAccountWithSchedulerOnce(selectionCtx, groupID, previousResponseID, sessionHash, requestedModel, excluded, requiredTransport, requiredCapability, requiredImageCapability, requireCompact, platform, previousResponseCanMove, useUpstreamTokenCost)
+			decision = selectedDecision
+			return selection, err
+		})
 		if err == nil && selection != nil && selection.Acquired && openAIImageSizeSpilloverPass(passCtx) {
 			s.bindOpenAIImageSizeSpilloverAccount(passCtx, groupID, sessionHash, initialStickyAccountID, selection)
 		}

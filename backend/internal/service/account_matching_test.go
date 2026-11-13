@@ -151,3 +151,38 @@ func TestAccountMatchingPoolPreservesAvailabilityAndPlatform(t *testing.T) {
 	require.True(t, matched)
 	require.Empty(t, accounts)
 }
+
+func TestAccountMatchingCrossGroupUpstreamFailover(t *testing.T) {
+	group := &Group{ID: 27, Platform: PlatformOpenAI, AccountErrorFailoverEnabled: true}
+	accounts := upstreamFailoverAccounts(1, 1, 2, 2, 2, 2, 3, 3)
+	ids := make([]int64, len(accounts))
+	for i := range accounts {
+		accounts[i].GroupIDs = []int64{55}
+		ids[i] = accounts[i].ID
+	}
+	outside := accounts[0]
+	outside.ID = 999
+	outside.GroupIDs = []int64{27}
+	outside.Priority = -100
+	repo := stubOpenAIAccountRepo{accounts: append(accounts, outside)}
+	svc := &OpenAIGatewayService{accountRepo: repo, settingService: NewSettingService(&gatewayTTLSettingRepo{data: map[string]string{SettingKeyAccountErrorFailoverEnabled: "true"}}, nil)}
+	ctx := withAccountMatching(context.Background(), ids)
+	ctx = svc.PrepareRequestAccountFailover(ctx, &group.ID, group, "", PlatformOpenAI)
+	require.True(t, RequestAccountFailoverEnabled(ctx))
+	excluded := map[int64]struct{}{}
+	var got []string
+	for i := 0; i <= len(accounts); i++ {
+		account, err := svc.SelectAccountForModelWithExclusions(ctx, &group.ID, "", "", excluded)
+		if err != nil {
+			require.ErrorIs(t, err, ErrNoAvailableAccounts)
+			break
+		}
+		require.Contains(t, ids, account.ID, "failover must stay inside matching rule")
+		require.NotContains(t, excluded, account.ID)
+		got = append(got, accountFailoverUpstream(account))
+		excluded[account.ID] = struct{}{}
+		MarkRequestAccountFailoverAction(ctx, "switch_account", account.ID)
+	}
+	u1, u2, u3 := accountFailoverUpstream(&accounts[0]), accountFailoverUpstream(&accounts[2]), accountFailoverUpstream(&accounts[6])
+	require.Equal(t, []string{u1, u2, u3, u1, u2, u3, u2}, got)
+}

@@ -225,8 +225,8 @@ func testImagesFailoverRound(t *testing.T, count int, enabled, groupEnabled bool
 	require.NotContains(t, loggedFields, "prompt")
 
 	attempts := 1
-	if (!enabled || !groupEnabled) && count > 2 {
-		count = 2 // Original maximum is one account switch.
+	if count > 2 {
+		count = 2 // Same upstream gets one final retry; disabled policy keeps its original one-switch limit.
 	}
 	var expected []int64
 	for id := 1; id <= count; id++ {

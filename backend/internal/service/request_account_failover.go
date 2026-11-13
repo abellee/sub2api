@@ -45,6 +45,8 @@ type RequestAccountFailoverTrace struct {
 	Actions          []string
 	FailedAccountIDs []int64
 	Attempts         []AccountFailoverAttempt
+	upstreams        map[int64]string
+	finalAccountID   int64
 }
 
 type AccountFailoverAttempt struct {
@@ -212,16 +214,16 @@ func (s *GatewayService) PrepareRequestAccountFailover(ctx context.Context, grou
 	if err != nil {
 		return withRequestAccountFailoverCount(ctx, 0)
 	}
-	count := 0
+	eligible := make([]Account, 0, len(accounts))
 	for i := range accounts {
 		a := &accounts[i]
 		if s.isAccountSchedulableForSelection(a) && s.isAccountAllowedForPlatform(a, platform, mixed) &&
 			(model == "" || s.isModelSupportedByAccountWithContext(ctx, a, model)) &&
 			s.isAccountSchedulableForModelSelection(ctx, a, model) && s.isAccountSchedulableForQuota(a) {
-			count++
+			eligible = append(eligible, *a)
 		}
 	}
-	return withRequestAccountFailoverCount(ctx, count)
+	return withRequestAccountFailoverAccounts(ctx, eligible)
 }
 
 func (s *OpenAIGatewayService) PrepareRequestAccountFailover(ctx context.Context, groupID *int64, group *Group, model, platform string, capabilities ...OpenAIEndpointCapability) context.Context {
@@ -238,17 +240,17 @@ func (s *OpenAIGatewayService) PrepareRequestAccountFailover(ctx context.Context
 	if err != nil {
 		return withRequestAccountFailoverCount(ctx, 0)
 	}
-	count := 0
+	eligible := make([]Account, 0, len(accounts))
 	for i := range accounts {
 		if OpenAIImagesEndpointFromContext(ctx) && !accounts[i].SupportsOpenAIImageCapability(OpenAIImagesCapabilityBasic) {
 			continue
 		}
 		if openAICompatibleAccountEligibilityFailureReason(ctx, &accounts[i], platform, model, false, capability) == "" &&
 			!s.isOpenAIAccountRequestRuntimeBlocked(&accounts[i], model) {
-			count++
+			eligible = append(eligible, accounts[i])
 		}
 	}
-	return withRequestAccountFailoverCount(ctx, count)
+	return withRequestAccountFailoverAccounts(ctx, eligible)
 }
 
 // ForwardWithAccountRetries leaves retries to the handler's account-selection
@@ -305,6 +307,9 @@ func ForwardWithAccountRetries[T any](ctx context.Context, c *gin.Context, forwa
 		copy.RetryableOnSameAccount = false
 		copy.SameAccountRetryDeadline = time.Time{}
 		copy.SkipAccountCooldown = true
+		if requestAccountFailoverFinalAttempt(ctx, accountID) {
+			copy.NextAccountAction = NextAccountStop
+		}
 		err = &copy
 	}
 	return result, err

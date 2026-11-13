@@ -368,7 +368,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 					return
 				}
 				switchCount++
-				markAccountErrorFailoverAction(c, "switch_account", account.ID)
+				markAccountErrorFailoverAction(c, "skip_ineligible_account", account.ID)
 				continue
 			}
 		}
