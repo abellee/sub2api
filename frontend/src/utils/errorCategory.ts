@@ -20,6 +20,7 @@ export function mapErrorCategory(phase?: string | null, errType?: string | null)
         case 'rate_limit_error':
           return 'rate_limit'
         case 'billing_error':
+        case 'insufficient_balance':
         case 'subscription_error':
           return 'quota'
         case 'invalid_request_error':

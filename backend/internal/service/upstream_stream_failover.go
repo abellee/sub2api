@@ -1,7 +1,6 @@
 package service
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -36,12 +35,28 @@ func (r *OpenAIForwardResult) HasObservedUsage() bool {
 
 func requestAccountFailoverError(ctx context.Context, err error) error {
 	if err == nil || !RequestAccountFailoverEnabled(ctx) || ctx.Err() != nil ||
-		errors.Is(err, bufio.ErrTooLong) || errors.Is(err, ErrUpstreamResponseBodyTooLarge) {
+		errors.Is(err, ErrInsufficientBalance) {
 		return err
 	}
 	var failure *UpstreamFailoverError
 	if errors.As(err, &failure) {
-		return err // Preserve explicit stop decisions and existing error policies.
+		// Only a confirmed request problem stops account traversal. Provider
+		// failures remain retryable even after partial output or a legacy stop.
+		if failure.Scope == GatewayFailureScopeRequest && !failure.RequestScopedTransient {
+			return err
+		}
+		status := failure.StatusCode
+		if status < 400 {
+			status = http.StatusBadGateway
+		}
+		copy := *failure
+		copy.NextAccountAction = NextAccountStop
+		if accountErrorShouldFailover(status, failure.ResponseBody) {
+			copy.NextAccountAction = NextAccountRetry
+			copy.SafeToFailoverAfterWrite = true
+			copy.SkipAccountCooldown = true
+		}
+		return &copy
 	}
 	var streamErr *upstreamStreamError
 	if !errors.As(err, &streamErr) {

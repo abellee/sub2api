@@ -38,7 +38,7 @@ func accountErrorShouldFailover(status int, body []byte) bool {
 		"content_policy", "content_filter", "safety_violation", "safety policy", "safety filter",
 		"invalid_parameter", "missing_required_parameter", "context_length_exceeded",
 		"invalid_image", "invalid_audio", "invalid_json", "invalid_prompt",
-		"parameter is invalid", "invalid parameter", "missing required", "unsupported parameter",
+		"invalid input", "parameter is invalid", "invalid parameter", "missing required", "unsupported parameter",
 		"unrecognized request argument", "must be a multiple of", "maximum context length",
 		"参数错误", "参数无效", "缺少必填", "内容违规", "内容安全",
 	}) {
@@ -59,13 +59,8 @@ func accountErrorShouldFailover(status int, body []byte) bool {
 		isOpenAIUpstreamAccessStateError(message, body) {
 		return true
 	}
-	errType := strings.ToLower(gjson.GetBytes(body, "error.type").String())
-	if errType == "" {
-		errType = strings.ToLower(gjson.GetBytes(body, "response.error.type").String())
-	}
 	if code == "invalid_argument" || strings.EqualFold(gjson.GetBytes(body, "error.status").String(), "INVALID_ARGUMENT") ||
-		gjson.GetBytes(body, "error.param").String() != "" ||
-		((status == 400 || status == 422) && (errType == "invalid_request_error" || errType == "validation_error")) {
+		gjson.GetBytes(body, "error.param").String() != "" {
 		return false
 	}
 	// Payload/media-type validation cannot be repaired by changing credentials.

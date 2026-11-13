@@ -1087,8 +1087,8 @@ func (s *GatewayService) sseStreamErrorEventFailover(ctx context.Context, c *gin
 	if RequestAccountFailoverEnabled(ctx) {
 		failure.SkipAccountCooldown = true
 		failure.NextAccountAction = NextAccountStop
-		// A ping may have committed HTTP 200 without committing model output.
-		if !outputStarted && accountErrorShouldFailover(semanticStatus, body) {
+		// Partial output does not stop traversal of the remaining accounts.
+		if accountErrorShouldFailover(semanticStatus, body) {
 			failure.NextAccountAction = NextAccountRetry
 			failure.SafeToFailoverAfterWrite = true
 		}

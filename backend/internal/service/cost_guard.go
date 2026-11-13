@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"math"
 	"net/http"
 	"strconv"
@@ -39,6 +40,7 @@ func normalizedCostGuardErrorResponse(status int, message string) *costGuardErro
 
 // CostGuardRejectedError preserves the configured response at rejection time.
 type CostGuardRejectedError struct {
+	Unpriced   bool // Missing pricing is not a user balance shortage.
 	StatusCode int
 	Message    string
 }
@@ -57,6 +59,23 @@ func CostGuardRejection() error {
 		response = normalizedCostGuardErrorResponse(0, "")
 	}
 	return &CostGuardRejectedError{StatusCode: response.statusCode, Message: response.message}
+}
+
+func CostGuardUnpricedRejection() error {
+	err := CostGuardRejection()
+	if rejection, ok := err.(*CostGuardRejectedError); ok {
+		rejection.Unpriced = true
+		return rejection
+	}
+	return &CostGuardRejectedError{StatusCode: http.StatusForbidden, Message: err.Error(), Unpriced: true}
+}
+
+func IsUserBalanceError(err error) bool {
+	var rejection *CostGuardRejectedError
+	if errors.As(err, &rejection) && rejection.Unpriced {
+		return false
+	}
+	return errors.Is(err, ErrInsufficientBalance)
 }
 
 var costGuardDefault atomic.Pointer[CostGuardService]

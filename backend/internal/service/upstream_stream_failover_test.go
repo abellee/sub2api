@@ -27,12 +27,13 @@ func TestAccountFailoverStreamErrorPolicy(t *testing.T) {
 			{"missing terminal", errUpstreamStreamMissingTerminal, true},
 			{"connection interrupted", upstreamStreamReadError(io.ErrUnexpectedEOF), true},
 			{"openai read error", newOpenAIUpstreamStreamReadError(io.ErrUnexpectedEOF), true},
-			{"balance", errors.New("insufficient balance"), false},
+			{"balance", ErrInsufficientBalance, false},
+			{"custom balance", &CostGuardRejectedError{StatusCode: 503, Message: "custom"}, false},
 			{"parameters", errors.New("invalid parameter"), false},
 			{"untyped text is not a classifier", errors.New("stream usage incomplete: missing terminal event"), false},
 			{"upstream canceled while request is live", upstreamStreamReadError(context.Canceled), true},
 			{"upstream timeout while request is live", upstreamStreamReadError(context.DeadlineExceeded), true},
-			{"size limit", upstreamStreamReadError(bufio.ErrTooLong), false},
+			{"size limit", upstreamStreamReadError(bufio.ErrTooLong), true},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				got := requestAccountFailoverError(ctx, tc.err)
@@ -55,7 +56,7 @@ func TestAccountFailoverStreamErrorPolicy(t *testing.T) {
 		failure := upstreamStreamReadError(stopped.Err())
 		require.Same(t, failure, requestAccountFailoverError(stopped, failure), "request cancellation must stop failover")
 	}
-	stop := &UpstreamFailoverError{Cause: errUpstreamStreamMissingTerminal, NextAccountAction: NextAccountStop}
+	stop := &UpstreamFailoverError{Cause: errUpstreamStreamMissingTerminal, Scope: GatewayFailureScopeRequest, NextAccountAction: NextAccountStop}
 	require.Same(t, stop, requestAccountFailoverError(ctx, stop))
 	require.False(t, stop.ShouldRetryNextAccount())
 }

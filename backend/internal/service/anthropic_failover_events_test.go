@@ -73,7 +73,7 @@ func TestAnthropicFailoverErrorsStayInternalUntilSuccess(t *testing.T) {
 	}
 }
 
-func TestAnthropicFailoverStopsForInputErrorsAndCommittedOutput(t *testing.T) {
+func TestAnthropicFailoverStopsOnlyForInputErrors(t *testing.T) {
 	for _, tc := range []struct {
 		name, body string
 		retry      bool
@@ -81,7 +81,7 @@ func TestAnthropicFailoverStopsForInputErrorsAndCommittedOutput(t *testing.T) {
 	}{
 		{"ping then retry", "event: ping\ndata: {\"type\":\"ping\"}\n\n" + failoverError, true, false},
 		{"input error", "data: {\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\",\"message\":\"input exceeds the context window\"}}\n\n", false, false},
-		{"output then error", failoverPreamble + failoverText + failoverError, false, true},
+		{"output then error", failoverPreamble + failoverText + failoverError, true, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := withRequestAccountFailoverCount(context.Background(), 3)
@@ -124,4 +124,36 @@ func TestAccountFailoverTraceAndBillingCancellation(t *testing.T) {
 	require.Empty(t, GetRequestAccountFailoverAttempts(billing), "async billing must not retain request traces")
 	require.Equal(t, "client:request:account:31", accountAttemptUsageBillingRequestID(billing, "client:request", 31))
 	require.Equal(t, "client:request:account:37", accountAttemptUsageBillingRequestID(billing, "client:request", 37))
+}
+
+func TestAnthropicFailoverPartialOutputThenSuccess(t *testing.T) {
+	ctx := withRequestAccountFailoverCount(context.Background(), 3)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	svc := &GatewayService{cfg: &config.Config{}, rateLimitService: &RateLimitService{}}
+	for i, body := range []string{failoverPreamble + failoverText + failoverError, failoverError, failoverPreamble + failoverText + failoverStop} {
+		account := &Account{ID: int64(i + 1), Platform: PlatformAnthropic}
+		attemptCtx := context.WithValue(ctx, ctxkey.AccountID, account.ID)
+		c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil).WithContext(attemptCtx)
+		resp := &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(body))}
+		_, err := ForwardWithAccountRetries(attemptCtx, c, func() (*ForwardResult, error) {
+			result, err := svc.handleStreamingResponseAnthropicAPIKeyPassthrough(attemptCtx, resp, c, account, time.Now(), "claude")
+			if err != nil {
+				return nil, err
+			}
+			return &ForwardResult{Usage: *result.usage, Stream: true}, nil
+		})
+		if i < 2 {
+			var failure *UpstreamFailoverError
+			require.ErrorAs(t, err, &failure)
+			require.True(t, failure.ShouldRetryNextAccount())
+			require.True(t, failure.SafeToFailoverAfterWrite)
+		} else {
+			require.NoError(t, err)
+		}
+	}
+	require.Equal(t, "success", RequestAccountFailoverResult(c))
+	require.Len(t, GetRequestAccountFailoverAttempts(ctx), 3)
+	require.Equal(t, 2, strings.Count(rec.Body.String(), `"text":"answer"`))
+	require.NotContains(t, rec.Body.String(), "event: error")
 }

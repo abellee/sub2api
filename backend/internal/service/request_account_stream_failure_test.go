@@ -246,7 +246,13 @@ func TestAccountStreamFailureRespectsClientAndOutput(t *testing.T) {
 			if tt.output {
 				_, _ = c.Writer.WriteString("data: partial answer\n\n")
 			}
-			require.Nil(t, requestAccountStreamFailover(c, nil, nil, io.ErrUnexpectedEOF))
+			failure := requestAccountStreamFailover(c, nil, nil, io.ErrUnexpectedEOF)
+			if tt.output {
+				require.NotNil(t, failure)
+				require.True(t, failure.ShouldRetryNextAccount())
+			} else {
+				require.Nil(t, failure)
+			}
 		})
 	}
 }
@@ -292,7 +298,7 @@ func TestAccountStreamExplicitStopPreserved(t *testing.T) {
 	finishRequestAccountStream(c, nil, nil, &result, &err)
 	require.Same(t, stop, err)
 	require.NotNil(t, result)
-	require.Nil(t, requestAccountStreamFailover(c, nil, nil, &sseStreamErrorEventError{RawData: `{"type":"error","error":{"type":"invalid_request_error","message":"invalid request"}}`}))
+	require.Nil(t, requestAccountStreamFailover(c, nil, nil, &sseStreamErrorEventError{RawData: `{"type":"error","error":{"type":"invalid_request_error","message":"invalid parameter: size"}}`}))
 }
 
 func TestAccountStreamRawUpstreamTimeoutAfterOutputIsFailure(t *testing.T) {

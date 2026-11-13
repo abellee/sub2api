@@ -13,7 +13,7 @@ import (
 
 func TestOpsCostGuardRejectionsRemainVisibleWithoutAffectingSLA(t *testing.T) {
 	for _, status := range []int{403, 429, 499, 503} {
-		for _, message := range []string{"余额不足，请充值", "Insufficient balance for this request."} {
+		for _, message := range []string{"余额不足，请充值", "Insufficient balance for this request.", "自定义提示"} {
 			for _, protocol := range []string{"openai", "anthropic", "gemini", "openai-sse", "anthropic-sse", "gateway-sse", "responses-sse", "websocket"} {
 				t.Run(fmt.Sprintf("%s/%d/%s", protocol, status, message), func(t *testing.T) {
 					setupOpsErrorLogTestQueue(t, 2)
@@ -28,6 +28,7 @@ func TestOpsCostGuardRejectionsRemainVisibleWithoutAffectingSLA(t *testing.T) {
 						path = "/v1/responses"
 					}
 					router.POST(path, func(c *gin.Context) {
+						c.Set(opsUserBalanceErrorKey, true)
 						switch protocol {
 						case "openai":
 							(&OpenAIGatewayHandler{}).handleStreamingAwareError(c, status, costGuardErrorType, message, false)
@@ -57,7 +58,7 @@ func TestOpsCostGuardRejectionsRemainVisibleWithoutAffectingSLA(t *testing.T) {
 					router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, path, nil))
 					require.Equal(t, int64(1), OpsErrorLogQueueLength(), "the rejection must remain visible exactly once")
 					entry := (<-opsErrorLogQueue).entry
-					require.Equal(t, costGuardErrorType, entry.ErrorType)
+					require.Equal(t, service.OpsUserBalanceErrorType, entry.ErrorType)
 					require.Equal(t, status, entry.StatusCode)
 					require.Equal(t, message, entry.ErrorMessage)
 					require.Equal(t, "request", entry.ErrorPhase)
@@ -79,4 +80,19 @@ func TestOpsCostGuardClassificationKeepsRealUpstreamFailuresInSLA(t *testing.T) 
 	require.Equal(t, "upstream", phase)
 	require.Equal(t, "provider", owner)
 	require.False(t, excluded)
+}
+
+func TestOpsUnpricedRejectionIsNotUserBalance(t *testing.T) {
+	setupOpsErrorLogTestQueue(t, 2)
+	ops := service.NewOpsService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := gin.New()
+	router.Use(OpsErrorLoggerMiddleware(ops))
+	router.POST("/v1/messages", func(c *gin.Context) {
+		c.Set(opsUserBalanceErrorKey, false)
+		(&GatewayHandler{}).handleStreamingAwareError(c, 403, costGuardErrorType, "Insufficient balance for the estimated request cost.", false)
+	})
+	router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/v1/messages", nil))
+	require.Equal(t, int64(1), OpsErrorLogQueueLength())
+	entry := (<-opsErrorLogQueue).entry
+	require.Equal(t, costGuardErrorType, entry.ErrorType)
 }

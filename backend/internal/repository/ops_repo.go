@@ -4,7 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -78,6 +80,9 @@ func (r *opsRepository) InsertErrorLog(ctx context.Context, input *service.OpsIn
 		insertOpsErrorLogSQL+" RETURNING id",
 		opsInsertErrorLogArgs(input)...,
 	).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) && input.ErrorType == service.OpsUserBalanceErrorType {
+		return 0, nil // Repeated balance rejection suppressed by the database.
+	}
 	if err != nil {
 		return 0, err
 	}
@@ -92,6 +97,24 @@ func (r *opsRepository) BatchInsertErrorLogs(ctx context.Context, inputs []*serv
 		return 0, nil
 	}
 
+	// Stable user order avoids cross-batch locks in the first-balance-error trigger.
+	inputs = append([]*service.OpsInsertErrorLogInput(nil), inputs...)
+	sort.SliceStable(inputs, func(i, j int) bool {
+		if inputs[i] == nil || inputs[j] == nil {
+			return inputs[j] == nil && inputs[i] != nil
+		}
+		var a, b int64
+		if inputs[i].UserID != nil {
+			a = *inputs[i].UserID
+		}
+		if inputs[j].UserID != nil {
+			b = *inputs[j].UserID
+		}
+		if a != b {
+			return a < b
+		}
+		return inputs[i].CreatedAt.Before(inputs[j].CreatedAt)
+	})
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, err
@@ -115,10 +138,16 @@ func (r *opsRepository) BatchInsertErrorLogs(ctx context.Context, inputs []*serv
 		if input == nil {
 			continue
 		}
-		if _, err = stmt.ExecContext(ctx, opsInsertErrorLogArgs(input)...); err != nil {
+		var result sql.Result
+		if result, err = stmt.ExecContext(ctx, opsInsertErrorLogArgs(input)...); err != nil {
 			return inserted, err
 		}
-		inserted++
+		var n int64
+		n, err = result.RowsAffected()
+		if err != nil {
+			return inserted, err
+		}
+		inserted += n
 	}
 
 	if err = tx.Commit(); err != nil {

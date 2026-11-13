@@ -89,6 +89,7 @@ func (h *OpenAIGatewayHandler) Live(c *gin.Context) {
 		subscription,
 		service.QuotaPlatform(c.Request.Context(), apiKey),
 	); err != nil {
+		markOpsUserBalanceError(c, err)
 		status, code, message, retryAfter := billingErrorDetails(err)
 		if retryAfter > 0 {
 			c.Header("Retry-After", strconv.Itoa(retryAfter))

@@ -75,7 +75,7 @@ func TestOpsErrorLoggerMiddleware_GoogleBillingErrorMatchesClaudeFormat(t *testi
 		status, code, message, _ := billingErrorDetails(service.ErrInsufficientBalance)
 		googleErrorWithType(c, status, code, "", message)
 	})
-	require.Equal(t, "billing_error", entry.ErrorType)
+	require.Equal(t, service.OpsUserBalanceErrorType, entry.ErrorType)
 	require.Equal(t, "request", entry.ErrorPhase)
 	require.Equal(t, "client", entry.ErrorOwner)
 	require.True(t, entry.IsBusinessLimited)

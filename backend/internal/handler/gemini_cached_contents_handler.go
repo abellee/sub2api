@@ -82,6 +82,7 @@ func readGeminiCachedContentBody(c *gin.Context) ([]byte, bool) {
 
 func (h *GatewayHandler) checkGeminiCachedContentBilling(c *gin.Context, reqLog *zap.Logger, apiKey *service.APIKey, subscription *service.UserSubscription) bool {
 	if err := h.billingCacheService.CheckBillingEligibility(c.Request.Context(), apiKey.User, apiKey, apiKey.Group, subscription, service.QuotaPlatform(c.Request.Context(), apiKey)); err != nil {
+		markOpsUserBalanceError(c, err)
 		reqLog.Info("gemini.cached_content.billing_eligibility_check_failed", zap.Error(err))
 		status, code, message, retryAfter := billingErrorDetails(err)
 		if retryAfter > 0 {

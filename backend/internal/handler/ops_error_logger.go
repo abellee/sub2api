@@ -1170,16 +1170,19 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 			}
 		}
 
+		if isOpsUserBalanceError(c, parsed.ErrorType, parsed.Code, parsed.Message) {
+			parsed.ErrorType = service.OpsUserBalanceErrorType
+		}
 		// Skip logging if a passthrough rule with skip_monitoring=true matched.
 		if shouldSkipFinalOpsFailure(c) {
 			return
 		}
 
 		// Skip logging if the error should be filtered based on settings
-		if parsed.ErrorType != costGuardErrorType && shouldSkipOpsErrorLog(c.Request.Context(), ops, parsed.Message, string(body), c.Request.URL.Path) {
+		if parsed.ErrorType != costGuardErrorType && parsed.ErrorType != service.OpsUserBalanceErrorType && shouldSkipOpsErrorLog(c.Request.Context(), ops, parsed.Message, string(body), c.Request.URL.Path) {
 			return
 		}
-		if parsed.ErrorType != costGuardErrorType && shouldSkipOpsClientClosed(c, ops, status) {
+		if parsed.ErrorType != costGuardErrorType && parsed.ErrorType != service.OpsUserBalanceErrorType && shouldSkipOpsClientClosed(c, ops, status) {
 			return
 		}
 
@@ -1219,6 +1222,9 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 		normalizedType := normalizeOpsErrorType(parsed.ErrorType, parsed.Code)
 
 		phase, isBusinessLimited, errorOwner, errorSource := classifyOpsErrorLog(c, normalizedType, parsed.Message, parsed.Code, status)
+		if normalizedType == service.OpsUserBalanceErrorType {
+			phase, isBusinessLimited, errorOwner, errorSource = "request", true, "client", "client_request"
+		}
 
 		entry := &service.OpsInsertErrorLogInput{
 			RequestID:       requestID,
@@ -1275,8 +1281,10 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 			CreatedAt: time.Now(),
 		}
 		applyOpsLatencyFieldsFromContext(c, entry)
-		applyOpsUpstreamFieldsFromContext(c, entry)
-		if parsed.StreamFailure && normalizedType != costGuardErrorType {
+		if normalizedType != service.OpsUserBalanceErrorType {
+			applyOpsUpstreamFieldsFromContext(c, entry)
+		}
+		if parsed.StreamFailure && normalizedType != costGuardErrorType && normalizedType != service.OpsUserBalanceErrorType {
 			if message := strings.TrimSpace(parsed.Message); message != "" {
 				entry.UpstreamErrorMessage = &message
 			}
@@ -1474,7 +1482,8 @@ func logOpsStreamErrorValue(c *gin.Context, ops *service.OpsService, wireStatus 
 	}
 
 	// 复用与 status>=400 分支相同的设置过滤（context canceled / 无可用账号等）。
-	if streamErr.ErrType != costGuardErrorType && shouldSkipOpsErrorLog(c.Request.Context(), ops, streamErr.Message, streamErr.Message, c.Request.URL.Path) {
+	userBalanceError := (streamErr.RequestScoped || !hasOpsUpstreamErrorContext(c)) && isOpsUserBalanceError(c, streamErr.ErrType, streamErr.Code, streamErr.Message)
+	if streamErr.ErrType != costGuardErrorType && !userBalanceError && shouldSkipOpsErrorLog(c.Request.Context(), ops, streamErr.Message, streamErr.Message, c.Request.URL.Path) {
 		return
 	}
 
@@ -1484,9 +1493,12 @@ func logOpsStreamErrorValue(c *gin.Context, ops *service.OpsService, wireStatus 
 		classifyStatus = wireStatus
 	}
 	normalizedType := normalizeOpsErrorType(streamErr.ErrType, streamErr.Code)
+	if userBalanceError {
+		normalizedType = service.OpsUserBalanceErrorType
+	}
 	var phase, errorOwner, errorSource string
 	var isBusinessLimited bool
-	if streamErr.RequestScoped {
+	if streamErr.RequestScoped || userBalanceError {
 		// 请求级带内结果只按错误类型分类，此前尝试残留的上游错误上下文不参与判定。
 		phase = classifyOpsPhase(normalizedType, streamErr.Message, streamErr.Code)
 		isBusinessLimited = true
@@ -1496,7 +1508,7 @@ func logOpsStreamErrorValue(c *gin.Context, ops *service.OpsService, wireStatus 
 		phase, isBusinessLimited, errorOwner, errorSource = classifyOpsErrorLog(c, normalizedType, streamErr.Message, streamErr.Code, classifyStatus)
 	}
 	recordedStatus := wireStatus
-	if streamErr.IntendedStatus >= 400 && (streamErr.CountTowardsSLA || streamErr.RequestScoped) {
+	if streamErr.IntendedStatus >= 400 && (streamErr.CountTowardsSLA || streamErr.RequestScoped || userBalanceError) {
 		recordedStatus = streamErr.IntendedStatus
 	}
 	errorBody := ""
@@ -1589,10 +1601,10 @@ func logOpsStreamErrorValue(c *gin.Context, ops *service.OpsService, wireStatus 
 		CreatedAt: time.Now(),
 	}
 	applyOpsLatencyFieldsFromContext(c, entry)
-	if !streamErr.RequestScoped {
+	if !streamErr.RequestScoped && !userBalanceError {
 		applyOpsUpstreamFieldsFromContext(c, entry)
 	}
-	if streamErr.Turn > 0 && !streamErr.RequestScoped {
+	if streamErr.Turn > 0 && !streamErr.RequestScoped && !userBalanceError {
 		applyOpsStreamErrorSnapshot(entry, streamErr)
 	}
 
@@ -2199,6 +2211,7 @@ func isKnownOpsErrorType(t string) bool {
 		"service_unavailable",
 		"rate_limit_error",
 		"billing_error",
+		service.OpsUserBalanceErrorType,
 		costGuardErrorType,
 		"subscription_error",
 		"upstream_error",
@@ -2242,7 +2255,7 @@ func classifyOpsPhase(errType, message, code string) string {
 	switch errType {
 	case "authentication_error":
 		return "auth"
-	case "billing_error", "subscription_error", costGuardErrorType:
+	case "billing_error", "subscription_error", costGuardErrorType, service.OpsUserBalanceErrorType:
 		return "request"
 	case "rate_limit_error":
 		if strings.Contains(msg, "concurrency") || strings.Contains(msg, "pending") || strings.Contains(msg, "queue") {
@@ -2265,7 +2278,7 @@ func classifyOpsPhase(errType, message, code string) string {
 
 func classifyOpsSeverity(errType string, status int) string {
 	switch errType {
-	case "invalid_request_error", "authentication_error", "permission_error", "forbidden_error", "not_found_error", "model_not_found", "billing_error", "subscription_error", costGuardErrorType:
+	case "invalid_request_error", "authentication_error", "permission_error", "forbidden_error", "not_found_error", "model_not_found", "billing_error", "subscription_error", costGuardErrorType, service.OpsUserBalanceErrorType:
 		return "P3"
 	}
 	if status >= 500 {
@@ -2324,7 +2337,7 @@ func classifyOpsErrorLog(c *gin.Context, errType, message, code string, status i
 }
 
 func classifyOpsIsBusinessLimited(errType, phase, code string, status int, message string, localClientAuthError ...bool) bool {
-	if errType == costGuardErrorType {
+	if errType == costGuardErrorType || errType == service.OpsUserBalanceErrorType {
 		return true
 	}
 	if len(localClientAuthError) > 0 && localClientAuthError[0] {

@@ -100,6 +100,7 @@ func (h *GatewayHandler) SystemOne(c *gin.Context) {
 		defer userRelease()
 	}
 	if err := h.billingCacheService.CheckBillingEligibility(c.Request.Context(), apiKey.User, apiKey, apiKey.Group, subscription, service.QuotaPlatform(c.Request.Context(), apiKey)); err != nil {
+		markOpsUserBalanceError(c, err)
 		reqLog.Info("systemone.billing_eligibility_check_failed", zap.Error(err))
 		status, code, message, retryAfter := billingErrorDetails(err)
 		if retryAfter > 0 {

@@ -62,6 +62,7 @@ func reserveInflightBalance(
 	}
 	ctx, done, err := reserveInflightBalanceCtx(c.Request.Context(), billing, estimator, apiKey, subscription, req)
 	if err != nil {
+		markOpsUserBalanceError(c, err)
 		return inflightNoop, err
 	}
 	c.Request = c.Request.WithContext(ctx)
@@ -95,7 +96,7 @@ func reserveInflightBalanceCtx(
 		return ctx, inflightNoop, nil
 	}
 	if !priced && billing.InflightReservationFailClosedOnUnpriced() {
-		return ctx, inflightNoop, service.CostGuardRejection()
+		return ctx, inflightNoop, service.CostGuardUnpricedRejection()
 	}
 	if estimate <= 0 {
 		return ctx, inflightNoop, nil

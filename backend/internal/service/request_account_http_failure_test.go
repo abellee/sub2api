@@ -22,6 +22,7 @@ func TestAccountErrorClassificationAcrossGateways(t *testing.T) {
 		body   string
 		retry  bool
 	}{
+		{"unknown invalid request", 400, `{"error":{"type":"invalid_request_error","message":"opaque provider failure"}}`, true},
 		{"endpoint missing", 404, `404 page not found`, true},
 		{"provider payment", 402, `payment required`, true},
 		{"provider Chinese credit", 403, `{"error":{"message":"用户额度不足, 剩余额度: -0.01"}}`, true},

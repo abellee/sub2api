@@ -1,7 +1,6 @@
 package service
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -16,7 +15,7 @@ import (
 // validation and explicit upstream stop decisions must not become retries.
 func requestAccountStreamFailover(c *gin.Context, account *Account, resp *http.Response, err error) *UpstreamFailoverError {
 	if err == nil || c == nil || c.Request == nil || !RequestAccountFailoverEnabled(c.Request.Context()) ||
-		c.Request.Context().Err() != nil || errors.Is(err, bufio.ErrTooLong) || errors.Is(err, ErrUpstreamResponseBodyTooLarge) {
+		c.Request.Context().Err() != nil || errors.Is(err, ErrInsufficientBalance) {
 		return nil
 	}
 	var failure *UpstreamFailoverError
@@ -29,16 +28,19 @@ func requestAccountStreamFailover(c *gin.Context, account *Account, resp *http.R
 			return nil
 		}
 	}
-	classified, _ := requestAccountFailoverError(c.Request.Context(), err).(*UpstreamFailoverError)
-	if accountAttemptWroteResponse(c) && (classified == nil || !classified.SafeToFailoverAfterWrite) {
-		return nil
-	}
 	status := http.StatusBadGateway
 	if errors.Is(err, errAnthropicNativeStreamIdle) || errors.Is(err, context.DeadlineExceeded) || strings.Contains(err.Error(), "stream data interval timeout") {
 		status = http.StatusGatewayTimeout
 	}
 	message := "Upstream response stream ended before completion"
 	body, _ := json.Marshal(gin.H{"error": gin.H{"type": "upstream_error", "message": message}})
+	if eventErr != nil {
+		body = []byte(eventErr.RawData)
+		if upstreamMessage := extractUpstreamErrorMessage(body); upstreamMessage != "" {
+			message = upstreamMessage
+		}
+		status = openAIStreamFailedEventSemanticStatus(body, message)
+	}
 	setOpsUpstreamError(c, status, message, "")
 	event := OpsUpstreamErrorEvent{Kind: "failover", UpstreamStatusCode: status, Message: message + ": " + sanitizeStreamError(err)}
 	if account != nil {
@@ -52,7 +54,7 @@ func requestAccountStreamFailover(c *gin.Context, account *Account, resp *http.R
 		event.UpstreamRequestID = resp.Header.Get("x-request-id")
 	}
 	appendOpsUpstreamError(c, event)
-	return &UpstreamFailoverError{Cause: err, StatusCode: status, ResponseBody: body, SkipAccountCooldown: true, SafeToFailoverAfterWrite: classified != nil && classified.SafeToFailoverAfterWrite}
+	return &UpstreamFailoverError{Cause: err, StatusCode: status, ResponseBody: body, SkipAccountCooldown: true, SafeToFailoverAfterWrite: true, NextAccountAction: NextAccountRetry}
 }
 
 // Keep reported usage for per-account billing, including failed attempts.
