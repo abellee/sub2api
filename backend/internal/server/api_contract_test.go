@@ -353,6 +353,8 @@ func TestAPIContracts(t *testing.T) {
 						"name": "Group One",
 						"description": "desc",
 						"platform": "anthropic",
+						"required_protocol": "",
+						"blocked_user_agents": "",
 						"rate_multiplier": 1.5,
 						"peak_rate_enabled": false,
 						"peak_start": "",
