@@ -25,8 +25,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-var errAnthropicStreamMissingTerminalEvent = errUpstreamStreamMissingTerminal
-
 type anthropicPassthroughForwardInput struct {
 	Body          []byte
 	Parsed        *ParsedRequest
