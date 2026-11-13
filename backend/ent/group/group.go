@@ -46,6 +46,10 @@ const (
 	FieldDuplicateOperationID = "duplicate_operation_id"
 	// FieldPlatform holds the string denoting the platform field in the database.
 	FieldPlatform = "platform"
+	// FieldBlockedUserAgents holds the string denoting the blocked_user_agents field in the database.
+	FieldBlockedUserAgents = "blocked_user_agents"
+	// FieldRequiredProtocol holds the string denoting the required_protocol field in the database.
+	FieldRequiredProtocol = "required_protocol"
 	// FieldSubscriptionType holds the string denoting the subscription_type field in the database.
 	FieldSubscriptionType = "subscription_type"
 	// FieldDailyLimitUsd holds the string denoting the daily_limit_usd field in the database.
@@ -248,6 +252,8 @@ var Columns = []string{
 	FieldStatus,
 	FieldDuplicateOperationID,
 	FieldPlatform,
+	FieldBlockedUserAgents,
+	FieldRequiredProtocol,
 	FieldSubscriptionType,
 	FieldDailyLimitUsd,
 	FieldWeeklyLimitUsd,
@@ -369,6 +375,12 @@ var (
 	DefaultPlatform string
 	// PlatformValidator is a validator for the "platform" field. It is called by the builders before save.
 	PlatformValidator func(string) error
+	// DefaultBlockedUserAgents holds the default value on creation for the "blocked_user_agents" field.
+	DefaultBlockedUserAgents string
+	// DefaultRequiredProtocol holds the default value on creation for the "required_protocol" field.
+	DefaultRequiredProtocol string
+	// RequiredProtocolValidator is a validator for the "required_protocol" field. It is called by the builders before save.
+	RequiredProtocolValidator func(string) error
 	// DefaultSubscriptionType holds the default value on creation for the "subscription_type" field.
 	DefaultSubscriptionType string
 	// SubscriptionTypeValidator is a validator for the "subscription_type" field. It is called by the builders before save.
@@ -537,6 +549,16 @@ func ByDuplicateOperationID(opts ...sql.OrderTermOption) OrderOption {
 // ByPlatform orders the results by the platform field.
 func ByPlatform(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldPlatform, opts...).ToFunc()
+}
+
+// ByBlockedUserAgents orders the results by the blocked_user_agents field.
+func ByBlockedUserAgents(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldBlockedUserAgents, opts...).ToFunc()
+}
+
+// ByRequiredProtocol orders the results by the required_protocol field.
+func ByRequiredProtocol(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRequiredProtocol, opts...).ToFunc()
 }
 
 // BySubscriptionType orders the results by the subscription_type field.

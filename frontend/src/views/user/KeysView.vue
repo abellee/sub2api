@@ -1391,6 +1391,8 @@ interface GroupOption {
   peakRateMultiplier: number
   subscriptionType: SubscriptionType
   platform: GroupPlatform
+  requiredProtocol?: string
+  blockedClients?: string[]
   recommendationReason?: string
   recommendationRating?: number
 }
@@ -1688,7 +1690,9 @@ const groupOptions = computed(() =>
     peakEnd: group.peak_end,
     peakRateMultiplier: group.peak_rate_multiplier,
     subscriptionType: group.subscription_type,
-    platform: group.platform
+    platform: group.platform,
+    requiredProtocol: group.required_protocol,
+    blockedClients: [...new Set((group.blocked_user_agents ?? '').split(',').map((client) => client.trim().toLowerCase()).filter(Boolean))]
   }))
 )
 

@@ -49,6 +49,8 @@ const messages: Record<string, string> = {
   'keys.created': 'Created',
   'keys.expiresAt': 'Expires',
   'keys.group': 'Group',
+  'keys.requiredProtocolTag': '仅限{protocol}协议',
+  'keys.blockedClientTag': '排除客户端：{client}',
   'keys.id': 'ID',
   'keys.currentConcurrency': 'Current Concurrency',
   'keys.lastUsedAt': 'Last Used',
@@ -109,7 +111,10 @@ vi.mock('vue-i18n', async () => {
   return {
     ...actual,
     useI18n: () => ({
-      t: (key: string) => messages[key] ?? key,
+      t: (key: string, params?: Record<string, unknown>) => {
+        const text = messages[key] ?? key
+        return text.replace(/\{(\w+)\}/g, (_, name) => String(params?.[name] ?? ''))
+      },
     }),
   }
 })
@@ -638,6 +643,27 @@ describe('user KeysView column settings', () => {
       await flushPromises()
       expect(keysAPI.create).toHaveBeenCalledOnce()
       expect(vi.mocked(keysAPI.create).mock.calls[0].slice(0, 2)).toEqual(['My key', 2])
+    })
+
+    it('shows configured protocol and client tags on each group card', async () => {
+      getAvailableGroups.mockResolvedValue([
+        { ...availableGroups[0], required_protocol: 'anthropic', blocked_user_agents: ' Claude, , cursor, CLAUDE ' },
+        { ...availableGroups[1], required_protocol: 'openai', blocked_user_agents: '' },
+        { ...availableGroups[6], required_protocol: 'google' },
+        { ...availableGroups[2], blocked_user_agents: 'codex' },
+        { ...availableGroups[3], required_protocol: '', blocked_user_agents: ' , ' },
+      ])
+      const wrapper = await openCreate()
+      const tags = wrapper.get('[data-group-id="1"] [data-test="group-policy-tags"]')
+      expect(tags.text()).toContain('仅限Anthropic协议')
+      expect(tags.text()).toContain('排除客户端：claude')
+      expect(tags.text()).toContain('排除客户端：cursor')
+      expect(tags.findAll('span')).toHaveLength(3)
+      expect(wrapper.get('[data-group-id="2"]').text()).toContain('仅限OpenAI协议')
+      expect(wrapper.get('[data-group-id="7"]').text()).toContain('仅限Google协议')
+      const clientOnly = wrapper.get('[data-group-id="3"] [data-test="group-policy-tags"]')
+      expect(clientOnly.text()).toBe('排除客户端：codex')
+      expect(wrapper.find('[data-group-id="4"] [data-test="group-policy-tags"]').exists()).toBe(false)
     })
 
     it('shows only the groups returned by the API', async () => {

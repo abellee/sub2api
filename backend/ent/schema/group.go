@@ -84,6 +84,14 @@ func (Group) Fields() []ent.Field {
 		field.String("platform").
 			MaxLen(50).
 			Default(domain.PlatformAnthropic),
+		field.String("blocked_user_agents").
+			Default("").
+			SchemaType(map[string]string{dialect.Postgres: "text"}).
+			Comment("拒绝的客户端 UA 关键词，英文逗号分隔，不区分大小写"),
+		field.String("required_protocol").
+			MaxLen(20).
+			Default("").
+			Comment("强制客户端协议；空值表示不限制"),
 		field.String("subscription_type").
 			MaxLen(20).
 			Default(domain.SubscriptionTypeStandard),

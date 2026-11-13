@@ -379,7 +379,7 @@ func normalizeCreateGroupInputForSimpleMode(input *CreateGroupInput) {
 		return
 	}
 	*input = CreateGroupInput{
-		Name: input.Name, Description: input.Description, I18n: input.I18n, Platform: input.Platform,
+		Name: input.Name, Description: input.Description, I18n: input.I18n, BlockedUserAgents: input.BlockedUserAgents, RequiredProtocol: input.RequiredProtocol, Platform: input.Platform,
 		RateMultiplier: 1, SubscriptionType: SubscriptionTypeStandard,
 	}
 }
@@ -388,7 +388,7 @@ func normalizeUpdateGroupInputForSimpleMode(input *UpdateGroupInput) {
 	if input == nil {
 		return
 	}
-	*input = UpdateGroupInput{Name: input.Name, Description: input.Description, I18n: input.I18n}
+	*input = UpdateGroupInput{Name: input.Name, Description: input.Description, I18n: input.I18n, BlockedUserAgents: input.BlockedUserAgents, RequiredProtocol: input.RequiredProtocol}
 }
 
 func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupInput) (*Group, error) {
@@ -397,6 +397,9 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 	}
 	if s.cfg != nil && s.cfg.RunMode == config.RunModeSimple {
 		normalizeCreateGroupInputForSimpleMode(input)
+	}
+	if err := ValidateRequiredProtocol(input.RequiredProtocol); err != nil {
+		return nil, err
 	}
 	if input.RateMultiplier <= 0 {
 		return nil, errors.New("rate_multiplier must be > 0")
@@ -585,6 +588,8 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		Description:                     input.Description,
 		I18n:                            i18n,
 		Platform:                        platform,
+		RequiredProtocol:                input.RequiredProtocol,
+		BlockedUserAgents:               strings.TrimSpace(input.BlockedUserAgents),
 		RateMultiplier:                  input.RateMultiplier,
 		IsExclusive:                     input.IsExclusive,
 		Status:                          StatusActive,
@@ -787,6 +792,17 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	}
 	if s.cfg != nil && s.cfg.RunMode == config.RunModeSimple {
 		normalizeUpdateGroupInputForSimpleMode(input)
+	}
+
+	if input.RequiredProtocol != nil {
+		if err := ValidateRequiredProtocol(*input.RequiredProtocol); err != nil {
+			return nil, err
+		}
+		group.RequiredProtocol = *input.RequiredProtocol
+	}
+
+	if input.BlockedUserAgents != nil {
+		group.BlockedUserAgents = strings.TrimSpace(*input.BlockedUserAgents)
 	}
 
 	// 渠道缓存里存了 groupID → platform 的映射，改了平台要让它失效（见函数末尾）

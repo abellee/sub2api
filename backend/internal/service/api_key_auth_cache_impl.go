@@ -14,7 +14,7 @@ import (
 	"github.com/dgraph-io/ristretto"
 )
 
-const apiKeyAuthSnapshotVersion = 28 // v28: Anthropic group thinking conversion config
+const apiKeyAuthSnapshotVersion = 29 // v29: group required protocol and blocked client prefixes
 
 type apiKeyAuthCacheConfig struct {
 	l1Size        int
@@ -383,6 +383,8 @@ func (s *APIKeyService) snapshotFromAPIKey(ctx context.Context, apiKey *APIKey) 
 			ID:                              apiKey.Group.ID,
 			Name:                            apiKey.Group.Name,
 			Platform:                        apiKey.Group.Platform,
+			RequiredProtocol:                apiKey.Group.RequiredProtocol,
+			BlockedUserAgents:               apiKey.Group.BlockedUserAgents,
 			IsExclusive:                     apiKey.Group.IsExclusive,
 			Status:                          apiKey.Group.Status,
 			SubscriptionType:                apiKey.Group.SubscriptionType,
@@ -490,6 +492,8 @@ func (s *APIKeyService) snapshotToAPIKey(key string, snapshot *APIKeyAuthSnapsho
 			ID:                              snapshot.Group.ID,
 			Name:                            snapshot.Group.Name,
 			Platform:                        snapshot.Group.Platform,
+			RequiredProtocol:                snapshot.Group.RequiredProtocol,
+			BlockedUserAgents:               snapshot.Group.BlockedUserAgents,
 			IsExclusive:                     snapshot.Group.IsExclusive,
 			Status:                          snapshot.Group.Status,
 			Hydrated:                        true,

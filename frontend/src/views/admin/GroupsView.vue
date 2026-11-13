@@ -521,6 +521,27 @@
         @submit.prevent="handleCreateGroup"
         class="space-y-5"
       >
+        <div>
+          <label for="create-group-required-protocol" class="input-label">{{ t("admin.groups.requiredProtocol.title") }}</label>
+          <Select
+            id="create-group-required-protocol"
+            v-model="createForm.required_protocol"
+            :options="requiredProtocolOptions"
+            data-testid="create-group-required-protocol"
+          />
+          <p class="input-hint">{{ t("admin.groups.requiredProtocol.hint") }}</p>
+        </div>
+        <div>
+          <label for="create-group-blocked-clients" class="input-label">{{ t("admin.groups.blockedClients.title") }}</label>
+          <input
+            id="create-group-blocked-clients"
+            v-model="createForm.blocked_user_agents"
+            type="text"
+            class="input"
+            :placeholder="t('admin.groups.blockedClients.placeholder')"
+          />
+          <p class="input-hint">{{ t("admin.groups.blockedClients.hint") }}</p>
+        </div>
         <div class="flex items-center justify-between gap-4">
           <div>
             <label for="create-group-account-error-failover" class="input-label">
@@ -2209,6 +2230,27 @@
         @submit.prevent="handleUpdateGroup"
         class="space-y-5"
       >
+        <div>
+          <label for="edit-group-required-protocol" class="input-label">{{ t("admin.groups.requiredProtocol.title") }}</label>
+          <Select
+            id="edit-group-required-protocol"
+            v-model="editForm.required_protocol"
+            :options="requiredProtocolOptions"
+            data-testid="edit-group-required-protocol"
+          />
+          <p class="input-hint">{{ t("admin.groups.requiredProtocol.hint") }}</p>
+        </div>
+        <div>
+          <label for="edit-group-blocked-clients" class="input-label">{{ t("admin.groups.blockedClients.title") }}</label>
+          <input
+            id="edit-group-blocked-clients"
+            v-model="editForm.blocked_user_agents"
+            type="text"
+            class="input"
+            :placeholder="t('admin.groups.blockedClients.placeholder')"
+          />
+          <p class="input-hint">{{ t("admin.groups.blockedClients.hint") }}</p>
+        </div>
         <div class="flex items-center justify-between gap-4">
           <div>
             <label for="edit-group-account-error-failover" class="input-label">
@@ -4502,6 +4544,7 @@ import type {
   CompositeRouteMatchType,
   GroupI18n,
   GroupPlatform,
+  GroupProtocol,
   SubscriptionType,
 } from "@/types";
 import type { GroupRecommendation } from "@/api/admin/groups";
@@ -5253,7 +5296,16 @@ const submitEditAllowlistCustomEntry = () => {
   }
 };
 
+const requiredProtocolOptions = computed(() => [
+  { value: "", label: t("admin.groups.requiredProtocol.none") },
+  { value: "anthropic", label: t("admin.groups.requiredProtocol.anthropic") },
+  { value: "openai", label: t("admin.groups.requiredProtocol.openai") },
+  { value: "google", label: t("admin.groups.requiredProtocol.google") },
+]);
+
 const createForm = reactive({
+  blocked_user_agents: "",
+  required_protocol: "" as GroupProtocol,
   name: "",
   description: "",
   i18n: {} as GroupI18n,
@@ -5622,6 +5674,8 @@ const convertApiFormatToRoutingRules = async (
 };
 
 const editForm = reactive({
+  blocked_user_agents: "",
+  required_protocol: "" as GroupProtocol,
   name: "",
   description: "",
   i18n: {} as GroupI18n,
@@ -6243,6 +6297,8 @@ const closeCreateModal = () => {
     accountSearchRunner.clearKey(getCreateRuleSearchKey(rule));
   });
   clearAllAccountSearchState();
+  createForm.required_protocol = "";
+  createForm.blocked_user_agents = "";
   createForm.name = "";
   createForm.description = "";
   createForm.i18n = {};
@@ -6517,6 +6573,8 @@ const handleCreateGroup = async () => {
           i18n: createForm.i18n,
           platform: createForm.platform,
           account_error_failover_enabled: createForm.account_error_failover_enabled,
+          required_protocol: createForm.required_protocol,
+          blocked_user_agents: createForm.blocked_user_agents,
         }
       : requestData;
     await adminAPI.groups.create(payload);
@@ -6549,6 +6607,8 @@ const handleEdit = async (group: AdminGroup) => {
     ]),
   );
   editForm.platform = group.platform;
+  editForm.required_protocol = group.required_protocol ?? "";
+  editForm.blocked_user_agents = group.blocked_user_agents ?? "";
   editForm.rate_multiplier = group.rate_multiplier;
   editForm.is_exclusive = group.is_exclusive;
   editForm.status = group.status;
@@ -6894,6 +6954,8 @@ const handleUpdateGroup = async () => {
           description: editForm.description,
           i18n: editForm.i18n,
           account_error_failover_enabled: editForm.account_error_failover_enabled,
+          required_protocol: editForm.required_protocol,
+          blocked_user_agents: editForm.blocked_user_agents,
         }
       : payload;
     await adminAPI.groups.update(editingGroup.value.id, requestData);

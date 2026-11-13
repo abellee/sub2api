@@ -584,7 +584,11 @@ export interface GroupLocaleText {
 export type GroupI18n = Record<string, GroupLocaleText>
 
 // 用户侧接口返回的 name / description 已由后端按请求语言（Accept-Language）选好
+export type GroupProtocol = "" | "anthropic" | "openai" | "google"
+
 export interface Group {
+  required_protocol?: GroupProtocol
+  blocked_user_agents?: string
   id: number
   name: string
   description: string | null
@@ -823,6 +827,8 @@ export interface UpdateApiKeyRequest {
 }
 
 export interface CreateGroupRequest {
+  required_protocol?: GroupProtocol
+  blocked_user_agents?: string
   name: string
   description?: string | null
   i18n?: GroupI18n
@@ -893,6 +899,8 @@ export interface CreateGroupRequest {
 }
 
 export interface UpdateGroupRequest {
+  required_protocol?: GroupProtocol
+  blocked_user_agents?: string
   name?: string
   description?: string | null
   i18n?: GroupI18n

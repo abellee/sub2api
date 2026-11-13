@@ -125,6 +125,16 @@ func Platform(v string) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldPlatform, v))
 }
 
+// BlockedUserAgents applies equality check predicate on the "blocked_user_agents" field. It's identical to BlockedUserAgentsEQ.
+func BlockedUserAgents(v string) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldBlockedUserAgents, v))
+}
+
+// RequiredProtocol applies equality check predicate on the "required_protocol" field. It's identical to RequiredProtocolEQ.
+func RequiredProtocol(v string) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldRequiredProtocol, v))
+}
+
 // SubscriptionType applies equality check predicate on the "subscription_type" field. It's identical to SubscriptionTypeEQ.
 func SubscriptionType(v string) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldSubscriptionType, v))
@@ -1063,6 +1073,136 @@ func PlatformEqualFold(v string) predicate.Group {
 // PlatformContainsFold applies the ContainsFold predicate on the "platform" field.
 func PlatformContainsFold(v string) predicate.Group {
 	return predicate.Group(sql.FieldContainsFold(FieldPlatform, v))
+}
+
+// BlockedUserAgentsEQ applies the EQ predicate on the "blocked_user_agents" field.
+func BlockedUserAgentsEQ(v string) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldBlockedUserAgents, v))
+}
+
+// BlockedUserAgentsNEQ applies the NEQ predicate on the "blocked_user_agents" field.
+func BlockedUserAgentsNEQ(v string) predicate.Group {
+	return predicate.Group(sql.FieldNEQ(FieldBlockedUserAgents, v))
+}
+
+// BlockedUserAgentsIn applies the In predicate on the "blocked_user_agents" field.
+func BlockedUserAgentsIn(vs ...string) predicate.Group {
+	return predicate.Group(sql.FieldIn(FieldBlockedUserAgents, vs...))
+}
+
+// BlockedUserAgentsNotIn applies the NotIn predicate on the "blocked_user_agents" field.
+func BlockedUserAgentsNotIn(vs ...string) predicate.Group {
+	return predicate.Group(sql.FieldNotIn(FieldBlockedUserAgents, vs...))
+}
+
+// BlockedUserAgentsGT applies the GT predicate on the "blocked_user_agents" field.
+func BlockedUserAgentsGT(v string) predicate.Group {
+	return predicate.Group(sql.FieldGT(FieldBlockedUserAgents, v))
+}
+
+// BlockedUserAgentsGTE applies the GTE predicate on the "blocked_user_agents" field.
+func BlockedUserAgentsGTE(v string) predicate.Group {
+	return predicate.Group(sql.FieldGTE(FieldBlockedUserAgents, v))
+}
+
+// BlockedUserAgentsLT applies the LT predicate on the "blocked_user_agents" field.
+func BlockedUserAgentsLT(v string) predicate.Group {
+	return predicate.Group(sql.FieldLT(FieldBlockedUserAgents, v))
+}
+
+// BlockedUserAgentsLTE applies the LTE predicate on the "blocked_user_agents" field.
+func BlockedUserAgentsLTE(v string) predicate.Group {
+	return predicate.Group(sql.FieldLTE(FieldBlockedUserAgents, v))
+}
+
+// BlockedUserAgentsContains applies the Contains predicate on the "blocked_user_agents" field.
+func BlockedUserAgentsContains(v string) predicate.Group {
+	return predicate.Group(sql.FieldContains(FieldBlockedUserAgents, v))
+}
+
+// BlockedUserAgentsHasPrefix applies the HasPrefix predicate on the "blocked_user_agents" field.
+func BlockedUserAgentsHasPrefix(v string) predicate.Group {
+	return predicate.Group(sql.FieldHasPrefix(FieldBlockedUserAgents, v))
+}
+
+// BlockedUserAgentsHasSuffix applies the HasSuffix predicate on the "blocked_user_agents" field.
+func BlockedUserAgentsHasSuffix(v string) predicate.Group {
+	return predicate.Group(sql.FieldHasSuffix(FieldBlockedUserAgents, v))
+}
+
+// BlockedUserAgentsEqualFold applies the EqualFold predicate on the "blocked_user_agents" field.
+func BlockedUserAgentsEqualFold(v string) predicate.Group {
+	return predicate.Group(sql.FieldEqualFold(FieldBlockedUserAgents, v))
+}
+
+// BlockedUserAgentsContainsFold applies the ContainsFold predicate on the "blocked_user_agents" field.
+func BlockedUserAgentsContainsFold(v string) predicate.Group {
+	return predicate.Group(sql.FieldContainsFold(FieldBlockedUserAgents, v))
+}
+
+// RequiredProtocolEQ applies the EQ predicate on the "required_protocol" field.
+func RequiredProtocolEQ(v string) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldRequiredProtocol, v))
+}
+
+// RequiredProtocolNEQ applies the NEQ predicate on the "required_protocol" field.
+func RequiredProtocolNEQ(v string) predicate.Group {
+	return predicate.Group(sql.FieldNEQ(FieldRequiredProtocol, v))
+}
+
+// RequiredProtocolIn applies the In predicate on the "required_protocol" field.
+func RequiredProtocolIn(vs ...string) predicate.Group {
+	return predicate.Group(sql.FieldIn(FieldRequiredProtocol, vs...))
+}
+
+// RequiredProtocolNotIn applies the NotIn predicate on the "required_protocol" field.
+func RequiredProtocolNotIn(vs ...string) predicate.Group {
+	return predicate.Group(sql.FieldNotIn(FieldRequiredProtocol, vs...))
+}
+
+// RequiredProtocolGT applies the GT predicate on the "required_protocol" field.
+func RequiredProtocolGT(v string) predicate.Group {
+	return predicate.Group(sql.FieldGT(FieldRequiredProtocol, v))
+}
+
+// RequiredProtocolGTE applies the GTE predicate on the "required_protocol" field.
+func RequiredProtocolGTE(v string) predicate.Group {
+	return predicate.Group(sql.FieldGTE(FieldRequiredProtocol, v))
+}
+
+// RequiredProtocolLT applies the LT predicate on the "required_protocol" field.
+func RequiredProtocolLT(v string) predicate.Group {
+	return predicate.Group(sql.FieldLT(FieldRequiredProtocol, v))
+}
+
+// RequiredProtocolLTE applies the LTE predicate on the "required_protocol" field.
+func RequiredProtocolLTE(v string) predicate.Group {
+	return predicate.Group(sql.FieldLTE(FieldRequiredProtocol, v))
+}
+
+// RequiredProtocolContains applies the Contains predicate on the "required_protocol" field.
+func RequiredProtocolContains(v string) predicate.Group {
+	return predicate.Group(sql.FieldContains(FieldRequiredProtocol, v))
+}
+
+// RequiredProtocolHasPrefix applies the HasPrefix predicate on the "required_protocol" field.
+func RequiredProtocolHasPrefix(v string) predicate.Group {
+	return predicate.Group(sql.FieldHasPrefix(FieldRequiredProtocol, v))
+}
+
+// RequiredProtocolHasSuffix applies the HasSuffix predicate on the "required_protocol" field.
+func RequiredProtocolHasSuffix(v string) predicate.Group {
+	return predicate.Group(sql.FieldHasSuffix(FieldRequiredProtocol, v))
+}
+
+// RequiredProtocolEqualFold applies the EqualFold predicate on the "required_protocol" field.
+func RequiredProtocolEqualFold(v string) predicate.Group {
+	return predicate.Group(sql.FieldEqualFold(FieldRequiredProtocol, v))
+}
+
+// RequiredProtocolContainsFold applies the ContainsFold predicate on the "required_protocol" field.
+func RequiredProtocolContainsFold(v string) predicate.Group {
+	return predicate.Group(sql.FieldContainsFold(FieldRequiredProtocol, v))
 }
 
 // SubscriptionTypeEQ applies the EQ predicate on the "subscription_type" field.

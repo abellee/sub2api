@@ -1303,6 +1303,19 @@ export default {
           detector: 'Detector'
         }
       },
+      blockedClients: {
+        title: 'Blocked clients',
+        placeholder: 'e.g. claude,cursor',
+        hint: 'Enter User-Agent (UA) prefixes separated by English commas. Requests are rejected only when the UA starts with any prefix, ignoring case. Leave empty for no restriction.',
+      },
+      requiredProtocol: {
+        title: 'Required protocol',
+        none: 'No restriction',
+        anthropic: 'Anthropic protocol',
+        openai: 'OpenAI protocol',
+        google: 'Google protocol',
+        hint: 'Clients must use the selected protocol. Other protocols are rejected with instructions to switch, avoiding cache loss from protocol conversion. OpenAI includes Chat Completions and Responses.',
+      },
       claudeCode: {
         title: 'Claude Code Client Restriction',
         tooltip: 'When enabled, this group only allows official Claude Code clients. Non-Claude Code requests will be rejected or fallback to the specified group.',

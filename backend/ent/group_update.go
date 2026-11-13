@@ -229,6 +229,34 @@ func (_u *GroupUpdate) SetNillablePlatform(v *string) *GroupUpdate {
 	return _u
 }
 
+// SetBlockedUserAgents sets the "blocked_user_agents" field.
+func (_u *GroupUpdate) SetBlockedUserAgents(v string) *GroupUpdate {
+	_u.mutation.SetBlockedUserAgents(v)
+	return _u
+}
+
+// SetNillableBlockedUserAgents sets the "blocked_user_agents" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillableBlockedUserAgents(v *string) *GroupUpdate {
+	if v != nil {
+		_u.SetBlockedUserAgents(*v)
+	}
+	return _u
+}
+
+// SetRequiredProtocol sets the "required_protocol" field.
+func (_u *GroupUpdate) SetRequiredProtocol(v string) *GroupUpdate {
+	_u.mutation.SetRequiredProtocol(v)
+	return _u
+}
+
+// SetNillableRequiredProtocol sets the "required_protocol" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillableRequiredProtocol(v *string) *GroupUpdate {
+	if v != nil {
+		_u.SetRequiredProtocol(*v)
+	}
+	return _u
+}
+
 // SetSubscriptionType sets the "subscription_type" field.
 func (_u *GroupUpdate) SetSubscriptionType(v string) *GroupUpdate {
 	_u.mutation.SetSubscriptionType(v)
@@ -1570,6 +1598,11 @@ func (_u *GroupUpdate) check() error {
 			return &ValidationError{Name: "platform", err: fmt.Errorf(`ent: validator failed for field "Group.platform": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.RequiredProtocol(); ok {
+		if err := group.RequiredProtocolValidator(v); err != nil {
+			return &ValidationError{Name: "required_protocol", err: fmt.Errorf(`ent: validator failed for field "Group.required_protocol": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.SubscriptionType(); ok {
 		if err := group.SubscriptionTypeValidator(v); err != nil {
 			return &ValidationError{Name: "subscription_type", err: fmt.Errorf(`ent: validator failed for field "Group.subscription_type": %w`, err)}
@@ -1678,6 +1711,12 @@ func (_u *GroupUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.Platform(); ok {
 		_spec.SetField(group.FieldPlatform, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.BlockedUserAgents(); ok {
+		_spec.SetField(group.FieldBlockedUserAgents, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.RequiredProtocol(); ok {
+		_spec.SetField(group.FieldRequiredProtocol, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.SubscriptionType(); ok {
 		_spec.SetField(group.FieldSubscriptionType, field.TypeString, value)
@@ -2496,6 +2535,34 @@ func (_u *GroupUpdateOne) SetPlatform(v string) *GroupUpdateOne {
 func (_u *GroupUpdateOne) SetNillablePlatform(v *string) *GroupUpdateOne {
 	if v != nil {
 		_u.SetPlatform(*v)
+	}
+	return _u
+}
+
+// SetBlockedUserAgents sets the "blocked_user_agents" field.
+func (_u *GroupUpdateOne) SetBlockedUserAgents(v string) *GroupUpdateOne {
+	_u.mutation.SetBlockedUserAgents(v)
+	return _u
+}
+
+// SetNillableBlockedUserAgents sets the "blocked_user_agents" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillableBlockedUserAgents(v *string) *GroupUpdateOne {
+	if v != nil {
+		_u.SetBlockedUserAgents(*v)
+	}
+	return _u
+}
+
+// SetRequiredProtocol sets the "required_protocol" field.
+func (_u *GroupUpdateOne) SetRequiredProtocol(v string) *GroupUpdateOne {
+	_u.mutation.SetRequiredProtocol(v)
+	return _u
+}
+
+// SetNillableRequiredProtocol sets the "required_protocol" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillableRequiredProtocol(v *string) *GroupUpdateOne {
+	if v != nil {
+		_u.SetRequiredProtocol(*v)
 	}
 	return _u
 }
@@ -3854,6 +3921,11 @@ func (_u *GroupUpdateOne) check() error {
 			return &ValidationError{Name: "platform", err: fmt.Errorf(`ent: validator failed for field "Group.platform": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.RequiredProtocol(); ok {
+		if err := group.RequiredProtocolValidator(v); err != nil {
+			return &ValidationError{Name: "required_protocol", err: fmt.Errorf(`ent: validator failed for field "Group.required_protocol": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.SubscriptionType(); ok {
 		if err := group.SubscriptionTypeValidator(v); err != nil {
 			return &ValidationError{Name: "subscription_type", err: fmt.Errorf(`ent: validator failed for field "Group.subscription_type": %w`, err)}
@@ -3979,6 +4051,12 @@ func (_u *GroupUpdateOne) sqlSave(ctx context.Context) (_node *Group, err error)
 	}
 	if value, ok := _u.mutation.Platform(); ok {
 		_spec.SetField(group.FieldPlatform, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.BlockedUserAgents(); ok {
+		_spec.SetField(group.FieldBlockedUserAgents, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.RequiredProtocol(); ok {
+		_spec.SetField(group.FieldRequiredProtocol, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.SubscriptionType(); ok {
 		_spec.SetField(group.FieldSubscriptionType, field.TypeString, value)

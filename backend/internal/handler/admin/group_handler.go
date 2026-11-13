@@ -246,6 +246,8 @@ func (h *GroupHandler) rejectUnsupportedSimpleModeOperation(c *gin.Context, oper
 }
 
 type simpleModeGroupResponse struct {
+	BlockedUserAgents           string `json:"blocked_user_agents"`
+	RequiredProtocol            string `json:"required_protocol"`
 	AccountErrorFailoverEnabled bool   `json:"account_error_failover_enabled"`
 	ID                          int64  `json:"id"`
 	Name                        string `json:"name"`
@@ -268,6 +270,8 @@ func groupForSimpleMode(group *service.Group) *simpleModeGroupResponse {
 		return nil
 	}
 	return &simpleModeGroupResponse{
+		BlockedUserAgents:           group.BlockedUserAgents,
+		RequiredProtocol:            group.RequiredProtocol,
 		AccountErrorFailoverEnabled: group.AccountErrorFailoverEnabled,
 		ID:                          group.ID, Name: group.Name, Description: group.Description, Platform: group.Platform,
 		Status:             group.Status,
@@ -282,7 +286,7 @@ func sanitizeCreateGroupRequestForSimpleMode(req *CreateGroupRequest) {
 	if req == nil {
 		return
 	}
-	allowed := CreateGroupRequest{Name: req.Name, Description: req.Description, I18n: req.I18n, Platform: req.Platform, AccountErrorFailoverEnabled: req.AccountErrorFailoverEnabled}
+	allowed := CreateGroupRequest{Name: req.Name, Description: req.Description, I18n: req.I18n, BlockedUserAgents: req.BlockedUserAgents, RequiredProtocol: req.RequiredProtocol, Platform: req.Platform, AccountErrorFailoverEnabled: req.AccountErrorFailoverEnabled}
 	allowed.RateMultiplier = 1
 	allowed.SubscriptionType = service.SubscriptionTypeStandard
 	*req = allowed
@@ -292,11 +296,13 @@ func sanitizeUpdateGroupRequestForSimpleMode(req *UpdateGroupRequest) {
 	if req == nil {
 		return
 	}
-	*req = UpdateGroupRequest{Name: req.Name, Description: req.Description, I18n: req.I18n, AccountErrorFailoverEnabled: req.AccountErrorFailoverEnabled}
+	*req = UpdateGroupRequest{Name: req.Name, Description: req.Description, I18n: req.I18n, BlockedUserAgents: req.BlockedUserAgents, RequiredProtocol: req.RequiredProtocol, AccountErrorFailoverEnabled: req.AccountErrorFailoverEnabled}
 }
 
 // CreateGroupRequest represents create group request
 type CreateGroupRequest struct {
+	BlockedUserAgents         string                        `json:"blocked_user_agents"`
+	RequiredProtocol          string                        `json:"required_protocol"`
 	Name                      string                        `json:"name" binding:"required"`
 	Description               string                        `json:"description"`
 	I18n                      service.GroupI18n             `json:"i18n"` // 名称与描述的界面语言译文
@@ -376,6 +382,8 @@ type CreateGroupRequest struct {
 
 // UpdateGroupRequest represents update group request
 type UpdateGroupRequest struct {
+	BlockedUserAgents         *string                        `json:"blocked_user_agents"`
+	RequiredProtocol          *string                        `json:"required_protocol"`
 	Name                      string                         `json:"name"`
 	Description               *string                        `json:"description"`
 	I18n                      *service.GroupI18n             `json:"i18n"` // 缺省不修改，传入则整体替换
@@ -817,6 +825,8 @@ func (h *GroupHandler) Create(c *gin.Context) {
 		Description:                     req.Description,
 		I18n:                            req.I18n,
 		Platform:                        req.Platform,
+		RequiredProtocol:                req.RequiredProtocol,
+		BlockedUserAgents:               req.BlockedUserAgents,
 		RateMultiplier:                  req.RateMultiplier,
 		IsExclusive:                     req.IsExclusive,
 		SubscriptionType:                req.SubscriptionType,
@@ -967,6 +977,8 @@ func (h *GroupHandler) Update(c *gin.Context) {
 		Description:                     req.Description,
 		I18n:                            req.I18n,
 		Platform:                        req.Platform,
+		RequiredProtocol:                req.RequiredProtocol,
+		BlockedUserAgents:               req.BlockedUserAgents,
 		RateMultiplier:                  req.RateMultiplier,
 		IsExclusive:                     req.IsExclusive,
 		Status:                          req.Status,

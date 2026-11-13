@@ -230,6 +230,82 @@ describe('GroupsView duplicate action', () => {
     vi.restoreAllMocks()
   })
 
+  it.each([false, true])('creates groups with the selected protocol in simple mode %s', async (simpleMode) => {
+    authState.isSimpleMode = simpleMode
+    const wrapper = mountView()
+    await flushPromises()
+    for (const protocol of ['', 'anthropic', 'openai', 'google']) {
+      await wrapper.findAll('button').find(button => button.text().includes('admin.groups.createGroup'))!.trigger('click')
+      await flushPromises()
+      const select = wrapper.getComponent('[data-testid="create-group-required-protocol"]')
+      expect(select.props('modelValue')).toBe('')
+      expect(select.props('options').map((option: { value: string }) => option.value)).toEqual(['', 'anthropic', 'openai', 'google'])
+      select.vm.$emit('update:modelValue', protocol)
+      await wrapper.get('#create-group-form input[data-tour="group-form-name"]').setValue('Protocol group')
+      await wrapper.get('#create-group-form').trigger('submit')
+      await flushPromises()
+      expect(adminAPI.groups.create).toHaveBeenLastCalledWith(expect.objectContaining({ required_protocol: protocol }))
+    }
+    wrapper.unmount()
+  })
+
+  it.each([false, true])('loads, changes and clears the saved protocol in simple mode %s', async (simpleMode) => {
+    authState.isSimpleMode = simpleMode
+    const group = { ...sourceGroup, required_protocol: 'anthropic' }
+    listGroups.mockResolvedValue({ items: [group], total: 1, page: 1, page_size: 20, pages: 1 })
+    updateGroup.mockResolvedValue(group)
+    const wrapper = mountView()
+    await flushPromises()
+    for (const protocol of ['openai', 'google', '']) {
+      await wrapper.findAll('button').find(button => button.text() === 'common.edit')!.trigger('click')
+      await flushPromises()
+      const select = wrapper.getComponent('[data-testid="edit-group-required-protocol"]')
+      expect(select.props('modelValue')).toBe('anthropic')
+      select.vm.$emit('update:modelValue', protocol)
+      await wrapper.get('#edit-group-form').trigger('submit')
+      await flushPromises()
+      expect(updateGroup).toHaveBeenLastCalledWith(42, expect.objectContaining({ required_protocol: protocol }))
+    }
+    wrapper.unmount()
+  })
+
+  it.each([false, true])('creates and resets blocked client keywords in simple mode %s', async (simpleMode) => {
+    authState.isSimpleMode = simpleMode
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.findAll('button').find(button => button.text().includes('admin.groups.createGroup'))!.trigger('click')
+    await flushPromises()
+    expect(wrapper.get<HTMLInputElement>('#create-group-blocked-clients').element.value).toBe('')
+    await wrapper.get('#create-group-blocked-clients').setValue('Claude, cursor')
+    await wrapper.get('input[data-tour="group-form-name"]').setValue('GPT clients')
+    await wrapper.get('#create-group-form').trigger('submit')
+    await flushPromises()
+    expect(adminAPI.groups.create).toHaveBeenLastCalledWith(expect.objectContaining({ blocked_user_agents: 'Claude, cursor' }))
+    await wrapper.findAll('button').find(button => button.text().includes('admin.groups.createGroup'))!.trigger('click')
+    await flushPromises()
+    expect(wrapper.get<HTMLInputElement>('#create-group-blocked-clients').element.value).toBe('')
+    wrapper.unmount()
+  })
+
+  it.each([false, true])('loads, edits and clears blocked clients in simple mode %s', async (simpleMode) => {
+    authState.isSimpleMode = simpleMode
+    const group = { ...sourceGroup, blocked_user_agents: 'Claude,cursor' }
+    listGroups.mockResolvedValue({ items: [group], total: 1, page: 1, page_size: 20, pages: 1 })
+    updateGroup.mockResolvedValue(group)
+    const wrapper = mountView()
+    await flushPromises()
+    for (const keywords of ['Claude', '']) {
+      await wrapper.findAll('button').find(button => button.text() === 'common.edit')!.trigger('click')
+      await flushPromises()
+      expect(wrapper.get<HTMLInputElement>('#edit-group-blocked-clients').element.value).toBe('Claude,cursor')
+      await wrapper.get('#edit-group-blocked-clients').setValue(keywords)
+      await wrapper.get('#edit-group-form').trigger('submit')
+      await flushPromises()
+      expect(updateGroup).toHaveBeenLastCalledWith(42, expect.objectContaining({ blocked_user_agents: keywords }))
+    }
+    wrapper.unmount()
+  })
+
   it('duplicates the selected group, reports success, and refreshes the list', async () => {
     const wrapper = mountView()
     await flushPromises()
@@ -286,7 +362,7 @@ describe('GroupsView duplicate action', () => {
     expect(toggle.attributes('aria-checked')).toBe('false')
     await toggle.trigger('click')
     const form = wrapper.get('#create-group-form')
-    await form.get('input[type="text"]').setValue('Retry group')
+    await form.get('input[data-tour="group-form-name"]').setValue('Retry group')
     await form.trigger('submit')
     await flushPromises()
     expect(adminAPI.groups.create).toHaveBeenCalledWith(expect.objectContaining({ account_error_failover_enabled: true }))
@@ -356,7 +432,7 @@ describe('GroupsView duplicate action', () => {
     expect(field.exists()).toBe(true)
     expect(field.props('modelValue')).toEqual({ enabled: false, all_models: true, models: [] })
     await field.get('button[role=switch]').trigger('click')
-    await wrapper.get('#create-group-form input[type=text]').setValue('Thinking group')
+    await wrapper.get('#create-group-form input[data-tour="group-form-name"]').setValue('Thinking group')
     await wrapper.get('#create-group-form').trigger('submit')
     await flushPromises()
     expect(adminAPI.groups.create).toHaveBeenCalledWith(expect.objectContaining({

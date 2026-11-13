@@ -224,6 +224,34 @@ func (_c *GroupCreate) SetNillablePlatform(v *string) *GroupCreate {
 	return _c
 }
 
+// SetBlockedUserAgents sets the "blocked_user_agents" field.
+func (_c *GroupCreate) SetBlockedUserAgents(v string) *GroupCreate {
+	_c.mutation.SetBlockedUserAgents(v)
+	return _c
+}
+
+// SetNillableBlockedUserAgents sets the "blocked_user_agents" field if the given value is not nil.
+func (_c *GroupCreate) SetNillableBlockedUserAgents(v *string) *GroupCreate {
+	if v != nil {
+		_c.SetBlockedUserAgents(*v)
+	}
+	return _c
+}
+
+// SetRequiredProtocol sets the "required_protocol" field.
+func (_c *GroupCreate) SetRequiredProtocol(v string) *GroupCreate {
+	_c.mutation.SetRequiredProtocol(v)
+	return _c
+}
+
+// SetNillableRequiredProtocol sets the "required_protocol" field if the given value is not nil.
+func (_c *GroupCreate) SetNillableRequiredProtocol(v *string) *GroupCreate {
+	if v != nil {
+		_c.SetRequiredProtocol(*v)
+	}
+	return _c
+}
+
 // SetSubscriptionType sets the "subscription_type" field.
 func (_c *GroupCreate) SetSubscriptionType(v string) *GroupCreate {
 	_c.mutation.SetSubscriptionType(v)
@@ -1145,6 +1173,14 @@ func (_c *GroupCreate) defaults() error {
 		v := group.DefaultPlatform
 		_c.mutation.SetPlatform(v)
 	}
+	if _, ok := _c.mutation.BlockedUserAgents(); !ok {
+		v := group.DefaultBlockedUserAgents
+		_c.mutation.SetBlockedUserAgents(v)
+	}
+	if _, ok := _c.mutation.RequiredProtocol(); !ok {
+		v := group.DefaultRequiredProtocol
+		_c.mutation.SetRequiredProtocol(v)
+	}
 	if _, ok := _c.mutation.SubscriptionType(); !ok {
 		v := group.DefaultSubscriptionType
 		_c.mutation.SetSubscriptionType(v)
@@ -1362,6 +1398,17 @@ func (_c *GroupCreate) check() error {
 	if v, ok := _c.mutation.Platform(); ok {
 		if err := group.PlatformValidator(v); err != nil {
 			return &ValidationError{Name: "platform", err: fmt.Errorf(`ent: validator failed for field "Group.platform": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.BlockedUserAgents(); !ok {
+		return &ValidationError{Name: "blocked_user_agents", err: errors.New(`ent: missing required field "Group.blocked_user_agents"`)}
+	}
+	if _, ok := _c.mutation.RequiredProtocol(); !ok {
+		return &ValidationError{Name: "required_protocol", err: errors.New(`ent: missing required field "Group.required_protocol"`)}
+	}
+	if v, ok := _c.mutation.RequiredProtocol(); ok {
+		if err := group.RequiredProtocolValidator(v); err != nil {
+			return &ValidationError{Name: "required_protocol", err: fmt.Errorf(`ent: validator failed for field "Group.required_protocol": %w`, err)}
 		}
 	}
 	if _, ok := _c.mutation.SubscriptionType(); !ok {
@@ -1601,6 +1648,14 @@ func (_c *GroupCreate) createSpec() (*Group, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.Platform(); ok {
 		_spec.SetField(group.FieldPlatform, field.TypeString, value)
 		_node.Platform = value
+	}
+	if value, ok := _c.mutation.BlockedUserAgents(); ok {
+		_spec.SetField(group.FieldBlockedUserAgents, field.TypeString, value)
+		_node.BlockedUserAgents = value
+	}
+	if value, ok := _c.mutation.RequiredProtocol(); ok {
+		_spec.SetField(group.FieldRequiredProtocol, field.TypeString, value)
+		_node.RequiredProtocol = value
 	}
 	if value, ok := _c.mutation.SubscriptionType(); ok {
 		_spec.SetField(group.FieldSubscriptionType, field.TypeString, value)
@@ -2159,6 +2214,30 @@ func (u *GroupUpsert) SetPlatform(v string) *GroupUpsert {
 // UpdatePlatform sets the "platform" field to the value that was provided on create.
 func (u *GroupUpsert) UpdatePlatform() *GroupUpsert {
 	u.SetExcluded(group.FieldPlatform)
+	return u
+}
+
+// SetBlockedUserAgents sets the "blocked_user_agents" field.
+func (u *GroupUpsert) SetBlockedUserAgents(v string) *GroupUpsert {
+	u.Set(group.FieldBlockedUserAgents, v)
+	return u
+}
+
+// UpdateBlockedUserAgents sets the "blocked_user_agents" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateBlockedUserAgents() *GroupUpsert {
+	u.SetExcluded(group.FieldBlockedUserAgents)
+	return u
+}
+
+// SetRequiredProtocol sets the "required_protocol" field.
+func (u *GroupUpsert) SetRequiredProtocol(v string) *GroupUpsert {
+	u.Set(group.FieldRequiredProtocol, v)
+	return u
+}
+
+// UpdateRequiredProtocol sets the "required_protocol" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateRequiredProtocol() *GroupUpsert {
+	u.SetExcluded(group.FieldRequiredProtocol)
 	return u
 }
 
@@ -3353,6 +3432,34 @@ func (u *GroupUpsertOne) SetPlatform(v string) *GroupUpsertOne {
 func (u *GroupUpsertOne) UpdatePlatform() *GroupUpsertOne {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdatePlatform()
+	})
+}
+
+// SetBlockedUserAgents sets the "blocked_user_agents" field.
+func (u *GroupUpsertOne) SetBlockedUserAgents(v string) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetBlockedUserAgents(v)
+	})
+}
+
+// UpdateBlockedUserAgents sets the "blocked_user_agents" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateBlockedUserAgents() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateBlockedUserAgents()
+	})
+}
+
+// SetRequiredProtocol sets the "required_protocol" field.
+func (u *GroupUpsertOne) SetRequiredProtocol(v string) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetRequiredProtocol(v)
+	})
+}
+
+// UpdateRequiredProtocol sets the "required_protocol" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateRequiredProtocol() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateRequiredProtocol()
 	})
 }
 
@@ -4869,6 +4976,34 @@ func (u *GroupUpsertBulk) SetPlatform(v string) *GroupUpsertBulk {
 func (u *GroupUpsertBulk) UpdatePlatform() *GroupUpsertBulk {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdatePlatform()
+	})
+}
+
+// SetBlockedUserAgents sets the "blocked_user_agents" field.
+func (u *GroupUpsertBulk) SetBlockedUserAgents(v string) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetBlockedUserAgents(v)
+	})
+}
+
+// UpdateBlockedUserAgents sets the "blocked_user_agents" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateBlockedUserAgents() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateBlockedUserAgents()
+	})
+}
+
+// SetRequiredProtocol sets the "required_protocol" field.
+func (u *GroupUpsertBulk) SetRequiredProtocol(v string) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetRequiredProtocol(v)
+	})
+}
+
+// UpdateRequiredProtocol sets the "required_protocol" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateRequiredProtocol() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateRequiredProtocol()
 	})
 }
 

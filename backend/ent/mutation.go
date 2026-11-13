@@ -22098,6 +22098,8 @@ type GroupMutation struct {
 	status                                  *string
 	duplicate_operation_id                  *string
 	platform                                *string
+	blocked_user_agents                     *string
+	required_protocol                       *string
 	subscription_type                       *string
 	daily_limit_usd                         *float64
 	adddaily_limit_usd                      *float64
@@ -22921,6 +22923,78 @@ func (m *GroupMutation) OldPlatform(ctx context.Context) (v string, err error) {
 // ResetPlatform resets all changes to the "platform" field.
 func (m *GroupMutation) ResetPlatform() {
 	m.platform = nil
+}
+
+// SetBlockedUserAgents sets the "blocked_user_agents" field.
+func (m *GroupMutation) SetBlockedUserAgents(s string) {
+	m.blocked_user_agents = &s
+}
+
+// BlockedUserAgents returns the value of the "blocked_user_agents" field in the mutation.
+func (m *GroupMutation) BlockedUserAgents() (r string, exists bool) {
+	v := m.blocked_user_agents
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldBlockedUserAgents returns the old "blocked_user_agents" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldBlockedUserAgents(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldBlockedUserAgents is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldBlockedUserAgents requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldBlockedUserAgents: %w", err)
+	}
+	return oldValue.BlockedUserAgents, nil
+}
+
+// ResetBlockedUserAgents resets all changes to the "blocked_user_agents" field.
+func (m *GroupMutation) ResetBlockedUserAgents() {
+	m.blocked_user_agents = nil
+}
+
+// SetRequiredProtocol sets the "required_protocol" field.
+func (m *GroupMutation) SetRequiredProtocol(s string) {
+	m.required_protocol = &s
+}
+
+// RequiredProtocol returns the value of the "required_protocol" field in the mutation.
+func (m *GroupMutation) RequiredProtocol() (r string, exists bool) {
+	v := m.required_protocol
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRequiredProtocol returns the old "required_protocol" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldRequiredProtocol(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRequiredProtocol is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRequiredProtocol requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRequiredProtocol: %w", err)
+	}
+	return oldValue.RequiredProtocol, nil
+}
+
+// ResetRequiredProtocol resets all changes to the "required_protocol" field.
+func (m *GroupMutation) ResetRequiredProtocol() {
+	m.required_protocol = nil
 }
 
 // SetSubscriptionType sets the "subscription_type" field.
@@ -26106,7 +26180,7 @@ func (m *GroupMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *GroupMutation) Fields() []string {
-	fields := make([]string, 0, 71)
+	fields := make([]string, 0, 73)
 	if m.created_at != nil {
 		fields = append(fields, group.FieldCreatedAt)
 	}
@@ -26151,6 +26225,12 @@ func (m *GroupMutation) Fields() []string {
 	}
 	if m.platform != nil {
 		fields = append(fields, group.FieldPlatform)
+	}
+	if m.blocked_user_agents != nil {
+		fields = append(fields, group.FieldBlockedUserAgents)
+	}
+	if m.required_protocol != nil {
+		fields = append(fields, group.FieldRequiredProtocol)
 	}
 	if m.subscription_type != nil {
 		fields = append(fields, group.FieldSubscriptionType)
@@ -26358,6 +26438,10 @@ func (m *GroupMutation) Field(name string) (ent.Value, bool) {
 		return m.DuplicateOperationID()
 	case group.FieldPlatform:
 		return m.Platform()
+	case group.FieldBlockedUserAgents:
+		return m.BlockedUserAgents()
+	case group.FieldRequiredProtocol:
+		return m.RequiredProtocol()
 	case group.FieldSubscriptionType:
 		return m.SubscriptionType()
 	case group.FieldDailyLimitUsd:
@@ -26509,6 +26593,10 @@ func (m *GroupMutation) OldField(ctx context.Context, name string) (ent.Value, e
 		return m.OldDuplicateOperationID(ctx)
 	case group.FieldPlatform:
 		return m.OldPlatform(ctx)
+	case group.FieldBlockedUserAgents:
+		return m.OldBlockedUserAgents(ctx)
+	case group.FieldRequiredProtocol:
+		return m.OldRequiredProtocol(ctx)
 	case group.FieldSubscriptionType:
 		return m.OldSubscriptionType(ctx)
 	case group.FieldDailyLimitUsd:
@@ -26734,6 +26822,20 @@ func (m *GroupMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetPlatform(v)
+		return nil
+	case group.FieldBlockedUserAgents:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetBlockedUserAgents(v)
+		return nil
+	case group.FieldRequiredProtocol:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRequiredProtocol(v)
 		return nil
 	case group.FieldSubscriptionType:
 		v, ok := value.(string)
@@ -27682,6 +27784,12 @@ func (m *GroupMutation) ResetField(name string) error {
 		return nil
 	case group.FieldPlatform:
 		m.ResetPlatform()
+		return nil
+	case group.FieldBlockedUserAgents:
+		m.ResetBlockedUserAgents()
+		return nil
+	case group.FieldRequiredProtocol:
+		m.ResetRequiredProtocol()
 		return nil
 	case group.FieldSubscriptionType:
 		m.ResetSubscriptionType()

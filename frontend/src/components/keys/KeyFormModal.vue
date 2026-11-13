@@ -126,6 +126,14 @@
                           {{ option.recommendationReason }}
                         </p>
                       </div>
+                      <div v-if="option.requiredProtocol || option.blockedClients?.length" class="flex flex-wrap gap-1.5" data-test="group-policy-tags">
+                        <span v-if="option.requiredProtocol" class="rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+                          {{ t('keys.requiredProtocolTag', { protocol: protocolNames[option.requiredProtocol] }) }}
+                        </span>
+                        <span v-for="client in option.blockedClients" :key="client" class="break-all rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300" :title="t('keys.blockedClientTagHint')">
+                          {{ t('keys.blockedClientTag', { client }) }}
+                        </span>
+                      </div>
                       <!-- 底部：上限倍率(左) | 模型价格入口(右) -->
                       <div class="group-row-footer">
                         <span
@@ -647,6 +655,8 @@ export type KeyGroupOption = {
   peakRateMultiplier: number
   subscriptionType: SubscriptionType
   platform: GroupPlatform
+  requiredProtocol?: string
+  blockedClients?: string[]
   recommendationReason?: string
   recommendationRating?: number
 }
@@ -677,6 +687,7 @@ const formData = defineModel<KeyFormData>('formData', { required: true })
 const emit = defineEmits<Emits>()
 
 const { t } = useI18n()
+const protocolNames: Record<string, string> = { anthropic: 'Anthropic', openai: 'OpenAI', google: 'Google' }
 
 const UNCATEGORIZED_TAB = '__uncategorized__'
 const RECOMMENDED_TAB = '__recommended__'

@@ -1300,6 +1300,19 @@ export default {
           detector: '内置识别'
         }
       },
+      blockedClients: {
+        title: '拒绝的客户端',
+        placeholder: '例如：claude,cursor',
+        hint: '填写客户端 User-Agent（UA）前缀，用英文逗号分隔。不区分大小写，仅当 UA 以任一前缀开头时拒绝；留空表示不限制。',
+      },
+      requiredProtocol: {
+        title: '强制协议',
+        none: '不限制',
+        anthropic: 'Anthropic 协议',
+        openai: 'OpenAI 协议',
+        google: 'Google 协议',
+        hint: '设置后，客户端必须使用所选协议；使用其他协议时会提示切换，避免协议转换导致缓存丢失。OpenAI 包括 Chat Completions 和 Responses。',
+      },
       claudeCode: {
         title: 'Claude Code 客户端限制',
         tooltip:
