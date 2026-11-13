@@ -14,7 +14,6 @@ import (
 const SettingKeyAccountErrorFailoverEnabled = "account_error_failover_enabled"
 
 const OpsAccountFailoverResultKey = "ops_account_failover_result"
-const accountAttemptWriterSizeKey = "account_attempt_writer_size"
 
 // IsAccountErrorFailoverEnabled caches the switch per service and defaults to off.
 func (s *SettingService) IsAccountErrorFailoverEnabled(ctx context.Context) bool {
@@ -265,7 +264,6 @@ func ForwardWithAccountRetries[T any](ctx context.Context, c *gin.Context, forwa
 		recordAccountFailoverAttempt(ctx, c, attempt, forwardErr, out != nil, disconnected)
 	}()
 	if c != nil {
-		c.Set(accountAttemptWriterSizeKey, c.Writer.Size())
 		c.Set(ResponseCommittedKey, false)
 		c.Set(OpsAccountFailoverResultKey, "failed")
 	}
@@ -304,13 +302,6 @@ func ForwardWithAccountRetries[T any](ctx context.Context, c *gin.Context, forwa
 		err = &copy
 	}
 	return result, err
-}
-
-func accountAttemptWroteResponse(c *gin.Context) bool {
-	if _, ok := c.Get(accountAttemptWriterSizeKey); ok {
-		return c.Writer.Size() != c.GetInt(accountAttemptWriterSizeKey)
-	}
-	return c.Writer.Written()
 }
 
 // An HTTP 200 or partial usage from an earlier account is not proof of success.

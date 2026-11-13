@@ -21,14 +21,14 @@ func TestUserBalancePeriodsPostgres(t *testing.T) {
 	}
 	db, err := sql.Open("postgres", dsn)
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	schema := fmt.Sprintf("balance_errors_%d", time.Now().UnixNano())
 	_, err = db.Exec("CREATE SCHEMA " + schema)
 	require.NoError(t, err)
-	defer db.Exec("DROP SCHEMA " + schema + " CASCADE")
+	defer func() { _, _ = db.Exec("DROP SCHEMA " + schema + " CASCADE") }()
 	conn, err := db.Conn(context.Background())
 	require.NoError(t, err)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	ctx := context.Background()
 	exec := func(query string, args ...any) {
 		t.Helper()
@@ -74,7 +74,7 @@ func TestUserBalancePeriodsPostgres(t *testing.T) {
 				failures <- e
 				return
 			}
-			defer c.Close()
+			defer func() { _ = c.Close() }()
 			_, e = c.ExecContext(ctx, "SET search_path TO "+schema)
 			if e == nil {
 				_, e = c.ExecContext(ctx, insert, 2, time.Now())
@@ -109,7 +109,7 @@ func TestUserBalancePeriodsPostgres(t *testing.T) {
 	// A second pool pins search_path for all repository transactions.
 	repoDB, err := sql.Open("postgres", dsn+" search_path="+schema)
 	require.NoError(t, err)
-	defer repoDB.Close()
+	defer func() { _ = repoDB.Close() }()
 	repo := NewOpsRepository(repoDB)
 	user := int64(2)
 	input := &service.OpsInsertErrorLogInput{UserID: &user, CreatedAt: time.Now(), ErrorType: service.OpsUserBalanceErrorType, ErrorPhase: "request", ErrorOwner: "client"}
