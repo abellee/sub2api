@@ -32,14 +32,14 @@ func TestAccountMatchingRepositorySaveAndConflict(t *testing.T) {
 			require.Equal(t, int64(1), rule.ID)
 		}
 		require.NoError(t, mock.ExpectationsWereMet())
-		db.Close()
+		_ = db.Close()
 	}
 }
 
 func TestAccountMatchingRepositoryLookupDistinguishesNoRuleAndFailure(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	repo := NewAccountMatchingRepository(db)
 	mock.ExpectQuery("SELECT account_ids").WithArgs(int64(2), int64(10)).WillReturnRows(sqlmock.NewRows([]string{"account_ids"}).AddRow("{20,21}"))
 	ids, err := repo.AllowedAccounts(context.Background(), 2, 10)

@@ -22,7 +22,7 @@ func (r *accountMatchingRepository) List(ctx context.Context) ([]service.Account
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	rules := make([]service.AccountMatchingRule, 0)
 	for rows.Next() {
 		var rule service.AccountMatchingRule
@@ -56,7 +56,7 @@ func (r *accountMatchingRepository) Save(ctx context.Context, rule *service.Acco
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	// Serialise edits for this user so concurrent overlapping rules cannot be saved.
 	if err := tx.QueryRowContext(ctx, `SELECT email FROM users WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`, rule.UserID).Scan(&rule.Email); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -127,7 +127,7 @@ func (r *accountMatchingRepository) SearchUsers(ctx context.Context, email strin
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var u service.AccountMatchingUser
 		if err := rows.Scan(&u.ID, &u.Email); err != nil {
