@@ -80,12 +80,12 @@ func TestReserveInflightBalance_UnpricedFailOpenByDefaultFailClosedOptIn(t *test
 	apiKey := &service.APIKey{User: &service.User{ID: 1}}
 	est := &countingEstimator{priced: false}
 
-	done, err := reserveInflightBalance(newInflightTestGinContext(), billing, est, apiKey, nil, tokenInflightEstimate("unknown", nil))
+	done, err := reserveInflightBalance(newInflightTestGinContext(), billing, est, apiKey, nil, service.InflightEstimateRequest{Model: "unknown", Kind: service.InflightEstimateImage})
 	require.NoError(t, err)
 	done()
 
 	cfg.Billing.InflightReservation.FailClosedOnUnpriced = true
-	_, err = reserveInflightBalance(newInflightTestGinContext(), billing, est, apiKey, nil, tokenInflightEstimate("unknown", nil))
+	_, err = reserveInflightBalance(newInflightTestGinContext(), billing, est, apiKey, nil, service.InflightEstimateRequest{Model: "unknown", Kind: service.InflightEstimateImage})
 	require.ErrorIs(t, err, service.ErrInsufficientBalance)
 }
 
@@ -147,7 +147,7 @@ func TestWrapUsageRecordTaskContext_HandsReservationToBillingTask(t *testing.T) 
 	apiKey := &service.APIKey{User: &service.User{ID: 5}}
 
 	c := newInflightTestGinContext()
-	done, err := reserveInflightBalance(c, billing, &countingEstimator{cost: 0.9, priced: true}, apiKey, nil, tokenInflightEstimate("m", nil))
+	done, err := reserveInflightBalance(c, billing, &countingEstimator{cost: 0.9, priced: true}, apiKey, nil, service.InflightEstimateRequest{Model: "m", Kind: service.InflightEstimateImage})
 	require.NoError(t, err)
 	require.Equal(t, 1, cache.count())
 
@@ -162,7 +162,7 @@ func TestWrapUsageRecordTaskContext_HandsReservationToBillingTask(t *testing.T) 
 
 	// Dropped task: the submitter abandons it and the reservation is released.
 	c2 := newInflightTestGinContext()
-	done2, err := reserveInflightBalance(c2, billing, &countingEstimator{cost: 0.9, priced: true}, apiKey, nil, tokenInflightEstimate("m", nil))
+	done2, err := reserveInflightBalance(c2, billing, &countingEstimator{cost: 0.9, priced: true}, apiKey, nil, service.InflightEstimateRequest{Model: "m", Kind: service.InflightEstimateImage})
 	require.NoError(t, err)
 	_, abandon2 := wrapUsageRecordTaskContext(c2.Request.Context(), func(context.Context) {})
 	done2()

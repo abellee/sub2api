@@ -40,6 +40,36 @@ func (*costGuardDisabledCache) ReserveInflightBalance(context.Context, int64, st
 	panic("disabled precheck requests must never reserve a balance")
 }
 
+func TestTextRequestsSkipCostPrecheckRegardlessOfSettings(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		t.Run(fmt.Sprintf("enabled=%t", enabled), func(t *testing.T) {
+			var repo service.SettingRepository = costGuardDisabledSettingRepo{}
+			if enabled {
+				repo = costGuardSettingRepo{}
+			}
+			guard := service.NewCostGuardService(service.NewSettingService(repo, nil))
+			t.Cleanup(guard.Stop)
+			require.NoError(t, guard.Start(context.Background()))
+			cache := &costGuardDisabledCache{newHandlerInflightCache(1)}
+			cfg := &config.Config{}
+			cfg.Billing.InflightReservation = config.InflightReservationConfig{Enabled: true, FailClosedOnUnpriced: true}
+			billing := service.NewBillingCacheService(cache, nil, nil, nil, nil, nil, cfg, nil)
+			t.Cleanup(billing.Stop)
+			key := &service.APIKey{ID: 2, User: &service.User{ID: 2}}
+			for _, priced := range []bool{false, true} {
+				estimator := &countingEstimator{cost: 100, priced: priced}
+				c := newInflightTestGinContext()
+				done, err := reserveInflightBalance(c, billing, estimator, key, nil, tokenInflightEstimate("gpt-6-astra", []byte(`{"input":"hello"}`)))
+				require.NoError(t, err)
+				done()
+				require.Zero(t, estimator.calls, "text requests must not tokenize or estimate cost")
+				require.Nil(t, service.InflightReservationFromContext(c.Request.Context()))
+				require.Zero(t, cache.count())
+			}
+		})
+	}
+}
+
 func TestCostGuardHandlerDisabledNeverReservesOrRejects(t *testing.T) {
 	settings := service.NewSettingService(costGuardDisabledSettingRepo{}, nil)
 	guard := service.NewCostGuardService(settings)
@@ -65,7 +95,7 @@ func TestCostGuardHandlerDisabledNeverReservesOrRejects(t *testing.T) {
 				billing := service.NewBillingCacheService(cache, nil, nil, nil, nil, nil, cfg, nil)
 				t.Cleanup(billing.Stop)
 				estimator := &countingEstimator{cost: tc.cost, priced: tc.priced}
-				resultCtx, done, err := reserveInflightBalanceCtx(ctx, billing, estimator, key, nil, tokenInflightEstimate("model", nil))
+				resultCtx, done, err := reserveInflightBalanceCtx(ctx, billing, estimator, key, nil, service.InflightEstimateRequest{Model: "model", Kind: service.InflightEstimateImage})
 				require.NoError(t, err)
 				done()
 				require.Equal(t, 1, estimator.calls)
@@ -93,7 +123,7 @@ func TestCostGuardHandlerDisabledSkipsSimpleAndSubscription(t *testing.T) {
 		estimator := &countingEstimator{cost: 5, priced: true}
 		core, logs := observer.New(zap.InfoLevel)
 		ctx := logger.IntoContext(context.Background(), zap.New(core))
-		_, done, err := reserveInflightBalanceCtx(ctx, billing, estimator, key, &service.UserSubscription{}, tokenInflightEstimate("model", nil))
+		_, done, err := reserveInflightBalanceCtx(ctx, billing, estimator, key, &service.UserSubscription{}, service.InflightEstimateRequest{Model: "model", Kind: service.InflightEstimateImage})
 		require.NoError(t, err)
 		done()
 		require.Zero(t, estimator.calls)
@@ -116,7 +146,7 @@ func TestCostGuardHandlerKeepsDecisionsWithoutPrecheckLogs(t *testing.T) {
 		cost     float64
 		decision string
 	}{{0.1, "allow"}, {5, "reject"}} {
-		_, done, err := reserveInflightBalanceCtx(ctx, billing, &countingEstimator{cost: tc.cost, priced: true}, key, nil, tokenInflightEstimate("model", nil))
+		_, done, err := reserveInflightBalanceCtx(ctx, billing, &countingEstimator{cost: tc.cost, priced: true}, key, nil, service.InflightEstimateRequest{Model: "model", Kind: service.InflightEstimateImage})
 		if tc.decision == "reject" {
 			require.Error(t, err)
 		} else {
@@ -150,24 +180,24 @@ func TestCostGuardHandlerRejectsLargeEstimateAndPreservesFailOpen(t *testing.T) 
 	t.Cleanup(billing.Stop)
 	key := &service.APIKey{ID: 1, User: &service.User{ID: 1}}
 	estimator := &countingEstimator{cost: 5, priced: true}
-	_, done, err := reserveInflightBalanceCtx(ctx, billing, estimator, key, nil, tokenInflightEstimate("model", nil))
+	_, done, err := reserveInflightBalanceCtx(ctx, billing, estimator, key, nil, service.InflightEstimateRequest{Model: "model", Kind: service.InflightEstimateImage})
 	require.ErrorIs(t, err, service.ErrInsufficientBalance)
 	assertCostGuardHTTPResponse(t, err)
 	done()
 	estimator.cost = 0.6
-	_, firstDone, err := reserveInflightBalanceCtx(ctx, billing, estimator, key, nil, tokenInflightEstimate("model", nil))
+	_, firstDone, err := reserveInflightBalanceCtx(ctx, billing, estimator, key, nil, service.InflightEstimateRequest{Model: "model", Kind: service.InflightEstimateImage})
 	require.NoError(t, err)
-	_, _, err = reserveInflightBalanceCtx(ctx, billing, estimator, key, nil, tokenInflightEstimate("model", nil))
+	_, _, err = reserveInflightBalanceCtx(ctx, billing, estimator, key, nil, service.InflightEstimateRequest{Model: "model", Kind: service.InflightEstimateImage})
 	require.ErrorIs(t, err, service.ErrInsufficientBalance)
 	assertCostGuardHTTPResponse(t, err)
 	firstDone()
 	estimator.cost, estimator.priced = 0, false
-	_, done, err = reserveInflightBalanceCtx(ctx, billing, estimator, key, nil, tokenInflightEstimate("unknown", nil))
+	_, done, err = reserveInflightBalanceCtx(ctx, billing, estimator, key, nil, service.InflightEstimateRequest{Model: "unknown", Kind: service.InflightEstimateImage})
 	require.NoError(t, err, "missing prices must not block requests")
 	done()
 	guard.Stop()
 	estimator.cost, estimator.priced = 5, true
-	_, done, err = reserveInflightBalanceCtx(ctx, billing, estimator, key, nil, tokenInflightEstimate("model", nil))
+	_, done, err = reserveInflightBalanceCtx(ctx, billing, estimator, key, nil, service.InflightEstimateRequest{Model: "model", Kind: service.InflightEstimateImage})
 	require.NoError(t, err, "disabled fork must preserve the host's existing behavior")
 	done()
 }

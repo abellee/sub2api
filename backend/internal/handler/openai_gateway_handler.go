@@ -3287,12 +3287,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				turnRecordPricingAt := turnPricing.currentOr(turnStart)
 				turnBillingAPIKey := turnBillingAPIKeys.forTurn(turn, apiKey)
 				cyberBlocked := service.GetOpsCyberPolicy(c) != nil
-				estimate := service.EstimateUsageInputTokens(cyberBlockBody, turnRequestedModel, "/responses")
-				if estimate != nil && turn > 1 {
-					estimate.Partial = true
-				}
-				turnUsageCtx := service.WithUsageInputTokenEstimate(ctx, estimate)
-				h.submitOpenAIUsageRecordTask(turnUsageCtx, result, func(taskCtx context.Context) {
+				h.submitOpenAIUsageRecordTask(ctx, result, func(taskCtx context.Context) {
 					if err := h.gatewayService.RecordUsage(taskCtx, &service.OpenAIRecordUsageInput{
 						Result:             result,
 						APIKey:             turnBillingAPIKey,

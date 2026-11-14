@@ -79,6 +79,10 @@ func reserveInflightBalanceCtx(
 	subscription *service.UserSubscription,
 	req service.InflightEstimateRequest,
 ) (context.Context, func(), error) {
+	// Text requests use actual upstream usage for billing, without a cost precheck.
+	if req.Kind == service.InflightEstimateToken {
+		return ctx, inflightNoop, nil
+	}
 	if billing == nil || estimator == nil || apiKey == nil || apiKey.User == nil || (!billing.InflightReservationEnabled() && !billing.CostGuardAvailable()) {
 		return ctx, inflightNoop, nil
 	}
