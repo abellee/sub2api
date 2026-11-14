@@ -18,7 +18,7 @@ func TestBatchDuplicateAccountsRepositoryCommitsOrRollsBackTogether(t *testing.T
 		t.Run(map[bool]string{false: "commit", true: "rollback"}[failSecond], func(t *testing.T) {
 			db, mock, err := sqlmock.New()
 			require.NoError(t, err)
-			defer db.Close()
+			defer func() { _ = db.Close() }()
 			client := dbent.NewClient(dbent.Driver(entsql.OpenDB(dialect.Postgres, db)))
 			repo := newAccountRepositoryWithSQL(client, nil, nil)
 			accounts := []*service.Account{

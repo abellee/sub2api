@@ -16,7 +16,7 @@ func TestScheduledRecoveryEnableAndSchedulingNotificationAreAtomic(t *testing.T)
 		t.Run(state, func(t *testing.T) {
 			db, mock, err := sqlmock.New()
 			require.NoError(t, err)
-			defer db.Close()
+			defer func() { _ = db.Close() }()
 			repo := &scheduledTestPlanRepository{db: db}
 			version := time.Now()
 			plan := &service.ScheduledTestPlan{ID: 7, UpdatedAt: version}

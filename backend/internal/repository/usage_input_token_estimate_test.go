@@ -30,7 +30,9 @@ func TestUsageInputTokenEstimateInsertAndRead(t *testing.T) {
 			} else {
 				payload, err := json.Marshal(estimate)
 				require.NoError(t, err)
-				require.JSONEq(t, string(payload), prepared.args[index].(string))
+				storedJSON, ok := prepared.args[index].(string)
+				require.True(t, ok)
+				require.JSONEq(t, string(payload), storedJSON)
 			}
 
 			db, mock := newSQLMock(t)
@@ -38,7 +40,7 @@ func TestUsageInputTokenEstimateInsertAndRead(t *testing.T) {
 			mock.ExpectQuery("SELECT").WillReturnRows(sqlmock.NewRows(columns).AddRow(values...))
 			rows, err := db.QueryContext(context.Background(), "SELECT usage")
 			require.NoError(t, err)
-			defer rows.Close()
+			defer func() { _ = rows.Close() }()
 			require.True(t, rows.Next())
 			stored, err := scanUsageLog(rows)
 			require.NoError(t, err)

@@ -18,12 +18,12 @@ func TestAccountBaseURLFilterUsesBoundLiteralInCountAndPage(t *testing.T) {
 		t.Run(filter, func(t *testing.T) {
 			db, mock, err := sqlmock.New()
 			require.NoError(t, err)
-			defer db.Close()
+			defer func() { _ = db.Close() }()
 			client := dbent.NewClient(dbent.Driver(entsql.OpenDB(dialect.Postgres, db)))
 			repo := newAccountRepositoryWithSQL(client, nil, nil)
 			predicate := `STRPOS\(LOWER\(COALESCE\("accounts"\."credentials" ->> 'base_url', ''\)\), LOWER\(\$2\)\) > 0`
 			mock.ExpectQuery(predicate).WithArgs("openai", strings.TrimSpace(filter)).WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
-			mock.ExpectQuery(predicate + `.*LIMIT 20`).WithArgs("openai", strings.TrimSpace(filter)).WillReturnRows(sqlmock.NewRows([]string{"id"}))
+			mock.ExpectQuery(predicate+`.*LIMIT 20`).WithArgs("openai", strings.TrimSpace(filter)).WillReturnRows(sqlmock.NewRows([]string{"id"}))
 			items, page, err := repo.ListWithFilters(context.Background(), pagination.PaginationParams{Page: 1, PageSize: 20}, "openai", "", "", "", 0, "", filter)
 			require.NoError(t, err)
 			require.Empty(t, items)
