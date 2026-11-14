@@ -369,6 +369,7 @@ func sanitizeGroupOpenAIFast(group *Group) {
 	if group == nil || !groupSupportsOpenAIFast(group.Platform) {
 		if group != nil {
 			group.ForceOpenAIFast = false
+			group.ForceOpenAIUltrafast = false
 			group.FreeOpenAIFast = false
 		}
 	}
@@ -638,6 +639,7 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		AllowMessagesDispatch:           input.AllowMessagesDispatch,
 		AllowLive:                       input.AllowLive,
 		ForceOpenAIFast:                 input.ForceOpenAIFast,
+		ForceOpenAIUltrafast:            input.ForceOpenAIUltrafast,
 		FreeOpenAIFast:                  input.FreeOpenAIFast,
 		RequireOAuthOnly:                input.RequireOAuthOnly,
 		RequirePrivacySet:               input.RequirePrivacySet,
@@ -654,10 +656,17 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 	}
 	sanitizeGroupMessagesDispatchFields(group)
 	sanitizeGroupOpenAIFast(group)
+	if group.ForceOpenAIFast && group.ForceOpenAIUltrafast {
+		return nil, infraerrors.BadRequest("CONFLICTING_OPENAI_SERVICE_TIERS", "Force Fast and Force Ultrafast cannot both be enabled")
+	}
 	if group.Platform != PlatformOpenAI && group.Platform != PlatformComposite {
 		group.AllowLive = false
 	}
 	sanitizeGroupReasoningEffortPolicy(group)
+	group.RateSyncGroupIDs, err = s.normalizeRateSyncGroupIDs(ctx, 0, input.RateSyncGroupIDs)
+	if err != nil {
+		return nil, err
+	}
 	if err := s.groupRepo.Create(ctx, group); err != nil {
 		return nil, err
 	}
@@ -807,6 +816,7 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 
 	// 渠道缓存里存了 groupID → platform 的映射，改了平台要让它失效（见函数末尾）
 	previousPlatform := group.Platform
+	previousRate := group.RateMultiplier
 
 	if input.Name != "" {
 		group.Name = input.Name
@@ -1048,6 +1058,9 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	if input.ForceOpenAIFast != nil {
 		group.ForceOpenAIFast = *input.ForceOpenAIFast
 	}
+	if input.ForceOpenAIUltrafast != nil {
+		group.ForceOpenAIUltrafast = *input.ForceOpenAIUltrafast
+	}
 	if input.FreeOpenAIFast != nil {
 		group.FreeOpenAIFast = *input.FreeOpenAIFast
 	}
@@ -1108,6 +1121,9 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	}
 	sanitizeGroupMessagesDispatchFields(group)
 	sanitizeGroupOpenAIFast(group)
+	if group.ForceOpenAIFast && group.ForceOpenAIUltrafast {
+		return nil, infraerrors.BadRequest("CONFLICTING_OPENAI_SERVICE_TIERS", "Force Fast and Force Ultrafast cannot both be enabled")
+	}
 	if group.Platform != PlatformOpenAI && group.Platform != PlatformComposite {
 		group.AllowLive = false
 	}
@@ -1122,12 +1138,35 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 		}
 	}
 
-	if err := s.groupRepo.Update(ctx, group); err != nil {
+	if input.RateSyncGroupIDs != nil {
+		group.RateSyncGroupIDs, err = s.normalizeRateSyncGroupIDs(ctx, id, *input.RateSyncGroupIDs)
+		if err != nil {
+			return nil, err
+		}
+	}
+	var syncTargets []int64
+	if input.RateMultiplier != nil && group.RateMultiplier != previousRate && len(group.RateSyncGroupIDs) > 0 {
+		syncTargets, err = s.normalizeRateSyncGroupIDs(ctx, id, group.RateSyncGroupIDs)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if len(syncTargets) > 0 {
+		if s.groupRateSyncRepo == nil {
+			return nil, errors.New("group rate sync repository is not configured")
+		}
+		err = s.groupRateSyncRepo.UpdateWithRateSync(ctx, group, syncTargets)
+	} else {
+		err = s.groupRepo.Update(ctx, group)
+	}
+	if err != nil {
 		return nil, err
 	}
 
 	if s.authCacheInvalidator != nil {
-		s.authCacheInvalidator.InvalidateAuthCacheByGroupID(ctx, id)
+		for _, groupID := range append([]int64{id}, syncTargets...) {
+			s.authCacheInvalidator.InvalidateAuthCacheByGroupID(ctx, groupID)
+		}
 	}
 
 	// 平台变了就失效渠道缓存：该缓存持有 groupID → platform，而渠道定价 / 模型映射 /

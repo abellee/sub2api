@@ -52,6 +52,7 @@ export async function list(
     group?: string
     search?: string
     privacy_mode?: string
+    base_url?: string
     lite?: string
     include_scheduler_score?: string
     sort_by?: string
@@ -94,6 +95,7 @@ export async function getUpstreamBillingRatesWithEtag(
     group?: string
     search?: string
     privacy_mode?: string
+    base_url?: string
     sort_by?: string
     sort_order?: 'asc' | 'desc'
   },
@@ -127,6 +129,7 @@ export async function listWithEtag(
     group?: string
     search?: string
     privacy_mode?: string
+    base_url?: string
     lite?: string
     include_scheduler_score?: string
     sort_by?: string
@@ -194,13 +197,13 @@ export async function create(accountData: CreateAccountRequest): Promise<Account
  * @param id - Source account ID
  * @returns Newly created account
  */
-const duplicateOperationKeys = new Map<number, string>()
+const duplicateOperationKeys = new Map<number | string, string>()
 
-function duplicateOperationStorageKey(id: number): string {
+function duplicateOperationStorageKey(id: number | string): string {
   return `sub2api:admin:account-duplicate:${id}`
 }
 
-function getStoredDuplicateOperationKey(id: number): string | null {
+function getStoredDuplicateOperationKey(id: number | string): string | null {
   try {
     return globalThis.sessionStorage?.getItem(duplicateOperationStorageKey(id)) ?? null
   } catch {
@@ -208,7 +211,7 @@ function getStoredDuplicateOperationKey(id: number): string | null {
   }
 }
 
-function storeDuplicateOperationKey(id: number, key: string | null): void {
+function storeDuplicateOperationKey(id: number | string, key: string | null): void {
   try {
     if (key) globalThis.sessionStorage?.setItem(duplicateOperationStorageKey(id), key)
     else globalThis.sessionStorage?.removeItem(duplicateOperationStorageKey(id))
@@ -218,18 +221,28 @@ function storeDuplicateOperationKey(id: number, key: string | null): void {
 }
 
 export async function duplicate(id: number): Promise<Account> {
-  let idempotencyKey = duplicateOperationKeys.get(id) ?? getStoredDuplicateOperationKey(id)
+  return duplicateAccountRequest<Account>(id)
+}
+
+export async function batchDuplicate(id: number, count: number): Promise<Account[]> {
+  return duplicateAccountRequest<Account[]>(id, count)
+}
+
+async function duplicateAccountRequest<T>(id: number, count?: number): Promise<T> {
+  const operation = count === undefined ? id : `${id}:batch:${count}`
+  let idempotencyKey = duplicateOperationKeys.get(operation) ?? getStoredDuplicateOperationKey(operation)
   if (!idempotencyKey) {
     const requestID = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
-    idempotencyKey = `account-duplicate-${id}-${requestID}`
+    idempotencyKey = `account-duplicate-${operation}-${requestID}`
   }
-  duplicateOperationKeys.set(id, idempotencyKey)
-  storeDuplicateOperationKey(id, idempotencyKey)
-  const { data } = await apiClient.post<Account>(`/admin/accounts/${id}/duplicate`, undefined, {
+  duplicateOperationKeys.set(operation, idempotencyKey)
+  storeDuplicateOperationKey(operation, idempotencyKey)
+  const path = count === undefined ? 'duplicate' : 'batch-duplicate'
+  const { data } = await apiClient.post<T>(`/admin/accounts/${id}/${path}`, count === undefined ? undefined : { count }, {
     headers: { 'Idempotency-Key': idempotencyKey }
   })
-  duplicateOperationKeys.delete(id)
-  storeDuplicateOperationKey(id, null)
+  duplicateOperationKeys.delete(operation)
+  storeDuplicateOperationKey(operation, null)
   return data
 }
 
@@ -729,6 +742,7 @@ export async function exportData(options?: {
     status?: string
     group?: string
     privacy_mode?: string
+    base_url?: string
     search?: string
     sort_by?: string
     sort_order?: 'asc' | 'desc'
@@ -739,13 +753,14 @@ export async function exportData(options?: {
   if (options?.ids && options.ids.length > 0) {
     params.ids = options.ids.join(',')
   } else if (options?.filters) {
-    const { platform, type, status, group, privacy_mode, search, sort_by, sort_order } = options.filters
+    const { platform, type, status, group, privacy_mode, search, sort_by, sort_order, base_url } = options.filters
     if (platform) params.platform = platform
     if (type) params.type = type
     if (status) params.status = status
     if (group) params.group = group
     if (privacy_mode) params.privacy_mode = privacy_mode
     if (search) params.search = search
+    if (base_url?.trim()) params.base_url = base_url.trim()
     if (sort_by) params.sort_by = sort_by
     if (sort_order) params.sort_order = sort_order
   }
@@ -1141,6 +1156,7 @@ export const accountsAPI = {
   getById,
   create,
   duplicate,
+  batchDuplicate,
   update,
   getGrokMediaEligibility,
   updateGrokMediaEligibility,

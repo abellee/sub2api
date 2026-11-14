@@ -864,6 +864,16 @@ export default {
         remove: 'Remove recommendation',
         saveFailed: 'Failed to save group recommendation'
       },
+      tags: {
+        action: 'Add tags',
+        title: 'Group tags',
+        hint: 'Tags appear on group cards when creating an API key. Descriptions appear on hover. Add up to 20 tags.',
+        name: 'Name',
+        description: 'Description',
+        add: 'Add tag',
+        saved: 'Tags saved',
+        saveFailed: 'Failed to save tags'
+      },
       capRate: {
         action: 'Cap',
         title: 'Set cap rate',
@@ -967,6 +977,11 @@ export default {
         privacySetOnly: 'Only allow accounts with privacy protection set',
         privacySetOnlyEnabled: 'Enabled — accounts with unset Privacy will be excluded',
         disabled: 'Disabled'
+      },
+      rateSync: {
+        label: 'Groups to sync base rate to',
+        hint: 'Changing this group’s base rate sets selected groups to the same rate. One-way only, without cascading. Editing the selection alone does not change rates.',
+        clear: 'Clear selection',
       },
       form: {
         name: 'Name',
@@ -1358,6 +1373,8 @@ export default {
       openaiFast: {
         title: 'OpenAI Fast mode',
         force: 'Force Fast (priority)',
+        ultrafast: 'Force Ultrafast (6× pricing)',
+        ultrafastHint: 'Forces service_tier=ultrafast and charges 6× Standard token prices, then applies the group multiplier. Mutually exclusive with Force Fast and unaffected by Free Fast. Global policies can still filter or block it. The upstream model must support it; reconnect existing WebSocket sessions.',
         hint: 'Forces service_tier=priority on OpenAI requests in this group. The global Fast/Flex policy can still filter or block it. New requests update immediately after saving; existing WebSocket sessions must reconnect.',
         free: 'Free Fast',
         freeHint: 'Fast requests in this group still use the priority tier, but customers are charged the equivalent Standard price.'

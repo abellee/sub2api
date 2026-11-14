@@ -307,6 +307,7 @@ func (h *MediaHubRelayHandler) Relay(c *gin.Context) {
 		}
 	}
 
+	copyMediaTaskQueryHeaders(c, resp.Header)
 	contentType = resp.Header.Get("Content-Type")
 	if c.GetString(mediaProtocolKey) != "" {
 		h.finishStandard(c, resp, metadata, subject.UserID, apiKey.ID, gid)
@@ -332,11 +333,13 @@ func (h *MediaHubRelayHandler) taskStatus(c *gin.Context, userID, keyID, groupID
 		UserID:        userID,
 		KeyID:         keyID,
 		GroupID:       groupID,
+		ClientQuery:   "status",
 	}, taskID)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": gin.H{"type": "api_error", "message": err.Error()}})
 		return
 	}
+	copyMediaTaskQueryHeaders(c, resp.Header)
 	var state map[string]any
 	if resp.StatusCode == http.StatusNotFound && h.deletedTaskResponse(c, userID, taskID) {
 		return

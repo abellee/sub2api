@@ -23,9 +23,8 @@
             <p class="input-hint">{{ t('admin.contentSafetyBilling.amountHint') }}</p>
           </div>
           <div>
-            <label for="safety-match" class="input-label">{{ t('admin.contentSafetyBilling.match') }}</label>
-            <input id="safety-match" v-model="draft.match_description" class="input" type="text" required maxlength="4096" data-test="match" />
-            <p class="input-hint">{{ t('admin.contentSafetyBilling.matchHint') }}</p>
+            <p class="input-label">{{ t('admin.contentSafetyBilling.match') }}</p>
+            <p id="safety-match" class="input-hint whitespace-pre-line" data-test="match">{{ t('admin.contentSafetyBilling.matchHint') }}</p>
           </div>
           <div>
             <label for="safety-message" class="input-label">{{ t('admin.contentSafetyBilling.clientMessage') }}</label>

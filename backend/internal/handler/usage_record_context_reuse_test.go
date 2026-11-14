@@ -97,6 +97,8 @@ func TestGatewayUsageKeepsModelAfterGinContextReuse(t *testing.T) {
 			select {
 			case usage := <-usageRepo.created:
 				require.Equal(t, "public-model-A", usage.RequestedModel)
+				require.NotNil(t, usage.InputTokenEstimate)
+				require.Greater(t, usage.InputTokenEstimate.Tokens, 0)
 			case <-time.After(2 * time.Second):
 				t.Fatal("queued request usage was not recorded")
 			}

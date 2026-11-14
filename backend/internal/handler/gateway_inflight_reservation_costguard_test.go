@@ -22,41 +22,44 @@ import (
 
 type costGuardSettingRepo struct{ service.SettingRepository }
 
-type costGuardLogOnlySettingRepo struct{ costGuardSettingRepo }
+type costGuardDisabledSettingRepo struct{ costGuardSettingRepo }
 
-func (costGuardLogOnlySettingRepo) GetMultiple(ctx context.Context, keys []string) (map[string]string, error) {
+func (costGuardDisabledSettingRepo) GetMultiple(ctx context.Context, keys []string) (map[string]string, error) {
 	values, err := (costGuardSettingRepo{}).GetMultiple(ctx, keys)
 	values[service.SettingKeyCostGuardEnabled] = "false"
 	return values, err
 }
 
-type costGuardLogOnlyCache struct{ *handlerInflightCache }
+type costGuardDisabledCache struct{ *handlerInflightCache }
 
-func (*costGuardLogOnlyCache) ReserveInflightBalance(context.Context, int64, string, float64, float64, time.Duration) (bool, float64, error) {
-	panic("logging-only requests must never reserve a balance")
+func (*costGuardDisabledCache) GetUserBalance(context.Context, int64) (float64, error) {
+	panic("disabled precheck must not read balances for diagnostics")
 }
 
-func TestCostGuardHandlerLogOnlyNeverReservesOrRejects(t *testing.T) {
-	settings := service.NewSettingService(costGuardLogOnlySettingRepo{}, nil)
+func (*costGuardDisabledCache) ReserveInflightBalance(context.Context, int64, string, float64, float64, time.Duration) (bool, float64, error) {
+	panic("disabled precheck requests must never reserve a balance")
+}
+
+func TestCostGuardHandlerDisabledNeverReservesOrRejects(t *testing.T) {
+	settings := service.NewSettingService(costGuardDisabledSettingRepo{}, nil)
 	guard := service.NewCostGuardService(settings)
 	t.Cleanup(guard.Stop)
 	require.NoError(t, guard.Start(context.Background()))
 	key := &service.APIKey{ID: 739, User: &service.User{ID: 553}}
 	for _, legacyEnabled := range []bool{false, true} {
 		for _, tc := range []struct {
-			name      string
-			cost      float64
-			priced    bool
-			estimated string
+			name   string
+			cost   float64
+			priced bool
 		}{
-			{"enough", 0.1, true, "allow"},
-			{"over balance", 5, true, "reject"},
-			{"unknown price", 0, false, "skip"},
+			{"enough", 0.1, true},
+			{"over balance", 5, true},
+			{"unknown price", 0, false},
 		} {
 			t.Run(fmt.Sprintf("legacy=%t/%s", legacyEnabled, tc.name), func(t *testing.T) {
 				core, logs := observer.New(zap.InfoLevel)
 				ctx := logger.IntoContext(context.Background(), zap.New(core))
-				cache := &costGuardLogOnlyCache{newHandlerInflightCache(1)}
+				cache := &costGuardDisabledCache{newHandlerInflightCache(1)}
 				cfg := &config.Config{}
 				cfg.Billing.InflightReservation = config.InflightReservationConfig{Enabled: legacyEnabled, FailClosedOnUnpriced: true}
 				billing := service.NewBillingCacheService(cache, nil, nil, nil, nil, nil, cfg, nil)
@@ -68,22 +71,14 @@ func TestCostGuardHandlerLogOnlyNeverReservesOrRejects(t *testing.T) {
 				require.Equal(t, 1, estimator.calls)
 				require.Nil(t, service.InflightReservationFromContext(resultCtx))
 				require.Zero(t, cache.count())
-				entries := logs.FilterMessage("cost_guard.precheck").All()
-				require.Len(t, entries, 1)
-				fields := entries[0].ContextMap()
-				require.Equal(t, "log_only", fields["mode"])
-				require.Equal(t, "allow", fields["decision"])
-				require.Equal(t, "log_only", fields["reason"])
-				require.Equal(t, tc.estimated, fields["estimated_decision"])
-				require.Equal(t, tc.cost, fields["estimated_cost_usd"])
-				require.Zero(t, fields["reservation_usd"])
+				require.Zero(t, logs.FilterMessage("cost_guard.precheck").Len())
 			})
 		}
 	}
 }
 
-func TestCostGuardHandlerLogOnlySkipsSimpleAndSubscription(t *testing.T) {
-	guard := service.NewCostGuardService(service.NewSettingService(costGuardLogOnlySettingRepo{}, nil))
+func TestCostGuardHandlerDisabledSkipsSimpleAndSubscription(t *testing.T) {
+	guard := service.NewCostGuardService(service.NewSettingService(costGuardDisabledSettingRepo{}, nil))
 	t.Cleanup(guard.Stop)
 	require.NoError(t, guard.Start(context.Background()))
 	for _, simple := range []bool{false, true} {
@@ -106,7 +101,7 @@ func TestCostGuardHandlerLogOnlySkipsSimpleAndSubscription(t *testing.T) {
 	}
 }
 
-func TestCostGuardHandlerLogsEachFinalDecision(t *testing.T) {
+func TestCostGuardHandlerKeepsDecisionsWithoutPrecheckLogs(t *testing.T) {
 	settings := service.NewSettingService(costGuardSettingRepo{}, nil)
 	guard := service.NewCostGuardService(settings)
 	t.Cleanup(guard.Stop)
@@ -128,10 +123,7 @@ func TestCostGuardHandlerLogsEachFinalDecision(t *testing.T) {
 			require.NoError(t, err)
 		}
 		done()
-		entries := logs.FilterMessage("cost_guard.precheck").All()
-		require.Len(t, entries, 1)
-		require.Equal(t, tc.decision, entries[0].ContextMap()["decision"])
-		require.Equal(t, tc.cost, entries[0].ContextMap()["estimated_cost_usd"])
+		require.Zero(t, logs.FilterMessage("cost_guard.precheck").Len())
 		logs.TakeAll()
 	}
 }

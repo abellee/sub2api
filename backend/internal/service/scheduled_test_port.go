@@ -7,17 +7,19 @@ import (
 
 // ScheduledTestPlan represents a scheduled test plan domain model.
 type ScheduledTestPlan struct {
-	ID             int64      `json:"id"`
-	AccountID      int64      `json:"account_id"`
-	ModelID        string     `json:"model_id"`
-	CronExpression string     `json:"cron_expression"`
-	Enabled        bool       `json:"enabled"`
-	MaxResults     int        `json:"max_results"`
-	AutoRecover    bool       `json:"auto_recover"`
-	LastRunAt      *time.Time `json:"last_run_at"`
-	NextRunAt      *time.Time `json:"next_run_at"`
-	CreatedAt      time.Time  `json:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at"`
+	ID                           int64      `json:"id"`
+	AccountID                    int64      `json:"account_id"`
+	ModelID                      string     `json:"model_id"`
+	CronExpression               string     `json:"cron_expression"`
+	Enabled                      bool       `json:"enabled"`
+	MaxResults                   int        `json:"max_results"`
+	AutoRecover                  bool       `json:"auto_recover"`
+	RecoveryProbeIntervalSeconds int        `json:"recovery_probe_interval_seconds"`
+	RecoverScheduling            bool       `json:"recover_scheduling"`
+	LastRunAt                    *time.Time `json:"last_run_at"`
+	NextRunAt                    *time.Time `json:"next_run_at"`
+	CreatedAt                    time.Time  `json:"created_at"`
+	UpdatedAt                    time.Time  `json:"updated_at"`
 }
 
 // ScheduledTestResult represents a single test execution result.
@@ -41,7 +43,10 @@ type ScheduledTestPlanRepository interface {
 	ListDue(ctx context.Context, now time.Time) ([]*ScheduledTestPlan, error)
 	Update(ctx context.Context, plan *ScheduledTestPlan) (*ScheduledTestPlan, error)
 	Delete(ctx context.Context, id int64) error
-	UpdateAfterRun(ctx context.Context, id int64, lastRunAt time.Time, nextRunAt time.Time) error
+	UpdateAfterRun(ctx context.Context, id int64, lastRunAt time.Time, nextRunAt time.Time, expectedUpdatedAt time.Time) error
+	ClaimDue(ctx context.Context, id int64, now, leaseUntil time.Time) (bool, error)
+	ListRecoveryAccountIDs(ctx context.Context, account *Account) ([]int64, error)
+	EnableScheduling(ctx context.Context, plan *ScheduledTestPlan, probe *Account, accounts []*Account) (int, error)
 }
 
 // ScheduledTestResultRepository defines the data access interface for test results.

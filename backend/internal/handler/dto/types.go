@@ -178,11 +178,13 @@ type Group struct {
 // AdminGroup 是管理员接口使用的 group DTO（包含敏感/内部字段）。
 // 注意：普通用户接口不得返回 model_routing/account_count/account_groups 等内部信息。
 type AdminGroup struct {
-	ImageAutoSizeFromReference  bool `json:"image_auto_size_from_reference"`
-	AccountErrorFailoverEnabled bool `json:"account_error_failover_enabled"`
+	RateSyncGroupIDs            []int64 `json:"rate_sync_group_ids"`
+	ImageAutoSizeFromReference  bool    `json:"image_auto_size_from_reference"`
+	AccountErrorFailoverEnabled bool    `json:"account_error_failover_enabled"`
 	Group
 	// ForceOpenAIFast 是管理端请求策略，用户侧分组 DTO 无需暴露。
-	ForceOpenAIFast bool `json:"force_openai_fast"`
+	ForceOpenAIFast      bool `json:"force_openai_fast"`
+	ForceOpenAIUltrafast bool `json:"force_openai_ultrafast"`
 	// FreeOpenAIFast 是管理端计费策略，用户侧分组 DTO 无需暴露。
 	FreeOpenAIFast bool `json:"free_openai_fast"`
 
@@ -695,6 +697,8 @@ type UsageLog struct {
 // AdminUsageLog 是管理员接口使用的 usage log DTO（包含管理员字段）。
 type AdminUsageLog struct {
 	UsageLog
+
+	InputTokenEstimate *service.InputTokenEstimate `json:"input_token_estimate"`
 
 	// UpstreamModel is the actual model sent to the upstream provider after mapping.
 	// Omitted when no mapping was applied (requested model was used as-is).

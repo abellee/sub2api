@@ -33,7 +33,7 @@ func TestScopedAdminUsageListDoesNotGrantNestedResourceRead(t *testing.T) {
 	privateAccount := &service.Account{ID: 11, Name: "private-account-name", Credentials: map[string]any{"access_token": "private-account-token"}}
 	for _, scoped := range []bool{true, false} {
 		t.Run(map[bool]string{true: "受限用量读取", false: "完整管理员保留响应"}[scoped], func(t *testing.T) {
-			repo := &scopedUsageResponseRepo{records: []service.UsageLog{{ID: 12, UserID: 7, APIKeyID: 8, AccountID: 11, RequestID: "request-public", RequestedModel: "requested-model", Model: "effective-model", InputTokens: 123, OutputTokens: 456, TotalCost: 1.25, ActualCost: 1, User: privateUser, APIKey: privateKey, Group: privateGroup, Subscription: privateSub, Account: privateAccount}}}
+			repo := &scopedUsageResponseRepo{records: []service.UsageLog{{ID: 12, UserID: 7, APIKeyID: 8, AccountID: 11, RequestID: "request-public", RequestedModel: "requested-model", Model: "effective-model", InputTokens: 123, OutputTokens: 456, InputTokenEstimate: &service.InputTokenEstimate{Tokens: 321, Encoding: "o200k_base"}, TotalCost: 1.25, ActualCost: 1, User: privateUser, APIKey: privateKey, Group: privateGroup, Subscription: privateSub, Account: privateAccount}}}
 			h := NewUsageHandler(service.NewUsageService(repo, nil, nil, nil), nil, nil, nil)
 			r := gin.New()
 			r.Use(func(c *gin.Context) {
@@ -57,6 +57,7 @@ func TestScopedAdminUsageListDoesNotGrantNestedResourceRead(t *testing.T) {
 			item := result.Data.Items[0]
 			require.JSONEq(t, `123`, string(item["input_tokens"]))
 			require.JSONEq(t, `456`, string(item["output_tokens"]))
+			require.JSONEq(t, `{"tokens":321,"encoding":"o200k_base"}`, string(item["input_token_estimate"]))
 			require.JSONEq(t, `1.25`, string(item["total_cost"]))
 			require.JSONEq(t, `"requested-model"`, string(item["model"]))
 			require.JSONEq(t, `8`, string(item["api_key_id"]))

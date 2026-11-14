@@ -154,7 +154,7 @@ func TestAdminServiceSimpleModeRejectsDirectCompositeGroupAccess(t *testing.T) {
 func TestAdminServiceSimpleModeRejectsAccountListCompositeFilter(t *testing.T) {
 	repo := &groupRepoStubForAdmin{getByID: &Group{ID: 9, Platform: PlatformComposite}}
 	svc := &adminServiceImpl{cfg: &config.Config{RunMode: config.RunModeSimple}, groupRepo: repo}
-	_, _, err := svc.ListAccounts(context.Background(), 1, 20, "", "", "", "", 9, "", "", "")
+	_, _, err := svc.ListAccounts(context.Background(), 1, 20, "", "", "", "", 9, "", "", "", "")
 	require.Error(t, err)
 }
 
@@ -1366,6 +1366,50 @@ func TestAdminService_CreateGroup_NormalizesForceOpenAIFastByPlatform(t *testing
 			require.Equal(t, tt.want, repo.created.FreeOpenAIFast)
 		})
 	}
+}
+
+func TestAdminService_GroupUltrafastPersistenceAndValidation(t *testing.T) {
+	for _, platform := range []string{PlatformOpenAI, PlatformComposite, PlatformAnthropic} {
+		t.Run(platform, func(t *testing.T) {
+			repo := &groupRepoStubForAdmin{createID: 7}
+			invalidator := &authCacheInvalidatorStub{}
+			svc := &adminServiceImpl{groupRepo: repo, authCacheInvalidator: invalidator}
+			group, err := svc.CreateGroup(context.Background(), &CreateGroupInput{
+				Name: "ultrafast", Platform: platform, RateMultiplier: 1, ForceOpenAIUltrafast: true,
+			})
+			require.NoError(t, err)
+			require.Equal(t, platform != PlatformAnthropic, repo.created.ForceOpenAIUltrafast)
+			repo.getByID = group
+			enabled, disabled := true, false
+			_, err = svc.UpdateGroup(context.Background(), group.ID, &UpdateGroupInput{ForceOpenAIUltrafast: &disabled})
+			require.NoError(t, err)
+			require.False(t, repo.updated.ForceOpenAIUltrafast)
+			_, err = svc.UpdateGroup(context.Background(), group.ID, &UpdateGroupInput{ForceOpenAIUltrafast: &enabled})
+			require.NoError(t, err)
+			require.Equal(t, platform != PlatformAnthropic, repo.updated.ForceOpenAIUltrafast)
+			require.Contains(t, invalidator.groupIDs, group.ID)
+			_, err = svc.UpdateGroup(context.Background(), group.ID, &UpdateGroupInput{Platform: PlatformAnthropic})
+			require.NoError(t, err)
+			require.False(t, repo.updated.ForceOpenAIUltrafast)
+		})
+	}
+	t.Run("conflicting tiers", func(t *testing.T) {
+		repo := &groupRepoStubForAdmin{getByID: &Group{ID: 7, Platform: PlatformOpenAI, Status: StatusActive, ForceOpenAIFast: true}}
+		svc := &adminServiceImpl{groupRepo: repo}
+		_, err := svc.CreateGroup(context.Background(), &CreateGroupInput{
+			Name: "invalid", Platform: PlatformOpenAI, RateMultiplier: 1, ForceOpenAIFast: true, ForceOpenAIUltrafast: true,
+		})
+		require.Equal(t, "CONFLICTING_OPENAI_SERVICE_TIERS", infraerrors.Reason(err))
+		require.Nil(t, repo.created)
+		enabled, disabled := true, false
+		_, err = svc.UpdateGroup(context.Background(), 7, &UpdateGroupInput{ForceOpenAIUltrafast: &enabled})
+		require.Equal(t, "CONFLICTING_OPENAI_SERVICE_TIERS", infraerrors.Reason(err))
+		require.Nil(t, repo.updated)
+		_, err = svc.UpdateGroup(context.Background(), 7, &UpdateGroupInput{ForceOpenAIFast: &disabled, ForceOpenAIUltrafast: &enabled})
+		require.NoError(t, err)
+		require.False(t, repo.updated.ForceOpenAIFast)
+		require.True(t, repo.updated.ForceOpenAIUltrafast)
+	})
 }
 
 func TestAdminService_UpdateGroup_ClearsForceOpenAIFastWhenPlatformChanges(t *testing.T) {

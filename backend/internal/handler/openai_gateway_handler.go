@@ -258,6 +258,7 @@ func usageRecordContext(parent context.Context, base context.Context) context.Co
 	if requestID, _ := parent.Value(ctxkey.RequestID).(string); strings.TrimSpace(requestID) != "" {
 		base = context.WithValue(base, ctxkey.RequestID, strings.TrimSpace(requestID))
 	}
+	base = service.WithUsageInputTokenEstimate(base, service.UsageInputTokenEstimateFromContext(parent))
 	return service.CopyAccountFailoverBillingContext(parent, base)
 }
 
@@ -3286,7 +3287,12 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				turnRecordPricingAt := turnPricing.currentOr(turnStart)
 				turnBillingAPIKey := turnBillingAPIKeys.forTurn(turn, apiKey)
 				cyberBlocked := service.GetOpsCyberPolicy(c) != nil
-				h.submitOpenAIUsageRecordTask(ctx, result, func(taskCtx context.Context) {
+				estimate := service.EstimateUsageInputTokens(cyberBlockBody, turnRequestedModel, "/responses")
+				if estimate != nil && turn > 1 {
+					estimate.Partial = true
+				}
+				turnUsageCtx := service.WithUsageInputTokenEstimate(ctx, estimate)
+				h.submitOpenAIUsageRecordTask(turnUsageCtx, result, func(taskCtx context.Context) {
 					if err := h.gatewayService.RecordUsage(taskCtx, &service.OpenAIRecordUsageInput{
 						Result:             result,
 						APIKey:             turnBillingAPIKey,

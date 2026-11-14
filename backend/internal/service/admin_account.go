@@ -10,9 +10,11 @@ import (
 	"maps"
 	"net/http"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
@@ -21,25 +23,25 @@ import (
 )
 
 // Account management implementations
-func (s *adminServiceImpl) ListAccounts(ctx context.Context, page, pageSize int, platform, accountType, status, search string, groupID int64, privacyMode string, sortBy, sortOrder string) ([]Account, int64, error) {
+func (s *adminServiceImpl) ListAccounts(ctx context.Context, page, pageSize int, platform, accountType, status, search string, groupID int64, privacyMode string, sortBy, sortOrder string, baseURL string) ([]Account, int64, error) {
 	if groupID > 0 {
 		if err := s.ValidateAccountGroupBindings(ctx, []int64{groupID}); err != nil {
 			return nil, 0, err
 		}
 	}
 	params := pagination.PaginationParams{Page: page, PageSize: pageSize, SortBy: sortBy, SortOrder: sortOrder}
-	accounts, result, err := s.accountRepo.ListWithFilters(ctx, params, platform, accountType, status, search, groupID, privacyMode)
+	accounts, result, err := s.accountRepo.ListWithFilters(ctx, params, platform, accountType, status, search, groupID, privacyMode, strings.TrimSpace(baseURL))
 	if err != nil {
 		return nil, 0, err
 	}
 	return accounts, result.Total, nil
 }
 
-func (s *adminServiceImpl) ListAccountsForSchedulerScoreFilter(ctx context.Context, platform, accountType, status, search string, groupID int64, privacyMode string) ([]Account, error) {
+func (s *adminServiceImpl) ListAccountsForSchedulerScoreFilter(ctx context.Context, platform, accountType, status, search string, groupID int64, privacyMode string, baseURL string) ([]Account, error) {
 	if s == nil || s.accountRepo == nil {
 		return nil, nil
 	}
-	return s.accountRepo.ListAllWithFilters(ctx, platform, accountType, status, search, groupID, privacyMode)
+	return s.accountRepo.ListAllWithFilters(ctx, platform, accountType, status, search, groupID, privacyMode, strings.TrimSpace(baseURL))
 }
 
 func (s *adminServiceImpl) ListOpenAISchedulableAccountsForSchedulerScore(ctx context.Context, groupID *int64) ([]Account, error) {
@@ -255,6 +257,20 @@ func (s *adminServiceImpl) DuplicateAccount(ctx context.Context, id int64, actor
 	if err != nil {
 		return nil, err
 	}
+	duplicate, err := s.prepareDuplicateAccount(ctx, source, duplicateAccountName(source.Name), operationID, false)
+	if err != nil {
+		return nil, err
+	}
+	if s.accountDuplicateRepo == nil {
+		return nil, errors.New("account duplicate repository is not configured")
+	}
+	if err := s.accountDuplicateRepo.CreateWithAccountGroups(ctx, duplicate, duplicate.AccountGroups); err != nil {
+		return nil, fmt.Errorf("create duplicate account: %w", err)
+	}
+	return duplicate, nil
+}
+
+func (s *adminServiceImpl) prepareDuplicateAccount(ctx context.Context, source *Account, name, operationID string, probeEnabled bool) (*Account, error) {
 	if source.IsCredentialShadow() {
 		return nil, infraerrors.BadRequest(
 			"ACCOUNT_DUPLICATE_SHADOW_UNSUPPORTED",
@@ -299,7 +315,7 @@ func (s *adminServiceImpl) DuplicateAccount(ctx context.Context, id int64, actor
 		proxyID = source.ProxyFallbackOriginID
 	}
 	input := &CreateAccountInput{
-		Name:                  duplicateAccountName(source.Name),
+		Name:                  name,
 		Notes:                 cloneAccountValuePointer(source.Notes),
 		Platform:              source.Platform,
 		Type:                  source.Type,
@@ -315,6 +331,10 @@ func (s *adminServiceImpl) DuplicateAccount(ctx context.Context, id int64, actor
 		AutoPauseOnExpired:    &autoPauseOnExpired,
 		SkipDefaultGroupBind:  true,
 		SkipMixedChannelCheck: true,
+	}
+	if probeEnabled {
+		enabled := true
+		input.ProbeEnabled = &enabled
 	}
 	accountExtra, err := normalizeOpenAILongContextBillingExtra(input.Platform, input.Extra)
 	if err != nil {
@@ -332,18 +352,78 @@ func (s *adminServiceImpl) DuplicateAccount(ctx context.Context, id int64, actor
 	}
 	// A copied credential must be reviewed before it can share live traffic with its source.
 	duplicate.Schedulable = false
-	if s.accountDuplicateRepo == nil {
-		return nil, errors.New("account duplicate repository is not configured")
-	}
-	if err := s.accountDuplicateRepo.CreateWithAccountGroups(ctx, duplicate, groups); err != nil {
-		return nil, fmt.Errorf("create duplicate account: %w", err)
-	}
-	for i := range groups {
-		groups[i].AccountID = duplicate.ID
-	}
 	duplicate.AccountGroups = groups
 	duplicate.GroupIDs = groupIDs
 	return duplicate, nil
+}
+
+const MaxBatchDuplicateAccounts = 100
+
+func batchDuplicateAccountOperationID(id int64, count int, actorScope, operationKey string) string {
+	if strings.TrimSpace(operationKey) == "" {
+		return ""
+	}
+	return duplicateAccountOperationID(id, actorScope, "batch:"+strconv.Itoa(count)+":"+operationKey)
+}
+
+func (s *adminServiceImpl) RecoverBatchDuplicateAccounts(ctx context.Context, id int64, count int, actorScope, operationKey string) ([]*Account, error) {
+	operationID := batchDuplicateAccountOperationID(id, count, actorScope, operationKey)
+	if operationID == "" {
+		return nil, nil
+	}
+	accounts, err := s.accountRepo.FindByExtraField(ctx, duplicateAccountOperationIDExtraKey, operationID)
+	if err != nil {
+		return nil, err
+	}
+	if len(accounts) == 0 {
+		return nil, nil
+	}
+	if len(accounts) != count {
+		return nil, infraerrors.Conflict("ACCOUNT_DUPLICATE_BATCH_CHANGED", "some accounts in the completed batch have been removed")
+	}
+	sort.Slice(accounts, func(i, j int) bool { return accounts[i].ID < accounts[j].ID })
+	result := make([]*Account, len(accounts))
+	for i := range accounts {
+		result[i] = &accounts[i]
+	}
+	return result, nil
+}
+
+func (s *adminServiceImpl) BatchDuplicateAccounts(ctx context.Context, id int64, count int, actorScope, operationKey string) ([]*Account, error) {
+	if count < 1 || count > MaxBatchDuplicateAccounts {
+		return nil, infraerrors.BadRequest("INVALID_DUPLICATE_COUNT", "count must be between 1 and 100")
+	}
+	existing, err := s.RecoverBatchDuplicateAccounts(ctx, id, count, actorScope, operationKey)
+	if err != nil || len(existing) > 0 {
+		return existing, err
+	}
+	source, err := s.accountRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if !isUpstreamBillingProbeAccount(source) {
+		return nil, ErrUpstreamBillingProbeAccountInvalid
+	}
+	name := strings.TrimSpace(source.Name)
+	if utf8.RuneCountInString(name)+1+len(strconv.Itoa(count)) > maxAccountNameRunes {
+		return nil, infraerrors.BadRequest("ACCOUNT_NAME_TOO_LONG", "shorten the source account name before adding numbered copies")
+	}
+	operationID := batchDuplicateAccountOperationID(id, count, actorScope, operationKey)
+	accounts := make([]*Account, 0, count)
+	for i := 1; i <= count; i++ {
+		account, err := s.prepareDuplicateAccount(ctx, source, name+"-"+strconv.Itoa(i), operationID, true)
+		if err != nil {
+			return nil, err
+		}
+		accounts = append(accounts, account)
+	}
+	if s.accountDuplicateRepo == nil {
+		return nil, errors.New("account duplicate repository is not configured")
+	}
+	if err := s.accountDuplicateRepo.CreateManyWithAccountGroups(ctx, accounts); err != nil {
+		return nil, fmt.Errorf("create duplicate accounts: %w", err)
+	}
+	return accounts, nil
 }
 
 func normalizeAccountConcurrency(platform, accountType string, concurrency int) int {
@@ -1275,6 +1355,7 @@ func (s *adminServiceImpl) resolveBulkUpdateTargetIDs(ctx context.Context, filte
 			filters.PrivacyMode,
 			"",
 			"",
+			filters.BaseURL,
 		)
 		if err != nil {
 			return nil, err

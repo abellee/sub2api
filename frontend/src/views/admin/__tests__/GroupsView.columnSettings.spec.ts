@@ -1,3 +1,4 @@
+import { adminAPI } from '@/api/admin'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 
@@ -55,6 +56,7 @@ vi.mock('@/api/admin', () => ({
     groups: {
       list: listGroups,
       getAll: getAllGroups,
+      getAllIncludingInactive: vi.fn().mockResolvedValue([]),
       getModelAllowlistCandidates,
       getUsageSummary,
       getCapacitySummary,
@@ -238,6 +240,7 @@ describe('admin GroupsView column settings', () => {
     localStorage.clear()
 
     listGroups.mockReset()
+    vi.mocked(adminAPI.groups.getAllIncludingInactive).mockResolvedValue([])
     getAllGroups.mockReset()
     getModelAllowlistCandidates.mockReset()
     getUsageSummary.mockReset()

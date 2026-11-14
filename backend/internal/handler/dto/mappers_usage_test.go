@@ -8,6 +8,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestUsageInputTokenEstimateIsAdminOnly(t *testing.T) {
+	log := &service.UsageLog{InputTokenEstimate: &service.InputTokenEstimate{Tokens: 1234, Encoding: "o200k_base"}}
+	userJSON, err := json.Marshal(UsageLogFromService(log))
+	require.NoError(t, err)
+	require.NotContains(t, string(userJSON), "input_token_estimate")
+	admin := UsageLogFromServiceAdmin(log)
+	require.Equal(t, log.InputTokenEstimate, admin.InputTokenEstimate)
+	adminJSON, err := json.Marshal(admin)
+	require.NoError(t, err)
+	require.Contains(t, string(adminJSON), `"input_token_estimate":{"tokens":1234,"encoding":"o200k_base"}`)
+}
+
 func TestUsageLogFromService_IncludesOpenAIWSMode(t *testing.T) {
 	t.Parallel()
 

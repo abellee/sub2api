@@ -242,6 +242,9 @@ func (s *OpenAIGatewayService) streamChatCompletionsAsResponses(
 		writeEvents(events)
 	})
 
+	if errors.Is(scan.Err, errContentSafetyRejected) {
+		return nil, scan.Err
+	}
 	if scan.Err != nil {
 		return &OpenAIForwardResult{
 			RequestID:                   requestID,

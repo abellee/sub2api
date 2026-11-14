@@ -98,6 +98,23 @@ describe('AccountActionMenu — spark shadow 按钮可见性', () => {
     wrapper.unmount()
   })
 
+  it('offers batch copies for API keys and emits the selected account', async () => {
+    const account = makeAccount({ type: 'apikey', parent_account_id: null })
+    const wrapper = mount(AccountActionMenu, { props: { show: true, account, anchorRect }, attachTo: document.body })
+    const button = getBodyButtons().find(button => button.textContent?.includes('admin.accounts.batchDuplicate'))
+    expect(button).toBeDefined()
+    button!.click()
+    await wrapper.vm.$nextTick()
+    expect(wrapper.emitted('batch-duplicate')?.[0][0]).toMatchObject({ id: account.id })
+    wrapper.unmount()
+  })
+
+  it.each(['oauth', 'upstream', 'bedrock'] as const)('hides batch copies for %s accounts without billing probe support', type => {
+    const wrapper = mount(AccountActionMenu, { props: { show: true, account: makeAccount({ type }), anchorRect }, attachTo: document.body })
+    expect(getBodyText()).not.toContain('admin.accounts.batchDuplicate')
+    wrapper.unmount()
+  })
+
   it('OpenAI OAuth 母账号（无 parent_account_id）显示「创建 spark 影子」按钮', () => {
     const account = makeAccount({ platform: 'openai', type: 'oauth', parent_account_id: null })
     const wrapper = mount(AccountActionMenu, {

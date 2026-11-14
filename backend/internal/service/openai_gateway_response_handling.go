@@ -498,6 +498,11 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		}
 		// Extract data from SSE line (supports both "data: " and "data:" formats)
 		if data, ok := extractOpenAISSEDataLine(line); ok {
+			if s.handleContentSafetyBilling(c, account, resp, []byte(data)) {
+				bufferedWriter.Reset(c.Writer)
+				streamEarlyErr = errContentSafetyRejected
+				return
+			}
 			dataBytes := []byte(data)
 			eventType := effectiveOpenAISSEEventType(dataBytes, pendingSSEEventType)
 			if codexFailureTerminal && sawBareError && !sawResponseFailed &&
@@ -833,6 +838,9 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		for documentScanner.Scan() {
 			processSSELine(documentScanner.Text(), true)
 			if streamEarlyErr != nil {
+				if errors.Is(streamEarlyErr, errContentSafetyRejected) {
+					return nil, streamEarlyErr
+				}
 				return resultWithUsage(), streamEarlyErr
 			}
 			// Terminal 事件完整写出后直接结束，不等上游 EOF（见下方异步循环同款说明）。
@@ -926,6 +934,9 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			processSSELine(ev.line, len(events) == 0)
 			markEventProcessed(ev)
 			if streamEarlyErr != nil {
+				if errors.Is(streamEarlyErr, errContentSafetyRejected) {
+					return nil, streamEarlyErr
+				}
 				return resultWithUsage(), streamEarlyErr
 			}
 			// Terminal 事件（response.completed 等）已完整写出后不再等上游 EOF：
@@ -1684,6 +1695,9 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 			return nil, retry
 		}
 		return nil, err
+	}
+	if s.handleContentSafetyBilling(c, account, resp, body) {
+		return nil, errContentSafetyRejected
 	}
 	observer := upstreamResponseModelObserverFromContext(c)
 	if observer == nil {

@@ -861,6 +861,16 @@ export default {
         remove: '取消推荐',
         saveFailed: '保存推荐分组失败'
       },
+      tags: {
+        action: '添加标签',
+        title: '分组标签',
+        hint: '标签显示在创建 API Key 的分组卡片中，说明在鼠标经过时显示。最多添加 20 个标签。',
+        name: '名称',
+        description: '说明',
+        add: '添加标签',
+        saved: '标签已保存',
+        saveFailed: '保存标签失败'
+      },
       capRate: {
         action: '上限',
         title: '设置上限倍率',
@@ -950,6 +960,11 @@ export default {
       accountsRateLimited: '限流:',
       accountsTotal: '总量:',
       accountsUnit: '个账号',
+      rateSync: {
+        label: '倍率同步分组',
+        hint: '修改本分组的基础倍率时，将所选分组改为相同倍率；仅单向同步，不继续触发关联。只调整关联选择时不改倍率。',
+        clear: '清空选择',
+      },
       form: {
         name: '名称',
         description: '描述',
@@ -1356,6 +1371,8 @@ export default {
       openaiFast: {
         title: 'OpenAI Fast 模式',
         force: '强制使用 Fast（priority）',
+        ultrafast: '强制使用 Ultrafast（6 倍计费）',
+        ultrafastHint: '强制写入 service_tier=ultrafast，按 Standard token 价格的 6 倍计费，再叠加分组倍率。与强制 Fast 互斥，不受免费 Fast 影响；全局策略仍可过滤或拦截。需上游模型支持，已有 WebSocket 会话需重连。',
         hint: '开启后，此分组的 OpenAI 请求会强制写入 service_tier=priority；全局 Fast/Flex 策略仍可过滤或拦截。保存后新请求立即生效，已建立的 WebSocket 会话需重连。',
         free: '免费 Fast',
         freeHint: '该分组的 Fast 请求仍使用 priority 档位，但客户实际费用按同一请求的 Standard 价格计算。'

@@ -3,19 +3,28 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
 func TestAPIKeyAuthSnapshotGroupForceOpenAIFastRoundtrip(t *testing.T) {
+	for _, ultrafast := range []bool{false, true} {
+		t.Run(fmt.Sprintf("ultrafast=%t", ultrafast), func(t *testing.T) {
+			testAPIKeyAuthSnapshotForcedTierRoundtrip(t, ultrafast)
+		})
+	}
+}
+
+func testAPIKeyAuthSnapshotForcedTierRoundtrip(t *testing.T, ultrafast bool) {
 	groupID := int64(50)
 	apiKey := &APIKey{
 		ID: 82, UserID: 40, GroupID: &groupID, Key: "sk-fast-roundtrip", Status: StatusActive,
 		User: &User{ID: 40, Status: StatusActive},
 		Group: &Group{
 			ID: groupID, Name: "fast-roundtrip", Platform: PlatformOpenAI, Status: StatusActive,
-			Hydrated: true, ForceOpenAIFast: true, FreeOpenAIFast: true,
+			Hydrated: true, ForceOpenAIFast: !ultrafast, ForceOpenAIUltrafast: ultrafast, FreeOpenAIFast: true,
 		},
 	}
 	svc := &APIKeyService{}
@@ -30,7 +39,8 @@ func TestAPIKeyAuthSnapshotGroupForceOpenAIFastRoundtrip(t *testing.T) {
 	require.True(t, used)
 	require.NotNil(t, materialized.Group)
 	require.True(t, materialized.Group.Hydrated)
-	require.True(t, materialized.Group.ForceOpenAIFast)
+	require.Equal(t, !ultrafast, materialized.Group.ForceOpenAIFast)
+	require.Equal(t, ultrafast, materialized.Group.ForceOpenAIUltrafast)
 	require.True(t, materialized.Group.FreeOpenAIFast)
 	require.Equal(t, apiKeyAuthSnapshotVersion, cached.Snapshot.Version)
 }

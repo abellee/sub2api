@@ -165,7 +165,7 @@ describe('admin AccountsView bulk edit scope', () => {
     probeUpstreamBillingBatch.mockResolvedValue([])
   })
 
-  it('opens bulk edit in filtered-results mode from the bulk actions dropdown', async () => {
+  it('keeps the upstream API filter when opening bulk edit for all filtered results', async () => {
     const wrapper = mount(AccountsView, {
       global: {
         stubs: {
@@ -177,7 +177,7 @@ describe('admin AccountsView bulk edit scope', () => {
           Pagination: true,
           ConfirmDialog: true,
           AccountTableActions: { template: '<div><slot name="beforeCreate" /><slot name="after" /></div>' },
-          AccountTableFilters: { template: '<div></div>' },
+          AccountTableFilters: { name: 'AccountTableFilters', template: '<div></div>' },
           AccountBulkActionsBar: AccountBulkActionsBarStub,
           AccountActionMenu: true,
           ImportDataModal: true,
@@ -204,11 +204,14 @@ describe('admin AccountsView bulk edit scope', () => {
     })
 
     await flushPromises()
+    wrapper.getComponent({ name: 'AccountTableFilters' }).vm.$emit('update:filters', { base_url: ' api.example.com ' })
     await wrapper.get('[data-test="edit-filtered"]').trigger('click')
     await flushPromises()
 
     expect(wrapper.get('[data-test="bulk-edit-modal"]').attributes('data-show')).toBe('true')
     expect(wrapper.get('[data-test="bulk-edit-modal"]').attributes('data-target-mode')).toBe('filtered')
+    expect(listAccounts).toHaveBeenLastCalledWith(1, 100, expect.objectContaining({ base_url: 'api.example.com' }))
+    expect(wrapper.getComponent(BulkEditAccountModalStub).props('target').filters.base_url).toBe('api.example.com')
   })
 
   it('renders the created_at column by default', async () => {

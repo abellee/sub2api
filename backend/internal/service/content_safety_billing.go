@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -15,7 +14,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/tidwall/gjson"
 	_ "modernc.org/sqlite"
 )
 
@@ -147,10 +145,14 @@ func (s *ContentSafetyBillingService) UpdateConfig(ctx context.Context, c Conten
 	return err
 }
 
-// Account 65 treats every upstream 403 as a safety rejection. Other accounts
-// match only the decoded error description, never unrelated JSON fields.
-func (s *ContentSafetyBillingService) Match(ctx context.Context, accountID int64, status int, body []byte) (*ContentSafetyBillingConfig, error) {
-	if s == nil || status != 403 {
+// Match applies the same upstream safety rules to every Grok account.
+func (s *ContentSafetyBillingService) Match(ctx context.Context, _ int64, status int, body []byte) (*ContentSafetyBillingConfig, error) {
+	probe := contentSafetyProbe{}
+	return s.matchDescription(ctx, probe.match(status, body))
+}
+
+func (s *ContentSafetyBillingService) matchDescription(ctx context.Context, description string) (*ContentSafetyBillingConfig, error) {
+	if s == nil || description == "" {
 		return nil, nil
 	}
 	c, err := s.Config(ctx)
@@ -160,27 +162,7 @@ func (s *ContentSafetyBillingService) Match(ctx context.Context, accountID int64
 	if !c.Enabled {
 		return nil, nil
 	}
-	if accountID == 65 {
-		c.MatchDescription = "Account 65: upstream HTTP 403"
-		return &c, nil
-	}
-	message := extractUpstreamErrorMessage(body)
-	if !json.Valid(body) {
-		message = string(body)
-	} else if message == "" {
-		// Native xAI errors also use {"code":"PermissionDenied","error":"..."}.
-		if value := gjson.GetBytes(body, "error"); value.Type == gjson.String {
-			message = value.String()
-		} else {
-			var value string
-			if json.Unmarshal(body, &value) == nil {
-				message = value
-			}
-		}
-	}
-	if !strings.Contains(message, c.MatchDescription) {
-		return nil, nil
-	}
+	c.MatchDescription = description
 	return &c, nil
 }
 

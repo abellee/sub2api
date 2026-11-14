@@ -428,18 +428,20 @@ func PublicTaskView(t *Task) map[string]any { return publicTaskView(t) }
 
 func publicTaskView(t *Task) map[string]any {
 	out := map[string]any{
-		"task_id":            t.ID,
-		"upstream_task_id":   t.UpstreamTaskID,
-		"schema_id":          t.SchemaID,
-		"model":              t.Model,
-		"user_id":            t.UserID,
-		"key_id":             t.KeyID,
-		"group_id":           t.GroupID,
-		"status":             t.Status,
-		"callback_state":     t.CallbackState,
-		"callback_attempts":  t.CallbackAttempts,
-		"created_at":         t.CreatedAt.UTC().Format(time.RFC3339),
-		"files_acknowledged": t.FilesAcknowledged,
+		"task_id":               t.ID,
+		"upstream_task_id":      t.UpstreamTaskID,
+		"schema_id":             t.SchemaID,
+		"model":                 t.Model,
+		"user_id":               t.UserID,
+		"key_id":                t.KeyID,
+		"group_id":              t.GroupID,
+		"status":                t.Status,
+		"callback_state":        t.CallbackState,
+		"callback_attempts":     t.CallbackAttempts,
+		"created_at":            t.CreatedAt.UTC().Format(time.RFC3339),
+		"query_expires_at":      t.CreatedAt.Add(taskQueryLifetime).UTC().Format(time.RFC3339),
+		"poll_interval_seconds": 3,
+		"files_acknowledged":    t.FilesAcknowledged,
 	}
 	if t.FilesDeletedAt != nil {
 		out["files_deleted_at"] = t.FilesDeletedAt

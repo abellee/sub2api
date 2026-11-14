@@ -2115,6 +2115,9 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 		lineStartsClientOutput := false
 		forceFlushFailedEvent := false
 		if data, ok := extractOpenAISSEDataLine(line); ok {
+			if s.handleContentSafetyBilling(c, account, resp, []byte(data)) {
+				return nil, errContentSafetyRejected
+			}
 			dataBytes := []byte(data)
 			trimmedData := strings.TrimSpace(data)
 			rawEventType := effectiveOpenAISSEEventType(dataBytes, pendingSSEEventType)
@@ -2412,6 +2415,9 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 			return nil, retry
 		}
 		return nil, err
+	}
+	if s.handleContentSafetyBilling(c, account, resp, body) {
+		return nil, errContentSafetyRejected
 	}
 	observer := upstreamResponseModelObserverFromContext(c)
 	if observer == nil {

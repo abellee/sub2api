@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AdminGroup, CodexModelsManifestConfig } from "@/types";
 import GroupsView from "@/views/admin/GroupsView.vue";
+import { adminAPI } from "@/api/admin";
 
 const {
   listGroups,
@@ -25,6 +26,7 @@ vi.mock("@/api/admin", () => ({
     groups: {
       list: listGroups,
       getAll: vi.fn(),
+      getAllIncludingInactive: vi.fn(),
       getModelAllowlistCandidates,
       getUsageSummary,
       getCapacitySummary,
@@ -83,6 +85,7 @@ const sourceGroup = {
   monthly_limit_usd: null,
   long_context_pricing_enabled: true,
   force_openai_fast: false,
+  force_openai_ultrafast: false,
   free_openai_fast: false,
   model_pricing: [],
   profit_control_enabled: false,
@@ -224,7 +227,12 @@ const mountView = () =>
         GroupCapacityBadge: true,
         GroupRateMultipliersModal: true,
         GroupRPMOverridesModal: true,
-        ReasoningEffortPolicyFields: true,
+        ReasoningEffortPolicyFields: defineComponent({
+          setup(_props, { expose }) {
+            expose({ validate: () => true, resetValidation: () => undefined });
+            return () => h("div");
+          },
+        }),
         CodexManifestAccountsField: CodexManifestAccountsFieldStub,
         PricingEntryCard: true,
         VueDraggable: true,
@@ -240,6 +248,9 @@ describe("GroupsView Codex manifest binding", () => {
     getUsageSummary.mockReset();
     getCapacitySummary.mockReset();
     getLiveCapability.mockReset();
+    vi.mocked(adminAPI.groups.getAllIncludingInactive).mockReset().mockResolvedValue([]);
+    vi.mocked(adminAPI.groups.create).mockReset().mockResolvedValue(sourceGroup);
+    vi.mocked(adminAPI.groups.update).mockReset().mockResolvedValue(sourceGroup);
 
     listGroups.mockResolvedValue({
       items: [sourceGroup],
@@ -289,4 +300,105 @@ describe("GroupsView Codex manifest binding", () => {
 
     wrapper.unmount();
   });
+
+  it("creates an Ultrafast group and keeps the two forced tiers exclusive", async () => {
+    const wrapper = mountView();
+    await flushPromises();
+    await wrapper.findAll("button").find((button) => button.text().includes("admin.groups.createGroup"))!.trigger("click");
+    await flushPromises();
+    await wrapper.get('[data-tour="group-form-name"]').setValue("Ultrafast");
+    wrapper.findAllComponents({ name: "Select" }).find((select) => select.attributes("data-tour") === "group-form-platform")!.vm.$emit("update:modelValue", "openai");
+    await flushPromises();
+
+    const fast = wrapper.get('[data-testid="create-force-openai-fast"]');
+    const ultra = wrapper.get('[data-testid="create-force-openai-ultrafast"]');
+    expect(ultra.attributes("aria-checked")).toBe("false");
+    await fast.trigger("click");
+    await ultra.trigger("click");
+    expect(fast.attributes("aria-checked")).toBe("false");
+    expect(ultra.attributes("aria-checked")).toBe("true");
+    await fast.trigger("click");
+    expect(ultra.attributes("aria-checked")).toBe("false");
+    await ultra.trigger("click");
+    await wrapper.get("#create-group-form").trigger("submit");
+    await flushPromises();
+    expect(adminAPI.groups.create).toHaveBeenCalledWith(expect.objectContaining({
+      force_openai_fast: false,
+      force_openai_ultrafast: true,
+      platform: "openai",
+    }));
+    wrapper.unmount();
+  });
+
+  it("loads, switches and saves the existing Ultrafast setting", async () => {
+    listGroups.mockResolvedValue({ items: [{ ...sourceGroup, force_openai_ultrafast: true, free_openai_fast: true }], total: 1, pages: 1 });
+    const wrapper = mountView();
+    await flushPromises();
+    await wrapper.findAll("button").find((button) => button.text().includes("common.edit"))!.trigger("click");
+    await flushPromises();
+    const ultra = wrapper.get('[data-testid="edit-force-openai-ultrafast"]');
+    expect(ultra.attributes("aria-checked")).toBe("true");
+    const fast = wrapper.get('[data-testid="edit-force-openai-fast"]');
+    await fast.trigger("click");
+    expect(ultra.attributes("aria-checked")).toBe("false");
+    await ultra.trigger("click");
+    expect(fast.attributes("aria-checked")).toBe("false");
+    await wrapper.get("#edit-group-form").trigger("submit");
+    await flushPromises();
+    expect(adminAPI.groups.update).toHaveBeenCalledWith(sourceGroup.id, expect.objectContaining({
+      force_openai_fast: false,
+      force_openai_ultrafast: true,
+      free_openai_fast: true,
+    }));
+    wrapper.unmount();
+  });
+  it("loads all rate sync targets, excludes itself, and saves selected or cleared links", async () => {
+    const linked = { ...sourceGroup, rate_sync_group_ids: [77] };
+    listGroups.mockResolvedValue({ items: [linked], total: 1, pages: 1 });
+    vi.mocked(adminAPI.groups.getAllIncludingInactive).mockResolvedValue([
+      linked,
+      { ...sourceGroup, id: 77, name: "Off-page disabled", status: "inactive" },
+      { ...sourceGroup, id: 88, name: "Other platform", platform: "gemini" },
+    ]);
+    const wrapper = mountView();
+    await flushPromises();
+    await wrapper.findAll("button").find(button => button.text().includes("common.edit"))!.trigger("click");
+    await flushPromises();
+    expect(adminAPI.groups.getAllIncludingInactive).toHaveBeenCalledOnce();
+    const field = wrapper.get('[data-testid="edit-rate-sync-groups"]');
+    expect(field.find('input[type="checkbox"][value="42"]').exists()).toBe(false);
+    expect((field.get('input[type="checkbox"][value="77"]').element as HTMLInputElement).checked).toBe(true);
+    await field.get('input[type="checkbox"][value="88"]').setValue(true);
+    await wrapper.get('[data-tour="group-form-multiplier"]').setValue("0.25");
+    await wrapper.get("#edit-group-form").trigger("submit");
+    await flushPromises();
+    expect(adminAPI.groups.update).toHaveBeenLastCalledWith(42, expect.objectContaining({ rate_multiplier: 0.25, rate_sync_group_ids: [77, 88] }));
+
+    await wrapper.findAll("button").find(button => button.text().includes("common.edit"))!.trigger("click");
+    await flushPromises();
+    await wrapper.findAll("button").find(button => button.text() === "admin.groups.rateSync.clear")!.trigger("click");
+    await wrapper.get("#edit-group-form").trigger("submit");
+    await flushPromises();
+    expect(adminAPI.groups.update).toHaveBeenLastCalledWith(42, expect.objectContaining({ rate_sync_group_ids: [] }));
+    wrapper.unmount();
+  });
+
+  it("sends selected sync groups when creating and resets the selection afterwards", async () => {
+    vi.mocked(adminAPI.groups.getAllIncludingInactive).mockResolvedValue([{ ...sourceGroup, id: 77 }]);
+    const wrapper = mountView();
+    await flushPromises();
+    const open = () => wrapper.findAll("button").find(button => button.text().includes("admin.groups.createGroup"))!.trigger("click");
+    await open();
+    await flushPromises();
+    await wrapper.get('[data-tour="group-form-name"]').setValue("Linked group");
+    await wrapper.get('[data-testid="create-rate-sync-groups"] input[type="checkbox"]').setValue(true);
+    await wrapper.get("#create-group-form").trigger("submit");
+    await flushPromises();
+    expect(adminAPI.groups.create).toHaveBeenCalledWith(expect.objectContaining({ rate_sync_group_ids: [77] }));
+    await open();
+    await flushPromises();
+    expect((wrapper.get('[data-testid="create-rate-sync-groups"] input[type="checkbox"]').element as HTMLInputElement).checked).toBe(false);
+    wrapper.unmount();
+  });
+
 });

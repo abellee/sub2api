@@ -256,6 +256,7 @@ func (s *OpenAIGatewayService) sendCCUpstreamRequest(
 	if err != nil {
 		return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
 	}
+	c.Set("content_safety_account", account)
 	return resp, nil
 }
 
@@ -303,6 +304,10 @@ func (s *OpenAIGatewayService) scanCCStream(
 		if payload == "[DONE]" {
 			st.SawDone = true
 			break
+		}
+		if s.handleContentSafetyBilling(c, contentSafetyAccount(c), resp, []byte(payload)) {
+			st.Err = errContentSafetyRejected
+			return st
 		}
 		// 观察上游 CC chunk 回显的 model / service_tier（计费以回显为准）。
 		// CC chunk 无 type 字段，按 untyped payload 观察（上游约束：只有终止
@@ -372,6 +377,9 @@ func (s *OpenAIGatewayService) readCCUpstreamJSONResponse(
 		return nil, OpenAIUsage{}, fmt.Errorf("read upstream body: %w", err)
 	}
 
+	if s.handleContentSafetyBilling(c, contentSafetyAccount(c), resp, respBody) {
+		return nil, OpenAIUsage{}, errContentSafetyRejected
+	}
 	var ccResp apicompat.ChatCompletionsResponse
 	if err := json.Unmarshal(respBody, &ccResp); err != nil {
 		writeError(c, http.StatusBadGateway, "api_error", "Failed to parse upstream response")

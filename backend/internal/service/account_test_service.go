@@ -3321,10 +3321,13 @@ func (s *AccountTestService) RunTestBackground(ctx context.Context, accountID in
 	responseText, errMsg := parseTestSSEOutput(body)
 
 	status := "success"
-	if testErr != nil || errMsg != "" {
+	if testErr != nil || errMsg != "" || ctx.Err() != nil || !successfulTestSSECompletion(body) {
 		status = "failed"
 		if errMsg == "" && testErr != nil {
 			errMsg = testErr.Error()
+		}
+		if errMsg == "" {
+			errMsg = "Test did not complete successfully"
 		}
 	}
 
@@ -3336,6 +3339,29 @@ func (s *AccountTestService) RunTestBackground(ctx context.Context, accountID in
 		StartedAt:    startedAt,
 		FinishedAt:   finishedAt,
 	}, nil
+}
+
+func successfulTestSSECompletion(body string) bool {
+	completed := false
+	for _, line := range strings.Split(body, "\n") {
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		var event TestEvent
+		if json.Unmarshal([]byte(strings.TrimSpace(strings.TrimPrefix(line, "data:"))), &event) != nil {
+			continue
+		}
+		if event.Type == "error" {
+			return false
+		}
+		if event.Type == "test_complete" {
+			if !event.Success {
+				return false
+			}
+			completed = true
+		}
+	}
+	return completed
 }
 
 // parseTestSSEOutput extracts response text and error message from captured SSE output.

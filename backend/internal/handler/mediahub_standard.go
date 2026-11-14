@@ -80,9 +80,18 @@ func (h *MediaHubController) TryStandardVideoTask(c *gin.Context, content bool) 
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer cancel()
 	in := mediahub.ForwardInput{MediadBaseURL: h.relay.cfg.MediadBaseURL, RelaySecret: h.relay.cfg.RelaySecret, UserID: subject.UserID, KeyID: key.ID, GroupID: gid}
+	in.ClientQuery = "status"
+	if content {
+		in.ClientQuery = "content"
+	}
 	result, err := h.relay.standardFetch(ctx, in, id, "grok_video")
 	if err != nil {
 		mediaStandardError(c, 502, "media task query unavailable")
+		return true
+	}
+	copyMediaTaskQueryHeaders(c, result.Header)
+	if result.StatusCode == http.StatusTooManyRequests || result.StatusCode == http.StatusGone {
+		c.Data(result.StatusCode, "application/json", result.Body)
 		return true
 	}
 	if result.StatusCode == http.StatusNotFound && h.relay.deletedTaskResponse(c, subject.UserID, id) {
@@ -154,6 +163,14 @@ func (h *MediaHubRelayHandler) standardFetch(ctx context.Context, in mediahub.Fo
 	return mediahub.ForwardTaskStatus(ctx, h.client, in, id)
 }
 
+func copyMediaTaskQueryHeaders(c *gin.Context, headers http.Header) {
+	for _, name := range []string{"Retry-After", "X-Task-Query-Expires-At", "Cache-Control"} {
+		if value := headers.Get(name); value != "" {
+			c.Header(name, value)
+		}
+	}
+}
+
 func (h *MediaHubRelayHandler) finishStandard(c *gin.Context, accepted *mediahub.ForwardResponse, body []byte, userID, keyID, groupID int64) {
 	if accepted.StatusCode != http.StatusAccepted {
 		c.Data(accepted.StatusCode, "application/json", accepted.Body)
@@ -164,15 +181,17 @@ func (h *MediaHubRelayHandler) finishStandard(c *gin.Context, accepted *mediahub
 		mediaStandardError(c, 502, "media service did not return a task ID")
 		return
 	}
+	queryExpiresAt := gjson.GetBytes(accepted.Body, "query_expires_at").String()
 	if strings.HasSuffix(c.GetString(mediaProtocolKey), "_async") {
 		c.Header("Location", "/v1/images/tasks/"+id)
 		c.Header("Retry-After", "3")
 		pollURL := "/v1/images/tasks/" + id
-		c.JSON(202, gin.H{"id": id, "task_id": id, "object": "image.generation.task", "status": "processing", "poll_url": pollURL})
+		c.JSON(202, gin.H{"id": id, "task_id": id, "object": "image.generation.task", "status": "processing", "poll_url": pollURL, "poll_interval_seconds": 3, "query_expires_at": queryExpiresAt})
 		return
 	}
 	if c.GetString(mediaProtocolKey) == "grok_video" {
-		c.JSON(200, gin.H{"id": id, "request_id": id})
+		c.Header("Retry-After", "3")
+		c.JSON(200, gin.H{"id": id, "request_id": id, "poll_interval_seconds": 3, "query_expires_at": queryExpiresAt})
 		return
 	}
 	format := "openai_url"
@@ -260,11 +279,13 @@ func (h *MediaHubController) TryStandardImageTask(c *gin.Context) bool {
 	in := mediahub.ForwardInput{MediadBaseURL: h.relay.cfg.MediadBaseURL, RelaySecret: h.relay.cfg.RelaySecret, UserID: subject.UserID, KeyID: key.ID, GroupID: gid}
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer cancel()
+	in.ClientQuery = "status"
 	state, err := h.relay.standardFetch(ctx, in, id, "state")
 	if err != nil {
 		mediaStandardError(c, 502, "media task query unavailable")
 		return true
 	}
+	copyMediaTaskQueryHeaders(c, state.Header)
 	if state.StatusCode != 200 {
 		if state.StatusCode == http.StatusNotFound && h.relay.deletedTaskResponse(c, subject.UserID, id) {
 			return true
@@ -272,7 +293,7 @@ func (h *MediaHubController) TryStandardImageTask(c *gin.Context) bool {
 		c.Data(state.StatusCode, "application/json", state.Body)
 		return true
 	}
-	out := gin.H{"id": id, "task_id": id, "status": "processing"}
+	out := gin.H{"id": id, "task_id": id, "status": "processing", "poll_interval_seconds": 3, "query_expires_at": gjson.GetBytes(state.Body, "query_expires_at").String()}
 	status := gjson.GetBytes(state.Body, "status").String()
 	if mediaTaskFailed(status) {
 		h.relay.writeTaskFailure(c, ctx, in, id, state.Body)
@@ -283,6 +304,7 @@ func (h *MediaHubController) TryStandardImageTask(c *gin.Context) bool {
 		return true
 	}
 	if status == "succeeded" && gjson.GetBytes(state.Body, "callback_state").String() == "confirmed" {
+		in.ClientQuery = ""
 		result, err := h.relay.standardFetch(ctx, in, id, "openai_url")
 		if err != nil {
 			mediaStandardError(c, 502, "media result unavailable")

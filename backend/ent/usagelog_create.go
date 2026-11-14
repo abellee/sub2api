@@ -197,6 +197,12 @@ func (_c *UsageLogCreate) SetNillableSubscriptionID(v *int64) *UsageLogCreate {
 	return _c
 }
 
+// SetInputTokenEstimate sets the "input_token_estimate" field.
+func (_c *UsageLogCreate) SetInputTokenEstimate(v map[string]interface{}) *UsageLogCreate {
+	_c.mutation.SetInputTokenEstimate(v)
+	return _c
+}
+
 // SetInputTokens sets the "input_tokens" field.
 func (_c *UsageLogCreate) SetInputTokens(v int) *UsageLogCreate {
 	_c.mutation.SetInputTokens(v)
@@ -1091,6 +1097,10 @@ func (_c *UsageLogCreate) createSpec() (*UsageLog, *sqlgraph.CreateSpec) {
 		_spec.SetField(usagelog.FieldBillingMode, field.TypeString, value)
 		_node.BillingMode = &value
 	}
+	if value, ok := _c.mutation.InputTokenEstimate(); ok {
+		_spec.SetField(usagelog.FieldInputTokenEstimate, field.TypeJSON, value)
+		_node.InputTokenEstimate = value
+	}
 	if value, ok := _c.mutation.InputTokens(); ok {
 		_spec.SetField(usagelog.FieldInputTokens, field.TypeInt, value)
 		_node.InputTokens = value
@@ -1615,6 +1625,24 @@ func (u *UsageLogUpsert) UpdateSubscriptionID() *UsageLogUpsert {
 // ClearSubscriptionID clears the value of the "subscription_id" field.
 func (u *UsageLogUpsert) ClearSubscriptionID() *UsageLogUpsert {
 	u.SetNull(usagelog.FieldSubscriptionID)
+	return u
+}
+
+// SetInputTokenEstimate sets the "input_token_estimate" field.
+func (u *UsageLogUpsert) SetInputTokenEstimate(v map[string]interface{}) *UsageLogUpsert {
+	u.Set(usagelog.FieldInputTokenEstimate, v)
+	return u
+}
+
+// UpdateInputTokenEstimate sets the "input_token_estimate" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateInputTokenEstimate() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldInputTokenEstimate)
+	return u
+}
+
+// ClearInputTokenEstimate clears the value of the "input_token_estimate" field.
+func (u *UsageLogUpsert) ClearInputTokenEstimate() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldInputTokenEstimate)
 	return u
 }
 
@@ -2583,6 +2611,27 @@ func (u *UsageLogUpsertOne) UpdateSubscriptionID() *UsageLogUpsertOne {
 func (u *UsageLogUpsertOne) ClearSubscriptionID() *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.ClearSubscriptionID()
+	})
+}
+
+// SetInputTokenEstimate sets the "input_token_estimate" field.
+func (u *UsageLogUpsertOne) SetInputTokenEstimate(v map[string]interface{}) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetInputTokenEstimate(v)
+	})
+}
+
+// UpdateInputTokenEstimate sets the "input_token_estimate" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateInputTokenEstimate() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateInputTokenEstimate()
+	})
+}
+
+// ClearInputTokenEstimate clears the value of the "input_token_estimate" field.
+func (u *UsageLogUpsertOne) ClearInputTokenEstimate() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearInputTokenEstimate()
 	})
 }
 
@@ -3823,6 +3872,27 @@ func (u *UsageLogUpsertBulk) UpdateSubscriptionID() *UsageLogUpsertBulk {
 func (u *UsageLogUpsertBulk) ClearSubscriptionID() *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.ClearSubscriptionID()
+	})
+}
+
+// SetInputTokenEstimate sets the "input_token_estimate" field.
+func (u *UsageLogUpsertBulk) SetInputTokenEstimate(v map[string]interface{}) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetInputTokenEstimate(v)
+	})
+}
+
+// UpdateInputTokenEstimate sets the "input_token_estimate" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateInputTokenEstimate() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateInputTokenEstimate()
+	})
+}
+
+// ClearInputTokenEstimate clears the value of the "input_token_estimate" field.
+func (u *UsageLogUpsertBulk) ClearInputTokenEstimate() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearInputTokenEstimate()
 	})
 }
 

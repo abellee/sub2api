@@ -666,6 +666,22 @@ describe('user KeysView column settings', () => {
       expect(wrapper.find('[data-group-id="4"] [data-test="group-policy-tags"]').exists()).toBe(false)
     })
 
+    it('shows custom tags beside the cap with descriptions only on hover', async () => {
+      getGroupCategories.mockResolvedValue({
+        categories: [], assignments: {}, group_caps: { '1': 0.8 },
+        group_tags: { '1': [{ name: '快速', description: '优先处理请求' }, { name: '稳定', description: '' }] },
+      })
+      const wrapper = await openCreate()
+      const footer = wrapper.get('[data-group-id="1"] .group-row-footer')
+      expect(footer.find('.group-cap-tag').exists()).toBe(true)
+      const tags = footer.findAll('[data-test="group-custom-tag"]')
+      expect(tags.map(tag => tag.text())).toEqual(['快速', '稳定'])
+      expect(tags[0].attributes('title')).toBe('优先处理请求')
+      expect(tags[1].attributes('title')).toBeUndefined()
+      expect(footer.text()).not.toContain('优先处理请求')
+      expect(wrapper.find('[data-group-id="2"] [data-test="group-custom-tag"]').exists()).toBe(false)
+    })
+
     it('shows only the groups returned by the API', async () => {
       getAvailableGroups.mockResolvedValue([availableGroups[5]])
       const wrapper = await openCreate()

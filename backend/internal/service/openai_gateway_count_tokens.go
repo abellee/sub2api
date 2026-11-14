@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
@@ -755,12 +756,17 @@ func compactOpenAIInputTokensJSON(raw json.RawMessage) (string, error) {
 	return buf.String(), nil
 }
 
+var (
+	openAICl100kCodec = sync.OnceValues(func() (tokenizer.Codec, error) { return tokenizer.Get(tokenizer.Cl100kBase) })
+	openAIO200kCodec  = sync.OnceValues(func() (tokenizer.Codec, error) { return tokenizer.Get(tokenizer.O200kBase) })
+)
+
 func openAIInputTokensCodecForModel(model string) (tokenizer.Codec, error) {
 	switch openAIInputTokensEncodingForModel(model) {
 	case tokenizer.Cl100kBase:
-		return tokenizer.Get(tokenizer.Cl100kBase)
+		return openAICl100kCodec()
 	default:
-		return tokenizer.Get(tokenizer.O200kBase)
+		return openAIO200kCodec()
 	}
 }
 

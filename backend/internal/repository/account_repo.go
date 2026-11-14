@@ -266,6 +266,28 @@ func (r *accountRepository) CreateWithAccountGroups(ctx context.Context, account
 	return nil
 }
 
+// CreateManyWithAccountGroups commits the whole batch, including group bindings and outbox.
+func (r *accountRepository) CreateManyWithAccountGroups(ctx context.Context, accounts []*service.Account) error {
+	tx, err := r.client.Tx(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	scoped := *r
+	scoped.client = tx.Client()
+	scoped.sql = tx.Client()
+	scoped.schedulerCache = nil
+	for _, account := range accounts {
+		if account == nil {
+			return service.ErrAccountNilInput
+		}
+		if err := scoped.CreateWithAccountGroups(ctx, account, account.AccountGroups); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 func (r *accountRepository) GetByID(ctx context.Context, id int64) (*service.Account, error) {
 	if scoped := r.accountTransactionScope(ctx); scoped != r {
 		return scoped.GetByID(ctx, id)
@@ -1034,10 +1056,10 @@ func (r *accountRepository) Delete(ctx context.Context, id int64) error {
 }
 
 func (r *accountRepository) List(ctx context.Context, params pagination.PaginationParams) ([]service.Account, *pagination.PaginationResult, error) {
-	return r.ListWithFilters(ctx, params, "", "", "", "", 0, "")
+	return r.ListWithFilters(ctx, params, "", "", "", "", 0, "", "")
 }
 
-func (r *accountRepository) accountListFilteredQuery(platform, accountType, status, search string, groupID int64, privacyMode string) *dbent.AccountQuery {
+func (r *accountRepository) accountListFilteredQuery(platform, accountType, status, search string, groupID int64, privacyMode string, baseURL string) *dbent.AccountQuery {
 	q := r.client.Account.Query()
 
 	if platform != "" {
@@ -1110,6 +1132,15 @@ func (r *accountRepository) accountListFilteredQuery(platform, accountType, stat
 	if search != "" {
 		q = q.Where(dbaccount.NameContainsFold(search))
 	}
+	if baseURL = strings.TrimSpace(baseURL); baseURL != "" {
+		q = q.Where(dbpredicate.Account(func(s *entsql.Selector) {
+			// Match literal URL fragments, including '%' and '_', without SQL wildcards.
+			s.Where(entsql.P(func(b *entsql.Builder) {
+				b.WriteString("STRPOS(LOWER(COALESCE(").Ident(s.C(dbaccount.FieldCredentials)).
+					WriteString(" ->> 'base_url', '')), LOWER(").Arg(baseURL).WriteString(")) > 0")
+			}))
+		}))
+	}
 	if groupID == service.AccountListGroupUngrouped {
 		q = q.Where(dbaccount.Not(dbaccount.HasAccountGroups()))
 	} else if groupID > 0 {
@@ -1133,8 +1164,8 @@ func (r *accountRepository) accountListFilteredQuery(platform, accountType, stat
 	return q
 }
 
-func (r *accountRepository) ListWithFilters(ctx context.Context, params pagination.PaginationParams, platform, accountType, status, search string, groupID int64, privacyMode string) ([]service.Account, *pagination.PaginationResult, error) {
-	q := r.accountListFilteredQuery(platform, accountType, status, search, groupID, privacyMode)
+func (r *accountRepository) ListWithFilters(ctx context.Context, params pagination.PaginationParams, platform, accountType, status, search string, groupID int64, privacyMode string, baseURL string) ([]service.Account, *pagination.PaginationResult, error) {
+	q := r.accountListFilteredQuery(platform, accountType, status, search, groupID, privacyMode, baseURL)
 	// Clone before Count so interceptor-appended predicates (SoftDeleteMixin's
 	// deleted_at IS NULL) don't accumulate on the shared builder and pollute the
 	// subsequent list query. Same pattern used in group_repo/promo_code_repo/user_repo
@@ -1163,8 +1194,8 @@ func (r *accountRepository) ListWithFilters(ctx context.Context, params paginati
 	return outAccounts, paginationResultFromTotal(int64(total), params), nil
 }
 
-func (r *accountRepository) ListAllWithFilters(ctx context.Context, platform, accountType, status, search string, groupID int64, privacyMode string) ([]service.Account, error) {
-	accounts, err := r.accountListFilteredQuery(platform, accountType, status, search, groupID, privacyMode).All(ctx)
+func (r *accountRepository) ListAllWithFilters(ctx context.Context, platform, accountType, status, search string, groupID int64, privacyMode string, baseURL string) ([]service.Account, error) {
+	accounts, err := r.accountListFilteredQuery(platform, accountType, status, search, groupID, privacyMode, baseURL).All(ctx)
 	if err != nil {
 		return nil, err
 	}

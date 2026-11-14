@@ -1075,6 +1075,16 @@ func SubscriptionIDNotNil() predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldNotNull(FieldSubscriptionID))
 }
 
+// InputTokenEstimateIsNil applies the IsNil predicate on the "input_token_estimate" field.
+func InputTokenEstimateIsNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIsNull(FieldInputTokenEstimate))
+}
+
+// InputTokenEstimateNotNil applies the NotNil predicate on the "input_token_estimate" field.
+func InputTokenEstimateNotNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotNull(FieldInputTokenEstimate))
+}
+
 // InputTokensEQ applies the EQ predicate on the "input_tokens" field.
 func InputTokensEQ(v int) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldInputTokens, v))

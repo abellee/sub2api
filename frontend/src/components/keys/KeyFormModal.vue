@@ -136,6 +136,13 @@
                           >
                             {{ t('keys.capRateTag', { rate: formatCapRate(capFor(option.value)!) }) }}
                           </span>
+                          <span
+                            v-for="(tag, index) in groupTags?.[String(option.value)] ?? []"
+                            :key="index"
+                            class="group-custom-tag"
+                            data-test="group-custom-tag"
+                            :title="tag.description || undefined"
+                          >{{ tag.name }}</span>
                           <div v-if="option.requiredProtocol || option.blockedClients?.length" class="contents" data-test="group-policy-tags">
                             <span v-if="option.requiredProtocol" class="inline-flex flex-none cursor-help items-center whitespace-nowrap rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300" :title="t('keys.requiredProtocolTagHint', { protocol: protocolNames[option.requiredProtocol] })">
                               {{ t('keys.requiredProtocolTag', { protocol: protocolNames[option.requiredProtocol] }) }}
@@ -620,7 +627,7 @@ import GroupOptionItem from '@/components/common/GroupOptionItem.vue'
 import PlatformIcon from '@/components/common/PlatformIcon.vue'
 import type { ApiKey, SubscriptionType, GroupPlatform } from '@/types'
 import { GROUP_PLATFORM_OPTIONS } from '@/constants/platforms'
-import type { GroupCategory, GroupRecommendation } from '@/api/groups'
+import type { GroupCategory, GroupRecommendation, GroupTag } from '@/api/groups'
 import GroupModelPricingModal from '@/components/keys/GroupModelPricingModal.vue'
 import { formatDateTime } from '@/utils/format'
 
@@ -673,6 +680,7 @@ interface Props {
   groupRecommendations: GroupRecommendation[]
   /** 分组上限倍率:分组 ID(字符串)→ 倍率;来自分组分类存储。 */
   groupCaps: Record<string, number>
+  groupTags?: Record<string, GroupTag[]>
   submitting: boolean
 }
 
@@ -1043,6 +1051,10 @@ const recommendationStarEmoji = (rating: number | undefined, index: number) => {
 
 .group-pricing-link {
   @apply inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-gray-400 transition-colors hover:text-primary-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/30 dark:text-dark-400 dark:hover:text-primary-400;
+}
+
+.group-custom-tag {
+  @apply inline-flex flex-none cursor-help items-center whitespace-nowrap rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-600 dark:bg-dark-700 dark:text-gray-300;
 }
 
 .recommendation-note {

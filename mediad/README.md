@@ -12,6 +12,8 @@
 
 签名任务查询接受 `response_format=state|openai_url|openai_b64_json|gemini`。标准结果仅在生成成功且主站确认结算后返回；`state` 只返回任务元数据。Gemini 保留原生响应并增加下载链接，OpenAI URL 替换为本服务长期保留的签名链接。
 
+客户端查询自任务创建起有效 1 小时，过期返回 `410 task_query_expired` 和 `stop_polling: true`，应停止查询；这不会取消生成、删除任务或影响管理员恢复。同一任务各查询入口共享 3 秒的最小间隔，更换 API Key 不会重置，过快返回 `429 task_query_rate_limited` 和 `Retry-After`。创建响应提供 `query_expires_at`、`poll_interval_seconds`；查询响应头提供 `X-Task-Query-Expires-At`、`Retry-After`。主站转发客户端查询时设置受信头 `X-Media-Client-Query: status`，视频内容入口使用 `content`，已完成视频可立即取回；内部结算、同步等待和诊断不设置该头。公开 result 链接执行相同限制，已取得的文件下载链接不受查询频率限制。频率窗口在单个媒体服务进程内共享，服务重启会重置频率窗口，但任务的查询截止时间仍按持久保存的创建时间计算。
+
 `GET /downloads/{task_id}/{file_id}?token=...` 由主站记录的链接访问。每个文件有独立令牌，服务重启后链接保持有效；主站未确认通知前不能下载。链接持有人可下载，禁止日志记录或公开分享令牌。没有目录索引。旧 `POST /relay/tasks/{task_id}/files/ack` 返回 410，不再删除文件。
 
 ## 接口

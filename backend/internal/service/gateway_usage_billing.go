@@ -639,6 +639,9 @@ func writeUsageLogBestEffort(ctx context.Context, repo UsageLogRepository, usage
 	if repo == nil || usageLog == nil {
 		return
 	}
+	if usageLog.InputTokenEstimate == nil {
+		usageLog.InputTokenEstimate = UsageInputTokenEstimateFromContext(ctx)
+	}
 	usageCtx, cancel := detachedBillingContext(ctx)
 	defer cancel()
 

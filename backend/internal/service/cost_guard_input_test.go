@@ -130,7 +130,7 @@ func TestCostGuardInputFailureSkipsEstimateInBothModes(t *testing.T) {
 		settings.costGuardEnabled.Store(false)
 		logged, priced := d.estimate(context.Background(), key, req)
 		require.True(t, priced)
-		require.Zero(t, logged, "logging-only mode must not fall back to whole-body size")
+		require.Zero(t, logged, "disabled precheck must not fall back to whole-body size")
 		settings.costGuardEnabled.Store(true)
 	}
 }

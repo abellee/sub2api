@@ -22,6 +22,7 @@ func mediaTaskFailed(status string) bool {
 func (h *MediaHubRelayHandler) taskFailureContext(c *gin.Context, ctx context.Context, in mediahub.ForwardInput, id string, state []byte) (int, []byte) {
 	// Private diagnostics are an immediate lookup, even after a synchronous wait.
 	in.Wait = false
+	in.ClientQuery = ""
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	taskStatus := gjson.GetBytes(state, "status").String()

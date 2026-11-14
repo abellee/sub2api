@@ -27,12 +27,18 @@ type GroupCategory struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
+type GroupTag struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
 // GroupCategorySnapshot is the category configuration stored in SQLite.
 type GroupCategorySnapshot struct {
 	Categories  []GroupCategory   `json:"categories"`
 	Assignments map[string]string `json:"assignments"`
 	// GroupCaps 按分组 ID(十进制字符串)记录上限倍率;与分类同文件持久化。
-	GroupCaps map[string]float64 `json:"group_caps,omitempty"`
+	GroupCaps map[string]float64    `json:"group_caps,omitempty"`
+	GroupTags map[string][]GroupTag `json:"group_tags,omitempty"`
 }
 
 // GroupCategoryStore shares a SQLite database with user menu configuration.
@@ -229,6 +235,40 @@ func (s *GroupCategoryStore) SetGroupCap(groupID int64, capRate *float64) error 
 	return s.saveLocked(snap)
 }
 
+func (s *GroupCategoryStore) SetGroupTags(groupID int64, tags []GroupTag) error {
+	if groupID <= 0 {
+		return fmt.Errorf("invalid group id")
+	}
+	if len(tags) > 20 {
+		return fmt.Errorf("at most 20 tags are allowed")
+	}
+	normalized := make([]GroupTag, len(tags))
+	for i, tag := range tags {
+		tag.Name = strings.TrimSpace(tag.Name)
+		tag.Description = strings.TrimSpace(tag.Description)
+		if tag.Name == "" || len([]rune(tag.Name)) > 50 {
+			return fmt.Errorf("tag name must contain 1 to 50 characters")
+		}
+		if len([]rune(tag.Description)) > 200 {
+			return fmt.Errorf("tag description must not exceed 200 characters")
+		}
+		normalized[i] = tag
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	snap, err := s.loadLocked()
+	if err != nil {
+		return err
+	}
+	key := fmt.Sprintf("%d", groupID)
+	if len(normalized) == 0 {
+		delete(snap.GroupTags, key)
+	} else {
+		snap.GroupTags[key] = normalized
+	}
+	return s.saveLocked(snap)
+}
+
 func (s *GroupCategoryStore) Reorder(ids []string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -278,6 +318,9 @@ func (s *GroupCategoryStore) loadLocked() (*GroupCategorySnapshot, error) {
 	}
 	if snap.GroupCaps == nil {
 		snap.GroupCaps = map[string]float64{}
+	}
+	if snap.GroupTags == nil {
+		snap.GroupTags = map[string][]GroupTag{}
 	}
 	return &snap, nil
 }

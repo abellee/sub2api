@@ -31,6 +31,7 @@ func scopedAdminUsageLogResponse(record *service.UsageLog) gin.H {
 		"group_id":                     usage.GroupID,
 		"subscription_id":              usage.SubscriptionID,
 		"input_tokens":                 usage.InputTokens,
+		"input_token_estimate":         usage.InputTokenEstimate,
 		"output_tokens":                usage.OutputTokens,
 		"cache_creation_tokens":        usage.CacheCreationTokens,
 		"cache_read_tokens":            usage.CacheReadTokens,

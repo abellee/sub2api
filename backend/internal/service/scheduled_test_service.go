@@ -3,10 +3,14 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/robfig/cron/v3"
 )
+
+const defaultRecoveryProbeIntervalSeconds = 3
+const maxRecoveryProbeIntervalSeconds = 3600
 
 var scheduledTestCronParser = cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
 
@@ -29,6 +33,15 @@ func NewScheduledTestService(
 
 // CreatePlan validates the cron expression, computes next_run_at, and persists the plan.
 func (s *ScheduledTestService) CreatePlan(ctx context.Context, plan *ScheduledTestPlan) (*ScheduledTestPlan, error) {
+	if plan.RecoveryProbeIntervalSeconds == 0 {
+		plan.RecoveryProbeIntervalSeconds = defaultRecoveryProbeIntervalSeconds
+	}
+	if plan.RecoveryProbeIntervalSeconds < 1 || plan.RecoveryProbeIntervalSeconds > maxRecoveryProbeIntervalSeconds {
+		return nil, fmt.Errorf("confirmation probe interval must be between 1 and 3600 seconds")
+	}
+	if plan.RecoverScheduling && strings.TrimSpace(plan.ModelID) == "" {
+		return nil, fmt.Errorf("a model is required for scheduling recovery")
+	}
 	nextRun, err := computeNextRun(plan.CronExpression, time.Now())
 	if err != nil {
 		return nil, fmt.Errorf("invalid cron expression: %w", err)
@@ -54,6 +67,15 @@ func (s *ScheduledTestService) ListPlansByAccount(ctx context.Context, accountID
 
 // UpdatePlan validates cron and updates the plan.
 func (s *ScheduledTestService) UpdatePlan(ctx context.Context, plan *ScheduledTestPlan) (*ScheduledTestPlan, error) {
+	if plan.RecoveryProbeIntervalSeconds == 0 {
+		plan.RecoveryProbeIntervalSeconds = defaultRecoveryProbeIntervalSeconds
+	}
+	if plan.RecoveryProbeIntervalSeconds < 1 || plan.RecoveryProbeIntervalSeconds > maxRecoveryProbeIntervalSeconds {
+		return nil, fmt.Errorf("confirmation probe interval must be between 1 and 3600 seconds")
+	}
+	if plan.RecoverScheduling && strings.TrimSpace(plan.ModelID) == "" {
+		return nil, fmt.Errorf("a model is required for scheduling recovery")
+	}
 	nextRun, err := computeNextRun(plan.CronExpression, time.Now())
 	if err != nil {
 		return nil, fmt.Errorf("invalid cron expression: %w", err)

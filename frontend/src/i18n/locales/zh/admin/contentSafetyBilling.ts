@@ -1,14 +1,14 @@
 export default {
   contentSafetyBilling: {
     title: '内容安全扣费',
-    description: 'Grok 上游返回 403 且错误描述包含指定文本时，按固定金额扣除用户余额，并向客户端返回统一错误信息。',
+    description: 'Grok 上游命中内置违规规则时，按配置金额扣除用户余额，并向客户端返回统一错误信息。',
     enabled: '启用内容安全扣费',
     amount: '每次扣款金额（USD）',
     amountHint: '直接从用户余额扣除固定金额，不乘分组倍率；订阅用户同样扣除余额。',
-    match: '错误描述检测内容',
-    matchHint: '区分大小写的包含匹配，仅检测上游 403 错误描述；此文本同时保存为扣款备注。',
+    match: '违规识别规则',
+    matchHint: '2xx：英文拒绝句式后接 that、this、you、your、the request、the prompt 或 it。400：生成图片或视频被内容审核拒绝。403：违规、安全检查、内容审核或策略提示，以及上述拒绝句式。忽略大小写，先规范化弯引号；后缀不要求单词边界。所有 Grok 账号统一检测，扣款备注记录命中内容。',
     clientMessage: '标准化错误信息',
-    clientMessageHint: '命中后保持 HTTP 403，在客户端协议对应的 error.message 中返回此文本，并停止换号重试。',
+    clientMessageHint: '命中后返回 HTTP 403 和此标准化信息，并停止换号重试；已开始的流式响应通过错误事件返回。',
     records: '扣款记录',
     recordsHint: '处理中记录会自动重试；每条记录使用固定扣款编号，避免重复扣款。',
     refresh: '刷新记录', retry: '重试',

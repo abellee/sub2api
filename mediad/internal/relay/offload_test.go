@@ -25,6 +25,8 @@ func TestPublicTaskResultOnlyExposesSettledLinks(t *testing.T) {
 	tracker.ConfigureFiles(t.TempDir(), 1<<20)
 	tracker.ConfigureDownloads("https://media.example")
 	h := NewRelayHandler(nil, store, tracker, relaySecret, nil)
+	now := time.Now()
+	h.now = func() time.Time { return now }
 	task := &Task{ID: "mtask_public", UserID: "42", KeyID: "7", Status: StatusQueued, CreatedAt: time.Now(), CallbackState: CallbackPending, Credential: "secret-never-expose", Response: []byte(`{"private":"image-base64-never-expose"}`)}
 	if err := store.Create(task); err != nil {
 		t.Fatal(err)
@@ -43,6 +45,7 @@ func TestPublicTaskResultOnlyExposesSettledLinks(t *testing.T) {
 	mux := http.NewServeMux()
 	h.Register(mux)
 	get := func(target string) *httptest.ResponseRecorder {
+		now = now.Add(taskQueryInterval)
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest("GET", target, nil)
 		r.Header.Set("Origin", "https://canvas.example")
@@ -82,7 +85,9 @@ func TestPublicTaskResultOnlyExposesSettledLinks(t *testing.T) {
 		t.Fatal(err)
 	}
 	mux = http.NewServeMux()
-	NewRelayHandler(nil, restarted, tracker, relaySecret, nil).Register(mux)
+	restartedHandler := NewRelayHandler(nil, restarted, tracker, relaySecret, nil)
+	restartedHandler.now = func() time.Time { return now }
+	restartedHandler.Register(mux)
 	if w := get(creation.URL); w.Code != 200 || !strings.Contains(w.Body.String(), "completed") {
 		t.Fatal("result link lost after restart", w.Body.String())
 	}

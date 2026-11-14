@@ -80,7 +80,7 @@ func (u *safetyUsageFake) Create(_ context.Context, log *UsageLog) (bool, error)
 }
 
 func safetyTestConfig() ContentSafetyBillingConfig {
-	return ContentSafetyBillingConfig{Enabled: true, Amount: 0.125, MatchDescription: "Failed check: SAFETY_CHECK_TYPE", ClientMessage: "请求未通过内容安全检查"}
+	return ContentSafetyBillingConfig{Enabled: true, Amount: 0.125, MatchDescription: "Failed check: SAFETY_CHECK_TYPE_IMAGE", ClientMessage: "请求未通过内容安全检查"}
 }
 
 func newSafetyTestService(t *testing.T, billing *safetyBillingFake) *ContentSafetyBillingService {
@@ -106,16 +106,16 @@ func TestContentSafetyBillingMatchAndValidation(t *testing.T) {
 		body   string
 		want   bool
 	}{
-		{"structured", 403, `{"error":{"message":"I'm sorry, I can't help with that request. Failed check: SAFETY_CHECK_TYPE"}}`, true},
-		{"escaped", 403, `{"error":{"message":"Failed check: SAFETY_CHECK_\u0054YPE"}}`, true},
-		{"plain text", 403, "Failed check: SAFETY_CHECK_TYPE", true},
-		{"native xai", 403, `{"code":"PermissionDenied","error":"I'm sorry, I can't help with that request. Failed check: SAFETY_CHECK_TYPE"}`, true},
-		{"json string", 403, `"Failed check: SAFETY_CHECK_TYPE"`, true},
-		{"different status", 400, `{"error":{"message":"Failed check: SAFETY_CHECK_TYPE"}}`, false},
-		{"successful", 200, `{"message":"Failed check: SAFETY_CHECK_TYPE"}`, false},
+		{"structured", 403, `{"error":{"message":"I'm sorry, I can't help with that request. Failed check: SAFETY_CHECK_TYPE_IMAGE"}}`, true},
+		{"escaped", 403, `{"error":{"message":"Failed check: SAFETY_CHECK_\u0054YPE_IMAGE"}}`, true},
+		{"plain text", 403, "Failed check: SAFETY_CHECK_TYPE_IMAGE", true},
+		{"native xai", 403, `{"code":"PermissionDenied","error":"I'm sorry, I can't help with that request. Failed check: SAFETY_CHECK_TYPE_IMAGE"}`, true},
+		{"json string", 403, `"Failed check: SAFETY_CHECK_TYPE_IMAGE"`, true},
+		{"different status", 400, `{"error":{"message":"Failed check: SAFETY_CHECK_TYPE_IMAGE"}}`, false},
+		{"successful", 200, `{"message":"Failed check: SAFETY_CHECK_TYPE_IMAGE"}`, false},
 		{"access denied", 403, `{"error":{"message":"permission denied"}}`, false},
-		{"unrelated metadata", 403, `{"error":{"message":"permission denied"},"metadata":"Failed check: SAFETY_CHECK_TYPE"}`, false},
-		{"case sensitive", 403, `{"message":"failed check: safety_check_type"}`, false},
+		{"unrelated metadata", 403, `{"error":{"message":"permission denied"},"metadata":"Failed check: SAFETY_CHECK_TYPE_IMAGE"}`, false},
+		{"case insensitive", 403, `{"message":"failed check: safety_check_type_image"}`, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			config, err := s.Match(ctx, 33, tc.status, []byte(tc.body))

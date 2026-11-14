@@ -307,6 +307,7 @@ type CreateGroupRequest struct {
 	Description               string                        `json:"description"`
 	I18n                      service.GroupI18n             `json:"i18n"` // 名称与描述的界面语言译文
 	Platform                  string                        `json:"platform" binding:"omitempty,group_platform"`
+	RateSyncGroupIDs          []int64                       `json:"rate_sync_group_ids"`
 	RateMultiplier            float64                       `json:"rate_multiplier"`
 	IsExclusive               bool                          `json:"is_exclusive"`
 	SubscriptionType          string                        `json:"subscription_type" binding:"omitempty,oneof=standard subscription"`
@@ -359,6 +360,7 @@ type CreateGroupRequest struct {
 	AllowMessagesDispatch       bool                                      `json:"allow_messages_dispatch"`
 	AllowLive                   bool                                      `json:"allow_live"`
 	ForceOpenAIFast             bool                                      `json:"force_openai_fast"`
+	ForceOpenAIUltrafast        bool                                      `json:"force_openai_ultrafast"`
 	FreeOpenAIFast              bool                                      `json:"free_openai_fast"`
 	RequireOAuthOnly            bool                                      `json:"require_oauth_only"`
 	RequirePrivacySet           bool                                      `json:"require_privacy_set"`
@@ -388,6 +390,7 @@ type UpdateGroupRequest struct {
 	Description               *string                        `json:"description"`
 	I18n                      *service.GroupI18n             `json:"i18n"` // 缺省不修改，传入则整体替换
 	Platform                  string                         `json:"platform" binding:"omitempty,group_platform"`
+	RateSyncGroupIDs          *[]int64                       `json:"rate_sync_group_ids"`
 	RateMultiplier            *float64                       `json:"rate_multiplier"`
 	IsExclusive               *bool                          `json:"is_exclusive"`
 	Status                    string                         `json:"status" binding:"omitempty,oneof=active inactive"`
@@ -441,6 +444,7 @@ type UpdateGroupRequest struct {
 	AllowMessagesDispatch       *bool                                      `json:"allow_messages_dispatch"`
 	AllowLive                   *bool                                      `json:"allow_live"`
 	ForceOpenAIFast             *bool                                      `json:"force_openai_fast"`
+	ForceOpenAIUltrafast        *bool                                      `json:"force_openai_ultrafast"`
 	FreeOpenAIFast              *bool                                      `json:"free_openai_fast"`
 	RequireOAuthOnly            *bool                                      `json:"require_oauth_only"`
 	RequirePrivacySet           *bool                                      `json:"require_privacy_set"`
@@ -827,6 +831,7 @@ func (h *GroupHandler) Create(c *gin.Context) {
 		Platform:                        req.Platform,
 		RequiredProtocol:                req.RequiredProtocol,
 		BlockedUserAgents:               req.BlockedUserAgents,
+		RateSyncGroupIDs:                req.RateSyncGroupIDs,
 		RateMultiplier:                  req.RateMultiplier,
 		IsExclusive:                     req.IsExclusive,
 		SubscriptionType:                req.SubscriptionType,
@@ -875,6 +880,7 @@ func (h *GroupHandler) Create(c *gin.Context) {
 		AllowMessagesDispatch:           req.AllowMessagesDispatch,
 		AllowLive:                       req.AllowLive,
 		ForceOpenAIFast:                 req.ForceOpenAIFast,
+		ForceOpenAIUltrafast:            req.ForceOpenAIUltrafast,
 		FreeOpenAIFast:                  req.FreeOpenAIFast,
 		RequireOAuthOnly:                req.RequireOAuthOnly,
 		RequirePrivacySet:               req.RequirePrivacySet,
@@ -979,6 +985,7 @@ func (h *GroupHandler) Update(c *gin.Context) {
 		Platform:                        req.Platform,
 		RequiredProtocol:                req.RequiredProtocol,
 		BlockedUserAgents:               req.BlockedUserAgents,
+		RateSyncGroupIDs:                req.RateSyncGroupIDs,
 		RateMultiplier:                  req.RateMultiplier,
 		IsExclusive:                     req.IsExclusive,
 		Status:                          req.Status,
@@ -1028,6 +1035,7 @@ func (h *GroupHandler) Update(c *gin.Context) {
 		AllowMessagesDispatch:           req.AllowMessagesDispatch,
 		AllowLive:                       req.AllowLive,
 		ForceOpenAIFast:                 req.ForceOpenAIFast,
+		ForceOpenAIUltrafast:            req.ForceOpenAIUltrafast,
 		FreeOpenAIFast:                  req.FreeOpenAIFast,
 		RequireOAuthOnly:                req.RequireOAuthOnly,
 		RequirePrivacySet:               req.RequirePrivacySet,

@@ -44,6 +44,8 @@ const (
 	FieldGroupID = "group_id"
 	// FieldSubscriptionID holds the string denoting the subscription_id field in the database.
 	FieldSubscriptionID = "subscription_id"
+	// FieldInputTokenEstimate holds the string denoting the input_token_estimate field in the database.
+	FieldInputTokenEstimate = "input_token_estimate"
 	// FieldInputTokens holds the string denoting the input_tokens field in the database.
 	FieldInputTokens = "input_tokens"
 	// FieldOutputTokens holds the string denoting the output_tokens field in the database.
@@ -183,6 +185,7 @@ var Columns = []string{
 	FieldBillingMode,
 	FieldGroupID,
 	FieldSubscriptionID,
+	FieldInputTokenEstimate,
 	FieldInputTokens,
 	FieldOutputTokens,
 	FieldCacheCreationTokens,

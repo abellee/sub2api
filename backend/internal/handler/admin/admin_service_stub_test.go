@@ -52,6 +52,7 @@ type stubAdminService struct {
 		groupIDs  []int64
 	}
 	lastListAccounts struct {
+		baseURL     string
 		platform    string
 		accountType string
 		status      string
@@ -432,7 +433,8 @@ func (s *stubAdminService) BatchSetGroupRPMOverrides(_ context.Context, _ int64,
 	return nil
 }
 
-func (s *stubAdminService) ListAccounts(ctx context.Context, page, pageSize int, platform, accountType, status, search string, groupID int64, privacyMode string, sortBy, sortOrder string) ([]service.Account, int64, error) {
+func (s *stubAdminService) ListAccounts(ctx context.Context, page, pageSize int, platform, accountType, status, search string, groupID int64, privacyMode string, sortBy, sortOrder string, baseURL string) ([]service.Account, int64, error) {
+	s.lastListAccounts.baseURL = baseURL
 	s.lastListAccounts.platform = platform
 	s.lastListAccounts.accountType = accountType
 	s.lastListAccounts.status = status
@@ -461,7 +463,7 @@ func (s *stubAdminService) ListAccounts(ctx context.Context, page, pageSize int,
 	return accounts[start:end], int64(total), nil
 }
 
-func (s *stubAdminService) ListAccountsForSchedulerScoreFilter(_ context.Context, platform, accountType, status, search string, groupID int64, privacyMode string) ([]service.Account, error) {
+func (s *stubAdminService) ListAccountsForSchedulerScoreFilter(_ context.Context, platform, accountType, status, search string, groupID int64, privacyMode string, baseURL string) ([]service.Account, error) {
 	s.schedulerScoreFilterCalls++
 	if s.accountSchedulerScoreFilterAccounts != nil {
 		return s.accountSchedulerScoreFilterAccounts, nil
@@ -532,6 +534,14 @@ func (s *stubAdminService) DuplicateAccount(ctx context.Context, id int64, actor
 }
 
 func (s *stubAdminService) RecoverDuplicateAccount(ctx context.Context, id int64, actorScope, operationKey string) (*service.Account, error) {
+	return nil, nil
+}
+
+func (s *stubAdminService) BatchDuplicateAccounts(ctx context.Context, id int64, count int, actorScope, operationKey string) ([]*service.Account, error) {
+	return nil, nil
+}
+
+func (s *stubAdminService) RecoverBatchDuplicateAccounts(ctx context.Context, id int64, count int, actorScope, operationKey string) ([]*service.Account, error) {
 	return nil, nil
 }
 

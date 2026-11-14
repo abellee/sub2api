@@ -52,6 +52,9 @@ func (Group) Fields() []ent.Field {
 		field.Float("rate_multiplier").
 			SchemaType(map[string]string{dialect.Postgres: "decimal(10,4)"}).
 			Default(1.0),
+		field.JSON("rate_sync_group_ids", []int64{}).
+			Default([]int64{}).
+			Comment("修改基础倍率时单向同步的目标分组 ID"),
 		// 高峰时段倍率（added by migration 158）
 		field.Bool("peak_rate_enabled").
 			Default(false).
@@ -267,6 +270,9 @@ func (Group) Fields() []ent.Field {
 		field.Bool("force_openai_fast").
 			Default(false).
 			Comment("是否强制此 OpenAI/Composite 分组请求使用 service_tier=priority"),
+		field.Bool("force_openai_ultrafast").
+			Default(false).
+			Comment("Force service_tier=ultrafast with 6x Standard token pricing"),
 		field.Bool("free_openai_fast").
 			Default(false).
 			Comment("是否让此 OpenAI/Composite 分组的 Fast 请求按 Standard 价格计费"),

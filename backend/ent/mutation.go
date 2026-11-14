@@ -22089,6 +22089,8 @@ type GroupMutation struct {
 	i18n                                    *domain.GroupI18n
 	rate_multiplier                         *float64
 	addrate_multiplier                      *float64
+	rate_sync_group_ids                     *[]int64
+	appendrate_sync_group_ids               []int64
 	peak_rate_enabled                       *bool
 	peak_start                              *string
 	peak_end                                *string
@@ -22165,6 +22167,7 @@ type GroupMutation struct {
 	allow_messages_dispatch                 *bool
 	allow_live                              *bool
 	force_openai_fast                       *bool
+	force_openai_ultrafast                  *bool
 	free_openai_fast                        *bool
 	require_oauth_only                      *bool
 	require_privacy_set                     *bool
@@ -22602,6 +22605,57 @@ func (m *GroupMutation) AddedRateMultiplier() (r float64, exists bool) {
 func (m *GroupMutation) ResetRateMultiplier() {
 	m.rate_multiplier = nil
 	m.addrate_multiplier = nil
+}
+
+// SetRateSyncGroupIds sets the "rate_sync_group_ids" field.
+func (m *GroupMutation) SetRateSyncGroupIds(i []int64) {
+	m.rate_sync_group_ids = &i
+	m.appendrate_sync_group_ids = nil
+}
+
+// RateSyncGroupIds returns the value of the "rate_sync_group_ids" field in the mutation.
+func (m *GroupMutation) RateSyncGroupIds() (r []int64, exists bool) {
+	v := m.rate_sync_group_ids
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRateSyncGroupIds returns the old "rate_sync_group_ids" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldRateSyncGroupIds(ctx context.Context) (v []int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRateSyncGroupIds is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRateSyncGroupIds requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRateSyncGroupIds: %w", err)
+	}
+	return oldValue.RateSyncGroupIds, nil
+}
+
+// AppendRateSyncGroupIds adds i to the "rate_sync_group_ids" field.
+func (m *GroupMutation) AppendRateSyncGroupIds(i []int64) {
+	m.appendrate_sync_group_ids = append(m.appendrate_sync_group_ids, i...)
+}
+
+// AppendedRateSyncGroupIds returns the list of values that were appended to the "rate_sync_group_ids" field in this mutation.
+func (m *GroupMutation) AppendedRateSyncGroupIds() ([]int64, bool) {
+	if len(m.appendrate_sync_group_ids) == 0 {
+		return nil, false
+	}
+	return m.appendrate_sync_group_ids, true
+}
+
+// ResetRateSyncGroupIds resets all changes to the "rate_sync_group_ids" field.
+func (m *GroupMutation) ResetRateSyncGroupIds() {
+	m.rate_sync_group_ids = nil
+	m.appendrate_sync_group_ids = nil
 }
 
 // SetPeakRateEnabled sets the "peak_rate_enabled" field.
@@ -25207,6 +25261,42 @@ func (m *GroupMutation) ResetForceOpenaiFast() {
 	m.force_openai_fast = nil
 }
 
+// SetForceOpenaiUltrafast sets the "force_openai_ultrafast" field.
+func (m *GroupMutation) SetForceOpenaiUltrafast(b bool) {
+	m.force_openai_ultrafast = &b
+}
+
+// ForceOpenaiUltrafast returns the value of the "force_openai_ultrafast" field in the mutation.
+func (m *GroupMutation) ForceOpenaiUltrafast() (r bool, exists bool) {
+	v := m.force_openai_ultrafast
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldForceOpenaiUltrafast returns the old "force_openai_ultrafast" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldForceOpenaiUltrafast(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldForceOpenaiUltrafast is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldForceOpenaiUltrafast requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldForceOpenaiUltrafast: %w", err)
+	}
+	return oldValue.ForceOpenaiUltrafast, nil
+}
+
+// ResetForceOpenaiUltrafast resets all changes to the "force_openai_ultrafast" field.
+func (m *GroupMutation) ResetForceOpenaiUltrafast() {
+	m.force_openai_ultrafast = nil
+}
+
 // SetFreeOpenaiFast sets the "free_openai_fast" field.
 func (m *GroupMutation) SetFreeOpenaiFast(b bool) {
 	m.free_openai_fast = &b
@@ -26180,7 +26270,7 @@ func (m *GroupMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *GroupMutation) Fields() []string {
-	fields := make([]string, 0, 73)
+	fields := make([]string, 0, 75)
 	if m.created_at != nil {
 		fields = append(fields, group.FieldCreatedAt)
 	}
@@ -26201,6 +26291,9 @@ func (m *GroupMutation) Fields() []string {
 	}
 	if m.rate_multiplier != nil {
 		fields = append(fields, group.FieldRateMultiplier)
+	}
+	if m.rate_sync_group_ids != nil {
+		fields = append(fields, group.FieldRateSyncGroupIds)
 	}
 	if m.peak_rate_enabled != nil {
 		fields = append(fields, group.FieldPeakRateEnabled)
@@ -26355,6 +26448,9 @@ func (m *GroupMutation) Fields() []string {
 	if m.force_openai_fast != nil {
 		fields = append(fields, group.FieldForceOpenaiFast)
 	}
+	if m.force_openai_ultrafast != nil {
+		fields = append(fields, group.FieldForceOpenaiUltrafast)
+	}
 	if m.free_openai_fast != nil {
 		fields = append(fields, group.FieldFreeOpenaiFast)
 	}
@@ -26422,6 +26518,8 @@ func (m *GroupMutation) Field(name string) (ent.Value, bool) {
 		return m.I18n()
 	case group.FieldRateMultiplier:
 		return m.RateMultiplier()
+	case group.FieldRateSyncGroupIds:
+		return m.RateSyncGroupIds()
 	case group.FieldPeakRateEnabled:
 		return m.PeakRateEnabled()
 	case group.FieldPeakStart:
@@ -26524,6 +26622,8 @@ func (m *GroupMutation) Field(name string) (ent.Value, bool) {
 		return m.AllowLive()
 	case group.FieldForceOpenaiFast:
 		return m.ForceOpenaiFast()
+	case group.FieldForceOpenaiUltrafast:
+		return m.ForceOpenaiUltrafast()
 	case group.FieldFreeOpenaiFast:
 		return m.FreeOpenaiFast()
 	case group.FieldRequireOauthOnly:
@@ -26577,6 +26677,8 @@ func (m *GroupMutation) OldField(ctx context.Context, name string) (ent.Value, e
 		return m.OldI18n(ctx)
 	case group.FieldRateMultiplier:
 		return m.OldRateMultiplier(ctx)
+	case group.FieldRateSyncGroupIds:
+		return m.OldRateSyncGroupIds(ctx)
 	case group.FieldPeakRateEnabled:
 		return m.OldPeakRateEnabled(ctx)
 	case group.FieldPeakStart:
@@ -26679,6 +26781,8 @@ func (m *GroupMutation) OldField(ctx context.Context, name string) (ent.Value, e
 		return m.OldAllowLive(ctx)
 	case group.FieldForceOpenaiFast:
 		return m.OldForceOpenaiFast(ctx)
+	case group.FieldForceOpenaiUltrafast:
+		return m.OldForceOpenaiUltrafast(ctx)
 	case group.FieldFreeOpenaiFast:
 		return m.OldFreeOpenaiFast(ctx)
 	case group.FieldRequireOauthOnly:
@@ -26766,6 +26870,13 @@ func (m *GroupMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetRateMultiplier(v)
+		return nil
+	case group.FieldRateSyncGroupIds:
+		v, ok := value.([]int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRateSyncGroupIds(v)
 		return nil
 	case group.FieldPeakRateEnabled:
 		v, ok := value.(bool)
@@ -27123,6 +27234,13 @@ func (m *GroupMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetForceOpenaiFast(v)
+		return nil
+	case group.FieldForceOpenaiUltrafast:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetForceOpenaiUltrafast(v)
 		return nil
 	case group.FieldFreeOpenaiFast:
 		v, ok := value.(bool)
@@ -27761,6 +27879,9 @@ func (m *GroupMutation) ResetField(name string) error {
 	case group.FieldRateMultiplier:
 		m.ResetRateMultiplier()
 		return nil
+	case group.FieldRateSyncGroupIds:
+		m.ResetRateSyncGroupIds()
+		return nil
 	case group.FieldPeakRateEnabled:
 		m.ResetPeakRateEnabled()
 		return nil
@@ -27913,6 +28034,9 @@ func (m *GroupMutation) ResetField(name string) error {
 		return nil
 	case group.FieldForceOpenaiFast:
 		m.ResetForceOpenaiFast()
+		return nil
+	case group.FieldForceOpenaiUltrafast:
+		m.ResetForceOpenaiUltrafast()
 		return nil
 	case group.FieldFreeOpenaiFast:
 		m.ResetFreeOpenaiFast()
@@ -45006,6 +45130,7 @@ type UsageLogMutation struct {
 	model_mapping_chain          *string
 	billing_tier                 *string
 	billing_mode                 *string
+	input_token_estimate         *map[string]interface{}
 	input_tokens                 *int
 	addinput_tokens              *int
 	output_tokens                *int
@@ -45869,6 +45994,55 @@ func (m *UsageLogMutation) SubscriptionIDCleared() bool {
 func (m *UsageLogMutation) ResetSubscriptionID() {
 	m.subscription = nil
 	delete(m.clearedFields, usagelog.FieldSubscriptionID)
+}
+
+// SetInputTokenEstimate sets the "input_token_estimate" field.
+func (m *UsageLogMutation) SetInputTokenEstimate(value map[string]interface{}) {
+	m.input_token_estimate = &value
+}
+
+// InputTokenEstimate returns the value of the "input_token_estimate" field in the mutation.
+func (m *UsageLogMutation) InputTokenEstimate() (r map[string]interface{}, exists bool) {
+	v := m.input_token_estimate
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldInputTokenEstimate returns the old "input_token_estimate" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldInputTokenEstimate(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldInputTokenEstimate is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldInputTokenEstimate requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldInputTokenEstimate: %w", err)
+	}
+	return oldValue.InputTokenEstimate, nil
+}
+
+// ClearInputTokenEstimate clears the value of the "input_token_estimate" field.
+func (m *UsageLogMutation) ClearInputTokenEstimate() {
+	m.input_token_estimate = nil
+	m.clearedFields[usagelog.FieldInputTokenEstimate] = struct{}{}
+}
+
+// InputTokenEstimateCleared returns if the "input_token_estimate" field was cleared in this mutation.
+func (m *UsageLogMutation) InputTokenEstimateCleared() bool {
+	_, ok := m.clearedFields[usagelog.FieldInputTokenEstimate]
+	return ok
+}
+
+// ResetInputTokenEstimate resets all changes to the "input_token_estimate" field.
+func (m *UsageLogMutation) ResetInputTokenEstimate() {
+	m.input_token_estimate = nil
+	delete(m.clearedFields, usagelog.FieldInputTokenEstimate)
 }
 
 // SetInputTokens sets the "input_tokens" field.
@@ -47976,7 +48150,7 @@ func (m *UsageLogMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UsageLogMutation) Fields() []string {
-	fields := make([]string, 0, 51)
+	fields := make([]string, 0, 52)
 	if m.user != nil {
 		fields = append(fields, usagelog.FieldUserID)
 	}
@@ -48021,6 +48195,9 @@ func (m *UsageLogMutation) Fields() []string {
 	}
 	if m.subscription != nil {
 		fields = append(fields, usagelog.FieldSubscriptionID)
+	}
+	if m.input_token_estimate != nil {
+		fields = append(fields, usagelog.FieldInputTokenEstimate)
 	}
 	if m.input_tokens != nil {
 		fields = append(fields, usagelog.FieldInputTokens)
@@ -48168,6 +48345,8 @@ func (m *UsageLogMutation) Field(name string) (ent.Value, bool) {
 		return m.GroupID()
 	case usagelog.FieldSubscriptionID:
 		return m.SubscriptionID()
+	case usagelog.FieldInputTokenEstimate:
+		return m.InputTokenEstimate()
 	case usagelog.FieldInputTokens:
 		return m.InputTokens()
 	case usagelog.FieldOutputTokens:
@@ -48279,6 +48458,8 @@ func (m *UsageLogMutation) OldField(ctx context.Context, name string) (ent.Value
 		return m.OldGroupID(ctx)
 	case usagelog.FieldSubscriptionID:
 		return m.OldSubscriptionID(ctx)
+	case usagelog.FieldInputTokenEstimate:
+		return m.OldInputTokenEstimate(ctx)
 	case usagelog.FieldInputTokens:
 		return m.OldInputTokens(ctx)
 	case usagelog.FieldOutputTokens:
@@ -48464,6 +48645,13 @@ func (m *UsageLogMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetSubscriptionID(v)
+		return nil
+	case usagelog.FieldInputTokenEstimate:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetInputTokenEstimate(v)
 		return nil
 	case usagelog.FieldInputTokens:
 		v, ok := value.(int)
@@ -49080,6 +49268,9 @@ func (m *UsageLogMutation) ClearedFields() []string {
 	if m.FieldCleared(usagelog.FieldSubscriptionID) {
 		fields = append(fields, usagelog.FieldSubscriptionID)
 	}
+	if m.FieldCleared(usagelog.FieldInputTokenEstimate) {
+		fields = append(fields, usagelog.FieldInputTokenEstimate)
+	}
 	if m.FieldCleared(usagelog.FieldAccountRateMultiplier) {
 		fields = append(fields, usagelog.FieldAccountRateMultiplier)
 	}
@@ -49159,6 +49350,9 @@ func (m *UsageLogMutation) ClearField(name string) error {
 		return nil
 	case usagelog.FieldSubscriptionID:
 		m.ClearSubscriptionID()
+		return nil
+	case usagelog.FieldInputTokenEstimate:
+		m.ClearInputTokenEstimate()
 		return nil
 	case usagelog.FieldAccountRateMultiplier:
 		m.ClearAccountRateMultiplier()
@@ -49248,6 +49442,9 @@ func (m *UsageLogMutation) ResetField(name string) error {
 		return nil
 	case usagelog.FieldSubscriptionID:
 		m.ResetSubscriptionID()
+		return nil
+	case usagelog.FieldInputTokenEstimate:
+		m.ResetInputTokenEstimate()
 		return nil
 	case usagelog.FieldInputTokens:
 		m.ResetInputTokens()

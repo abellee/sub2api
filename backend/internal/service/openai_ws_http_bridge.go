@@ -792,6 +792,10 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 			continue
 		}
 
+		if message, matched := s.contentSafetyRejection(c, account, resp, []byte(trimmedData), fmt.Sprintf("ws:%d", turn)); matched {
+			_ = writeClientMessage(buildOpenAIWSHTTPBridgeErrorEvent(http.StatusForbidden, message))
+			return nil, errContentSafetyRejected
+		}
 		upstreamMessage := []byte(openAICompatPayloadWithEventType(trimmedData, pendingSSEEventType))
 		if normalized, changed := normalizeCompletedImageGenerationStatus(upstreamMessage); changed {
 			upstreamMessage = normalized

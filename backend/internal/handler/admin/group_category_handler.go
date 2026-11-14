@@ -10,7 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// GroupCategoryHandler manages JSON-backed group categories.
+// GroupCategoryHandler manages SQLite-backed group categories.
 type GroupCategoryHandler struct {
 	store *service.GroupCategoryStore
 }
@@ -168,6 +168,26 @@ func (h *GroupCategoryHandler) SetGroupCap(c *gin.Context) {
 		return
 	}
 	if err := h.store.SetGroupCap(groupID, req.CapRate); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"ok": true})
+}
+
+func (h *GroupCategoryHandler) SetGroupTags(c *gin.Context) {
+	groupID, err := strconv.ParseInt(c.Param("group_id"), 10, 64)
+	if err != nil || groupID <= 0 {
+		response.BadRequest(c, "Invalid group id")
+		return
+	}
+	var req struct {
+		Tags *[]service.GroupTag `json:"tags" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request")
+		return
+	}
+	if err := h.store.SetGroupTags(groupID, *req.Tags); err != nil {
 		response.BadRequest(c, err.Error())
 		return
 	}

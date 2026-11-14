@@ -47,9 +47,14 @@ type GroupDuplicateRepository interface {
 	CreateFromSource(ctx context.Context, group *Group, sourceGroupID int64) error
 }
 
-// AdminGroupRepository makes the group-duplication write capability an explicit
-// admin-service dependency without widening gateway-only group test doubles.
+type GroupRateSyncRepository interface {
+	// UpdateWithRateSync saves the source and linked base rates in one transaction.
+	UpdateWithRateSync(ctx context.Context, group *Group, targetIDs []int64) error
+}
+
+// AdminGroupRepository keeps admin write capabilities separate from gateway readers.
 type AdminGroupRepository interface {
+	GroupRateSyncRepository
 	GroupRepository
 	GroupDuplicateRepository
 	EmptyGroupDeleteRepository

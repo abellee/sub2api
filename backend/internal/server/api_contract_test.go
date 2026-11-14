@@ -1905,6 +1905,10 @@ func (s *stubAccountRepo) CreateWithAccountGroups(ctx context.Context, account *
 	return errors.New("not implemented")
 }
 
+func (s *stubAccountRepo) CreateManyWithAccountGroups(ctx context.Context, accounts []*service.Account) error {
+	return errors.New("not implemented")
+}
+
 func (s *stubAccountRepo) GetByID(ctx context.Context, id int64) (*service.Account, error) {
 	return nil, service.ErrAccountNotFound
 }
@@ -1947,11 +1951,11 @@ func (s *stubAccountRepo) List(ctx context.Context, params pagination.Pagination
 	return nil, nil, errors.New("not implemented")
 }
 
-func (s *stubAccountRepo) ListAllWithFilters(context.Context, string, string, string, string, int64, string) ([]service.Account, error) {
+func (s *stubAccountRepo) ListAllWithFilters(context.Context, string, string, string, string, int64, string, string) ([]service.Account, error) {
 	return nil, nil
 }
 
-func (s *stubAccountRepo) ListWithFilters(ctx context.Context, params pagination.PaginationParams, platform, accountType, status, search string, groupID int64, privacyMode string) ([]service.Account, *pagination.PaginationResult, error) {
+func (s *stubAccountRepo) ListWithFilters(ctx context.Context, params pagination.PaginationParams, platform, accountType, status, search string, groupID int64, privacyMode string, baseURL string) ([]service.Account, *pagination.PaginationResult, error) {
 	return nil, nil, errors.New("not implemented")
 }
 
@@ -2999,3 +3003,7 @@ var (
 	_ service.UsageLogRepository         = (*stubUsageLogRepo)(nil)
 	_ service.SettingRepository          = (*stubSettingRepo)(nil)
 )
+
+func (stubGroupRepo) UpdateWithRateSync(ctx context.Context, group *service.Group, targetIDs []int64) error {
+	return nil
+}

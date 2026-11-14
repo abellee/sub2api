@@ -172,6 +172,15 @@ func (r *codexSeedDuplicateRepo) CreateWithAccountGroups(ctx context.Context, ac
 	return r.Create(ctx, account)
 }
 
+func (r *codexSeedDuplicateRepo) CreateManyWithAccountGroups(ctx context.Context, accounts []*Account) error {
+	for _, account := range accounts {
+		if err := r.CreateWithAccountGroups(ctx, account, account.AccountGroups); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func TestDuplicateAccountDoesNotCopyCodexFingerprintSeed(t *testing.T) {
 	ctx := context.Background()
 	repo := &codexSeedDuplicateRepo{upstreamBillingProbeAccountRepo: &upstreamBillingProbeAccountRepo{accounts: make(map[int64]*Account)}}

@@ -364,6 +364,9 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 		line := scanner.Text()
 		refusalDetector.ObserveSSELine(line)
 		if payload, ok := extractOpenAISSEDataLine(line); ok {
+			if s.handleContentSafetyBilling(c, account, resp, []byte(payload)) {
+				return nil, errContentSafetyRejected
+			}
 			trimmedPayload := strings.TrimSpace(payload)
 			terminal.ObserveDataLine(trimmedPayload)
 			if trimmedPayload != "[DONE]" {
@@ -546,6 +549,9 @@ func (s *OpenAIGatewayService) bufferRawChatCompletions(
 			writeChatCompletionsError(c, http.StatusBadGateway, "api_error", "Failed to read upstream response")
 		}
 		return nil, fmt.Errorf("read upstream body: %w", err)
+	}
+	if s.handleContentSafetyBilling(c, account, resp, respBody) {
+		return nil, errContentSafetyRejected
 	}
 	observer := upstreamResponseModelObserverFromContext(c)
 	if observer == nil {

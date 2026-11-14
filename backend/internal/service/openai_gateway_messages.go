@@ -617,6 +617,9 @@ func (s *OpenAIGatewayService) handleAnthropicBufferedStreamingResponse(
 
 	finalResponse, usage, acc, prior, err := s.readOpenAICompatBufferedTerminal(resp, c, account, "openai messages buffered", requestID)
 	if err != nil {
+		if errors.Is(err, errContentSafetyRejected) {
+			return nil, err
+		}
 		if retry := requestAccountStreamFailover(c, account, resp, err); retry != nil {
 			return &OpenAIForwardResult{
 				RequestID: requestID, UpstreamHeaders: resp.Header, Usage: usage,
@@ -939,6 +942,10 @@ func (s *OpenAIGatewayService) readOpenAICompatBufferedTerminal(
 				if frame, ok := parser.Finish(); ok {
 					payload := openAICompatPayloadWithEventType(frame.Data, frame.EventType)
 					payload = string(restoreCodexToolNamesFromContext(c, []byte(payload)))
+					if s.handleContentSafetyBilling(c, account, resp, []byte(payload)) {
+						return nil, usage, acc, prior, errContentSafetyRejected
+					}
+
 					var event apicompat.ResponsesStreamEvent
 					if err := json.Unmarshal([]byte(payload), &event); err == nil {
 						s.parseSSEUsageBytesWithType([]byte(payload), event.Type, &usage)
@@ -980,6 +987,9 @@ func (s *OpenAIGatewayService) readOpenAICompatBufferedTerminal(
 			}
 			payload := openAICompatPayloadWithEventType(frame.Data, frame.EventType)
 			payload = string(restoreCodexToolNamesFromContext(c, []byte(payload)))
+			if s.handleContentSafetyBilling(c, account, resp, []byte(payload)) {
+				return nil, usage, acc, prior, errContentSafetyRejected
+			}
 
 			var event apicompat.ResponsesStreamEvent
 			if err := json.Unmarshal([]byte(payload), &event); err != nil {
@@ -1097,6 +1107,10 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 
 	// processDataLine handles a single "data: ..." SSE line from upstream.
 	processDataLine := func(payload string) bool {
+		if s.handleContentSafetyBilling(c, account, resp, []byte(payload)) {
+			streamNonFailoverErr = errContentSafetyRejected
+			return true
+		}
 		payload = string(restoreCodexToolNamesFromContext(c, []byte(payload)))
 		if firstChunk {
 			firstChunk = false
@@ -1232,6 +1246,9 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 
 	// finalizeStream sends any remaining Anthropic events and returns the result.
 	finalizeStream := func() (*OpenAIForwardResult, error) {
+		if errors.Is(streamNonFailoverErr, errContentSafetyRejected) {
+			return nil, streamNonFailoverErr
+		}
 		if streamFailoverErr != nil {
 			return resultWithUsage(), streamFailoverErr
 		}

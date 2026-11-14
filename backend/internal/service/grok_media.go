@@ -752,6 +752,9 @@ func (s *OpenAIGatewayService) ForwardGrokMedia(
 	if err != nil {
 		return nil, err
 	}
+	if s.handleContentSafetyBilling(c, account, resp, respBody) {
+		return nil, errContentSafetyRejected
+	}
 	if endpoint == GrokMediaEndpointImagesGenerations || endpoint == GrokMediaEndpointImagesEdits {
 		if countOpenAIResponseImageOutputsFromJSONBytes(respBody) <= 0 {
 			setOpsUpstreamError(c, http.StatusBadGateway, "xAI upstream returned no image output", truncateString(string(respBody), 512))
@@ -859,6 +862,9 @@ func (s *OpenAIGatewayService) forwardGrokMediaVideoContent(
 		return nil, err
 	}
 
+	if s.handleContentSafetyBilling(c, account, statusResp, statusBody) {
+		return nil, errContentSafetyRejected
+	}
 	contentURL, err := grokMediaSignedVideoContentURL(statusBody, requestID)
 	if err != nil {
 		SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())

@@ -477,6 +477,16 @@
                 <span class="text-xs">{{ t('admin.groups.capRate.action') }}</span>
               </button>
               <button
+                data-testid="group-tags"
+                :title="t('admin.groups.tags.action')"
+                :disabled="!groupMetadataLoaded"
+                @click="tagsGroup = row; showTagsModal = true"
+                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 disabled:opacity-50 dark:hover:bg-dark-700 dark:hover:text-gray-300"
+              >
+                <Icon name="badge" size="sm" />
+                <span class="text-xs">{{ t('admin.groups.tags.action') }}</span>
+              </button>
+              <button
                 @click="handleDelete(row)"
                 class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400"
               >
@@ -689,6 +699,17 @@
             data-tour="group-form-multiplier"
           />
           <p class="input-hint">{{ t("admin.groups.rateMultiplierHint") }}</p>
+        </div>
+        <div v-if="!authStore.isSimpleMode">
+          <GroupSelector
+            v-model="createForm.rate_sync_group_ids"
+            :label="t('admin.groups.rateSync.label')"
+            :groups="rateSyncGroups"
+            searchable
+            data-testid="create-rate-sync-groups"
+          />
+          <button v-if="createForm.rate_sync_group_ids.length" type="button" class="mt-1 text-xs text-primary-500" @click="createForm.rate_sync_group_ids = []">{{ t('admin.groups.rateSync.clear') }}</button>
+          <p class="input-hint">{{ t('admin.groups.rateSync.hint') }}</p>
         </div>
         <div>
           <label class="input-label">{{ t("admin.groups.form.rpmLimit") }}</label>
@@ -1677,10 +1698,25 @@
               data-testid="create-force-openai-fast"
               :aria-label="t('admin.groups.openaiFast.force')"
               v-model="createForm.force_openai_fast"
+              @update:model-value="$event && (createForm.force_openai_ultrafast = false)"
             />
           </div>
           <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
             {{ t("admin.groups.openaiFast.hint") }}
+          </p>
+          <div class="flex items-center justify-between gap-4 mt-4">
+            <label class="text-sm text-gray-600 dark:text-gray-400">
+              {{ t("admin.groups.openaiFast.ultrafast") }}
+            </label>
+            <Toggle
+              data-testid="create-force-openai-ultrafast"
+              :aria-label="t('admin.groups.openaiFast.ultrafast')"
+              v-model="createForm.force_openai_ultrafast"
+              @update:model-value="$event && (createForm.force_openai_fast = false)"
+            />
+          </div>
+          <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            {{ t("admin.groups.openaiFast.ultrafastHint") }}
           </p>
           <div class="flex items-center justify-between gap-4 mt-4">
             <label class="text-sm text-gray-600 dark:text-gray-400">
@@ -2397,6 +2433,17 @@
             class="input"
             data-tour="group-form-multiplier"
           />
+        </div>
+        <div v-if="!authStore.isSimpleMode">
+          <GroupSelector
+            v-model="editForm.rate_sync_group_ids"
+            :label="t('admin.groups.rateSync.label')"
+            :groups="editRateSyncGroups"
+            searchable
+            data-testid="edit-rate-sync-groups"
+          />
+          <button v-if="editForm.rate_sync_group_ids.length" type="button" class="mt-1 text-xs text-primary-500" @click="editForm.rate_sync_group_ids = []">{{ t('admin.groups.rateSync.clear') }}</button>
+          <p class="input-hint">{{ t('admin.groups.rateSync.hint') }}</p>
         </div>
         <div>
           <label class="input-label">{{ t("admin.groups.form.rpmLimit") }}</label>
@@ -3397,10 +3444,25 @@
               data-testid="edit-force-openai-fast"
               :aria-label="t('admin.groups.openaiFast.force')"
               v-model="editForm.force_openai_fast"
+              @update:model-value="$event && (editForm.force_openai_ultrafast = false)"
             />
           </div>
           <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
             {{ t("admin.groups.openaiFast.hint") }}
+          </p>
+          <div class="flex items-center justify-between gap-4 mt-4">
+            <label class="text-sm text-gray-600 dark:text-gray-400">
+              {{ t("admin.groups.openaiFast.ultrafast") }}
+            </label>
+            <Toggle
+              data-testid="edit-force-openai-ultrafast"
+              :aria-label="t('admin.groups.openaiFast.ultrafast')"
+              v-model="editForm.force_openai_ultrafast"
+              @update:model-value="$event && (editForm.force_openai_fast = false)"
+            />
+          </div>
+          <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            {{ t("admin.groups.openaiFast.ultrafastHint") }}
           </p>
           <div class="flex items-center justify-between gap-4 mt-4">
             <label class="text-sm text-gray-600 dark:text-gray-400">
@@ -4501,6 +4563,14 @@
       </template>
     </BaseDialog>
 
+    <GroupTagsModal
+      :show="showTagsModal"
+      :group="tagsGroup"
+      :tags="tagsGroup ? groupTags[String(tagsGroup.id)] ?? [] : []"
+      @close="showTagsModal = false"
+      @saved="(groupId, tags) => { groupTags[String(groupId)] = tags }"
+    />
+
     <GroupSetCategoryModal
       :show="showSetCategoryModal"
       :group="setCategoryGroup"
@@ -4562,12 +4632,15 @@ import BaseDialog from "@/components/common/BaseDialog.vue";
 import ConfirmDialog from "@/components/common/ConfirmDialog.vue";
 import EmptyState from "@/components/common/EmptyState.vue";
 import Select from "@/components/common/Select.vue";
+import GroupSelector from "@/components/common/GroupSelector.vue";
 import PlatformIcon from "@/components/common/PlatformIcon.vue";
 import { platformLabel } from "@/utils/platformColors";
 import Icon from "@/components/icons/Icon.vue";
 import GroupI18nField from "@/components/admin/group/GroupI18nField.vue";
 import GroupRateMultipliersModal from "@/components/admin/group/GroupRateMultipliersModal.vue";
 import GroupSetCategoryModal from "@/components/admin/group/GroupSetCategoryModal.vue";
+import GroupTagsModal from "@/components/admin/group/GroupTagsModal.vue";
+import type { GroupTag } from "@/api/groups";
 import GroupRPMOverridesModal from "@/components/admin/group/GroupRPMOverridesModal.vue";
 import GroupCapacityBadge from "@/components/common/GroupCapacityBadge.vue";
 import ReasoningEffortPolicyFields from "@/components/admin/group/ReasoningEffortPolicyFields.vue";
@@ -5054,6 +5127,16 @@ const copyAccountsGroupOptionsForEdit = computed(() => {
 });
 
 const groups = ref<AdminGroup[]>([]);
+const rateSyncGroups = ref<AdminGroup[]>([]);
+const editRateSyncGroups = computed(() => rateSyncGroups.value.filter(group => group.id !== editingGroup.value?.id));
+const loadRateSyncGroups = async () => {
+  if (authStore.isSimpleMode) return;
+  try {
+    rateSyncGroups.value = await adminAPI.groups.getAllIncludingInactive();
+  } catch {
+    appStore.showError(t("admin.groups.failedToLoad"));
+  }
+};
 const loading = ref(false);
 
 // Development fixtures make the recommendation workflow testable before a local
@@ -5068,7 +5151,7 @@ const devGroupFixtures: AdminGroup[] = [
     web_search_price_per_call: null, search_price_per_1k: null, audio_realtime_price_per_min: null, audio_tts_price_per_million_chars: null, audio_stt_price_per_hour: null,
     peak_rate_enabled: false, peak_start: '', peak_end: '', peak_rate_multiplier: 0.06, claude_code_only: false, fallback_group_id: null, fallback_group_id_on_invalid_request: null,
     allow_live: false, require_oauth_only: false, require_privacy_set: false, created_at: '', updated_at: '', model_pricing: [], profit_control_enabled: false,
-    profit_min_margin: 0, profit_safety_buffer: 0, model_routing: null, model_routing_enabled: false, mcp_xml_inject: true, force_openai_fast: false, free_openai_fast: false, sort_order: 10, account_count: 8, active_account_count: 7, rate_limited_account_count: 1
+    profit_min_margin: 0, profit_safety_buffer: 0, model_routing: null, model_routing_enabled: false, mcp_xml_inject: true, force_openai_fast: false, force_openai_ultrafast: false, free_openai_fast: false, sort_order: 10, account_count: 8, active_account_count: 7, rate_limited_account_count: 1
   },
   {
     id: 1002, name: 'GPT 高峰池', description: 'OpenAI 高峰时段线路，适合高并发请求', platform: 'openai', rate_multiplier: 0.08,
@@ -5079,7 +5162,7 @@ const devGroupFixtures: AdminGroup[] = [
     web_search_price_per_call: null, search_price_per_1k: null, audio_realtime_price_per_min: null, audio_tts_price_per_million_chars: null, audio_stt_price_per_hour: null,
     peak_rate_enabled: true, peak_start: '18:00', peak_end: '23:00', peak_rate_multiplier: 0.1, claude_code_only: false, fallback_group_id: null, fallback_group_id_on_invalid_request: null,
     allow_live: false, require_oauth_only: false, require_privacy_set: false, created_at: '', updated_at: '', model_pricing: [], profit_control_enabled: false,
-    profit_min_margin: 0, profit_safety_buffer: 0, model_routing: null, model_routing_enabled: false, mcp_xml_inject: true, force_openai_fast: false, free_openai_fast: false, sort_order: 20, account_count: 5, active_account_count: 5, rate_limited_account_count: 0
+    profit_min_margin: 0, profit_safety_buffer: 0, model_routing: null, model_routing_enabled: false, mcp_xml_inject: true, force_openai_fast: false, force_openai_ultrafast: false, free_openai_fast: false, sort_order: 20, account_count: 5, active_account_count: 5, rate_limited_account_count: 0
   },
   {
     id: 1003, name: 'Claude 稳定池', description: 'Anthropic 长文本与复杂分析线路', platform: 'anthropic', rate_multiplier: 0.12,
@@ -5090,7 +5173,7 @@ const devGroupFixtures: AdminGroup[] = [
     web_search_price_per_call: null, search_price_per_1k: null, audio_realtime_price_per_min: null, audio_tts_price_per_million_chars: null, audio_stt_price_per_hour: null,
     peak_rate_enabled: false, peak_start: '', peak_end: '', peak_rate_multiplier: 0.12, claude_code_only: false, fallback_group_id: null, fallback_group_id_on_invalid_request: null,
     allow_live: false, require_oauth_only: false, require_privacy_set: false, created_at: '', updated_at: '', model_pricing: [], profit_control_enabled: false,
-    profit_min_margin: 0, profit_safety_buffer: 0, model_routing: null, model_routing_enabled: false, mcp_xml_inject: true, force_openai_fast: false, free_openai_fast: false, sort_order: 30, account_count: 4, active_account_count: 4, rate_limited_account_count: 0
+    profit_min_margin: 0, profit_safety_buffer: 0, model_routing: null, model_routing_enabled: false, mcp_xml_inject: true, force_openai_fast: false, force_openai_ultrafast: false, free_openai_fast: false, sort_order: 30, account_count: 4, active_account_count: 4, rate_limited_account_count: 0
   },
   {
     id: 1004, name: 'Gemini 多模态池', description: 'Gemini 文本与图片请求线路', platform: 'gemini', rate_multiplier: 0.08,
@@ -5101,7 +5184,7 @@ const devGroupFixtures: AdminGroup[] = [
     web_search_price_per_call: null, search_price_per_1k: null, audio_realtime_price_per_min: null, audio_tts_price_per_million_chars: null, audio_stt_price_per_hour: null,
     peak_rate_enabled: false, peak_start: '', peak_end: '', peak_rate_multiplier: 0.08, claude_code_only: false, fallback_group_id: null, fallback_group_id_on_invalid_request: null,
     allow_live: false, require_oauth_only: false, require_privacy_set: false, created_at: '', updated_at: '', model_pricing: [], profit_control_enabled: false,
-    profit_min_margin: 0, profit_safety_buffer: 0, model_routing: null, model_routing_enabled: false, mcp_xml_inject: true, force_openai_fast: false, free_openai_fast: false, sort_order: 40, account_count: 3, active_account_count: 3, rate_limited_account_count: 0
+    profit_min_margin: 0, profit_safety_buffer: 0, model_routing: null, model_routing_enabled: false, mcp_xml_inject: true, force_openai_fast: false, force_openai_ultrafast: false, free_openai_fast: false, sort_order: 40, account_count: 3, active_account_count: 3, rate_limited_account_count: 0
   },
   {
     id: 1005, name: 'DeepSeek 性价比池', description: 'DeepSeek 高性价比代码线路', platform: 'deepseek', rate_multiplier: 0.03,
@@ -5112,7 +5195,7 @@ const devGroupFixtures: AdminGroup[] = [
     web_search_price_per_call: null, search_price_per_1k: null, audio_realtime_price_per_min: null, audio_tts_price_per_million_chars: null, audio_stt_price_per_hour: null,
     peak_rate_enabled: false, peak_start: '', peak_end: '', peak_rate_multiplier: 0.03, claude_code_only: false, fallback_group_id: null, fallback_group_id_on_invalid_request: null,
     allow_live: false, require_oauth_only: false, require_privacy_set: false, created_at: '', updated_at: '', model_pricing: [], profit_control_enabled: false,
-    profit_min_margin: 0, profit_safety_buffer: 0, model_routing: null, model_routing_enabled: false, mcp_xml_inject: true, force_openai_fast: false, free_openai_fast: false, sort_order: 50, account_count: 6, active_account_count: 6, rate_limited_account_count: 0
+    profit_min_margin: 0, profit_safety_buffer: 0, model_routing: null, model_routing_enabled: false, mcp_xml_inject: true, force_openai_fast: false, force_openai_ultrafast: false, free_openai_fast: false, sort_order: 50, account_count: 6, active_account_count: 6, rate_limited_account_count: 0
   }
 ];
 type GroupUsageSummary = {
@@ -5311,6 +5394,7 @@ const createForm = reactive({
   i18n: {} as GroupI18n,
   platform: "anthropic" as GroupPlatform,
   rate_multiplier: 1.0,
+  rate_sync_group_ids: [] as number[],
   is_exclusive: false,
   subscription_type: "standard" as SubscriptionType,
   daily_limit_usd: null as number | null,
@@ -5318,6 +5402,7 @@ const createForm = reactive({
   monthly_limit_usd: null as number | null,
   long_context_pricing_enabled: true,
   force_openai_fast: false,
+  force_openai_ultrafast: false,
   free_openai_fast: false,
   model_pricing: [] as PricingFormEntry[],
   // 图片生成计费配置
@@ -5681,6 +5766,7 @@ const editForm = reactive({
   i18n: {} as GroupI18n,
   platform: "anthropic" as GroupPlatform,
   rate_multiplier: 1.0,
+  rate_sync_group_ids: [] as number[],
   is_exclusive: false,
   status: "active" as "active" | "inactive",
   subscription_type: "standard" as SubscriptionType,
@@ -5689,6 +5775,7 @@ const editForm = reactive({
   monthly_limit_usd: null as number | null,
   long_context_pricing_enabled: true,
   force_openai_fast: false,
+  force_openai_ultrafast: false,
   free_openai_fast: false,
   model_pricing: [] as PricingFormEntry[],
   // 图片生成计费配置
@@ -6061,8 +6148,12 @@ const loadRecommendations = async () => {
   }
 };
 
-// 分组上限倍率:与分组分类同库存储(group_categories.json 的 group_caps)。
+// 分组上限倍率及标签与分类同库存储。
 const groupCaps = ref<Map<number, number>>(new Map());
+const groupTags = ref<Record<string, GroupTag[]>>({});
+const groupMetadataLoaded = ref(false);
+const tagsGroup = ref<AdminGroup | null>(null);
+const showTagsModal = ref(false);
 const capGroup = ref<AdminGroup | null>(null);
 const showCapModal = ref(false);
 const capSaving = ref(false);
@@ -6074,6 +6165,8 @@ const formatCapRate = (value: number): string => String(Math.round(value * 1000)
 const loadGroupCaps = async () => {
   try {
     const snapshot = await adminAPI.groupCategories.list();
+    groupTags.value = snapshot.group_tags ?? {};
+    groupMetadataLoaded.value = true;
     groupCaps.value = new Map(
       Object.entries(snapshot.group_caps ?? {}).map(([id, rate]) => [Number(id), rate]),
     );
@@ -6287,6 +6380,7 @@ const handleSort = (key: string, order: 'asc' | 'desc') => {
 };
 
 const openCreateModal = () => {
+  void loadRateSyncGroups();
   showCreateModal.value = true;
   loadModelAllowlistCandidates("create", 0, createForm.platform);
 };
@@ -6304,6 +6398,7 @@ const closeCreateModal = () => {
   createForm.i18n = {};
   createForm.platform = "anthropic";
   createForm.rate_multiplier = 1.0;
+  createForm.rate_sync_group_ids = [];
   createForm.is_exclusive = false;
   createForm.subscription_type = "standard";
   createForm.daily_limit_usd = null;
@@ -6329,6 +6424,7 @@ const closeCreateModal = () => {
   createForm.video_model_prices = createVideoModelPricesForm();
   createForm.long_context_pricing_enabled = true;
   createForm.force_openai_fast = false;
+  createForm.force_openai_ultrafast = false;
   createForm.free_openai_fast = false;
   createForm.model_pricing = [];
   createForm.web_search_price_per_call = null;
@@ -6464,6 +6560,10 @@ const handleCreateGroup = async () => {
         createForm.platform,
         createForm.force_openai_fast,
       ),
+      force_openai_ultrafast: normalizeGroupOpenAIFast(
+        createForm.platform,
+        createForm.force_openai_ultrafast,
+      ),
       free_openai_fast: normalizeGroupOpenAIFast(
         createForm.platform,
         createForm.free_openai_fast,
@@ -6597,6 +6697,7 @@ const handleCreateGroup = async () => {
 };
 
 const handleEdit = async (group: AdminGroup) => {
+  void loadRateSyncGroups();
   editingGroup.value = group;
   editForm.name = group.name;
   editForm.description = group.description || "";
@@ -6610,6 +6711,7 @@ const handleEdit = async (group: AdminGroup) => {
   editForm.required_protocol = group.required_protocol ?? "";
   editForm.blocked_user_agents = group.blocked_user_agents ?? "";
   editForm.rate_multiplier = group.rate_multiplier;
+  editForm.rate_sync_group_ids = [...(group.rate_sync_group_ids || [])];
   editForm.is_exclusive = group.is_exclusive;
   editForm.status = group.status;
   editForm.subscription_type = group.subscription_type || "standard";
@@ -6619,6 +6721,7 @@ const handleEdit = async (group: AdminGroup) => {
   editForm.long_context_pricing_enabled =
     group.long_context_pricing_enabled ?? true;
   editForm.force_openai_fast = group.force_openai_fast ?? false;
+  editForm.force_openai_ultrafast = group.force_openai_ultrafast ?? false;
   editForm.free_openai_fast = group.free_openai_fast ?? false;
   editForm.model_pricing = groupPricingFromAPI(group.model_pricing);
   editForm.allow_image_generation = group.allow_image_generation ?? false;
@@ -6762,6 +6865,7 @@ const closeEditModal = () => {
   editForm.video_model_prices = createVideoModelPricesForm();
   editForm.long_context_pricing_enabled = true;
   editForm.force_openai_fast = false;
+  editForm.force_openai_ultrafast = false;
   editForm.free_openai_fast = false;
   editForm.model_pricing = [];
   editForm.web_search_price_per_call = null;
@@ -6830,6 +6934,10 @@ const handleUpdateGroup = async () => {
       force_openai_fast: normalizeGroupOpenAIFast(
         editForm.platform,
         editForm.force_openai_fast,
+      ),
+      force_openai_ultrafast: normalizeGroupOpenAIFast(
+        editForm.platform,
+        editForm.force_openai_ultrafast,
       ),
       free_openai_fast: normalizeGroupOpenAIFast(
         editForm.platform,

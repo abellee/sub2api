@@ -149,7 +149,7 @@ func CostGuardEnabled() bool {
 	return s != nil && s.settings != nil && s.settings.costGuardEnabled.Load()
 }
 
-func costGuardLoggingEnabled() bool {
+func costGuardAvailable() bool {
 	s := costGuardDefault.Load()
 	return s != nil && s.settings != nil
 }
@@ -220,7 +220,7 @@ func costGuardLongContextPricing(billing *BillingService, resolved *ResolvedPric
 }
 
 func costGuardTokenCounts(billing *BillingService, cfg config.InflightReservationConfig, model string, bodyBytes, maxTokens int) (int, int) {
-	if !costGuardLoggingEnabled() {
+	if !costGuardAvailable() {
 		return tokenCounts(cfg, bodyBytes, maxTokens)
 	}
 	// Use this request's input without truncating its estimate to the old cap.
@@ -245,4 +245,22 @@ func costGuardTokenCounts(billing *BillingService, cfg config.InflightReservatio
 		output = modelLimit
 	}
 	return input, output
+}
+
+// CostGuardCheck freezes enforcement for a request that started with it disabled.
+type CostGuardCheck struct{ enforce bool }
+
+func BeginCostGuardCheck(key *APIKey) *CostGuardCheck {
+	if !costGuardAvailable() || key == nil || key.User == nil {
+		return nil
+	}
+	return &CostGuardCheck{enforce: CostGuardEnabled()}
+}
+
+func (c *CostGuardCheck) EnforcementDisabled() bool {
+	if c == nil {
+		return false
+	}
+	c.enforce = c.enforce && CostGuardEnabled()
+	return !c.enforce
 }

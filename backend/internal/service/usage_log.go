@@ -149,6 +149,7 @@ type UsageLog struct {
 	GroupID        *int64
 	SubscriptionID *int64
 
+	InputTokenEstimate  *InputTokenEstimate // Temporary admin-only tokenizer evaluation.
 	InputTokens         int
 	OutputTokens        int
 	CacheCreationTokens int

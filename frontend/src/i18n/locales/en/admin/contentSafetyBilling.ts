@@ -1,14 +1,14 @@
 export default {
   contentSafetyBilling: {
     title: 'Content Safety Billing',
-    description: 'Debit a fixed amount from the user balance when a Grok upstream returns 403 with matching error text, and return a standard message to the client.',
+    description: 'Debit the configured amount when a Grok upstream matches the built-in safety rules, and return the standard error message.',
     enabled: 'Enable content safety billing',
     amount: 'Debit per request (USD)',
     amountHint: 'A fixed balance debit without group multipliers. Subscription users are also charged from their balance.',
-    match: 'Error description to detect',
-    matchHint: 'Case-sensitive substring match on upstream 403 error descriptions. This text is also saved as the debit note.',
+    match: 'Safety detection rules',
+    matchHint: '2xx: refusal wording followed by that, this, you, your, the request, the prompt or it. 400: generated image or video rejected by content moderation. 403: safety, moderation or policy markers, or the same refusal wording. Matching ignores case and normalizes curly quotes; suffixes need no word boundary. All Grok accounts use these rules. Debit notes record the match.',
     clientMessage: 'Standard error message',
-    clientMessageHint: 'Keep HTTP 403 and return this text in the protocol error.message. Account failover stops for this request.',
+    clientMessageHint: 'Return HTTP 403 with this standard message and stop account failover. Streams that have already started receive an error event.',
     records: 'Debit records',
     recordsHint: 'Pending records retry automatically using the same debit ID to prevent duplicate charges.',
     refresh: 'Refresh records', retry: 'Retry',

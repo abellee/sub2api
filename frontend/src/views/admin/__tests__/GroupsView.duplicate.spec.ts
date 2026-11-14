@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AdminGroup } from '@/types'
 import GroupsView from '@/views/admin/GroupsView.vue'
 import AnthropicThinkingCompatField from '@/components/admin/group/AnthropicThinkingCompatField.vue'
+import GroupTagsModal from '@/components/admin/group/GroupTagsModal.vue'
 import { adminAPI } from '@/api/admin'
 
 const {
@@ -45,6 +46,7 @@ vi.mock('@/api/admin', () => ({
       getCapacitySummary,
       getLiveCapability,
       getAll: vi.fn(),
+      getAllIncludingInactive: vi.fn().mockResolvedValue([]),
       create: vi.fn(),
       update: updateGroup,
       delete: vi.fn(),
@@ -187,6 +189,7 @@ function mountView() {
 describe('GroupsView duplicate action', () => {
   beforeEach(() => {
     authState.isSimpleMode = false
+    vi.mocked(adminAPI.groups.getAllIncludingInactive).mockResolvedValue([])
     localStorage.clear()
     vi.spyOn(console, 'error').mockImplementation(() => {})
     for (const fn of [
@@ -228,6 +231,32 @@ describe('GroupsView duplicate action', () => {
 
   afterEach(() => {
     vi.restoreAllMocks()
+  })
+
+  it('opens the tag editor with saved group tags and retains updates when reopened', async () => {
+    const tags = [{ name: '快速', description: '说明' }]
+    getGroupCategories.mockResolvedValue({ categories: [], assignments: {}, group_tags: { '42': tags } })
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.get('[data-testid="group-tags"]').trigger('click')
+    const modal = wrapper.getComponent(GroupTagsModal)
+    expect(modal.props('show')).toBe(true)
+    expect(modal.props('group')?.id).toBe(42)
+    expect(modal.props('tags')).toEqual(tags)
+    const updated = [{ name: '新标签', description: '' }]
+    modal.vm.$emit('saved', 42, updated)
+    modal.vm.$emit('close')
+    await wrapper.get('[data-testid="group-tags"]').trigger('click')
+    expect(modal.props('tags')).toEqual(updated)
+    wrapper.unmount()
+  })
+
+  it('disables the tag editor when configuration could not be loaded', async () => {
+    getGroupCategories.mockRejectedValue(new Error('load failed'))
+    const wrapper = mountView()
+    await flushPromises()
+    expect(wrapper.get('[data-testid="group-tags"]').attributes('disabled')).toBeDefined()
+    wrapper.unmount()
   })
 
   it.each([false, true])('creates groups with the selected protocol in simple mode %s', async (simpleMode) => {

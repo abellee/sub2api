@@ -522,6 +522,7 @@
       :group-category-assignments="groupCategoryAssignments"
       :group-recommendations="groupRecommendations"
       :group-caps="effectiveGroupCaps"
+      :group-tags="groupTags"
       :submitting="submitting"
       @close="closeModals"
       @submit="handleSubmit"
@@ -1342,7 +1343,7 @@ import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 
 const { t } = useI18n()
 import { keysAPI, authAPI, usageAPI, userGroupsAPI } from '@/api'
-import type { GroupCategory, GroupRecommendation } from '@/api/groups'
+import type { GroupCategory, GroupRecommendation, GroupTag } from '@/api/groups'
 import StudioLayout from '@/components/user/dashboard/studio/DashboardStudioLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import BulkEditKeysModal from '@/components/keys/BulkEditKeysModal.vue'
@@ -1535,6 +1536,7 @@ const groupRecommendations = ref<GroupRecommendation[]>([])
 const groupCategories = ref<GroupCategory[]>([])
 const groupCategoryAssignments = ref<Record<string, string>>({})
 const groupCaps = ref<Record<string, number>>({})
+const groupTags = ref<Record<string, GroupTag[]>>({})
 // 展示用的上限倍率：真实数据优先；开发模式下无真实数据时给第一个分组挂 0.8x 测试数据
 const effectiveGroupCaps = computed<Record<string, number>>(() => {
   if (Object.keys(groupCaps.value).length > 0) return groupCaps.value
@@ -2136,11 +2138,13 @@ const loadGroupCategories = async () => {
     groupCategories.value = snap.categories
     groupCategoryAssignments.value = snap.assignments
     groupCaps.value = snap.group_caps ?? {}
+    groupTags.value = snap.group_tags ?? {}
   } catch (error) {
     console.error('Failed to load group categories:', error)
     groupCategories.value = []
     groupCategoryAssignments.value = {}
     groupCaps.value = {}
+    groupTags.value = {}
   }
 }
 

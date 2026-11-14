@@ -15,7 +15,7 @@ import (
 // validation and explicit upstream stop decisions must not become retries.
 func requestAccountStreamFailover(c *gin.Context, account *Account, resp *http.Response, err error) *UpstreamFailoverError {
 	if err == nil || c == nil || c.Request == nil || !RequestAccountFailoverEnabled(c.Request.Context()) ||
-		c.Request.Context().Err() != nil || errors.Is(err, ErrInsufficientBalance) {
+		c.Request.Context().Err() != nil || errors.Is(err, ErrInsufficientBalance) || errors.Is(err, errContentSafetyRejected) {
 		return nil
 	}
 	var failure *UpstreamFailoverError

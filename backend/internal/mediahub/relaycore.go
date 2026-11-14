@@ -28,8 +28,10 @@ type ForwardInput struct {
 	ClientPath string
 	// ResultFormat requests a protocol-compatible result after settlement.
 	ResultFormat string
-	Wait         bool
-	Protocol     string
+	// ClientQuery marks public status/content queries, excluding internal waits and diagnostics.
+	ClientQuery string
+	Wait        bool
+	Protocol    string
 	// Body 是客户端原始请求体。
 	Body []byte
 	// ContentType 是客户端 Content-Type(multipart 原样传递)。
@@ -151,6 +153,9 @@ func OpenTaskResult(ctx context.Context, client *http.Client, in ForwardInput, t
 	req.Header.Set(HeaderSignature, sig)
 	req.Header.Set(HeaderUserID, strconv.FormatInt(in.UserID, 10))
 	req.Header.Set(HeaderKeyID, strconv.FormatInt(in.KeyID, 10))
+	if in.ClientQuery != "" {
+		req.Header.Set("X-Media-Client-Query", in.ClientQuery)
+	}
 	if in.GroupID > 0 {
 		req.Header.Set(HeaderGroupID, strconv.FormatInt(in.GroupID, 10))
 	}

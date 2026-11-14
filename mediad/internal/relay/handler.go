@@ -35,13 +35,14 @@ const (
 const MaxRelayBody = 128 << 20
 
 type RelayHandler struct {
-	registry *SchemaRegistry
-	store    *MemoryStore
-	tracker  *Tracker
-	secret   string
-	MaxSync  time.Duration
-	now      func() time.Time
-	createMu sync.Mutex
+	registry    *SchemaRegistry
+	store       *MemoryStore
+	tracker     *Tracker
+	secret      string
+	MaxSync     time.Duration
+	now         func() time.Time
+	createMu    sync.Mutex
+	queryLimits taskQueryLimits
 }
 
 func NewRelayHandler(registry *SchemaRegistry, store *MemoryStore, tracker *Tracker, secret string, logger *log.Logger) *RelayHandler {
@@ -163,6 +164,9 @@ func (h *RelayHandler) handleTaskStatus(w http.ResponseWriter, r *http.Request) 
 	task, ok := h.ownedTask(r)
 	if !ok {
 		writeError(w, 404, "task_not_found", "task not found")
+		return
+	}
+	if query := r.Header.Get(HeaderClientQuery); query != "" && !h.allowTaskQuery(w, task, query == "content") {
 		return
 	}
 	if format := r.URL.Query().Get("response_format"); format != "" {

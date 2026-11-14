@@ -75,6 +75,9 @@ func (UsageLog) Fields() []ent.Field {
 			Optional().
 			Nillable(),
 
+		// Temporary tokenizer evaluation; excluded from billing and aggregates.
+		field.JSON("input_token_estimate", map[string]any{}).Optional(),
+
 		// Token 计数字段
 		field.Int("input_tokens").
 			Default(0),

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // The link grants access to one task's status and image links, never account credentials.
@@ -17,7 +18,10 @@ func (h *RelayHandler) resultToken(id string) string {
 
 func (h *RelayHandler) writeAccepted(w http.ResponseWriter, task *Task, duplicate bool) {
 	w.Header().Set("Location", "/relay/tasks/"+task.ID)
+	w.Header().Set("Retry-After", "3")
 	out := map[string]any{"task_id": task.ID, "upstream_task_id": task.UpstreamTaskID, "status": task.Status, "poll_url": "/relay/tasks/" + task.ID, "duplicated": duplicate}
+	out["poll_interval_seconds"] = 3
+	out["query_expires_at"] = task.CreatedAt.Add(taskQueryLifetime).UTC().Format(time.RFC3339)
 	if h.tracker.downloadBase != "" {
 		out["result_url"] = strings.TrimRight(h.tracker.downloadBase, "/") + "/downloads/" + task.ID + "/result?token=" + h.resultToken(task.ID)
 	}
@@ -26,7 +30,7 @@ func (h *RelayHandler) writeAccepted(w http.ResponseWriter, task *Task, duplicat
 
 func publicMediaHeaders(w http.ResponseWriter) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Expose-Headers", "Retry-After")
+	w.Header().Set("Access-Control-Expose-Headers", "Retry-After, X-Task-Query-Expires-At")
 	w.Header().Set("Cache-Control", "private, no-store")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -46,6 +50,9 @@ func (h *RelayHandler) handlePublicResult(w http.ResponseWriter, r *http.Request
 	}
 	if task.Status == StatusSucceeded && task.FilesAcknowledged {
 		writeError(w, http.StatusGone, "result_expired", "media files have expired")
+		return
+	}
+	if !h.allowTaskQuery(w, task, false) {
 		return
 	}
 	out := map[string]any{"id": id, "task_id": id, "status": "processing"}

@@ -309,6 +309,18 @@ func (_u *UsageLogUpdate) ClearSubscriptionID() *UsageLogUpdate {
 	return _u
 }
 
+// SetInputTokenEstimate sets the "input_token_estimate" field.
+func (_u *UsageLogUpdate) SetInputTokenEstimate(v map[string]interface{}) *UsageLogUpdate {
+	_u.mutation.SetInputTokenEstimate(v)
+	return _u
+}
+
+// ClearInputTokenEstimate clears the value of the "input_token_estimate" field.
+func (_u *UsageLogUpdate) ClearInputTokenEstimate() *UsageLogUpdate {
+	_u.mutation.ClearInputTokenEstimate()
+	return _u
+}
+
 // SetInputTokens sets the "input_tokens" field.
 func (_u *UsageLogUpdate) SetInputTokens(v int) *UsageLogUpdate {
 	_u.mutation.ResetInputTokens()
@@ -1276,6 +1288,12 @@ func (_u *UsageLogUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if _u.mutation.BillingModeCleared() {
 		_spec.ClearField(usagelog.FieldBillingMode, field.TypeString)
 	}
+	if value, ok := _u.mutation.InputTokenEstimate(); ok {
+		_spec.SetField(usagelog.FieldInputTokenEstimate, field.TypeJSON, value)
+	}
+	if _u.mutation.InputTokenEstimateCleared() {
+		_spec.ClearField(usagelog.FieldInputTokenEstimate, field.TypeJSON)
+	}
 	if value, ok := _u.mutation.InputTokens(); ok {
 		_spec.SetField(usagelog.FieldInputTokens, field.TypeInt, value)
 	}
@@ -1928,6 +1946,18 @@ func (_u *UsageLogUpdateOne) SetNillableSubscriptionID(v *int64) *UsageLogUpdate
 // ClearSubscriptionID clears the value of the "subscription_id" field.
 func (_u *UsageLogUpdateOne) ClearSubscriptionID() *UsageLogUpdateOne {
 	_u.mutation.ClearSubscriptionID()
+	return _u
+}
+
+// SetInputTokenEstimate sets the "input_token_estimate" field.
+func (_u *UsageLogUpdateOne) SetInputTokenEstimate(v map[string]interface{}) *UsageLogUpdateOne {
+	_u.mutation.SetInputTokenEstimate(v)
+	return _u
+}
+
+// ClearInputTokenEstimate clears the value of the "input_token_estimate" field.
+func (_u *UsageLogUpdateOne) ClearInputTokenEstimate() *UsageLogUpdateOne {
+	_u.mutation.ClearInputTokenEstimate()
 	return _u
 }
 
@@ -2927,6 +2957,12 @@ func (_u *UsageLogUpdateOne) sqlSave(ctx context.Context) (_node *UsageLog, err 
 	}
 	if _u.mutation.BillingModeCleared() {
 		_spec.ClearField(usagelog.FieldBillingMode, field.TypeString)
+	}
+	if value, ok := _u.mutation.InputTokenEstimate(); ok {
+		_spec.SetField(usagelog.FieldInputTokenEstimate, field.TypeJSON, value)
+	}
+	if _u.mutation.InputTokenEstimateCleared() {
+		_spec.ClearField(usagelog.FieldInputTokenEstimate, field.TypeJSON)
 	}
 	if value, ok := _u.mutation.InputTokens(); ok {
 		_spec.SetField(usagelog.FieldInputTokens, field.TypeInt, value)

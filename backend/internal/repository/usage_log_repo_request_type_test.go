@@ -101,6 +101,7 @@ func TestUsageLogRepositoryCreateSyncRequestTypeAndLegacyFields(t *testing.T) {
 			sqlmock.AnyArg(), // account_stats_cost
 			log.SearchCount,
 			log.SearchCost,
+			sqlmock.AnyArg(), // input_token_estimate
 			sqlmock.AnyArg(), // upstream_request_id
 			sqlmock.AnyArg(), // session_id
 			log.NativeCompactionV2,
@@ -200,6 +201,7 @@ func TestUsageLogRepositoryCreate_PersistsServiceTier(t *testing.T) {
 			sqlmock.AnyArg(), // account_stats_cost
 			log.SearchCount,
 			log.SearchCost,
+			sqlmock.AnyArg(), // input_token_estimate
 			sqlmock.AnyArg(), // upstream_request_id
 			sqlmock.AnyArg(), // session_id
 			log.NativeCompactionV2,
@@ -977,6 +979,7 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{},
 			sql.NullFloat64{},
 			2, 0.0392, // search_count, search_cost
+			sql.NullString{}, // input_token_estimate
 			sql.NullString{}, // upstream_request_id
 			sql.NullString{},
 			false, // native_compaction_v2
@@ -1062,6 +1065,7 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{},  // billing_mode
 			sql.NullFloat64{}, // account_stats_cost
 			0, 0.0,            // search_count, search_cost
+			sql.NullString{}, // input_token_estimate
 			sql.NullString{}, // upstream_request_id
 			sql.NullString{}, // session_id
 			false,            // native_compaction_v2
@@ -1128,6 +1132,7 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{},  // billing_mode
 			sql.NullFloat64{}, // account_stats_cost
 			0, 0.0,            // search_count, search_cost
+			sql.NullString{}, // input_token_estimate
 			sql.NullString{}, // upstream_request_id
 			sql.NullString{}, // session_id
 			true,             // native_compaction_v2
@@ -1195,6 +1200,7 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{},  // billing_mode
 			sql.NullFloat64{}, // account_stats_cost
 			0, 0.0,            // search_count, search_cost
+			sql.NullString{}, // input_token_estimate
 			sql.NullString{}, // upstream_request_id
 			sql.NullString{}, // session_id
 			false,            // native_compaction_v2

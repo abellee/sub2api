@@ -1464,6 +1464,9 @@ func (s *OpenAIGatewayService) describeGrokComposerImage(
 		return "", OpenAIUsage{}, fmt.Errorf("read grok composer image bridge response: %w", err)
 	}
 
+	if s.handleContentSafetyBilling(c, account, resp, respBody) {
+		return "", OpenAIUsage{}, errContentSafetyRejected
+	}
 	var parsed apicompat.ResponsesResponse
 	if err := json.Unmarshal(respBody, &parsed); err != nil {
 		return "", OpenAIUsage{}, fmt.Errorf("parse grok composer image bridge response: %w", err)
