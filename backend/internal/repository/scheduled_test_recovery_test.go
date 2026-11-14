@@ -78,7 +78,7 @@ func TestScheduledRecoveryEnableAndSchedulingNotificationAreAtomic(t *testing.T)
 func TestScheduledRecoveryListsOnlyExactKeyCandidates(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	repo := &scheduledTestPlanRepository{db: db}
 	account := &service.Account{ID: 42, Type: service.AccountTypeAPIKey, Credentials: map[string]any{"api_key": "test-key"}}
 	mock.ExpectQuery(`(?s)SELECT id FROM accounts.*deleted_at IS NULL AND type = 'apikey' AND credentials ->> 'api_key' = \$1.*ORDER BY id`).WithArgs("test-key").WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(42).AddRow(43))
@@ -96,7 +96,7 @@ func TestScheduledRecoveryListsOnlyExactKeyCandidates(t *testing.T) {
 func TestScheduledTestClaimAndAdvanceRespectConcurrentChanges(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	repo := &scheduledTestPlanRepository{db: db}
 	now := time.Now()
 	lease := now.Add(6 * time.Minute)
@@ -114,7 +114,7 @@ func TestScheduledTestClaimAndAdvanceRespectConcurrentChanges(t *testing.T) {
 func TestScheduledTestPlanPersistsRecoveryOptIn(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	repo := &scheduledTestPlanRepository{db: db}
 	now := time.Now()
 	columns := []string{"id", "account_id", "model_id", "cron_expression", "enabled", "max_results", "auto_recover", "recover_scheduling", "recovery_probe_interval_seconds", "last_run_at", "next_run_at", "created_at", "updated_at"}
