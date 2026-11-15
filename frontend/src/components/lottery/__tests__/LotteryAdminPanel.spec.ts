@@ -11,12 +11,12 @@ const activity = {
   prizes: [{ id: 1, name: '余额奖', prize_type: 'balance', value: 1, stock: 1, weight: 1 }]
 }
 
-function setup() {
+function setup(dailyConfigs: unknown[] = []) {
   let removed = false
   const get = vi.fn((path: string) => {
     if (path.endsWith('/participants')) return envelope({ participants: removed ? [] : [{ id: 1, user_id: 7, email: 'user@test.com', weight: 1 }] })
     if (path === '/v1/admin/activities') return envelope({ activities: [activity] })
-    if (path === '/v1/admin/daily-configs') return envelope({ configs: [] })
+    if (path === '/v1/admin/daily-configs') return envelope({ configs: dailyConfigs })
     return envelope({ activity, winners: [] })
   })
   const put = vi.fn(() => envelope({ id: 10 }))
@@ -29,6 +29,24 @@ function setup() {
 afterEach(() => { document.body.style.overflow = ''; vi.useRealTimers() })
 
 describe('LotteryAdminPanel moderation', () => {
+  it('saves daily notification choices without rebuilding the booked round', async () => {
+    const { wrapper, put } = setup([{
+      ...activity, id: 2, enabled: true, start_time: '08:00', duration_hours: 1,
+      notify: true, notify_channels: ['browser', 'group'], notify_stages: ['started', 'results']
+    }])
+    await flushPromises()
+    await wrapper.findAll('button').find(b => b.text() === '编辑')!.trigger('click')
+    expect(wrapper.text()).toContain('无需重建活动')
+    await wrapper.get('[aria-label="群通知"]').setValue(false)
+    await wrapper.findAll('button').find(b => b.text() === '保存')!.trigger('click')
+    await flushPromises()
+    expect(put).toHaveBeenCalledWith('/v1/admin/daily-configs/2', {
+      config: expect.objectContaining({ notify_channels: ['browser'], notify_stages: ['started', 'results'] }),
+      regenerate: false
+    })
+    expect(wrapper.text()).toContain('通知设置已同步到尚未开奖的场次')
+    wrapper.unmount()
+  })
   it('selects both notification channels when creating an activity', async () => {
     const { wrapper } = setup()
     await flushPromises()

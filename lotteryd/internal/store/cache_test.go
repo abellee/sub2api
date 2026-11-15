@@ -36,6 +36,44 @@ func TestNotificationChannelEditsInvalidateRedisSettings(t *testing.T) {
 	require.Equal(t, []string{lottery.StageResults}, settings[1].Stages)
 }
 
+func TestDailyNotificationSyncOnlyChangesActiveUndrawnRounds(t *testing.T) {
+	s, _ := cachedStore(t)
+	var ids []int64
+	for _, configID := range []int64{1, 1, 1, 1, 2, 0} {
+		id, err := s.CreateActivity(&lottery.Activity{Name: "round", DailyConfigID: configID, StartsAt: time.Now(), DrawsAt: time.Now().Add(time.Hour), ConditionMatch: lottery.MatchAll})
+		require.NoError(t, err)
+		ids = append(ids, id)
+		if len(ids) != 2 { // The second active round has no notification row yet.
+			require.NoError(t, s.SetActivityNotify(id, lottery.AllNotifyStages(), nil))
+		}
+	}
+	_, err := s.DrawActivity(ids[2])
+	require.NoError(t, err)
+	require.NoError(t, s.SetActivityStatus(ids[3], "archived"))
+	require.NoError(t, s.MarkActivityPush(ids[0], lottery.StageStarted, 3))
+	_, err = s.ListActivityNotificationSettings()
+	require.NoError(t, err)
+	for _, settings := range []lottery.NotificationSettings{
+		{Stages: []string{lottery.StageResults}, Channels: []string{lottery.NotifyBrowser}},
+		{Stages: lottery.AllNotifyStages(), Channels: []string{}},
+		{Stages: []string{}, Channels: []string{lottery.NotifyBrowser}},
+	} {
+		require.NoError(t, s.SetUndrawnActivityNotify(1, settings.Stages, settings.Channels))
+		all, err := s.ListActivityNotificationSettings()
+		require.NoError(t, err)
+		for _, id := range ids[:2] {
+			require.Equal(t, settings, all[id])
+		}
+		for _, id := range ids[2:] {
+			require.Equal(t, lottery.AllNotifyStages(), all[id].Stages)
+			require.Equal(t, []string{lottery.NotifyBrowser, lottery.NotifyGroup}, all[id].Channels)
+		}
+		logs, err := s.ListActivityPushLogs()
+		require.NoError(t, err)
+		require.Equal(t, 3, logs[ids[0]][lottery.StageStarted])
+	}
+}
+
 func TestActivityCacheTracksEditsParticipationRemovalDrawAndFulfillment(t *testing.T) {
 	s, r := cachedStore(t)
 	id := moderationActivity(t, s)

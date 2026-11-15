@@ -872,7 +872,8 @@ func (ap *App) GetDailyConfigs() []lottery.DailyConfig {
 }
 
 // SaveDailyConfig 新建（ID=0）或更新日常定时抽奖配置，返回带 ID 的配置。
-// 可见范围未填时，新建按全部用户，更新保留原来的范围。保存后同步到该配置尚未开奖的场次。
+// 可见范围未填时，新建按全部用户，更新保留原来的范围。
+// 保存后将可见范围、黑名单和通知设置同步到该配置尚未开奖的场次。
 func (ap *App) SaveDailyConfig(c lottery.DailyConfig) (lottery.DailyConfig, error) {
 	channels, channelErr := lottery.ResolveNotifyChannels(c.NotifyChannels)
 	if channelErr != nil {
@@ -933,6 +934,9 @@ func (ap *App) SaveDailyConfig(c lottery.DailyConfig) (lottery.DailyConfig, erro
 		return c, err
 	}
 	if err := ap.Store.SetUndrawnActivityBlacklist(c.ID, c.Blacklist); err != nil {
+		return c, err
+	}
+	if err := ap.Store.SetUndrawnActivityNotify(c.ID, lottery.ResolveNotifyStages(c.NotifyStages, c.Notify), c.NotifyChannels); err != nil {
 		return c, err
 	}
 	return c, nil

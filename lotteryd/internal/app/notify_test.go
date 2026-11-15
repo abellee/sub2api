@@ -8,8 +8,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alicebob/miniredis/v2"
 	"github.com/stretchr/testify/require"
 
+	"lotteryd/internal/cache"
 	"lotteryd/internal/lottery"
 	"lotteryd/internal/push"
 	"lotteryd/internal/store/storetest"
@@ -171,6 +173,7 @@ func TestDailyNotificationChannelsReachCreatedRounds(t *testing.T) {
 		want, err := lottery.ResolveNotifyChannels(channels)
 		require.NoError(t, err)
 		require.Equal(t, want, cfg.NotifyChannels)
+		require.NoError(t, ap.CreateDueDailyActivity(time.Now()))
 		acts, err := s.ListActivities()
 		require.NoError(t, err)
 		found := false
@@ -185,5 +188,83 @@ func TestDailyNotificationChannelsReachCreatedRounds(t *testing.T) {
 			require.Equal(t, []string{lottery.StageStarted}, settings.Stages)
 		}
 		require.True(t, found)
+	}
+}
+
+func TestDailyNotificationEditsReachBookedAndFutureRounds(t *testing.T) {
+	s := storetest.Open(t)
+	r := miniredis.RunT(t)
+	c, err := cache.New("redis://"+r.Addr(), t.Name())
+	require.NoError(t, err)
+	t.Cleanup(func() { c.Close() })
+	s.SetCache(c)
+	ap := New(s, nil, Config{})
+	cfg, err := ap.SaveDailyConfig(lottery.DailyConfig{
+		Enabled: true, Name: "daily", DurationHours: 1, StartTime: "08:00", ConditionMatch: lottery.MatchAll,
+		Notify: true, Prizes: []lottery.PrizeSpec{{Name: "prize", PrizeType: lottery.PrizeBalance, Value: 1, Stock: 1}},
+	})
+	require.NoError(t, err)
+	now := time.Date(2026, 11, 15, 0, 0, 0, 0, lottery.Beijing())
+	require.NoError(t, ap.CreateDueDailyActivity(now))
+	acts, err := s.ListActivities()
+	require.NoError(t, err)
+	require.Len(t, acts, 1)
+	booked := acts[0]
+	require.NoError(t, s.AddParticipant(booked.ID, 7, "user@test.com", 1, 0))
+	require.NoError(t, s.MarkActivityPush(booked.ID, lottery.StageBeforeStart, 5))
+	settings, err := s.ListActivityNotificationSettings()
+	require.NoError(t, err)
+	require.Equal(t, []string{lottery.NotifyBrowser, lottery.NotifyGroup}, settings[booked.ID].Channels)
+
+	cfg.NotifyChannels = []string{lottery.NotifyBrowser}
+	cfg.NotifyStages = []string{lottery.StageStarted, lottery.StageResults}
+	_, err = ap.SaveDailyConfig(cfg)
+	require.NoError(t, err)
+	settings, err = s.ListActivityNotificationSettings()
+	require.NoError(t, err)
+	require.Equal(t, cfg.NotifyChannels, settings[booked.ID].Channels)
+	require.Equal(t, cfg.NotifyStages, settings[booked.ID].Stages)
+	require.Equal(t, cfg.NotifyChannels, ap.GetDailyConfigs()[0].NotifyChannels)
+	unchanged, err := s.GetActivity(booked.ID)
+	require.NoError(t, err)
+	unchanged.UpdatedAt = booked.UpdatedAt
+	require.Equal(t, booked, *unchanged)
+	participants, err := s.ListParticipants(booked.ID)
+	require.NoError(t, err)
+	require.Len(t, participants, 1)
+	logs, err := s.ListActivityPushLogs()
+	require.NoError(t, err)
+	require.Equal(t, 5, logs[booked.ID][lottery.StageBeforeStart])
+
+	sent := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.Method == http.MethodGet {
+			_ = json.NewEncoder(w).Encode(map[string]any{"users": []any{}})
+			return
+		}
+		var body map[string]any
+		require.NoError(t, json.NewDecoder(req.Body).Decode(&body))
+		require.Equal(t, true, body["browserNotification"])
+		require.NotContains(t, body, "groupNotification")
+		sent++
+		_ = json.NewEncoder(w).Encode(push.Result{})
+	}))
+	defer srv.Close()
+	ap.Push = push.New(srv.URL, "test-only")
+	require.NoError(t, ap.NotifyDueActivities(context.Background(), booked.StartsAt))
+	require.NoError(t, ap.NotifyDueActivities(context.Background(), booked.StartsAt))
+	require.Equal(t, 1, sent)
+
+	_, err = s.DrawActivity(booked.ID)
+	require.NoError(t, err)
+	require.NoError(t, ap.CreateDueDailyActivity(booked.DrawsAt))
+	acts, err = s.ListActivities()
+	require.NoError(t, err)
+	require.Len(t, acts, 2)
+	for _, activity := range acts {
+		settings, err := s.ActivityNotificationSettings(activity.ID)
+		require.NoError(t, err)
+		require.Equal(t, cfg.NotifyChannels, settings.Channels)
+		require.Equal(t, cfg.NotifyStages, settings.Stages)
 	}
 }

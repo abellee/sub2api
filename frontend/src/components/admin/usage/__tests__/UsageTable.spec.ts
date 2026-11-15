@@ -103,10 +103,6 @@ const messages: Record<string, string> = {
 	'usage.modelMismatch': 'Different model',
   'admin.usage.upstreamMultiplier': 'Upstream rate',
   'admin.usage.apiAddress': 'API URL',
-  'admin.usage.tokenizerInput': 'Tokenizer input',
-  'admin.usage.tokenizerInputMissing': 'Not collected',
-  'admin.usage.tokenizerInputPartial': '(visible text only)',
-  'admin.usage.tokenizerInputHint': 'Encoding: {encoding}; upstream total input: {actual}; evaluation only',
 }
 
 vi.mock('vue-i18n', async () => {
@@ -169,31 +165,6 @@ const baseImageRow = {
 }
 
 describe('admin UsageTable tooltip', () => {
-  it('shows tokenizer input separately, preserves zero, and marks incomplete or missing observations', () => {
-    const row = { ...baseImageRow, image_count: 0, billing_mode: 'token', input_tokens: 100, output_tokens: 50, cache_read_tokens: 200, cache_creation_tokens: 300 }
-    const wrapper = mount(UsageTable, {
-      props: {
-        data: [
-          { ...row, request_id: 'estimated', input_token_estimate: { tokens: 1234, encoding: 'o200k_base', partial: true } },
-          { ...row, request_id: 'empty', input_token_estimate: { tokens: 0, encoding: 'o200k_base' } },
-          { ...row, request_id: 'historical' },
-        ],
-        loading: false,
-        columns: [{ key: 'tokens', label: 'Tokens' }],
-      },
-      global: { stubs: { DataTable: DataTableStub, EmptyState: true, Icon: true, Teleport: true } },
-    })
-    const cells = wrapper.findAll('[data-testid="input-token-estimate"]')
-    expect(cells[0].text()).toContain('1,234')
-    expect(cells[0].text()).toContain('visible text only')
-    expect(cells[0].attributes('title')).toContain('upstream total input: 600')
-    expect(cells[0].attributes('title')).toContain('o200k_base')
-    expect(cells[1].text()).toContain('Tokenizer input: 0')
-    expect(cells[1].text()).not.toContain('Not collected')
-    expect(cells[2].text()).toContain('Not collected')
-    wrapper.unmount()
-  })
-
   it.each([
     [100, 100, 800, '800 (80.00%)'],
     [2, 0, 1, '1 (33.33%)'],

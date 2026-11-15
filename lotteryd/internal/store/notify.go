@@ -59,6 +59,22 @@ func (s *Store) SetActivityNotify(activityID int64, stages []string, channels []
 	return s.changed(err)
 }
 
+// SetUndrawnActivityNotify 同步定时配置的通知设置，不清除已发送记录。
+func (s *Store) SetUndrawnActivityNotify(configID int64, stages []string, channels []string) error {
+	channels, err := lottery.ResolveNotifyChannels(channels)
+	if err != nil {
+		return err
+	}
+	stages = lottery.NormalizeNotifyStages(stages)
+	_, err = s.db.Exec(`
+		INSERT INTO activity_notify(activity_id, enabled, stages, channels)
+		SELECT id, $2, $3, $4 FROM activities
+		WHERE daily_config_id = $1 AND status = 'active' AND drawn_at = ''
+		ON CONFLICT(activity_id) DO UPDATE SET enabled = excluded.enabled, stages = excluded.stages, channels = excluded.channels
+	`, configID, len(stages) > 0, strings.Join(stages, ","), strings.Join(channels, ","))
+	return s.changed(err)
+}
+
 // ActivityNotificationSettings 返回这场活动勾选的阶段和渠道。
 // 旧数据只记了 enabled=1、没有阶段列表时，视为四个阶段都勾选。没有记录时为空。
 func (s *Store) ActivityNotificationSettings(activityID int64) (lottery.NotificationSettings, error) {

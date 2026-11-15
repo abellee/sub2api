@@ -227,19 +227,6 @@
               </div>
             </div>
           </div>
-          <div
-            data-testid="input-token-estimate"
-            class="mt-1 text-xs text-gray-500 dark:text-gray-400"
-            :title="t('admin.usage.tokenizerInputHint', {
-              encoding: row.input_token_estimate?.encoding || '-',
-              actual: ((row.input_tokens || 0) + (row.cache_read_tokens || 0) + (row.cache_creation_tokens || 0)).toLocaleString(),
-            })"
-          >
-            {{ t('admin.usage.tokenizerInput') }}:
-            <span v-if="row.input_token_estimate != null">{{ row.input_token_estimate.tokens.toLocaleString() }}</span>
-            <span v-else>{{ t('admin.usage.tokenizerInputMissing') }}</span>
-            <span v-if="row.input_token_estimate?.partial"> {{ t('admin.usage.tokenizerInputPartial') }}</span>
-          </div>
         </template>
 
         <template #cell-cost="{ row }">

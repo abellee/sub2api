@@ -820,7 +820,7 @@ async function submit(regenerate = false) {
         await adminUpdateDailyConfig(props.client, editingDailyId.value, cfg, regenerate)
         notice.value = regenerate
           ? '配置已保存，并已按新配置重新生成当前场次'
-          : '日常抽奖配置已保存（作为之后自动创建场次的依据）'
+          : '日常抽奖配置已保存，通知设置已同步到尚未开奖的场次'
       } else {
         await adminCreateDailyConfig(props.client, cfg)
         notice.value = '日常抽奖已保存，调度器将每天自动创建活动'
@@ -1375,6 +1375,7 @@ onMounted(refresh)
             <div class="sm:col-span-2 rounded-xl border border-gray-100 px-4 py-3 dark:border-dark-700">
               <p class="text-sm font-medium text-gray-800 dark:text-gray-100">发送阶段通知</p>
               <p class="mt-1 text-xs text-gray-400 dark:text-dark-500">只发送勾选的阶段和渠道。浏览器通知沿用原规则，开奖结果只通知中奖用户；群通知会把活动信息交给机器人，按当前人设生成后发送，不含活动链接和中奖私密信息。</p>
+              <p v-if="form.isDaily" class="mt-1 text-xs text-gray-400 dark:text-dark-500">保存后，通知阶段和渠道会同步到该定时配置尚未开奖的场次，无需重建活动。</p>
               <div class="mt-3 flex flex-wrap gap-5">
                 <label class="flex items-center gap-2 text-sm"><input v-model="form.notifyChannels.browser" type="checkbox" aria-label="浏览器通知" class="h-4 w-4" />浏览器通知</label>
                 <label class="flex items-center gap-2 text-sm"><input v-model="form.notifyChannels.group" type="checkbox" aria-label="群通知" class="h-4 w-4" />群通知</label>
