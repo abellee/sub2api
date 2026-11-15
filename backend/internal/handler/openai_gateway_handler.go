@@ -3219,8 +3219,10 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			},
 			AfterTurn: func(turn int, result *service.OpenAIForwardResult, turnErr error) {
 				turnUsageCtx := ctx
-				if matchingCtx, ok := turnMatchingContexts.LoadAndDelete(turn); ok {
-					turnUsageCtx = matchingCtx.(context.Context)
+				if storedCtx, ok := turnMatchingContexts.LoadAndDelete(turn); ok {
+					if matchingCtx, ok := storedCtx.(context.Context); ok {
+						turnUsageCtx = matchingCtx
+					}
 				}
 				if service.RequestAccountFailoverEnabled(ctx) && turnErr == nil {
 					delete(sameAccountRetryCount, account.ID)
