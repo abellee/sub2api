@@ -1149,7 +1149,44 @@ export async function refreshOpenCodeGoUsage(id: number): Promise<OpenCodeGoUsag
   return data
 }
 
+export interface APIAccountTotals {
+  requests: number
+  tokens: number
+  user_cost: number
+  account_cost: number
+  standard_cost: number
+  margin: number
+}
+
+export interface APIAccountSummary {
+  base_url: string
+  start_date: string
+  end_date: string
+  timezone: string
+  granularity: string
+  summary: APIAccountTotals
+  accounts: (APIAccountTotals & { account_id: number; name: string })[]
+  periods: (APIAccountTotals & { period: string })[]
+}
+
+export interface APIAccountSummaryParams {
+  base_url: string
+  start_date: string
+  end_date: string
+  timezone: string
+  granularity: 'hour' | 'day' | 'week' | 'month'
+}
+
+export async function getAPIAccountSummary(
+  params: APIAccountSummaryParams,
+  signal?: AbortSignal
+): Promise<APIAccountSummary> {
+  const { data } = await apiClient.get<APIAccountSummary>('/admin/accounts/api-summary', { params, signal })
+  return data
+}
+
 export const accountsAPI = {
+  getAPIAccountSummary,
   list,
   listWithEtag,
   getUpstreamBillingRatesWithEtag,
