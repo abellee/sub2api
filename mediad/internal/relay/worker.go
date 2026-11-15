@@ -9,6 +9,8 @@ import (
 	"time"
 )
 
+const resultStagingTimeout = 10 * time.Minute
+
 func (t *Tracker) taskSchema(task *Task) (*Schema, bool) {
 	if task.Schema != nil {
 		return task.Schema, true
@@ -172,14 +174,30 @@ func (t *Tracker) finishFiles(task *Task) {
 	if t.stager == nil {
 		return
 	}
+	// CompletedAt records the upstream result time, so restart cannot reset this limit.
+	if task.CompletedAt == nil {
+		now := t.now()
+		task.CompletedAt = &now
+		if !t.saveResult(task) {
+			return
+		}
+	}
+	ctx, cancel := context.WithDeadline(t.ctx, task.CompletedAt.Add(resultStagingTimeout))
+	defer cancel()
 	attempts := t.downloadAttempts
 	if attempts <= 0 {
 		attempts = 3
 	}
 	for attempt := 0; attempt < attempts; attempt++ {
-		files, err := t.stager.Stage(t.ctx, task)
+		if ctx.Err() != nil {
+			break
+		}
+		files, err := t.stager.Stage(ctx, task)
 		if t.ctx.Err() != nil {
 			return
+		}
+		if ctx.Err() != nil {
+			break
 		}
 		if err == nil {
 			task.Files = files
@@ -196,19 +214,30 @@ func (t *Tracker) finishFiles(task *Task) {
 			return
 		}
 		// 可查询的上游重新读取结果，刷新可能过期的下载地址。
-		if schema, ok := t.taskSchema(task); ok && task.UpstreamTaskID != "" {
-			if status, body, qerr := t.pollOnce(task, schema); qerr == nil && schema.IsTerminalSuccess(status) {
+		if schema, ok := t.taskSchema(task); ok && task.UpstreamTaskID != "" && attempt+1 < attempts {
+			if status, body, qerr := t.pollOnceContext(ctx, task, schema); qerr == nil && schema.IsTerminalSuccess(status) {
 				task.Result = ExtractResult(schema, body)
 				if err := t.store.Update(task); err != nil {
 					return
 				}
 			}
 		}
+		if attempt+1 == attempts {
+			break
+		}
 		select {
-		case <-t.ctx.Done():
-			return
+		case <-ctx.Done():
 		case <-time.After(time.Second):
 		}
 	}
-	// 保持 downloading，管理端重试或重启可继续；不宣告成功、不丢文件。
+	if t.ctx.Err() != nil {
+		return
+	}
+	task.ErrorCode = "result_staging_failed"
+	message := "Media result could not be retrieved after retries. Stop polling and contact support with the task ID."
+	if ctx.Err() != nil {
+		task.ErrorCode = "result_staging_timeout"
+		message = "Media result retrieval exceeded 10 minutes. Stop polling and contact support with the task ID."
+	}
+	t.complete(task, StatusFailed, nil, nil, message)
 }

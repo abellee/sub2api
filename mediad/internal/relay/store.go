@@ -41,6 +41,7 @@ type Task struct {
 	Usage             *Usage           `json:"usage,omitempty"`
 	Result            map[string]any   `json:"result,omitempty"`
 	ErrorMessage      string           `json:"error_message,omitempty"`
+	ErrorCode         string           `json:"error_code,omitempty"`
 	CreatedAt         time.Time        `json:"created_at"`
 	CompletedAt       *time.Time       `json:"completed_at,omitempty"`
 	// CallbackState: pending(待回调)| confirmed(已确认)| exhausted(重试耗尽)| disabled(未配置/被禁用)
@@ -138,7 +139,7 @@ func (s *MemoryStore) PublicTask(id string) (*Task, bool) {
 	}
 	return &Task{ID: t.ID, Status: t.Status, CallbackState: t.CallbackState, CreatedAt: t.CreatedAt,
 		UserID: t.UserID, KeyID: t.KeyID, FilesDeletedAt: t.FilesDeletedAt,
-		ErrorMessage: t.ErrorMessage, FilesAcknowledged: t.FilesAcknowledged, DownloadToken: t.DownloadToken,
+		ErrorMessage: t.ErrorMessage, ErrorCode: t.ErrorCode, FilesAcknowledged: t.FilesAcknowledged, DownloadToken: t.DownloadToken,
 		Files: append([]ResultFile(nil), t.Files...)}, true
 }
 
@@ -153,7 +154,9 @@ func (s *MemoryStore) Update(task *Task) error {
 	if prev := s.tasks[task.ID]; prev != nil && prev.FilesAcknowledged {
 		task.FilesAcknowledged = true
 		task.FilesDeletedAt = prev.FilesDeletedAt
-		task.Response = nil
+		if !task.stagingFailed() {
+			task.Response = nil
+		}
 		task.Result = nil
 	}
 	task.releaseCompletedRequest()
@@ -337,6 +340,10 @@ func (t *Task) releaseCompletedRequest() bool {
 	}
 	t.Request = nil
 	return true
+}
+
+func (t *Task) stagingFailed() bool {
+	return t.Status == StatusFailed && (t.ErrorCode == "result_staging_timeout" || t.ErrorCode == "result_staging_failed")
 }
 
 // NewDiskStore 在确认任务受理前持久化，每个任务独立保存；损坏时拒绝启动。

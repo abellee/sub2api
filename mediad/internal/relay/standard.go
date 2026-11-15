@@ -10,6 +10,9 @@ import (
 
 // Standard results become readable only after the main site confirms billing.
 func (h *RelayHandler) handleStandardResult(w http.ResponseWriter, r *http.Request, task *Task, format string) {
+	if writeStagingFailure(w, task) {
+		return
+	}
 	if format == "state" {
 		writeJSON(w, 200, publicTaskView(task))
 		return

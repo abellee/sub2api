@@ -241,13 +241,17 @@ func (t *Tracker) trackLoop(taskID string) {
 
 // pollOnce 查询一次上游任务状态,返回(状态串, 响应体, 错误)。
 func (t *Tracker) pollOnce(task *Task, schema *Schema) (string, []byte, error) {
+	return t.pollOnceContext(t.ctx, task, schema)
+}
+
+func (t *Tracker) pollOnceContext(parent context.Context, task *Task, schema *Schema) (string, []byte, error) {
 	q := schema.Upstream.Query
 	if q == nil {
 		return "", nil, fmt.Errorf("schema %q has no query spec", task.SchemaID)
 	}
 	endpoint := BuildQueryURL(task.UpstreamURL, q.Path, task.UpstreamTaskID)
 
-	req, err := http.NewRequestWithContext(t.ctx, strings.ToUpper(firstNonEmpty(q.Method, http.MethodGet)), endpoint, nil)
+	req, err := http.NewRequestWithContext(parent, strings.ToUpper(firstNonEmpty(q.Method, http.MethodGet)), endpoint, nil)
 	if err != nil {
 		return "", nil, err
 	}
@@ -261,7 +265,7 @@ func (t *Tracker) pollOnce(task *Task, schema *Schema) (string, []byte, error) {
 	if q.TimeoutSeconds > 0 {
 		timeout = time.Duration(q.TimeoutSeconds) * time.Second
 	}
-	ctx, cancel := context.WithTimeout(t.ctx, timeout)
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 	req = req.WithContext(ctx)
 

@@ -412,6 +412,7 @@ func (h *ManagementHandler) handleRecover(w http.ResponseWriter, r *http.Request
 	task.CallbackAttempts = 0
 	task.CallbackState = CallbackPending
 	task.ErrorMessage = ""
+	task.ErrorCode = ""
 	if err := h.store.Update(task); err != nil {
 		writeError(w, 503, "store_failed", err.Error())
 		return
