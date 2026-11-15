@@ -112,6 +112,7 @@ func (s *MemoryStore) Create(task *Task) error {
 	if _, exists := s.tasks[task.ID]; exists {
 		return fmt.Errorf("task already exists")
 	}
+	task.releaseCompletedRequest()
 	if err := s.persist(task); err != nil {
 		return err
 	}
@@ -155,6 +156,7 @@ func (s *MemoryStore) Update(task *Task) error {
 		task.Response = nil
 		task.Result = nil
 	}
+	task.releaseCompletedRequest()
 	if err := s.persist(task); err != nil {
 		return err
 	}
@@ -328,6 +330,15 @@ func cloneTask(t *Task) *Task {
 	return &cp
 }
 
+// Completed tasks never submit again; keep their results, not reference image bodies.
+func (t *Task) releaseCompletedRequest() bool {
+	if t.Request == nil || (t.Status != StatusSucceeded && t.Status != StatusFailed) {
+		return false
+	}
+	t.Request = nil
+	return true
+}
+
 // NewDiskStore 在确认任务受理前持久化，每个任务独立保存；损坏时拒绝启动。
 func NewDiskStore(root string) (*MemoryStore, error) {
 	if err := os.MkdirAll(root, 0700); err != nil {
@@ -356,6 +367,11 @@ func NewDiskStore(root string) (*MemoryStore, error) {
 		}
 		if task.ID+".json" != e.Name() {
 			return nil, fmt.Errorf("invalid task filename %s", e.Name())
+		}
+		if task.releaseCompletedRequest() {
+			if err := s.persist(&task); err != nil {
+				return nil, fmt.Errorf("release completed request %s: %w", e.Name(), err)
+			}
 		}
 		s.tasks[task.ID] = &task
 	}
