@@ -117,6 +117,22 @@ func TestGatewayServiceRecordUsage_BillingUsesDetachedContext(t *testing.T) {
 	require.NoError(t, quotaSvc.lastQuotaCtxErr)
 }
 
+func TestGatewayRecordUsageInputRoutingBeforeForceCacheBilling(t *testing.T) {
+	routing, store, _ := newInputRoutingTestService(t)
+	ctx, err := routing.apply(context.Background(), 2, 10, nil)
+	require.NoError(t, err)
+	usageRepo := &openAIRecordUsageLogRepoStub{}
+	svc := newGatewayRecordUsageServiceForTest(usageRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{})
+	err = svc.RecordUsage(ctx, &RecordUsageInput{
+		Result: &ForwardResult{RequestID: "ordinary-before-discount", Model: "claude-sonnet-4", Usage: ClaudeUsage{InputTokens: 100001, OutputTokens: 1, CacheReadInputTokens: 800000}},
+		APIKey: &APIKey{ID: 7}, User: &User{ID: 2}, Account: &Account{ID: 701}, ForceCacheBilling: true,
+	})
+	require.NoError(t, err)
+	require.Equal(t, 0, usageRepo.lastLog.InputTokens, "billing reclassification is preserved")
+	require.Equal(t, 100001, store.input, "routing uses original ordinary input, excluding cache")
+	require.Equal(t, 1, store.writes)
+}
+
 func TestGatewayServiceRecordUsage_BillingFingerprintIncludesRequestPayloadHash(t *testing.T) {
 	usageRepo := &openAIRecordUsageLogRepoStub{}
 	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}

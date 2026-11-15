@@ -290,6 +290,7 @@ type RateLimitCacheInvalidator interface {
 
 type APIKeyService struct {
 	accountMatching           AccountMatchingRepository
+	inputRouting              *AccountInputRoutingService
 	apiKeyRepo                APIKeyRepository
 	userRepo                  UserRepository
 	groupRepo                 GroupRepository

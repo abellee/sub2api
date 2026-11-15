@@ -73,12 +73,22 @@ func filterAccountMatching(ctx context.Context, accounts []Account) []Account {
 }
 
 func (s *APIKeyService) WithAccountMatching(ctx context.Context, userID int64, groupID *int64) (context.Context, error) {
-	if s.accountMatching == nil || groupID == nil {
+	// Refreshing a WebSocket turn must also be able to remove an old restriction.
+	ctx = context.WithValue(ctx, accountMatchingContextKey{}, struct{}{})
+	ctx = context.WithValue(ctx, accountInputRoutingKey{}, (*accountInputRoutingObservation)(nil))
+	if groupID == nil {
 		return ctx, nil
 	}
-	ids, err := s.accountMatching.AllowedAccounts(ctx, userID, *groupID)
-	if err != nil {
-		return ctx, err
+	var ids []int64
+	if s.accountMatching != nil {
+		var err error
+		ids, err = s.accountMatching.AllowedAccounts(ctx, userID, *groupID)
+		if err != nil {
+			return ctx, err
+		}
+	}
+	if s.inputRouting != nil {
+		return s.inputRouting.apply(ctx, userID, *groupID, ids)
 	}
 	return withAccountMatching(ctx, ids), nil
 }

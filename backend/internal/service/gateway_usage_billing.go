@@ -644,6 +644,7 @@ func writeUsageLogBestEffort(ctx context.Context, repo UsageLogRepository, usage
 	}
 	usageCtx, cancel := detachedBillingContext(ctx)
 	defer cancel()
+	observeAccountInputRouting(usageCtx, usageLog)
 
 	if writer, ok := repo.(usageLogBestEffortWriter); ok {
 		if err := writer.CreateBestEffort(usageCtx, usageLog); err != nil {
@@ -798,6 +799,10 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 
 	// 强制缓存计费：将 input_tokens 转为 cache_read_input_tokens
 	// 用于粘性会话切换时的特殊计费处理
+	if observation, _ := ctx.Value(accountInputRoutingKey{}).(*accountInputRoutingObservation); observation != nil {
+		// Routing uses upstream ordinary input, before billing-only reclassification.
+		ctx = context.WithValue(ctx, accountInputRoutingInputKey{}, result.Usage.InputTokens)
+	}
 	if input.ForceCacheBilling && result.Usage.InputTokens > 0 {
 		logger.LegacyPrintf("service.gateway", "force_cache_billing: %d input_tokens → cache_read_input_tokens (account=%d)",
 			result.Usage.InputTokens, account.ID)

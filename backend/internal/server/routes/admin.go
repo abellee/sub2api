@@ -66,6 +66,8 @@ func RegisterAdminRoutes(
 			matching := admin.Group("/account-matching")
 			matching.GET("", h.Admin.AccountMatching.List)
 			matching.GET("/users", h.Admin.AccountMatching.SearchUsers)
+			matching.GET("/input-routing", h.Admin.AccountMatching.GetInputRouting)
+			matching.PUT("/input-routing", h.Admin.AccountMatching.SaveInputRouting)
 			matching.POST("", h.Admin.AccountMatching.Save)
 			matching.PUT("/:id", h.Admin.AccountMatching.Save)
 			matching.DELETE("/:id", h.Admin.AccountMatching.Delete)

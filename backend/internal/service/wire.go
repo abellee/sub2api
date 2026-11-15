@@ -872,6 +872,7 @@ func ProvideBillingCacheService(
 
 // ProvideAPIKeyService wires APIKeyService and connects rate-limit cache invalidation.
 func ProvideAPIKeyService(
+	inputRouting *AccountInputRoutingService,
 	accountMatching AccountMatchingRepository,
 	apiKeyRepo APIKeyRepository,
 	userRepo UserRepository,
@@ -885,6 +886,7 @@ func ProvideAPIKeyService(
 ) *APIKeyService {
 	svc := NewAPIKeyService(apiKeyRepo, userRepo, groupRepo, userSubRepo, userGroupRateRepo, cache, cfg)
 	svc.accountMatching = accountMatching
+	svc.inputRouting = inputRouting
 	svc.SetRateLimitCacheInvalidator(billingCacheService)
 	svc.SetConcurrencyService(concurrencyService)
 	return svc
@@ -892,6 +894,7 @@ func ProvideAPIKeyService(
 
 // ProviderSet is the Wire provider set for all services
 var ProviderSet = wire.NewSet(
+	NewAccountInputRoutingService,
 	ProvideGroupRecommendationStore,
 	// Core services
 	ProvideAuthService,

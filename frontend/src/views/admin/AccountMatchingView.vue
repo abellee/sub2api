@@ -3,9 +3,13 @@
     <TablePageLayout>
       <template #filters>
         <div class="flex flex-wrap items-center justify-between gap-3">
-          <p class="max-w-3xl text-sm text-gray-500 dark:text-gray-400">{{ t('admin.accountMatching.description') }}</p>
+          <div class="max-w-3xl space-y-1 text-sm text-gray-500 dark:text-gray-400">
+            <p>{{ t('admin.accountMatching.description') }}</p>
+            <p>{{ t(inputRouting.enabled ? 'admin.accountMatching.inputRoutingActive' : 'admin.accountMatching.inputRoutingInactive', { threshold: inputRouting.threshold.toLocaleString() }) }}</p>
+          </div>
           <div class="flex gap-2">
             <button class="btn btn-secondary" :disabled="loading" @click="load">{{ t('common.refresh') }}</button>
+            <button class="btn btn-secondary" :disabled="loading || !optionsReady" @click="openInputRouting">{{ t('admin.accountMatching.inputRoutingTitle') }}</button>
             <button class="btn btn-primary" :disabled="loading || !optionsReady" @click="openForm()"><Icon name="plus" size="md" class="mr-1" />{{ t('common.add') }}</button>
           </div>
         </div>
@@ -78,6 +82,37 @@
       </form>
       <template #footer><div class="flex justify-end gap-3"><button class="btn btn-secondary" :disabled="saving" @click="closeForm">{{ t('common.cancel') }}</button><button class="btn btn-primary" type="submit" form="account-matching-form" :disabled="saving || !canSave">{{ t(saving ? 'common.saving' : 'common.save') }}</button></div></template>
     </BaseDialog>
+    <BaseDialog :show="showInputRouting" :title="t('admin.accountMatching.inputRoutingTitle')" width="wide" :show-close-button="!savingInputRouting" :close-on-escape="!savingInputRouting" @close="!savingInputRouting && (showInputRouting = false)">
+      <form id="input-routing-form" class="space-y-5" @submit.prevent="saveInputRouting">
+        <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('admin.accountMatching.inputRoutingHint') }}</p>
+        <fieldset :disabled="savingInputRouting" class="space-y-5">
+          <label class="flex items-center gap-2"><input id="input-routing-enabled" v-model="inputRoutingForm.enabled" type="checkbox" class="rounded text-primary-600" />{{ t('admin.accountMatching.inputRoutingEnable') }}</label>
+          <div>
+            <label for="input-routing-threshold" class="input-label">{{ t('admin.accountMatching.inputRoutingThreshold') }}</label>
+            <input id="input-routing-threshold" v-model.number="inputRoutingForm.threshold" type="number" min="1" max="100000000" step="1" required class="input" />
+          </div>
+          <fieldset>
+            <legend class="input-label">{{ t('admin.accountMatching.groups') }}</legend>
+            <input v-model="inputGroupSearch" class="input mb-2" :aria-label="t('admin.accountMatching.searchGroups')" :placeholder="t('admin.accountMatching.searchGroups')" />
+            <div class="max-h-40 overflow-y-auto rounded-lg border p-2 dark:border-dark-600">
+              <label v-for="group in inputGroups" :key="group.id" class="flex items-center gap-2 p-2"><input v-model="inputRoutingForm.group_ids" type="checkbox" :value="group.id" />{{ group.name }} <span class="text-xs text-gray-400">#{{ group.id }} · {{ group.platform }}</span></label>
+              <label v-for="id in inputRoutingForm.group_ids.filter(id => !groupMap.has(id))" :key="id" class="flex items-center gap-2 p-2 text-red-600"><input v-model="inputRoutingForm.group_ids" type="checkbox" :value="id" />{{ groupName(id) }}</label>
+            </div>
+          </fieldset>
+          <fieldset>
+            <legend class="input-label">{{ t('admin.accountMatching.inputRoutingAccounts', { count: inputRoutingForm.account_ids.length }) }}</legend>
+            <input v-model="inputAccountSearch" class="input mb-2" :aria-label="t('admin.accountMatching.searchAccounts')" :placeholder="t('admin.accountMatching.searchAccounts')" />
+            <div class="max-h-48 overflow-y-auto rounded-lg border p-2 dark:border-dark-600">
+              <label v-for="account in inputAccounts" :key="account.id" class="flex items-center gap-2 p-2"><input v-model="inputRoutingForm.account_ids" type="checkbox" :value="account.id" :disabled="inputRoutingForm.account_ids.length >= 2 && !inputRoutingForm.account_ids.includes(account.id)" />{{ account.name }} <span class="text-xs text-gray-400">#{{ account.id }} · {{ account.platform }}</span></label>
+              <label v-for="id in inputRoutingForm.account_ids.filter(id => !accountMap.has(id))" :key="id" class="flex items-center gap-2 p-2 text-red-600"><input v-model="inputRoutingForm.account_ids" type="checkbox" :value="id" />{{ accountName(id) }}</label>
+            </div>
+          </fieldset>
+        </fieldset>
+        <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.accountMatching.inputRoutingBoundary') }}</p>
+        <p v-if="inputRoutingError" role="alert" class="text-sm text-red-600">{{ inputRoutingError }}</p>
+      </form>
+      <template #footer><div class="flex justify-end gap-3"><button class="btn btn-secondary" :disabled="savingInputRouting" @click="showInputRouting = false">{{ t('common.cancel') }}</button><button class="btn btn-primary" type="submit" form="input-routing-form" :disabled="savingInputRouting || !canSaveInputRouting">{{ t(savingInputRouting ? 'common.saving' : 'common.save') }}</button></div></template>
+    </BaseDialog>
     <ConfirmDialog :show="!!deleting" :title="t('common.delete')" :message="t('admin.accountMatching.deleteConfirm', { email: deleting?.email || '' })" :confirm-text="t(deletingBusy ? 'common.processing' : 'common.confirm')" danger @confirm="remove" @cancel="!deletingBusy && (deleting = null)" />
   </AppLayout>
 </template>
@@ -85,7 +120,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { accountMatchingAPI, type AccountMatchingInput, type AccountMatchingRule, type AccountMatchingUser } from '@/api/admin/accountMatching'
+import { accountMatchingAPI, type AccountInputRoutingSettings, type AccountMatchingInput, type AccountMatchingRule, type AccountMatchingUser } from '@/api/admin/accountMatching'
 import accountsAPI from '@/api/admin/accounts'
 import groupsAPI from '@/api/admin/groups'
 import type { AccountListItem, AdminGroup } from '@/types'
@@ -106,6 +141,13 @@ const groups = ref<AdminGroup[]>([])
 const accounts = ref<AccountListItem[]>([])
 const loading = ref(false)
 const optionsReady = ref(false)
+const inputRouting = ref<AccountInputRoutingSettings>({ enabled: false, threshold: 100000, group_ids: [], account_ids: [] })
+const inputRoutingForm = ref<AccountInputRoutingSettings>({ ...inputRouting.value })
+const showInputRouting = ref(false)
+const savingInputRouting = ref(false)
+const inputRoutingError = ref('')
+const inputGroupSearch = ref('')
+const inputAccountSearch = ref('')
 const loadError = ref('')
 const showForm = ref(false)
 const saving = ref(false)
@@ -135,6 +177,30 @@ const missingGroupIDs = computed(() => form.value.group_ids.filter(id => !groupM
 const missingAccountIDs = computed(() => form.value.account_ids.filter(id => !accountMap.value.has(id)))
 const canSave = computed(() => form.value.user_id > 0 && form.value.group_ids.length > 0 && form.value.account_ids.length > 0 && !missingGroupIDs.value.length && !missingAccountIDs.value.length)
 
+const inputGroups = computed(() => groups.value.filter(g => matches(g.id, g.name, inputGroupSearch.value)))
+const inputAccounts = computed(() => accounts.value.filter(a => matches(a.id, a.name, inputAccountSearch.value)))
+const canSaveInputRouting = computed(() => {
+  const cfg = inputRoutingForm.value
+  return Number.isInteger(cfg.threshold) && cfg.threshold > 0 && cfg.threshold <= 100000000 &&
+    (!cfg.enabled || (cfg.group_ids.length > 0 && cfg.account_ids.length === 2 && cfg.group_ids.every(id => groupMap.value.has(id)) && cfg.account_ids.every(id => accountMap.value.has(id))))
+})
+function openInputRouting() {
+  inputRoutingForm.value = { ...inputRouting.value, group_ids: [...inputRouting.value.group_ids], account_ids: [...inputRouting.value.account_ids] }
+  inputRoutingError.value = inputGroupSearch.value = inputAccountSearch.value = ''
+  showInputRouting.value = true
+}
+async function saveInputRouting() {
+  if (savingInputRouting.value || !canSaveInputRouting.value) return
+  savingInputRouting.value = true
+  inputRoutingError.value = ''
+  try {
+    inputRouting.value = await accountMatchingAPI.saveInputRouting(inputRoutingForm.value)
+    showInputRouting.value = false
+    app.showSuccess(t('common.saved'))
+  } catch (error) { inputRoutingError.value = extractApiErrorMessage(error, t('admin.accountMatching.saveFailed')) }
+  finally { savingInputRouting.value = false }
+}
+
 async function loadAccounts() {
   const result: AccountListItem[] = []
   for (let page = 1; ; page++) {
@@ -148,13 +214,13 @@ async function load() {
   loading.value = true
   loadError.value = ''
   try {
-    const [ruleData, options] = await Promise.allSettled([accountMatchingAPI.list(), Promise.all([groupsAPI.getAllIncludingInactive(), loadAccounts()])])
+    const [ruleData, options] = await Promise.allSettled([Promise.all([accountMatchingAPI.list(), accountMatchingAPI.getInputRouting()]), Promise.all([groupsAPI.getAllIncludingInactive(), loadAccounts()])])
     if (options.status === 'fulfilled') {
       groups.value = options.value[0]
       accounts.value = options.value[1]
       optionsReady.value = true
     } else { optionsReady.value = false }
-    if (ruleData.status === 'fulfilled') rules.value = ruleData.value
+    if (ruleData.status === 'fulfilled') { rules.value = ruleData.value[0]; inputRouting.value = ruleData.value[1] }
     else throw ruleData.reason
     if (options.status === 'rejected') throw options.reason
   } catch (error) {

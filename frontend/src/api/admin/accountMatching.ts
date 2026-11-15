@@ -13,7 +13,21 @@ export interface AccountMatchingRule {
 export interface AccountMatchingUser { id: number; email: string }
 export type AccountMatchingInput = Pick<AccountMatchingRule, 'user_id' | 'group_ids' | 'account_ids'>
 
+export interface AccountInputRoutingSettings {
+  enabled: boolean
+  threshold: number
+  group_ids: number[]
+  account_ids: number[]
+  revision?: string
+}
+
 export const accountMatchingAPI = {
+  async getInputRouting() {
+    return (await apiClient.get<AccountInputRoutingSettings>('/admin/account-matching/input-routing')).data
+  },
+  async saveInputRouting(input: AccountInputRoutingSettings) {
+    return (await apiClient.put<AccountInputRoutingSettings>('/admin/account-matching/input-routing', input)).data
+  },
   async list() {
     return (await apiClient.get<AccountMatchingRule[]>('/admin/account-matching')).data
   },

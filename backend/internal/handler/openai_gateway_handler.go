@@ -259,6 +259,7 @@ func usageRecordContext(parent context.Context, base context.Context) context.Co
 		base = context.WithValue(base, ctxkey.RequestID, strings.TrimSpace(requestID))
 	}
 	base = service.WithUsageInputTokenEstimate(base, service.UsageInputTokenEstimateFromContext(parent))
+	base = service.CopyAccountInputRoutingContext(parent, base)
 	return service.CopyAccountFailoverBillingContext(parent, base)
 }
 
@@ -3078,6 +3079,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		// 后续 turn 的计费分组同样在 BeforeTurn 经认证缓存重取，使分组调价对
 		// 已打开的连接生效。
 		var turnBillingAPIKeys openAIWSTurnBillingAPIKeys
+		var turnMatchingContexts sync.Map
 		// Passthrough ingress does not invoke BeforeTurn for the first frame.
 		if err := checkSimpleModeTurnBilling(); err != nil {
 			closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, "billing check failed")
@@ -3158,6 +3160,16 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				return mapping.MappedModel, nil
 			},
 			BeforeTurn: func(turn int) error {
+				if h.apiKeyService != nil {
+					matchingCtx, err := h.apiKeyService.WithAccountMatching(ctx, subject.UserID, apiKey.GroupID)
+					if err != nil {
+						return service.NewOpenAIWSClientCloseError(coderws.StatusTryAgainLater, "account matching is temporarily unavailable", err)
+					}
+					if !service.AccountMatchingAllows(matchingCtx, account.ID) {
+						return service.NewOpenAIWSClientCloseError(coderws.StatusTryAgainLater, "account matching changed, please reconnect", nil)
+					}
+					turnMatchingContexts.Store(turn, matchingCtx)
+				}
 				// turn==1 的会话屏蔽已由握手层检查覆盖；连接内 flag 只拦截后续 turn。
 				if cyberBlockedThisConn && !h.cyberPolicyLogOnly(c, apiKey) {
 					return service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, cyberSessionBlockedClientMsg, nil)
@@ -3206,6 +3218,10 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				return checkSimpleModeTurnBilling()
 			},
 			AfterTurn: func(turn int, result *service.OpenAIForwardResult, turnErr error) {
+				turnUsageCtx := ctx
+				if matchingCtx, ok := turnMatchingContexts.LoadAndDelete(turn); ok {
+					turnUsageCtx = matchingCtx.(context.Context)
+				}
 				if service.RequestAccountFailoverEnabled(ctx) && turnErr == nil {
 					delete(sameAccountRetryCount, account.ID)
 				}
@@ -3287,7 +3303,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				turnRecordPricingAt := turnPricing.currentOr(turnStart)
 				turnBillingAPIKey := turnBillingAPIKeys.forTurn(turn, apiKey)
 				cyberBlocked := service.GetOpsCyberPolicy(c) != nil
-				h.submitOpenAIUsageRecordTask(ctx, result, func(taskCtx context.Context) {
+				h.submitOpenAIUsageRecordTask(turnUsageCtx, result, func(taskCtx context.Context) {
 					if err := h.gatewayService.RecordUsage(taskCtx, &service.OpenAIRecordUsageInput{
 						Result:             result,
 						APIKey:             turnBillingAPIKey,

@@ -37,7 +37,7 @@ func TestAccountMatchingAuthUsesAuthenticatedUserAndFailsClosed(t *testing.T) {
 		}
 		repo := &stubApiKeyRepo{getByKey: func(context.Context, string) (*service.APIKey, error) { return key, nil }}
 		matching := &authMatchingRepo{err: lookupErr}
-		svc := service.ProvideAPIKeyService(matching, repo, nil, nil, nil, nil, nil, cfg, nil, nil)
+		svc := service.ProvideAPIKeyService(nil, matching, repo, nil, nil, nil, nil, nil, cfg, nil, nil)
 		router := gin.New()
 		router.Use(gin.HandlerFunc(NewAPIKeyAuthMiddleware(svc, nil, cfg)))
 		entered := false

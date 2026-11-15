@@ -9,11 +9,12 @@ import (
 )
 
 type AccountMatchingHandler struct {
-	repo service.AccountMatchingRepository
+	repo         service.AccountMatchingRepository
+	inputRouting *service.AccountInputRoutingService
 }
 
-func NewAccountMatchingHandler(repo service.AccountMatchingRepository) *AccountMatchingHandler {
-	return &AccountMatchingHandler{repo: repo}
+func NewAccountMatchingHandler(repo service.AccountMatchingRepository, inputRouting *service.AccountInputRoutingService) *AccountMatchingHandler {
+	return &AccountMatchingHandler{repo: repo, inputRouting: inputRouting}
 }
 
 func (h *AccountMatchingHandler) List(c *gin.Context) {
@@ -72,4 +73,27 @@ func (h *AccountMatchingHandler) Delete(c *gin.Context) {
 		return
 	}
 	response.Success(c, gin.H{"message": "已删除"})
+}
+
+func (h *AccountMatchingHandler) GetInputRouting(c *gin.Context) {
+	cfg, err := h.inputRouting.Settings(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, cfg)
+}
+
+func (h *AccountMatchingHandler) SaveInputRouting(c *gin.Context) {
+	var cfg service.AccountInputRoutingSettings
+	if err := c.ShouldBindJSON(&cfg); err != nil {
+		response.BadRequest(c, "请填写有效的输入限制设置")
+		return
+	}
+	cfg, err := h.inputRouting.SaveSettings(c.Request.Context(), cfg)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, cfg)
 }
