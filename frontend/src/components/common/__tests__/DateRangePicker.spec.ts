@@ -88,6 +88,8 @@ describe('DateRangePicker', () => {
     })
 
     await wrapper.find('.date-picker-trigger').trigger('click')
+    // Date controls must be safe to embed in a query form.
+    for (const button of wrapper.findAll('button')) expect(button.attributes('type')).toBe('button')
     const presetButton = wrapper.findAll('.date-picker-preset').find((node) =>
       node.text().includes('Last 24 Hours')
     )

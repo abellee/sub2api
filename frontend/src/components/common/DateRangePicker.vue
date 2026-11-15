@@ -27,6 +27,7 @@
           <button
             v-for="preset in presets"
             :key="preset.value"
+            type="button"
             @click="selectPreset(preset)"
             :class="['date-picker-preset', isPresetActive(preset) && 'date-picker-preset-active']"
           >
@@ -66,7 +67,7 @@
 
         <!-- Apply button -->
         <div class="date-picker-actions">
-          <button @click="apply" class="date-picker-apply">
+          <button type="button" @click="apply" class="date-picker-apply">
             {{ t('dates.apply') }}
           </button>
         </div>
