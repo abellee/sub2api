@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
+	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
 	"github.com/gin-gonic/gin"
 )
 
@@ -277,6 +278,9 @@ func ForwardWithAccountRetries[T any](ctx context.Context, c *gin.Context, forwa
 	}
 	result, err := forward()
 	if ctx.Err() != nil {
+		if errors.Is(err, pkghttputil.ErrUpstreamDrainTimeout) {
+			return result, err
+		}
 		return result, ctx.Err()
 	}
 	switch partial := any(result).(type) {
