@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -139,6 +140,38 @@ func TestAccountInputRoutingUsageWriteSurvivesCancellation(t *testing.T) {
 	require.Equal(t, 100001, store.input)
 	require.Equal(t, 1, repo.calls)
 	require.NoError(t, repo.lastCtxErr)
+}
+
+func TestAccountInputRoutingTextPricingModes(t *testing.T) {
+	for _, tc := range []struct {
+		mode         string
+		image, video int
+		want         int
+	}{
+		{mode: string(BillingModeToken), want: 1},
+		{mode: string(BillingModePerRequest), want: 1},
+		{mode: string(BillingModeImage)},
+		{mode: string(BillingModeVideo)},
+		{mode: "unknown"},
+		{mode: string(BillingModePerRequest), image: 1},
+		{mode: string(BillingModePerRequest), video: 1},
+	} {
+		t.Run(fmt.Sprintf("%s/image=%d/video=%d", tc.mode, tc.image, tc.video), func(t *testing.T) {
+			s, store, _ := newInputRoutingTestService(t)
+			ctx, err := s.apply(context.Background(), 2, 10, nil)
+			require.NoError(t, err)
+			observeAccountInputRouting(ctx, &UsageLog{
+				UserID: 2, APIKeyID: 7, RequestID: "text-pricing-mode",
+				InputTokens: 150000, OutputTokens: 5000, BillingMode: &tc.mode,
+				ImageCount: tc.image, VideoCount: tc.video,
+			})
+			require.Equal(t, tc.want, store.writes)
+			if tc.want > 0 {
+				require.Equal(t, 150000, store.input)
+				require.Equal(t, 5000, store.output)
+			}
+		})
+	}
 }
 
 type inputRoutingGroups struct{ GroupRepository }

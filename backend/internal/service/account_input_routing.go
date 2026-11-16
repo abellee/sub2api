@@ -188,11 +188,11 @@ func observeAccountInputRouting(ctx context.Context, usage *UsageLog) {
 	observation, _ := ctx.Value(accountInputRoutingKey{}).(*accountInputRoutingObservation)
 	if observation == nil || usage == nil || usage.UserID != observation.userID || usage.RequestID == "" || usage.APIKeyID <= 0 ||
 		usage.InputTokens < 0 || usage.OutputTokens < 0 || usage.ImageCount > 0 || usage.VideoCount > 0 ||
-		(usage.BillingMode != nil && *usage.BillingMode != string(BillingModeToken)) ||
+		(usage.BillingMode != nil && *usage.BillingMode != string(BillingModeToken) && *usage.BillingMode != string(BillingModePerRequest)) ||
 		usage.InputTokens+usage.OutputTokens+usage.CacheReadTokens+usage.CacheCreationTokens == 0 {
 		return
 	}
-	// Completed upstream usage is already normalized: InputTokens excludes caches.
+	// Text usage counts for both token and per-request pricing; InputTokens excludes caches.
 	s := observation.service
 	current, err := s.Settings(ctx)
 	if err == nil && (!current.Enabled || current.Revision != observation.settings.Revision) {

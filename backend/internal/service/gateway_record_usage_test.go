@@ -5,6 +5,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -132,6 +133,32 @@ func TestGatewayRecordUsageInputRoutingBeforeForceCacheBilling(t *testing.T) {
 	require.Equal(t, 100001, store.input, "routing uses original ordinary input, excluding cache")
 	require.Equal(t, 1, store.output, "routing uses actual output")
 	require.Equal(t, 1, store.writes)
+}
+
+func TestGatewayRecordUsageInputRoutingPerRequestText(t *testing.T) {
+	routing, store, _ := newInputRoutingTestService(t)
+	ctx, err := routing.apply(context.Background(), 2, 10, nil)
+	require.NoError(t, err)
+	usageRepo := &openAIRecordUsageLogRepoStub{}
+	svc := newGatewayRecordUsageServiceForTest(usageRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{})
+	svc.resolver = NewModelPricingResolver(nil, svc.billingService)
+	groupID := int64(10)
+	price := 0.02
+	key := &APIKey{ID: 7, GroupID: &groupID, Group: &Group{
+		ID: groupID, Platform: PlatformGemini, Hydrated: true, RateMultiplier: 1,
+		ModelPricing: []ChannelModelPricing{{Models: []string{"gemini-3.8-flash"}, BillingMode: BillingModePerRequest, PerRequestPrice: &price}},
+	}}
+	for i, inputTokens := range []int{150000, 160000, 170000, 10, 20, 30} {
+		err = svc.RecordUsage(ctx, &RecordUsageInput{
+			Result: &ForwardResult{RequestID: fmt.Sprintf("per-request-text-%d", i), Model: "gemini-3.8-flash", Usage: ClaudeUsage{InputTokens: inputTokens, OutputTokens: 100, CacheReadInputTokens: 200000}},
+			APIKey: key, User: &User{ID: 2}, Account: &Account{ID: 20, Platform: PlatformGemini},
+		})
+		require.NoError(t, err)
+		require.Equal(t, i+1, store.writes, "both high and recovery usage must be observed")
+		require.Equal(t, inputTokens, store.input, "exclude cached input")
+		require.Equal(t, string(BillingModePerRequest), *usageRepo.lastLog.BillingMode)
+		require.InDelta(t, price, usageRepo.lastLog.ActualCost, 1e-12, "keep per-request billing")
+	}
 }
 
 func TestGatewayServiceRecordUsage_BillingFingerprintIncludesRequestPayloadHash(t *testing.T) {
