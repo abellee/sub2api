@@ -17,6 +17,7 @@ export interface AccountInputRoutingSettings {
   enabled: boolean
   threshold: number
   output_threshold: number
+  output_input_threshold: number
   group_ids: number[]
   account_ids: number[]
   revision?: string

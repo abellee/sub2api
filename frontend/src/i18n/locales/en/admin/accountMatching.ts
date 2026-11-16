@@ -1,14 +1,15 @@
 export default {
   accountMatching: {
     inputRoutingTitle: 'Input and output token restriction',
-    inputRoutingActive: 'Restriction enabled: ordinary input threshold {threshold} tokens, output threshold {outputThreshold} tokens; manual account matching takes priority.',
+    inputRoutingActive: 'Restriction enabled after 3 events: input above {threshold} tokens, or output above {outputThreshold} tokens with input above {outputInputThreshold} tokens. Manual account matching takes priority.',
     inputRoutingInactive: 'Input and output token restriction is disabled.',
     inputRoutingEnable: 'Enable input and output token restriction',
     inputRoutingThreshold: 'Ordinary input threshold (tokens, excluding caches)',
     inputRoutingOutputThreshold: 'Output threshold (tokens)',
     inputRoutingAccounts: 'Two accounts to use while restricted ({count} selected)',
-    inputRoutingHint: 'Count each user separately within the selected groups. After 3 requests with both ordinary input and output above their respective thresholds, subsequent requests use only the two selected accounts. After 3 consecutive requests with both below their thresholds while restricted, subsequent requests return to the selected group. Existing manual matching always takes priority and is never intersected with this rule.',
-    inputRoutingBoundary: 'Uses input and output reported after text requests complete; ordinary input excludes cache reads and writes. Meeting only one condition or equaling a threshold does not add an above-threshold event and breaks the below-threshold streak while restricted. Only text requests with usage count, in completion order; requests already sent are unaffected. A WebSocket must reconnect when its account becomes ineligible. Requests fail when both accounts are unavailable. Saving resets counts; other instances synchronize within 5 seconds.',
+    inputRoutingOutputInputThreshold: 'Input threshold when output exceeds its limit (tokens, excluding caches)',
+    inputRoutingHint: 'Count each user separately within the selected groups. After 3 events meeting either condition, subsequent requests use only the two selected accounts: ordinary input exceeds the input threshold; or output exceeds the output threshold and ordinary input exceeds the accompanying input threshold. Each request counts at most once. While restricted, return to the selected group after 3 consecutive requests with input below its threshold and either output below its threshold or input below the accompanying threshold. Manual account matching always takes priority.',
+    inputRoutingBoundary: 'Uses completed request usage; ordinary input excludes cache reads and writes. Exceeds means strictly greater; below means strictly less. Boundary values that fail the recovery condition break the recovery streak. Only text requests with usage count, in completion order; requests already sent are unaffected. A WebSocket must reconnect when its account becomes ineligible. Requests fail when both accounts are unavailable. Saving resets counts; other instances synchronize within 5 seconds.',
     title: 'Account matching',
     description: 'Requests to the selected groups use only the selected accounts, even when they belong to other groups. Accounts must be enabled, available, and support the requested platform and model.',
     add: 'Add account matching',

@@ -16,8 +16,8 @@ func NewAccountInputRoutingStore(client *redis.Client) service.AccountInputRouti
 }
 
 func inputRoutingStateKey(revision string, userID, groupID int64) string {
-	// Separate dual-threshold counters from old input-only replicas and revisions.
-	return fmt.Sprintf("account_input_output_routing:{%d:%d}:%s:state", userID, groupID, revision)
+	// Keep counters separate from replicas using the previous threshold conditions.
+	return fmt.Sprintf("account_input_output_routing_v2:{%d:%d}:%s:state", userID, groupID, revision)
 }
 
 func (s *accountInputRoutingStore) Restricted(ctx context.Context, revision string, userID, groupID int64) (bool, error) {
@@ -37,14 +37,14 @@ if redis.call('HGET', KEYS[1], 'revision') == ARGV[1] then
   restricted = tonumber(redis.call('HGET', KEYS[1], 'restricted') or '0')
 end
 local input, output = tonumber(ARGV[2]), tonumber(ARGV[3])
-local threshold, outputThreshold = tonumber(ARGV[4]), tonumber(ARGV[5])
+local threshold, outputThreshold, outputInputThreshold = tonumber(ARGV[4]), tonumber(ARGV[5]), tonumber(ARGV[6])
 if restricted == 0 then
-  if input > threshold and output > outputThreshold then
+  if input > threshold or (output > outputThreshold and input > outputInputThreshold) then
     high = math.min(3, high + 1)
     if high == 3 then restricted = 1; low = 0 end
   end
 else
-  if input < threshold and output < outputThreshold then
+  if input < threshold and (output < outputThreshold or input < outputInputThreshold) then
     low = low + 1
     if low == 3 then high = 0; low = 0; restricted = 0 end
   else
@@ -56,10 +56,10 @@ redis.call('SET', KEYS[2], '1', 'EX', 604800)
 return restricted
 `)
 
-func (s *accountInputRoutingStore) Observe(ctx context.Context, revision string, userID, groupID, keyID int64, requestID string, input, output, threshold, outputThreshold int) error {
+func (s *accountInputRoutingStore) Observe(ctx context.Context, revision string, userID, groupID, keyID int64, requestID string, input, output, threshold, outputThreshold, outputInputThreshold int) error {
 	// Scope duplicate suppression by key, request and configuration revision.
 	hash := sha256.Sum256([]byte(fmt.Sprintf("%s:%d:%s", revision, keyID, requestID)))
 	state := inputRoutingStateKey(revision, userID, groupID)
-	_, err := inputRoutingObserveScript.Run(ctx, s.client, []string{state, fmt.Sprintf("%s:seen:%x", state, hash)}, revision, input, output, threshold, outputThreshold).Result()
+	_, err := inputRoutingObserveScript.Run(ctx, s.client, []string{state, fmt.Sprintf("%s:seen:%x", state, hash)}, revision, input, output, threshold, outputThreshold, outputInputThreshold).Result()
 	return err
 }

@@ -1,14 +1,15 @@
 export default {
   accountMatching: {
     inputRoutingTitle: '输入输出限制',
-    inputRoutingActive: '输入输出限制已开启，普通输入阈值 {threshold} token，输出阈值 {outputThreshold} token；已有账号匹配优先。',
+    inputRoutingActive: '输入输出限制已开启：输入超过 {threshold} token，或输出超过 {outputThreshold} token 且输入超过 {outputInputThreshold} token，累计 3 次后受限；已有账号匹配优先。',
     inputRoutingInactive: '输入输出限制已关闭。',
     inputRoutingEnable: '开启输入输出限制',
     inputRoutingThreshold: '普通输入阈值（token，不含缓存）',
     inputRoutingOutputThreshold: '输出阈值（token）',
     inputRoutingAccounts: '受限时使用的两个账号（已选 {count} 个）',
-    inputRoutingHint: '对所选分组中的每位用户分别计数。累计 3 次普通输入和输出同时高于各自阈值，下一次起仅使用指定的两个账号；受限后连续 3 次同时低于各自阈值，下一次起恢复走指定分组。已有手动账号匹配始终优先，不与本规则叠加。',
-    inputRoutingBoundary: '按请求完成后返回的输入、输出计数，普通输入不含缓存读写。只满足一项或等于阈值不增加超限次数，受限时会打断连续低于阈值的计数。仅统计有用量的文本请求，按完成顺序更新，已发出的请求不受影响。长连接账号不再符合规则时需重连。两个账号都不可用时请求失败。保存设置后重新计数，各实例最多 5 秒同步。',
+    inputRoutingOutputInputThreshold: '输出超限时的输入阈值（token，不含缓存）',
+    inputRoutingHint: '对所选分组中的每位用户分别计数。以下任一条件累计满足 3 次，下一次起仅使用指定的两个账号：普通输入超过输入阈值；或输出超过输出阈值，且普通输入超过“输出超限时的输入阈值”。一次请求最多计 1 次。受限后，连续 3 次普通输入低于输入阈值，且输出低于输出阈值或普通输入低于输出配套输入阈值，下一次起恢复走指定分组。已有手动账号匹配始终优先。',
+    inputRoutingBoundary: '按请求完成后返回的用量计数，普通输入不含缓存读写。超过用严格大于，低于用严格小于；落在边界且不满足恢复条件时，会打断连续恢复计数。仅统计有用量的文本请求，按完成顺序更新，已发出的请求不受影响。长连接账号不再符合规则时需重连。两个账号都不可用时请求失败。保存设置后重新计数，各实例最多 5 秒同步。',
     title: '账号匹配',
     description: '用户请求指定分组时，仅使用限定账号，无需将账号绑定到该分组。账号仍需开启、可用，并支持请求的平台和模型。',
     add: '添加账号匹配',
