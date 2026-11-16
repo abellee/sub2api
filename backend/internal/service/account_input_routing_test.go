@@ -27,26 +27,28 @@ func (r *inputRoutingSettingsRepo) Set(_ context.Context, _ string, raw string) 
 }
 
 type inputRoutingStoreStub struct {
-	restricted             bool
-	err                    error
-	reads, writes          int
-	userID, groupID, keyID int64
-	input, threshold       int
+	restricted              bool
+	err                     error
+	reads, writes           int
+	userID, groupID, keyID  int64
+	input, threshold        int
+	output, outputThreshold int
 }
 
 func (s *inputRoutingStoreStub) Restricted(context.Context, string, int64, int64) (bool, error) {
 	s.reads++
 	return s.restricted, s.err
 }
-func (s *inputRoutingStoreStub) Observe(_ context.Context, _ string, userID, groupID, keyID int64, _ string, input, threshold int) error {
+func (s *inputRoutingStoreStub) Observe(_ context.Context, _ string, userID, groupID, keyID int64, _ string, input, output, threshold, outputThreshold int) error {
 	s.writes++
 	s.userID, s.groupID, s.keyID = userID, groupID, keyID
 	s.input, s.threshold = input, threshold
+	s.output, s.outputThreshold = output, outputThreshold
 	return s.err
 }
 func newInputRoutingTestService(t *testing.T) (*AccountInputRoutingService, *inputRoutingStoreStub, *inputRoutingSettingsRepo) {
 	t.Helper()
-	cfg := AccountInputRoutingSettings{Enabled: true, Threshold: 100000, GroupIDs: []int64{10}, AccountIDs: []int64{20, 21}, Revision: "v1"}
+	cfg := AccountInputRoutingSettings{Enabled: true, Threshold: 100000, OutputThreshold: 10000, GroupIDs: []int64{10}, AccountIDs: []int64{20, 21}, Revision: "v1"}
 	raw, err := json.Marshal(cfg)
 	require.NoError(t, err)
 	repo := &inputRoutingSettingsRepo{raw: string(raw)}
@@ -96,8 +98,10 @@ func TestAccountInputRoutingObservesOrdinaryInputAndOriginalGroup(t *testing.T) 
 	observeAccountInputRouting(ctx, usage)
 	require.Equal(t, 1, store.writes)
 	require.Equal(t, 12, store.input)
+	require.Equal(t, 5, store.output)
 	require.Equal(t, int64(10), store.groupID)
 	require.Equal(t, 100000, store.threshold)
+	require.Equal(t, 10000, store.outputThreshold)
 	usage.InputTokens = 0
 	usage.OutputTokens = 0
 	observeAccountInputRouting(ctx, usage)
@@ -111,6 +115,10 @@ func TestAccountInputRoutingObservesOrdinaryInputAndOriginalGroup(t *testing.T) 
 	observeAccountInputRouting(ctx, usage)
 	require.Equal(t, 2, store.writes)
 	usage.ImageCount = 0
+	usage.OutputTokens = -1
+	observeAccountInputRouting(ctx, usage)
+	require.Equal(t, 2, store.writes, "negative output is invalid usage")
+	usage.OutputTokens = 5
 	usage.UserID = 3
 	observeAccountInputRouting(ctx, usage)
 	require.Equal(t, 2, store.writes)
@@ -153,6 +161,7 @@ func TestAccountInputRoutingSettingsValidationAndDisable(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, cfg.Enabled)
 	require.Equal(t, 100000, cfg.Threshold)
+	require.Equal(t, 10000, cfg.OutputThreshold)
 	repo.err = nil
 	cfg.Enabled = true
 	cfg.GroupIDs = []int64{10}
@@ -167,6 +176,13 @@ func TestAccountInputRoutingSettingsValidationAndDisable(t *testing.T) {
 	bad.Threshold = 0
 	_, err = s.SaveSettings(context.Background(), bad)
 	require.ErrorIs(t, err, ErrAccountInputRoutingInvalid)
+	for _, threshold := range []int{-1, 0, 100000001} {
+		bad := cfg
+		bad.OutputThreshold = threshold
+		_, err = s.SaveSettings(context.Background(), bad)
+		require.ErrorIs(t, err, ErrAccountInputRoutingInvalid)
+	}
+	cfg.OutputThreshold = 25000
 	saved, err := s.SaveSettings(context.Background(), cfg)
 	require.NoError(t, err)
 	require.NotEmpty(t, saved.Revision)
@@ -174,6 +190,10 @@ func TestAccountInputRoutingSettingsValidationAndDisable(t *testing.T) {
 	fresh, err := s.Settings(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, int64(20), fresh.AccountIDs[0], "callers must not mutate cached settings")
+	reloaded := NewAccountInputRoutingService(repo, nil, nil, nil)
+	persisted, err := reloaded.Settings(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, 25000, persisted.OutputThreshold)
 	store := &inputRoutingStoreStub{restricted: true}
 	s.store = store
 	ctx, err := s.apply(context.Background(), 2, 10, nil)
@@ -189,4 +209,22 @@ func TestAccountInputRoutingSettingsValidationAndDisable(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, AccountMatchingAllows(ctx, 99))
 	require.Equal(t, 1, store.reads)
+}
+
+func TestAccountInputRoutingLoadsLegacySettingsWithOutputDefault(t *testing.T) {
+	repo := &inputRoutingSettingsRepo{raw: `{"enabled":true,"threshold":120000,"group_ids":[10],"account_ids":[20,21],"revision":"old"}`}
+	s := NewAccountInputRoutingService(repo, nil, nil, nil)
+	cfg, err := s.Settings(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, 120000, cfg.Threshold)
+	require.Equal(t, 10000, cfg.OutputThreshold)
+	for _, value := range []int{0, -1, 100000001} {
+		cfg.OutputThreshold = value
+		raw, err := json.Marshal(cfg)
+		require.NoError(t, err)
+		repo.raw = string(raw)
+		s = NewAccountInputRoutingService(repo, nil, nil, nil)
+		_, err = s.Settings(context.Background())
+		require.Error(t, err)
+	}
 }

@@ -67,10 +67,8 @@ func newBodyLimitPassthroughRule(responseCode int, customMessage string) *model.
 	}
 }
 
-// A configured 413 rule must win over the built-in body-limit mapping: the
-// built-in branch returns 413 before the generic passthrough lookup runs, so a
-// rule could otherwise never match on this path.
-func TestOpenAIBodyLimitFailoverExhausted_PassthroughRuleOverridesBuiltInMapping(t *testing.T) {
+// Rules replace the message while preserving the final upstream 413.
+func TestOpenAIBodyLimitFailoverExhausted_PassthroughRulePreservesFinalStatus(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -80,7 +78,7 @@ func TestOpenAIBodyLimitFailoverExhausted_PassthroughRuleOverridesBuiltInMapping
 
 	h.handleFailoverExhausted(c, bodyLimitFailoverTestError(), false)
 
-	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Equal(t, http.StatusRequestEntityTooLarge, rec.Code)
 	var envelope map[string]any
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &envelope))
 	errBody, ok := envelope["error"].(map[string]any)

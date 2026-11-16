@@ -87,7 +87,7 @@ func (h *AccountMatchingHandler) GetInputRouting(c *gin.Context) {
 func (h *AccountMatchingHandler) SaveInputRouting(c *gin.Context) {
 	var cfg service.AccountInputRoutingSettings
 	if err := c.ShouldBindJSON(&cfg); err != nil {
-		response.BadRequest(c, "请填写有效的输入限制设置")
+		response.BadRequest(c, "请填写有效的输入、输出限制设置")
 		return
 	}
 	cfg, err := h.inputRouting.SaveSettings(c.Request.Context(), cfg)

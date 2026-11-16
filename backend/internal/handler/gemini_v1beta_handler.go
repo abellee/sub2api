@@ -916,46 +916,8 @@ func parseGeminiModelAction(rest string) (model string, action string, err error
 }
 
 func (h *GatewayHandler) handleGeminiFailoverExhausted(c *gin.Context, failoverErr *service.UpstreamFailoverError) {
-	if failoverErr == nil {
-		googleError(c, http.StatusBadGateway, "Upstream request failed")
-		return
-	}
-
-	statusCode := failoverErr.StatusCode
-	responseBody := failoverErr.ResponseBody
-
-	// 先检查透传规则
-	if h.errorPassthroughService != nil && len(responseBody) > 0 {
-		if rule := h.errorPassthroughService.MatchRule(service.PlatformGemini, statusCode, responseBody); rule != nil {
-			// 确定响应状态码
-			respCode := statusCode
-			if !rule.PassthroughCode && rule.ResponseCode != nil {
-				respCode = *rule.ResponseCode
-			}
-
-			// 确定响应消息
-			msg := service.ExtractUpstreamErrorMessage(responseBody)
-			if !rule.PassthroughBody && rule.CustomMessage != nil {
-				msg = *rule.CustomMessage
-			}
-
-			if rule.SkipMonitoring {
-				c.Set(service.OpsSkipPassthroughKey, true)
-			}
-
-			// 按透传规则改写的是上游错误，不登记本地错误类型。
-			googleErrorWithType(c, respCode, "", "", msg)
-			return
-		}
-	}
-
-	// 记录原始上游状态码，以便 ops 错误日志捕获真实的上游错误
-	upstreamMsg := service.ExtractUpstreamErrorMessage(responseBody)
-	service.SetOpsUpstreamError(c, statusCode, upstreamMsg, "")
-
-	// 使用默认的错误映射
-	status, message := mapGeminiUpstreamError(statusCode)
-	googleError(c, status, message)
+	status, _, message := failoverClientResponse(c, h.errorPassthroughService, failoverErr, service.PlatformGemini)
+	googleErrorWithType(c, status, "", "", message)
 }
 
 func mapGeminiUpstreamError(statusCode int) (int, string) {

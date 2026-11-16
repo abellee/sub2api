@@ -59,7 +59,7 @@ func TestGatewayChatAntigravityCredentialFailureReturnsActionableMessage(t *test
 		ResponseBody:      []byte(`{"error":{"message":"Invalid bearer token","refresh_token":"must-not-leak"}}`),
 	}, false)
 
-	require.Equal(t, http.StatusBadGateway, recorder.Code)
+	require.Equal(t, http.StatusUnauthorized, recorder.Code)
 	require.Contains(t, recorder.Body.String(), service.AntigravityCredentialRejectedClientMessage)
 	require.NotContains(t, strings.ToLower(recorder.Body.String()), "bearer")
 	require.NotContains(t, strings.ToLower(recorder.Body.String()), "refresh_token")
@@ -81,13 +81,13 @@ func TestOpenAIAccessStateCredentialFailureUsesTypedSafeResponse(t *testing.T) {
 		ResponseBody:      []byte(`{"error":{"message":"Your workspace is deactivated","token":"must-not-leak"}}`),
 	}, false)
 
-	require.Equal(t, http.StatusBadGateway, recorder.Code)
+	require.Equal(t, http.StatusForbidden, recorder.Code)
 	require.Contains(t, recorder.Body.String(), "Upstream access is temporarily unavailable")
 	require.NotContains(t, strings.ToLower(recorder.Body.String()), "deactivated")
 	require.NotContains(t, recorder.Body.String(), "must-not-leak")
 }
 
-func TestOpenAICapacityFailoverExhaustionPreservesMessageAsServerError(t *testing.T) {
+func TestOpenAICapacityFailoverExhaustionPreservesStatusWithoutUpstreamMessage(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	message := "Our servers are currently overloaded. Please try again later."
 	failoverErr := &service.UpstreamFailoverError{
@@ -103,9 +103,9 @@ func TestOpenAICapacityFailoverExhaustionPreservesMessageAsServerError(t *testin
 		recorder := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(recorder)
 		(&OpenAIGatewayHandler{}).handleFailoverExhausted(c, failoverErr, false)
-		require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
-		require.Equal(t, "server_error", gjson.Get(recorder.Body.String(), "error.type").String())
-		require.Equal(t, message, gjson.Get(recorder.Body.String(), "error.message").String())
+		require.Equal(t, http.StatusBadRequest, recorder.Code)
+		require.Equal(t, "upstream_error", gjson.Get(recorder.Body.String(), "error.type").String())
+		require.Equal(t, "Upstream request failed", gjson.Get(recorder.Body.String(), "error.message").String())
 		require.NotContains(t, recorder.Body.String(), "server_is_overloaded")
 	})
 
@@ -113,22 +113,22 @@ func TestOpenAICapacityFailoverExhaustionPreservesMessageAsServerError(t *testin
 		recorder := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(recorder)
 		(&GatewayHandler{}).handleResponsesFailoverExhausted(c, failoverErr, false)
-		require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
-		require.Equal(t, "server_error", gjson.Get(recorder.Body.String(), "error.code").String())
-		require.Equal(t, message, gjson.Get(recorder.Body.String(), "error.message").String())
+		require.Equal(t, http.StatusBadRequest, recorder.Code)
+		require.Equal(t, "upstream_error", gjson.Get(recorder.Body.String(), "error.code").String())
+		require.Equal(t, "Upstream request failed", gjson.Get(recorder.Body.String(), "error.message").String())
 	})
 
 	t.Run("anthropic_compat", func(t *testing.T) {
 		recorder := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(recorder)
 		(&OpenAIGatewayHandler{}).handleAnthropicFailoverExhausted(c, failoverErr, false)
-		require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
-		require.Equal(t, "api_error", gjson.Get(recorder.Body.String(), "error.type").String())
-		require.Equal(t, message, gjson.Get(recorder.Body.String(), "error.message").String())
+		require.Equal(t, http.StatusBadRequest, recorder.Code)
+		require.Equal(t, "upstream_error", gjson.Get(recorder.Body.String(), "error.type").String())
+		require.Equal(t, "Upstream request failed", gjson.Get(recorder.Body.String(), "error.message").String())
 	})
 }
 
-func TestOpenAIManagedSingleAccountModelNotFoundExhaustionPreservesStructured400(t *testing.T) {
+func TestOpenAIManagedSingleAccountModelNotFoundExhaustionPreserves400WithoutUpstreamDetails(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
@@ -140,10 +140,10 @@ func TestOpenAIManagedSingleAccountModelNotFoundExhaustionPreservesStructured400
 	}, false)
 
 	require.Equal(t, http.StatusBadRequest, recorder.Code)
-	require.Equal(t, "invalid_request_error", gjson.Get(recorder.Body.String(), "error.type").String())
-	require.Equal(t, "model_not_found", gjson.Get(recorder.Body.String(), "error.code").String())
-	require.Equal(t, "model", gjson.Get(recorder.Body.String(), "error.param").String())
-	require.Equal(t, "The requested model is unavailable on this account", gjson.Get(recorder.Body.String(), "error.message").String())
+	require.Equal(t, "upstream_error", gjson.Get(recorder.Body.String(), "error.type").String())
+	require.False(t, gjson.Get(recorder.Body.String(), "error.code").Exists())
+	require.False(t, gjson.Get(recorder.Body.String(), "error.param").Exists())
+	require.Equal(t, "Upstream request failed", gjson.Get(recorder.Body.String(), "error.message").String())
 }
 
 func TestOpenAIManagedModelNotFoundExhaustionSanitizesMessage(t *testing.T) {
@@ -159,7 +159,7 @@ func TestOpenAIManagedModelNotFoundExhaustionSanitizesMessage(t *testing.T) {
 
 	require.Equal(t, http.StatusBadRequest, recorder.Code)
 	require.NotContains(t, recorder.Body.String(), "super-secret-value")
-	require.Contains(t, gjson.Get(recorder.Body.String(), "error.message").String(), "access_token=***")
+	require.Equal(t, "Upstream request failed", gjson.Get(recorder.Body.String(), "error.message").String())
 	recorded, ok := c.Get(service.OpsUpstreamErrorMessageKey)
 	require.True(t, ok)
 	require.NotContains(t, recorded, "super-secret-value")
@@ -417,7 +417,7 @@ func TestOpsWebSocketCredentialFailoverExhaustedIsRecorded(t *testing.T) {
 			Stage: string(service.GatewayFailureStageAccountAuth), Scope: string(service.GatewayFailureScopeAccount),
 			Reason: string(service.GrokCredentialReasonRevoked), Message: "Grok OAuth credentials require account action",
 		}})
-		closeOpenAIWSFailoverExhausted(c, nil, &service.UpstreamFailoverError{
+		(&OpenAIGatewayHandler{}).closeOpenAIWSFailoverExhausted(c, nil, &service.UpstreamFailoverError{
 			Stage:             service.GatewayFailureStageAccountAuth,
 			Scope:             service.GatewayFailureScopeAccount,
 			Reason:            service.GrokCredentialReasonRevoked,

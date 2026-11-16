@@ -150,7 +150,7 @@ func TestOpenAIGatewayHandlerResponses_AstraProFirst403SecondSucceeds(t *testing
 }
 
 // both OAuth accounts 403: exhausted keeps every wire body pro+max/model, is not 200,
-// and surfaces the existing-policy 502 upstream_error (unchanged 403-masking policy).
+// and returns the final upstream 403 with a safe error message.
 func TestOpenAIGatewayHandlerResponses_AstraProBoth403NoDowngrade(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -164,7 +164,7 @@ func TestOpenAIGatewayHandlerResponses_AstraProBoth403NoDowngrade(t *testing.T) 
 	assertAstraProWire(t, urls, bodies)
 	require.Equal(t, []int64{1, 2}, accountIDs)
 	require.NotEqual(t, http.StatusOK, rec.Code, "all-403 must never surface a 200 to the client")
-	require.Equal(t, http.StatusBadGateway, rec.Code)
+	require.Equal(t, http.StatusForbidden, rec.Code)
 	require.Equal(t, "upstream_error", gjson.GetBytes(rec.Body.Bytes(), "error.type").String())
 }
 

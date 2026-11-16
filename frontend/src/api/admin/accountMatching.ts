@@ -16,6 +16,7 @@ export type AccountMatchingInput = Pick<AccountMatchingRule, 'user_id' | 'group_
 export interface AccountInputRoutingSettings {
   enabled: boolean
   threshold: number
+  output_threshold: number
   group_ids: number[]
   account_ids: number[]
   revision?: string

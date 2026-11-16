@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/model"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -631,7 +632,7 @@ func TestResponsesGrok429FailoverHandlesMixedStatuses(t *testing.T) {
 
 		router.ServeHTTP(recorder, req)
 
-		require.Equal(t, http.StatusBadGateway, recorder.Code, recorder.Body.String())
+		require.Equal(t, http.StatusInternalServerError, recorder.Code, recorder.Body.String())
 		require.Equal(t, []int64{801, 802}, upstream.accountHits())
 		require.NotContains(t, recorder.Body.String(), "upstream unavailable")
 	})
@@ -661,6 +662,26 @@ func TestResponsesGrok429FailoverHandlesMixedStatuses(t *testing.T) {
 		require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
 		require.Equal(t, []int64{801, 802, 803}, upstream.accountHits())
 	})
+}
+
+func TestResponsesFinalFailoverMatchesLastErrorRuleAndKeepsStatus(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h, _, upstream, router, cleanup := newGrokCredentialFailoverHandler(t, "mixed_429_500")
+	defer cleanup()
+	earlier, final, ignoredStatus := "first attempt rule", "最后一次错误的提示", 418
+	h.errorPassthroughService = service.NewErrorPassthroughService(&errorPassthroughRepoStub{rules: []*model.ErrorPassthroughRule{
+		{Enabled: true, MatchMode: model.MatchModeAny, ErrorCodes: []int{429}, CustomMessage: &earlier},
+		{Enabled: true, MatchMode: model.MatchModeAny, ErrorCodes: []int{500}, CustomMessage: &final, ResponseCode: &ignoredStatus, PassthroughBody: true},
+	}}, nil)
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/openai/v1/responses", bytes.NewBufferString(`{"model":"grok","input":"hello","stream":false}`))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(recorder, req)
+	require.Equal(t, []int64{801, 802}, upstream.accountHits())
+	require.Equal(t, 500, recorder.Code)
+	require.Contains(t, recorder.Body.String(), final)
+	require.NotContains(t, recorder.Body.String(), earlier)
+	require.NotContains(t, recorder.Body.String(), "upstream unavailable")
 }
 
 func TestGrokMedia429FailoverIsBounded(t *testing.T) {
@@ -811,6 +832,27 @@ func TestResponsesWebSocketCredentialFailoverLoop(t *testing.T) {
 		require.Equal(t, 3, repo.selectorCalls())
 		require.Equal(t, []int64{802}, upstream.accountHits())
 		require.Empty(t, repo.errorIDs())
+	})
+
+	t.Run("final failure uses configured rule message", func(t *testing.T) {
+		h, _, upstream, router, cleanup := newGrokCredentialFailoverHandler(t, "mixed_429_500")
+		defer cleanup()
+		earlier, final, ignoredStatus := "earlier rule", "final rule message", 418
+		h.errorPassthroughService = service.NewErrorPassthroughService(&errorPassthroughRepoStub{rules: []*model.ErrorPassthroughRule{
+			{Enabled: true, MatchMode: model.MatchModeAny, ErrorCodes: []int{429}, CustomMessage: &earlier},
+			{Enabled: true, MatchMode: model.MatchModeAny, ErrorCodes: []int{500}, CustomMessage: &final, ResponseCode: &ignoredStatus, PassthroughBody: true},
+		}}, nil)
+		conn, closeConn := dial(t, router)
+		defer closeConn()
+		writeFirst(t, conn)
+		readCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		_, _, err := conn.Read(readCtx)
+		require.Equal(t, coderws.StatusTryAgainLater, coderws.CloseStatus(err))
+		var closeErr coderws.CloseError
+		require.ErrorAs(t, err, &closeErr)
+		require.Equal(t, final, closeErr.Reason)
+		require.Equal(t, []int64{801, 802}, upstream.accountHits())
 	})
 
 	t.Run("parent cancellation prevents reselection", func(t *testing.T) {

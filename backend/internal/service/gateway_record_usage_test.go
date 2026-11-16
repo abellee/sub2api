@@ -130,6 +130,7 @@ func TestGatewayRecordUsageInputRoutingBeforeForceCacheBilling(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 0, usageRepo.lastLog.InputTokens, "billing reclassification is preserved")
 	require.Equal(t, 100001, store.input, "routing uses original ordinary input, excluding cache")
+	require.Equal(t, 1, store.output, "routing uses actual output")
 	require.Equal(t, 1, store.writes)
 }
 

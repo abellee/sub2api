@@ -1963,69 +1963,13 @@ func (h *GatewayHandler) handleConcurrencyError(c *gin.Context, err error, slotT
 }
 
 func (h *GatewayHandler) handleFailoverExhausted(c *gin.Context, failoverErr *service.UpstreamFailoverError, platform string, streamStarted bool) {
-	statusCode := failoverErr.StatusCode
-	responseBody := failoverErr.ResponseBody
-	if service.IsOpenAISilentRefusalErrorBody(responseBody) {
-		service.SetOpsUpstreamError(c, statusCode, service.OpenAISilentRefusalClientMessage(), "")
-		h.handleStreamingAwareError(c, http.StatusBadGateway, "upstream_error", service.OpenAISilentRefusalClientMessage(), streamStarted)
-		return
-	}
-
-	// 先检查透传规则
-	if h.errorPassthroughService != nil && len(responseBody) > 0 {
-		if rule := h.errorPassthroughService.MatchRule(platform, statusCode, responseBody); rule != nil {
-			// 确定响应状态码
-			respCode := statusCode
-			if !rule.PassthroughCode && rule.ResponseCode != nil {
-				respCode = *rule.ResponseCode
-			}
-
-			// 确定响应消息
-			msg := service.ExtractUpstreamErrorMessage(responseBody)
-			if !rule.PassthroughBody && rule.CustomMessage != nil {
-				msg = *rule.CustomMessage
-			}
-
-			if rule.SkipMonitoring {
-				c.Set(service.OpsSkipPassthroughKey, true)
-			}
-
-			h.handleStreamingAwareError(c, respCode, "upstream_error", msg, streamStarted)
-			return
-		}
-	}
-
-	// 记录原始上游状态码，以便 ops 错误日志捕获真实的上游错误
-	upstreamMsg := service.ExtractUpstreamErrorMessage(responseBody)
-	service.SetOpsUpstreamError(c, statusCode, upstreamMsg, "")
-
-	// 使用默认的错误映射
-	status, errType, errMsg := h.mapUpstreamError(statusCode)
-	h.handleStreamingAwareError(c, status, errType, errMsg, streamStarted)
+	status, errType, message := failoverClientResponse(c, h.errorPassthroughService, failoverErr, platform)
+	h.handleStreamingAwareError(c, status, errType, message, streamStarted)
 }
 
 // handleFailoverExhaustedSimple 简化版本，用于没有响应体的情况
 func (h *GatewayHandler) handleFailoverExhaustedSimple(c *gin.Context, statusCode int, streamStarted bool) {
-	status, errType, errMsg := h.mapUpstreamError(statusCode)
-	service.SetOpsUpstreamError(c, statusCode, errMsg, "")
-	h.handleStreamingAwareError(c, status, errType, errMsg, streamStarted)
-}
-
-func (h *GatewayHandler) mapUpstreamError(statusCode int) (int, string, string) {
-	switch statusCode {
-	case 401:
-		return http.StatusBadGateway, "upstream_error", "Upstream authentication failed, please contact administrator"
-	case 403:
-		return http.StatusBadGateway, "upstream_error", "Upstream access forbidden, please contact administrator"
-	case 429:
-		return http.StatusTooManyRequests, "rate_limit_error", "Upstream rate limit exceeded, please retry later"
-	case 529:
-		return http.StatusServiceUnavailable, "overloaded_error", "Upstream service overloaded, please retry later"
-	case 500, 502, 503, 504:
-		return http.StatusBadGateway, "upstream_error", "Upstream service temporarily unavailable"
-	default:
-		return http.StatusBadGateway, "upstream_error", "Upstream request failed"
-	}
+	h.handleFailoverExhausted(c, &service.UpstreamFailoverError{StatusCode: statusCode}, "", streamStarted)
 }
 
 // handleStreamingAwareError handles errors that may occur after streaming has started

@@ -15,7 +15,7 @@ beforeEach(() => {
   vi.resetAllMocks()
   vi.useFakeTimers()
   mocks.list.mockResolvedValue([])
-  mocks.getInputRouting.mockResolvedValue({ enabled: false, threshold: 100000, group_ids: [], account_ids: [] })
+  mocks.getInputRouting.mockResolvedValue({ enabled: false, threshold: 100000, output_threshold: 10000, group_ids: [], account_ids: [] })
   mocks.saveInputRouting.mockImplementation(async input => ({ ...input, revision: 'new' }))
   mocks.groups.mockResolvedValue([{ id: 10, name: 'Group A', platform: 'openai' }, { id: 11, name: 'Group B', platform: 'gemini' }])
   mocks.accounts.mockImplementation(async (page: number) => ({ items: page === 1 ? [{ id: 20, name: 'Account A', platform: 'openai' }] : [{ id: 21, name: 'Account B', platform: 'gemini' }], pages: 2, page, total: 2 }))
@@ -96,12 +96,13 @@ describe('Account matching', () => {
 })
 
 describe('Input token restriction settings', () => {
-  it('saves the switch, threshold, groups and exactly two accounts independently of manual matching', async () => {
+  it('saves both thresholds, groups and exactly two accounts independently of manual matching', async () => {
     const wrapper = await render()
     await button(wrapper, 'admin.accountMatching.inputRoutingTitle').trigger('click')
     const form = wrapper.get('#input-routing-form')
     await form.get('#input-routing-enabled').setValue(true)
     await form.get('#input-routing-threshold').setValue(120000)
+    await form.get('#input-routing-output-threshold').setValue(20000)
     await form.get('input[value="10"]').setValue(true)
     await form.get('input[value="20"]').setValue(true)
     await form.trigger('submit')
@@ -109,7 +110,7 @@ describe('Input token restriction settings', () => {
     await form.get('input[value="21"]').setValue(true)
     await form.trigger('submit')
     await flushPromises()
-    expect(mocks.saveInputRouting).toHaveBeenCalledWith({ enabled: true, threshold: 120000, group_ids: [10], account_ids: [20, 21] })
+    expect(mocks.saveInputRouting).toHaveBeenCalledWith({ enabled: true, threshold: 120000, output_threshold: 20000, group_ids: [10], account_ids: [20, 21] })
     expect(mocks.save).not.toHaveBeenCalled()
     expect(wrapper.find('#input-routing-form').exists()).toBe(false)
     expect(wrapper.text()).toContain('admin.accountMatching.inputRoutingActive')
@@ -117,7 +118,7 @@ describe('Input token restriction settings', () => {
   })
 
   it('can turn the feature off after selected groups or accounts were deleted', async () => {
-    mocks.getInputRouting.mockResolvedValue({ enabled: true, threshold: 100000, group_ids: [99], account_ids: [98, 97], revision: 'old' })
+    mocks.getInputRouting.mockResolvedValue({ enabled: true, threshold: 100000, output_threshold: 10000, group_ids: [99], account_ids: [98, 97], revision: 'old' })
     const wrapper = await render()
     await button(wrapper, 'admin.accountMatching.inputRoutingTitle').trigger('click')
     const form = wrapper.get('#input-routing-form')
@@ -133,11 +134,30 @@ describe('Input token restriction settings', () => {
     const wrapper = await render()
     await button(wrapper, 'admin.accountMatching.inputRoutingTitle').trigger('click')
     await wrapper.get('#input-routing-threshold').setValue(150000)
+    await wrapper.get('#input-routing-output-threshold').setValue(25000)
     await wrapper.get('#input-routing-form').trigger('submit')
     await flushPromises()
     expect(wrapper.find('#input-routing-form').exists()).toBe(true)
     expect((wrapper.get('#input-routing-threshold').element as HTMLInputElement).value).toBe('150000')
+    expect((wrapper.get('#input-routing-output-threshold').element as HTMLInputElement).value).toBe('25000')
     expect(wrapper.get('#input-routing-form [role="alert"]').text()).toContain('save failed')
+    wrapper.unmount()
+  })
+
+  it.each(['', 0, -1, 1.5, 100000001])('rejects an invalid output threshold: %s', async value => {
+    const wrapper = await render()
+    await button(wrapper, 'admin.accountMatching.inputRoutingTitle').trigger('click')
+    await wrapper.get('#input-routing-output-threshold').setValue(value)
+    await wrapper.get('#input-routing-form').trigger('submit')
+    expect(mocks.saveInputRouting).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('loads an existing output threshold into the editor', async () => {
+    mocks.getInputRouting.mockResolvedValue({ enabled: true, threshold: 120000, output_threshold: 30000, group_ids: [10], account_ids: [20, 21] })
+    const wrapper = await render()
+    await button(wrapper, 'admin.accountMatching.inputRoutingTitle').trigger('click')
+    expect((wrapper.get('#input-routing-output-threshold').element as HTMLInputElement).value).toBe('30000')
     wrapper.unmount()
   })
 })

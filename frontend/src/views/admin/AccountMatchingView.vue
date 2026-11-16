@@ -5,7 +5,7 @@
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div class="max-w-3xl space-y-1 text-sm text-gray-500 dark:text-gray-400">
             <p>{{ t('admin.accountMatching.description') }}</p>
-            <p>{{ t(inputRouting.enabled ? 'admin.accountMatching.inputRoutingActive' : 'admin.accountMatching.inputRoutingInactive', { threshold: inputRouting.threshold.toLocaleString() }) }}</p>
+            <p>{{ t(inputRouting.enabled ? 'admin.accountMatching.inputRoutingActive' : 'admin.accountMatching.inputRoutingInactive', { threshold: inputRouting.threshold.toLocaleString(), outputThreshold: inputRouting.output_threshold.toLocaleString() }) }}</p>
           </div>
           <div class="flex gap-2">
             <button class="btn btn-secondary" :disabled="loading" @click="load">{{ t('common.refresh') }}</button>
@@ -91,6 +91,10 @@
             <label for="input-routing-threshold" class="input-label">{{ t('admin.accountMatching.inputRoutingThreshold') }}</label>
             <input id="input-routing-threshold" v-model.number="inputRoutingForm.threshold" type="number" min="1" max="100000000" step="1" required class="input" />
           </div>
+          <div>
+            <label for="input-routing-output-threshold" class="input-label">{{ t('admin.accountMatching.inputRoutingOutputThreshold') }}</label>
+            <input id="input-routing-output-threshold" v-model.number="inputRoutingForm.output_threshold" type="number" min="1" max="100000000" step="1" required class="input" />
+          </div>
           <fieldset>
             <legend class="input-label">{{ t('admin.accountMatching.groups') }}</legend>
             <input v-model="inputGroupSearch" class="input mb-2" :aria-label="t('admin.accountMatching.searchGroups')" :placeholder="t('admin.accountMatching.searchGroups')" />
@@ -141,7 +145,7 @@ const groups = ref<AdminGroup[]>([])
 const accounts = ref<AccountListItem[]>([])
 const loading = ref(false)
 const optionsReady = ref(false)
-const inputRouting = ref<AccountInputRoutingSettings>({ enabled: false, threshold: 100000, group_ids: [], account_ids: [] })
+const inputRouting = ref<AccountInputRoutingSettings>({ enabled: false, threshold: 100000, output_threshold: 10000, group_ids: [], account_ids: [] })
 const inputRoutingForm = ref<AccountInputRoutingSettings>({ ...inputRouting.value })
 const showInputRouting = ref(false)
 const savingInputRouting = ref(false)
@@ -182,6 +186,7 @@ const inputAccounts = computed(() => accounts.value.filter(a => matches(a.id, a.
 const canSaveInputRouting = computed(() => {
   const cfg = inputRoutingForm.value
   return Number.isInteger(cfg.threshold) && cfg.threshold > 0 && cfg.threshold <= 100000000 &&
+    Number.isInteger(cfg.output_threshold) && cfg.output_threshold > 0 && cfg.output_threshold <= 100000000 &&
     (!cfg.enabled || (cfg.group_ids.length > 0 && cfg.account_ids.length === 2 && cfg.group_ids.every(id => groupMap.value.has(id)) && cfg.account_ids.every(id => accountMap.value.has(id))))
 })
 function openInputRouting() {

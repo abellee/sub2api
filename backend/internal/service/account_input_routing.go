@@ -18,16 +18,17 @@ import (
 const accountInputRoutingSetting = "account_matching_input_routing"
 
 type AccountInputRoutingSettings struct {
-	Enabled    bool    `json:"enabled"`
-	Threshold  int     `json:"threshold"`
-	GroupIDs   []int64 `json:"group_ids"`
-	AccountIDs []int64 `json:"account_ids"`
-	Revision   string  `json:"revision"`
+	Enabled         bool    `json:"enabled"`
+	Threshold       int     `json:"threshold"`
+	OutputThreshold int     `json:"output_threshold"`
+	GroupIDs        []int64 `json:"group_ids"`
+	AccountIDs      []int64 `json:"account_ids"`
+	Revision        string  `json:"revision"`
 }
 
 type AccountInputRoutingStore interface {
 	Restricted(context.Context, string, int64, int64) (bool, error)
-	Observe(context.Context, string, int64, int64, int64, string, int, int) error
+	Observe(context.Context, string, int64, int64, int64, string, int, int, int, int) error
 }
 
 type cachedAccountInputRouting struct {
@@ -57,7 +58,7 @@ func (s *AccountInputRoutingService) Settings(ctx context.Context) (AccountInput
 	if cached := s.cache.Load(); cached != nil && time.Now().Before(cached.expires) {
 		return cloneAccountInputRoutingSettings(cached.settings), nil
 	}
-	cfg := AccountInputRoutingSettings{Threshold: 100000, GroupIDs: []int64{}, AccountIDs: []int64{}}
+	cfg := AccountInputRoutingSettings{Threshold: 100000, OutputThreshold: 10000, GroupIDs: []int64{}, AccountIDs: []int64{}}
 	raw, err := s.settings.GetValue(ctx, accountInputRoutingSetting)
 	if err != nil && !errors.Is(err, ErrSettingNotFound) {
 		return cfg, err
@@ -66,7 +67,7 @@ func (s *AccountInputRoutingService) Settings(ctx context.Context) (AccountInput
 		if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
 			return cfg, err
 		}
-		if cfg.Threshold <= 0 || (cfg.Enabled && (len(cfg.GroupIDs) == 0 || len(cfg.AccountIDs) != 2 || cfg.Revision == "")) {
+		if cfg.Threshold <= 0 || cfg.Threshold > 100000000 || cfg.OutputThreshold <= 0 || cfg.OutputThreshold > 100000000 || (cfg.Enabled && (len(cfg.GroupIDs) == 0 || len(cfg.AccountIDs) != 2 || cfg.Revision == "")) {
 			return cfg, fmt.Errorf("invalid input routing settings")
 		}
 	}
@@ -80,10 +81,10 @@ func cloneAccountInputRoutingSettings(cfg AccountInputRoutingSettings) AccountIn
 	return cfg
 }
 
-var ErrAccountInputRoutingInvalid = infraerrors.BadRequest("ACCOUNT_INPUT_ROUTING_INVALID", "请填写有效的普通输入阈值、分组和两个不同的账号")
+var ErrAccountInputRoutingInvalid = infraerrors.BadRequest("ACCOUNT_INPUT_ROUTING_INVALID", "请填写有效的输入、输出阈值、分组和两个不同的账号")
 
 func (s *AccountInputRoutingService) SaveSettings(ctx context.Context, cfg AccountInputRoutingSettings) (AccountInputRoutingSettings, error) {
-	if cfg.Threshold <= 0 || cfg.Threshold > 100000000 || len(cfg.GroupIDs) > 10000 || len(cfg.AccountIDs) > 2 {
+	if cfg.Threshold <= 0 || cfg.Threshold > 100000000 || cfg.OutputThreshold <= 0 || cfg.OutputThreshold > 100000000 || len(cfg.GroupIDs) > 10000 || len(cfg.AccountIDs) > 2 {
 		return cfg, ErrAccountInputRoutingInvalid
 	}
 	if cfg.Enabled && (len(cfg.GroupIDs) == 0 || len(cfg.AccountIDs) != 2) {
@@ -177,7 +178,7 @@ func (s *AccountInputRoutingService) apply(ctx context.Context, userID, groupID 
 func observeAccountInputRouting(ctx context.Context, usage *UsageLog) {
 	observation, _ := ctx.Value(accountInputRoutingKey{}).(*accountInputRoutingObservation)
 	if observation == nil || usage == nil || usage.UserID != observation.userID || usage.RequestID == "" || usage.APIKeyID <= 0 ||
-		usage.InputTokens < 0 || usage.ImageCount > 0 || usage.VideoCount > 0 ||
+		usage.InputTokens < 0 || usage.OutputTokens < 0 || usage.ImageCount > 0 || usage.VideoCount > 0 ||
 		(usage.BillingMode != nil && *usage.BillingMode != string(BillingModeToken)) ||
 		usage.InputTokens+usage.OutputTokens+usage.CacheReadTokens+usage.CacheCreationTokens == 0 {
 		return
@@ -193,7 +194,7 @@ func observeAccountInputRouting(ctx context.Context, usage *UsageLog) {
 		if original, ok := ctx.Value(accountInputRoutingInputKey{}).(int); ok {
 			input = original
 		}
-		err = s.store.Observe(ctx, current.Revision, observation.userID, observation.groupID, usage.APIKeyID, usage.RequestID, input, current.Threshold)
+		err = s.store.Observe(ctx, current.Revision, observation.userID, observation.groupID, usage.APIKeyID, usage.RequestID, input, usage.OutputTokens, current.Threshold, current.OutputThreshold)
 	}
 	if err != nil {
 		logger.LegacyPrintf("service.account_input_routing", "Update input routing count failed: %v", err)

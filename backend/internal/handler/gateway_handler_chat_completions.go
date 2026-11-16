@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
@@ -439,33 +438,12 @@ func (h *GatewayHandler) chatCompletionsErrorResponse(c *gin.Context, status int
 
 // handleCCFailoverExhausted writes a failover-exhausted error in CC format.
 func (h *GatewayHandler) handleCCFailoverExhausted(c *gin.Context, lastErr *service.UpstreamFailoverError, streamStarted bool) {
+	status, errType, message := failoverClientResponse(c, h.errorPassthroughService, lastErr, service.PlatformAnthropic)
 	if streamStarted {
+		service.MarkOpsStreamError(c, errType, message, status)
+		c.SSEvent("error", gin.H{"error": gin.H{"type": errType, "message": message}})
+		c.Writer.Flush()
 		return
 	}
-	if lastErr != nil {
-		copyFailoverRetryAfter(c, lastErr.ResponseHeaders)
-	}
-	if lastErr != nil && lastErr.IsCredentialFailure() {
-		status, message := credentialFailoverClientResponse(lastErr)
-		h.chatCompletionsErrorResponse(c, status, "server_error", message)
-		return
-	}
-	if lastErr != nil && lastErr.IsOpenAICapacityShed() && strings.TrimSpace(lastErr.ClientMessage) != "" {
-		status := lastErr.ClientStatusCode
-		if status <= 0 {
-			status = http.StatusServiceUnavailable
-		}
-		h.chatCompletionsErrorResponse(c, status, "server_error", lastErr.ClientMessage)
-		return
-	}
-	statusCode := http.StatusBadGateway
-	if lastErr != nil && lastErr.StatusCode > 0 {
-		statusCode = lastErr.StatusCode
-	}
-	if lastErr != nil && service.IsOpenAISilentRefusalErrorBody(lastErr.ResponseBody) {
-		service.SetOpsUpstreamError(c, statusCode, service.OpenAISilentRefusalClientMessage(), "")
-		h.chatCompletionsErrorResponse(c, http.StatusBadGateway, "upstream_error", service.OpenAISilentRefusalClientMessage())
-		return
-	}
-	h.chatCompletionsErrorResponse(c, statusCode, "server_error", "All available accounts exhausted")
+	h.chatCompletionsErrorResponse(c, status, errType, message)
 }

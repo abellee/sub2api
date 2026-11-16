@@ -104,10 +104,10 @@ func TestGeminiV1BetaModels_BoundCacheRetryExhaustedPassesThroughUpstream429(t *
 
 	require.Len(t, upstream.requestBodies(), 3, "首发 + pool_mode_retry_count 次同账号重试")
 	require.Equal(t, http.StatusTooManyRequests, rec.Code)
-	require.JSONEq(t, boundRetryUpstream429, rec.Body.String(), "重试用尽后原样回写上游网关的响应")
+	require.Contains(t, rec.Body.String(), "Upstream rate limit exceeded")
 }
 
-// 502 在池模式重试状态码内时同样同账号重试；用尽后原样回写，不按空响应临时封禁本账号。
+// 502 在池模式重试状态码内时同样同账号重试；用尽后保留状态码，不按空响应临时封禁本账号。
 func TestGeminiV1BetaModels_BoundCacheRetryExhaustedOn502KeepsAccountSchedulable(t *testing.T) {
 	upstream := &boundRetryUpstream{failures: 10, failStatus: http.StatusBadGateway}
 	env := newBoundRetryEnv(t, upstream, 429, 502)
@@ -116,5 +116,5 @@ func TestGeminiV1BetaModels_BoundCacheRetryExhaustedOn502KeepsAccountSchedulable
 
 	require.Len(t, upstream.requestBodies(), 3)
 	require.Equal(t, http.StatusBadGateway, rec.Code)
-	require.JSONEq(t, boundRetryUpstream502, rec.Body.String())
+	require.Contains(t, rec.Body.String(), "Upstream service temporarily unavailable")
 }

@@ -29,10 +29,10 @@ func TestOpenAIImagesBalanceExhaustionPreservesMachineReadableCause(t *testing.T
 		require.Equal(t, "23", recorder.Header().Get("Retry-After"))
 
 		if streamStarted {
-			require.Contains(t, recorder.Body.String(), `"code":"insufficient_balance"`)
+			require.Contains(t, recorder.Body.String(), service.OpenAIImagesInsufficientBalanceMessage)
 		} else {
-			require.Equal(t, http.StatusPaymentRequired, recorder.Code)
-			require.Equal(t, service.OpenAIImagesInsufficientBalanceCode, gjson.GetBytes(recorder.Body.Bytes(), "error.code").String())
+			require.Equal(t, http.StatusBadGateway, recorder.Code)
+			require.Equal(t, service.OpenAIImagesInsufficientBalanceMessage, gjson.GetBytes(recorder.Body.Bytes(), "error.message").String())
 		}
 	}
 }
