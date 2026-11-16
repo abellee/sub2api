@@ -56,6 +56,10 @@ func (w *lifecycleDisconnectedWriter) Write([]byte) (int, error) {
 	return 0, errors.New("client disconnected")
 }
 
+func (w *lifecycleDisconnectedWriter) WriteString(s string) (int, error) {
+	return w.Write([]byte(s))
+}
+
 // Exercise the real forwarding and RecordUsage services with the real HTTP
 // upstream. Only the persistence boundary is replaced: closing an attempt must
 // not cancel the detached stream before its final usage reaches billing.
@@ -151,6 +155,76 @@ func TestHTTPUpstreamForwardDrainsUsageAfterClientDisconnect(t *testing.T) {
 	require.Equal(t, 17, usageRepo.logs[0].InputTokens)
 	require.Equal(t, 8, usageRepo.logs[0].OutputTokens)
 	require.Greater(t, usageRepo.logs[0].ActualCost, 0.0)
+	s, ok := upstream.(*httpUpstreamService)
+	require.True(t, ok)
+	requireNoUpstreamInFlight(t, s)
+	for _, entry := range s.clients {
+		entry.client.CloseIdleConnections()
+	}
+}
+
+func TestHTTPUpstreamAnthropicDisconnectBillsFinalUsagePastDrainInterval(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	clientCtx, disconnect := context.WithCancel(t.Context())
+	defer disconnect()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("X-Request-Id", "anthropic-disconnect-billing")
+		_, _ = io.WriteString(w, "data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":15,\"cache_creation_input_tokens\":29889}}}\n\n")
+		_ = http.NewResponseController(w).Flush()
+		for range 15 {
+			select {
+			case <-r.Context().Done():
+				return
+			case <-time.After(100 * time.Millisecond):
+				_, _ = io.WriteString(w, "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"hello\"}}\n\n")
+				_ = http.NewResponseController(w).Flush()
+			}
+		}
+		_, _ = io.WriteString(w, "data: {\"type\":\"message_delta\",\"usage\":{\"output_tokens\":47767}}\n\ndata: {\"type\":\"message_stop\"}\n\n")
+	}))
+	defer srv.Close()
+	defer srv.CloseClientConnections()
+	cfg := &config.Config{}
+	cfg.Default.RateMultiplier = 0.42
+	cfg.Security.URLAllowlist.AllowPrivateHosts = true
+	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Gateway.StreamDataIntervalTimeout = 1
+	upstream := NewHTTPUpstream(cfg)
+	usageRepo := &lifecycleUsageLogRepo{}
+	billingRepo := &lifecycleBillingRepo{}
+	svc := service.NewGatewayService(
+		nil, nil, usageRepo, billingRepo, nil, nil, nil, nil, cfg, nil, nil,
+		service.NewBillingService(cfg, nil), nil, nil, nil, upstream,
+		&service.DeferredService{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+	)
+	account := &service.Account{
+		ID: 1, Platform: service.PlatformAnthropic, Type: service.AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{"base_url": srv.URL, "api_key": "test-key"},
+		Extra:       map[string]any{"anthropic_passthrough": true},
+	}
+	body := []byte(`{"model":"claude-sonnet-5-5","stream":true,"messages":[{"role":"user","content":"hello"}]}`)
+	parsed, err := service.ParseGatewayRequest(service.NewRequestBodyRef(body), service.PlatformAnthropic)
+	require.NoError(t, err)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(string(body))).WithContext(clientCtx)
+	c.Writer = &lifecycleDisconnectedWriter{ResponseWriter: c.Writer, disconnect: disconnect}
+	result, err := svc.Forward(clientCtx, c, account, parsed)
+	require.NoError(t, err)
+	require.ErrorIs(t, clientCtx.Err(), context.Canceled)
+	require.NotNil(t, result)
+	require.True(t, result.ClientDisconnect)
+	require.Equal(t, 47767, result.Usage.OutputTokens)
+	require.Equal(t, 29889, result.Usage.CacheCreationInputTokens)
+	require.NoError(t, svc.RecordUsage(clientCtx, &service.RecordUsageInput{
+		Result: result, APIKey: &service.APIKey{ID: 2},
+		User: &service.User{ID: 3}, Account: account,
+	}))
+	require.Len(t, billingRepo.commands, 1)
+	require.Len(t, usageRepo.logs, 1)
+	require.Equal(t, 47767, usageRepo.logs[0].OutputTokens)
+	require.Greater(t, usageRepo.logs[0].OutputCost, 0.0)
 	s, ok := upstream.(*httpUpstreamService)
 	require.True(t, ok)
 	requireNoUpstreamInFlight(t, s)

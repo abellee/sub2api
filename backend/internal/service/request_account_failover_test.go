@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -62,6 +63,21 @@ func TestForwardWithAccountRetries(t *testing.T) {
 			require.True(t, original.RetryableOnSameAccount, "shared errors must not be mutated")
 		})
 	}
+}
+
+func TestForwardWithAccountRetriesDrainTimeoutKeepsUsageAndCause(t *testing.T) {
+	ctx, cancel := context.WithCancel(withRequestAccountFailoverCount(t.Context(), 2))
+	defer cancel()
+	partial := &ForwardResult{Usage: ClaudeUsage{InputTokens: 15}, ClientDisconnect: true}
+	calls := 0
+	result, err := ForwardWithAccountRetries(ctx, nil, func() (*ForwardResult, error) {
+		calls++
+		cancel()
+		return partial, errors.Join(pkghttputil.ErrUpstreamDrainTimeout, context.Canceled)
+	})
+	require.Same(t, partial, result)
+	require.ErrorIs(t, err, pkghttputil.ErrUpstreamDrainTimeout)
+	require.Equal(t, 1, calls)
 }
 
 func TestForwardWithAccountRetriesCanceled(t *testing.T) {

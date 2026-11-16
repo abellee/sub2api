@@ -323,6 +323,9 @@ func doUpstreamRequest(client *http.Client, req *http.Request, drainTimeouts ...
 		return resp, err
 	}
 	decompressResponseBody(resp)
+	if contentType := strings.ToLower(strings.TrimSpace(resp.Header.Get("Content-Type"))); contentType == "text/event-stream" || strings.HasPrefix(contentType, "text/event-stream;") {
+		resp.Body = pkghttputil.TrackUpstreamStreamDrain(ctx, resp.Body)
+	}
 	resp.Body = &cancelOnCloseBody{ReadCloser: resp.Body, cancel: cancel}
 	return resp, nil
 }
