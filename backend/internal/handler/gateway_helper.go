@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/latencytrace"
+
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
@@ -172,7 +174,7 @@ type ConcurrencyHelper struct {
 
 // NewConcurrencyHelper creates a new ConcurrencyHelper
 func NewConcurrencyHelper(concurrencyService *service.ConcurrencyService, pingFormat SSEPingFormat, pingInterval time.Duration) *ConcurrencyHelper {
-	if pingInterval <= 0 {
+	if pingInterval < 0 {
 		pingInterval = defaultPingInterval
 	}
 	return &ConcurrencyHelper{
@@ -272,6 +274,8 @@ func (h *ConcurrencyHelper) AcquireUserSlotWithWait(c *gin.Context, userID int64
 }
 
 func (h *ConcurrencyHelper) acquireUserSlotWithWaitTimeout(c *gin.Context, userID int64, maxConcurrency int, timeout time.Duration, isStream bool, streamStarted *bool) (func(), error) {
+	latencytrace.Mark(c.Request.Context(), "user_slot_start")
+	defer latencytrace.Mark(c.Request.Context(), "user_slot_done")
 	ctx := c.Request.Context()
 
 	// Try to acquire immediately
@@ -359,6 +363,11 @@ func (h *ConcurrencyHelper) waitForSlotWithPing(c *gin.Context, slotType string,
 
 // waitForSlotWithPingTimeout waits for a concurrency slot with a custom timeout.
 func (h *ConcurrencyHelper) waitForSlotWithPingTimeout(c *gin.Context, slotType string, id int64, maxConcurrency int, timeout time.Duration, isStream bool, streamStarted *bool, tryImmediate bool) (func(), error) {
+	if slotType == "account" {
+		trace := latencytrace.From(c.Request.Context())
+		trace.MarkNext("account_slot_start")
+		defer trace.MarkNext("account_slot_done")
+	}
 	ctx, cancel := context.WithTimeout(c.Request.Context(), timeout)
 	defer cancel()
 
@@ -380,7 +389,7 @@ func (h *ConcurrencyHelper) waitForSlotWithPingTimeout(c *gin.Context, slotType 
 	}
 
 	// Determine if ping is needed (streaming + ping format defined)
-	needPing := isStream && h.pingFormat != ""
+	needPing := isStream && h.pingFormat != "" && h.pingInterval > 0
 
 	var flusher http.Flusher
 	if needPing {

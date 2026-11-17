@@ -14,7 +14,7 @@ import (
 	"github.com/dgraph-io/ristretto"
 )
 
-const apiKeyAuthSnapshotVersion = 29 // v29: group required protocol and blocked client prefixes
+const apiKeyAuthSnapshotVersion = 29 // v29: blocked client user agents and force_openai_ultrafast
 
 type apiKeyAuthCacheConfig struct {
 	l1Size        int

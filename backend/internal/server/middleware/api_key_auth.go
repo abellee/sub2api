@@ -394,6 +394,7 @@ func GetSubscriptionFromContext(c *gin.Context) (*service.UserSubscription, bool
 }
 
 func setGroupContext(c *gin.Context, group *service.Group) {
+	defer beginLatencyCollection(c)
 	if !service.IsGroupContextValid(group) {
 		return
 	}

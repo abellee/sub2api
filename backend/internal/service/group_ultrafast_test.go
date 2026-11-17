@@ -63,14 +63,14 @@ func TestGroupUltrafastHTTPAndWSPolicy(t *testing.T) {
 func TestGroupUltrafastRequiresTrustedOpenAIContext(t *testing.T) {
 	group := &Group{ID: 7, Platform: PlatformOpenAI, Status: StatusActive, Hydrated: true, ForceOpenAIUltrafast: true}
 	ctx := context.WithValue(context.Background(), ctxkey.Group, group)
-	require.Empty(t, openAIGroupForcedServiceTier(ctx, &Account{Platform: PlatformGrok}))
-	require.Empty(t, openAIGroupForcedServiceTier(context.Background(), &Account{Platform: PlatformOpenAI}))
+	require.Empty(t, openAIGroupForcedServiceTier(ctx, &Account{Platform: PlatformGrok}, "gpt-6-astra"))
+	require.Empty(t, openAIGroupForcedServiceTier(context.Background(), &Account{Platform: PlatformOpenAI}, "gpt-6-astra"))
 	group.Hydrated = false
-	require.Empty(t, openAIGroupForcedServiceTier(ctx, &Account{Platform: PlatformOpenAI}))
+	require.Empty(t, openAIGroupForcedServiceTier(ctx, &Account{Platform: PlatformOpenAI}, "gpt-6-astra"))
 }
 
 func TestGroupUltrafastTokenBillingSixTimesStandard(t *testing.T) {
-	for _, model := range []string{"gpt-6-astra", "gpt-6-sol"} {
+	for _, model := range []string{"gpt-6-astra", "gpt-6.1-sol"} {
 		for _, customPricing := range []bool{false, true} {
 			svc := &OpenAIGatewayService{billingService: newTestBillingService()}
 			key := &APIKey{Group: &Group{ID: 7, Platform: PlatformOpenAI, ForceOpenAIUltrafast: true, FreeOpenAIFast: true}}
@@ -102,10 +102,10 @@ func TestGroupUltrafastRecordUsageIgnoresFreeFast(t *testing.T) {
 	groupID := int64(77)
 	inputPrice, outputPrice := 0.001, 0.002
 	key := &APIKey{ID: 7, GroupID: &groupID, Group: &Group{ID: groupID, Platform: PlatformOpenAI, Status: StatusActive, Hydrated: true, RateMultiplier: 0.5, ForceOpenAIUltrafast: true, FreeOpenAIFast: true,
-		ModelPricing: []ChannelModelPricing{{Models: []string{"gpt-6-sol"}, BillingMode: BillingModeToken, InputPrice: &inputPrice, OutputPrice: &outputPrice}}}}
+		ModelPricing: []ChannelModelPricing{{Models: []string{"gpt-6.1-sol"}, BillingMode: BillingModeToken, InputPrice: &inputPrice, OutputPrice: &outputPrice}}}}
 	tier := OpenAIFastTierUltrafast
 	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
-		Result: &OpenAIForwardResult{RequestID: "ultrafast-test", Model: "gpt-6-sol", ServiceTier: &tier, Usage: OpenAIUsage{InputTokens: 100, OutputTokens: 50}},
+		Result: &OpenAIForwardResult{RequestID: "ultrafast-test", Model: "gpt-6.1-sol", ServiceTier: &tier, Usage: OpenAIUsage{InputTokens: 100, OutputTokens: 50}},
 		APIKey: key, User: &User{ID: 2}, Account: &Account{ID: 42, Platform: PlatformOpenAI, Type: AccountTypeAPIKey},
 	})
 	require.NoError(t, err)
@@ -128,9 +128,9 @@ func TestGroupUltrafastLeavesNonTokenFeesUnchanged(t *testing.T) {
 
 	key.Group.ModelPricing = nil
 	tokens := UsageTokens{InputTokens: 1000, OutputTokens: 500}
-	standard, err := svc.calculateOpenAIRecordUsageTokenCost(context.Background(), key, "gpt-6-sol", 0.5, time.Now(), tokens, "", "", nil, false)
+	standard, err := svc.calculateOpenAIRecordUsageTokenCost(context.Background(), key, "gpt-6.1-sol", 0.5, time.Now(), tokens, "", "", nil, false)
 	require.NoError(t, err)
-	cost, err = svc.calculateOpenAIRecordUsageCost(context.Background(), &OpenAIForwardResult{SearchCount: 2}, key, []string{"gpt-6-sol"}, 0.5, 0.5, 0.5, 0.5, tokens, OpenAIFastTierUltrafast, nil, false, time.Now())
+	cost, err = svc.calculateOpenAIRecordUsageCost(context.Background(), &OpenAIForwardResult{SearchCount: 2}, key, []string{"gpt-6.1-sol"}, 0.5, 0.5, 0.5, 0.5, tokens, OpenAIFastTierUltrafast, nil, false, time.Now())
 	require.NoError(t, err)
 	wantTotal := standard.TotalCost*6 + 2*searchPrice/1000
 	require.InDelta(t, wantTotal, cost.TotalCost, 1e-12)

@@ -26,7 +26,11 @@ func failoverClientResponse(c *gin.Context, rules *service.ErrorPassthroughServi
 		platform = resolveOpsPlatform(c.Request.Context(), getOpsAPIKey(c), platform)
 	}
 	if rules != nil {
-		if rule := rules.MatchRule(platform, status, failure.ResponseBody); rule != nil {
+		ruleBody := failure.ResponseBody
+		if failure.StreamFailedFrame != nil {
+			ruleBody = failure.StreamFailedFrame.Payload
+		}
+		if rule := rules.MatchRule(platform, status, ruleBody); rule != nil {
 			// Never fall back to upstream text, even on an old body-passthrough rule.
 			if rule.CustomMessage != nil {
 				message = *rule.CustomMessage

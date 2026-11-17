@@ -1376,6 +1376,7 @@ export default {
         ultrafast: 'Force Ultrafast (6× pricing)',
         ultrafastHint: 'Forces service_tier=ultrafast and charges 6× Standard token prices, then applies the group multiplier. Mutually exclusive with Force Fast and unaffected by Free Fast. Global policies can still filter or block it. The upstream model must support it; reconnect existing WebSocket sessions.',
         hint: 'Forces service_tier=priority on OpenAI requests in this group. The global Fast/Flex policy can still filter or block it. New requests update immediately after saving; existing WebSocket sessions must reconnect.',
+        forceUltrafast: 'Force Ultra Fast (ultrafast)',
         free: 'Free Fast',
         freeHint: 'Fast requests in this group still use the priority tier, but customers are charged the equivalent Standard price.'
       },

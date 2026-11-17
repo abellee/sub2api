@@ -14,6 +14,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/latencytrace"
 )
 
 var ErrOpsDisabled = infraerrors.NotFound("OPS_DISABLED", "Ops monitoring is disabled")
@@ -43,9 +44,10 @@ type OpsRuntimeSettingsRefreshHealth struct {
 
 // OpsService provides ingestion and query APIs for the Ops monitoring module.
 type OpsService struct {
-	opsRepo     OpsRepository
-	settingRepo SettingRepository
-	cfg         *config.Config
+	latencyCollector *latencytrace.Collector
+	opsRepo          OpsRepository
+	settingRepo      SettingRepository
+	cfg              *config.Config
 
 	accountRepo AccountRepository
 	userRepo    UserRepository
@@ -139,6 +141,9 @@ func NewOpsService(
 		systemLogSink:             systemLogSink,
 	}
 	svc.initRuntimeSettings(context.Background())
+	if repo, ok := opsRepo.(latencytrace.Repository); ok {
+		svc.latencyCollector = latencytrace.New(repo)
+	}
 	svc.applyRuntimeLogConfigOnStartup(context.Background())
 	return svc
 }
@@ -235,6 +240,9 @@ func (s *OpsService) RefreshRuntimeSettings(ctx context.Context) error {
 // StartRuntimeSettingsRefresh keeps DB-backed Ops settings converged across
 // application instances without putting database I/O on request paths.
 func (s *OpsService) StartRuntimeSettingsRefresh(ctx context.Context) {
+	if s != nil && s.latencyCollector != nil {
+		s.latencyCollector.Start(ctx)
+	}
 	s.startRuntimeSettingsRefresh(ctx, opsRuntimeSettingsRefreshInterval, opsRuntimeSettingsRefreshJitter, opsRuntimeSettingsRefreshTimeout)
 }
 
@@ -336,6 +344,7 @@ func (s *OpsService) StopRuntimeSettingsRefresh() {
 	if s == nil {
 		return
 	}
+	s.latencyCollector.Close()
 	s.runtimeRefreshMu.Lock()
 	cancel := s.runtimeRefreshCancel
 	done := s.runtimeRefreshDone

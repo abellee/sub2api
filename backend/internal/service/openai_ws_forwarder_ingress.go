@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/latencytrace"
 	"net/http"
 	"net/url"
 	"strings"
@@ -320,7 +321,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			normalized = next
 		}
 		accountIdentitySourceRaw := append([]byte(nil), normalized...)
-		accountScopedPayload, accountScoped, scopeErr := applyCodexAccountIdentityClientMetadataRaw(normalized, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c))
+		accountScopedPayload, accountScoped, scopeErr := applyCodexAccountIdentityClientMetadataRaw(normalized, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c), codexClientSessionID(c))
 		if scopeErr != nil {
 			return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket identity metadata", scopeErr)
 		}
@@ -487,7 +488,13 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		writeCtx, cancel := newOpenAIWSDownstreamWriteContext(ctx, hooks, s.openAIWSWriteTimeout())
 		defer cancel()
 		message = restoreCodexToolNamesFromContext(c, message)
-		return clientConn.Write(writeCtx, coderws.MessageText, message)
+		trace := latencytrace.From(ctx)
+		trace.MarkCurrent("downstream_write_start")
+		err := clientConn.Write(writeCtx, coderws.MessageText, message)
+		if err == nil {
+			trace.MarkCurrent("downstream_first_write")
+		}
+		return err
 	}
 
 	readClientMessage := func() ([]byte, error) {
@@ -860,7 +867,10 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 
 	agentTaskRecoveryTried := false
 	var acquireTurnLease func(int, string, bool, bool) (*openAIWSConnLease, error)
+	var latencyAttempt *latencytrace.AttemptTrace
 	acquireTurnLease = func(turn int, preferred string, forcePreferredConn bool, forceNewConn bool) (*openAIWSConnLease, error) {
+		latencyAttempt = latencytrace.From(ctx).StartAttempt(account.ID, "ws", -1)
+		latencyAttempt.Mark("connection_wait_start")
 		req := cloneOpenAIWSAcquireRequest(baseAcquireReq)
 		req.PreferredConnID = strings.TrimSpace(preferred)
 		req.ForcePreferredConn = forcePreferredConn
@@ -869,6 +879,12 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		req.ForceNewConn = dedicatedMode || forceNewConn
 		acquireCtx, acquireCancel := context.WithTimeout(ctx, acquireTimeout)
 		lease, acquireErr := pool.Acquire(acquireCtx, req)
+		if acquireErr != nil {
+			latencyAttempt.Done(0, true)
+		} else {
+			latencyAttempt.Mark("connection_ready")
+			latencyAttempt.Reused(lease.Reused())
+		}
 		acquireCancel()
 		var dialErr *openAIWSDialError
 		if acquireErr != nil && s.isAgentIdentityAccount(ctx, account) && errors.As(acquireErr, &dialErr) && isAgentIdentityTaskInvalidWSDialError(dialErr) && !agentTaskRecoveryTried {
@@ -962,14 +978,25 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			return nil, errors.New("upstream websocket lease is nil")
 		}
 		turnStart := time.Now()
+		if latencyAttempt == nil {
+			latencyAttempt = latencytrace.From(ctx).StartAttempt(account.ID, "ws", int64(payloadBytes))
+			latencyAttempt.Mark("connection_wait_start")
+			latencyAttempt.Mark("connection_ready")
+			latencyAttempt.Reused(true)
+		}
+		defer func() { latencyAttempt = nil }()
+		latencyAttempt.RequestSize(int64(payloadBytes))
 		wroteDownstream := false
 		if err := lease.WriteJSONWithContextTimeout(ctx, json.RawMessage(payload), s.openAIWSWriteTimeout()); err != nil {
+			latencyAttempt.Mark("upload_failed")
+			latencyAttempt.Done(0, true)
 			return nil, wrapOpenAIWSIngressTurnError(
 				"write_upstream",
 				fmt.Errorf("write upstream websocket request: %w", err),
 				false,
 			)
 		}
+		latencyAttempt.Mark("upload_complete")
 		if debugEnabled {
 			logOpenAIWSModeDebug(
 				"ingress_ws_turn_request_sent account_id=%d turn=%d conn_id=%s payload_bytes=%d",
@@ -1013,6 +1040,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		for {
 			upstreamMessage, readErr := lease.ReadMessageWithContextTimeout(ctx, s.openAIWSReadTimeout())
 			if readErr != nil {
+				latencyAttempt.Done(0, true)
 				lease.MarkBroken()
 				return nil, wrapOpenAIWSIngressTurnError(
 					"read_upstream",
@@ -1025,6 +1053,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			}
 
 			eventType, eventResponseID, _ := parseOpenAIWSEventEnvelope(upstreamMessage)
+			latencyAttempt.Mark("first_stream_event")
 			responseModelObserver.ObserveOpenAI(upstreamMessage, eventType)
 			if responseID == "" && eventResponseID != "" {
 				responseID = eventResponseID
@@ -1153,6 +1182,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				terminalEventCount++
 			}
 			if firstTokenMs == nil && isTokenEvent {
+				latencyAttempt.Mark("first_semantic_output")
 				ms := int(time.Since(turnStart).Milliseconds())
 				firstTokenMs = &ms
 			}

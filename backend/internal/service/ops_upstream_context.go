@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/latencytrace"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -86,6 +87,9 @@ func SetOpsLatencyMs(c *gin.Context, key string, value int64) {
 		return
 	}
 	c.Set(key, value)
+	if c.Request != nil {
+		latencytrace.From(c.Request.Context()).Duration(key, float64(value))
+	}
 }
 
 // SetOpsUpstreamModel stores only the effective model slug for final Ops

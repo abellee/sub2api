@@ -1,5 +1,6 @@
 import overview from './overview'
 import accountMatching from './accountMatching'
+import logCollection from './logCollection'
 import channels from './channels'
 import accounts from './accounts'
 import resources from './resources'
@@ -17,6 +18,7 @@ import menuManagement from './menuManagement'
 
 export default {
   ...accountMatching,
+  ...logCollection,
   ...overview,
   ...channels,
   ...accounts,

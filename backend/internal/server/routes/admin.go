@@ -273,6 +273,10 @@ func registerAdminAPIKeyRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 func registerOpsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	ops := admin.Group("/ops")
 	{
+		ops.GET("/latency-collections", h.Admin.Ops.ListLatencyCollections)
+		ops.POST("/latency-collections", h.Admin.Ops.CreateLatencyCollection)
+		ops.POST("/latency-collections/:id/stop", h.Admin.Ops.StopLatencyCollection)
+		ops.GET("/latency-collections/:id/records", h.Admin.Ops.ListLatencyRecords)
 		// Realtime ops signals
 		ops.GET("/concurrency", h.Admin.Ops.GetConcurrencyStats)
 		ops.GET("/user-concurrency", h.Admin.Ops.GetUserConcurrencyStats)

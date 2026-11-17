@@ -21,6 +21,7 @@ import (
 // pricingAt 与本次客户计费使用同一时刻，避免跨峰谷请求的成本与售价错位。
 // longContextPricingEnabled 表示上游是否对本次请求收取长上下文费率，用于优先级 1、3；
 // 由 accountStatsLongContextPricingEnabled 按分组和账号开关得出。
+// upstreamPriceFactor 是上游按实际请求端点计价的倍数（见 ForwardResult.UpstreamPriceMultiplier），用于优先级 3。
 // reasoningEffort 是最终转发等级；按账号统计定价中配置的等级倍率计费。
 func resolveAccountStatsCost(
 	ctx context.Context,
@@ -35,6 +36,7 @@ func resolveAccountStatsCost(
 	serviceTier string,
 	pricingAt time.Time,
 	longContextPricingEnabled bool,
+	upstreamPriceFactor float64,
 	reasoningEfforts ...string,
 ) *float64 {
 	reasoningEffort := ""
@@ -67,7 +69,11 @@ func resolveAccountStatsCost(
 
 	// 优先级 3：模型定价文件（LiteLLM）默认价格
 	if billingService != nil {
-		return tryModelFilePricing(billingService, upstreamModel, tokens, serviceTier, pricingAt, longContextPricingEnabled, reasoningEffort)
+		cost := tryModelFilePricing(billingService, upstreamModel, tokens, serviceTier, pricingAt, longContextPricingEnabled, reasoningEffort)
+		if cost != nil && upstreamPriceFactor > 0 {
+			*cost *= upstreamPriceFactor
+		}
+		return cost
 	}
 
 	return nil
@@ -130,7 +136,7 @@ func tryCustomRules(
 			if modelPricing, err := billingService.GetModelPricing(model); err == nil &&
 				billingService.shouldApplySessionLongContextPricing(tokens, modelPricing) {
 				adjusted := *pricing
-				for _, price := range []**float64{&adjusted.InputPrice, &adjusted.CacheWritePrice, &adjusted.CacheWrite1hPrice, &adjusted.CacheReadPrice} {
+				for _, price := range []**float64{&adjusted.InputPrice, &adjusted.CacheWritePrice, &adjusted.CacheWrite1hPrice, &adjusted.CacheWrite12hPrice, &adjusted.CacheReadPrice} {
 					if *price != nil {
 						value := **price * longContextMultiplierOrOne(modelPricing.LongContextInputMultiplier)
 						*price = &value
@@ -297,6 +303,7 @@ func applyAccountStatsCost(
 	totalCost float64,
 	pricingAt time.Time,
 	longContextPricingEnabled bool,
+	upstreamPriceFactor float64,
 ) {
 	model := upstreamModel
 	if model == "" {
@@ -315,7 +322,7 @@ func applyAccountStatsCost(
 		reasoningEffort = *usageLog.ReasoningEffort
 	}
 	usageLog.AccountStatsCost = resolveAccountStatsCost(
-		ctx, cs, bs, accountID, groupID, model, tokens, requestCount, totalCost, serviceTier, pricingAt, longContextPricingEnabled, reasoningEffort,
+		ctx, cs, bs, accountID, groupID, model, tokens, requestCount, totalCost, serviceTier, pricingAt, longContextPricingEnabled, upstreamPriceFactor, reasoningEffort,
 	)
 }
 

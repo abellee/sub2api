@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/latencytrace"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
 	"github.com/gin-gonic/gin"
@@ -39,6 +40,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		return nil, wrapOpenAIWSFallback("invalid_state", errors.New("service or account is nil"))
 	}
 	responseModelObserver := &upstreamResponseModelObserver{}
+	latencyAttempt := latencytrace.From(ctx).StartAttempt(account.ID, "ws", -1)
 
 	wsURL, err := s.buildOpenAIResponsesWSURL(account)
 	if err != nil {
@@ -202,6 +204,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	acquireCtx, acquireCancel := context.WithTimeout(ctx, s.openAIWSAcquireTimeout())
 	defer acquireCancel()
 
+	latencyAttempt.Mark("connection_wait_start")
 	lease, err := s.getOpenAIWSConnPool().Acquire(acquireCtx, openAIWSAcquireRequest{
 		Account: account,
 		WSURL:   wsURL,
@@ -220,6 +223,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	})
 	if err != nil {
 		var agentDialErr *openAIWSDialError
+		latencyAttempt.Done(0, true)
 		if s.isAgentIdentityAccount(ctx, account) && errors.As(err, &agentDialErr) && isAgentIdentityTaskInvalidWSDialError(agentDialErr) && agentTaskRecoveryTried != nil && !*agentTaskRecoveryTried {
 			*agentTaskRecoveryTried = true
 			if recoveryErr := s.recoverAgentIdentityTask(ctx, account, account.GetCredential("task_id")); recoveryErr != nil {
@@ -304,6 +308,8 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	}
 	if c != nil {
 		SetOpsLatencyMs(c, OpsOpenAIWSConnPickMsKey, lease.ConnPickDuration().Milliseconds())
+		latencyAttempt.Mark("connection_ready")
+		latencyAttempt.Reused(lease.Reused())
 		SetOpsLatencyMs(c, OpsOpenAIWSQueueWaitMsKey, lease.QueueWaitDuration().Milliseconds())
 		c.Set(OpsOpenAIWSConnReusedKey, lease.Reused())
 		if connID != "" {
@@ -343,6 +349,8 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	}
 
 	if err := lease.WriteJSONWithContextTimeout(ctx, payload, s.openAIWSWriteTimeout()); err != nil {
+		latencyAttempt.Mark("upload_failed")
+		latencyAttempt.Done(0, true)
 		lease.MarkBroken()
 		logOpenAIWSModeInfo(
 			"write_request_fail account_id=%d conn_id=%s cause=%s payload_bytes=%d",
@@ -353,6 +361,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		)
 		return nil, wrapOpenAIWSFallback("write_request", err)
 	}
+	latencyAttempt.Mark("upload_complete")
 	if debugEnabled {
 		logOpenAIWSModeDebug(
 			"write_request_sent account_id=%d conn_id=%s stream=%v payload_bytes=%d previous_response_id=%s",
@@ -576,6 +585,7 @@ readLoop:
 		}
 		if readErr != nil {
 			lease.MarkBroken()
+			latencyAttempt.Done(0, true)
 			closeStatus, closeReason := summarizeOpenAIWSReadCloseError(readErr)
 			logOpenAIWSModeInfo(
 				"read_fail account_id=%d conn_id=%s wrote_downstream=%v close_status=%s close_reason=%s cause=%s events=%d token_events=%d terminal_events=%d buffered_pending=%d buffered_flushed=%d first_event=%s last_event=%s",
@@ -610,6 +620,7 @@ readLoop:
 		}
 
 		eventType, eventResponseID, responseField := parseOpenAIWSEventEnvelope(message)
+		latencyAttempt.Mark("first_stream_event")
 		if eventType == "" {
 			continue
 		}
@@ -633,6 +644,7 @@ readLoop:
 			terminalEventCount++
 		}
 		if firstTokenMs == nil && isTokenEvent {
+			latencyAttempt.Mark("first_semantic_output")
 			ms := int(time.Since(startTime).Milliseconds())
 			firstTokenMs = &ms
 		}

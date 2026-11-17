@@ -87,13 +87,82 @@ func TestGeminiForwardNative_ClientDisconnectWithoutUsageStaysUnbilled(t *testin
 	require.Nil(t, result)
 }
 
+// A failed attempt without observed usage must not reach per-request billing.
+// Token, image and search usage already received must survive the same error.
+func TestGeminiStreamFailurePreservesOnlyObservedUsage(t *testing.T) {
+	for _, protocol := range []string{"native", "messages", "chat"} {
+		for _, clientGone := range []bool{false, true} {
+			for _, tc := range []struct {
+				name                            string
+				payload                         string
+				input, output, images, searches int
+			}{
+				{name: "empty", payload: geminiAbortTextChunk},
+				{name: "tokens", payload: geminiAbortUsageChunk, input: 10, output: 2},
+				{name: "image", payload: geminiAbortImageChunk, input: 10, output: 1290, images: 1},
+				{name: "search", payload: `data: {"candidates":[{"content":{"parts":[{"text":"answer"}],"role":"model"},"groundingMetadata":{"webSearchQueries":["query"]}}]}` + "\n\n", searches: 1},
+			} {
+				mode := "upstream_error"
+				if clientGone {
+					mode = "client_disconnect"
+				}
+				t.Run(protocol+"/"+mode+"/"+tc.name, func(t *testing.T) {
+					model := "gemini-3-flash-preview"
+					if tc.images > 0 {
+						model = "gemini-3-pro-image"
+					}
+					body := []byte(`{"model":"` + model + `","max_tokens":16,"stream":true,"messages":[{"role":"user","content":"hi"}]}`)
+					if protocol == "native" {
+						body = []byte(`{"contents":[{"role":"user","parts":[{"text":"hi"}]}]}`)
+					}
+					svc, c, _ := newGeminiAbortingStreamService(t, "/", body, tc.payload, clientGone)
+					var result *ForwardResult
+					var err error
+					switch protocol {
+					case "native":
+						result, err = svc.ForwardNative(c.Request.Context(), c, geminiVertexAPIKeyTestAccount(""), model, "streamGenerateContent", true, body)
+					case "messages":
+						result, err = svc.Forward(c.Request.Context(), c, geminiVertexAPIKeyTestAccount(""), body)
+					case "chat":
+						result, err = svc.ForwardAsChatCompletions(c.Request.Context(), c, geminiVertexAPIKeyTestAccount(""), body)
+					}
+					if !clientGone {
+						require.ErrorIs(t, err, io.ErrUnexpectedEOF)
+					}
+					if tc.name == "empty" {
+						require.Error(t, err)
+						require.Nil(t, result)
+						if clientGone {
+							require.ErrorIs(t, err, context.Canceled)
+							marks := GetOpsStreamErrors(c)
+							require.Len(t, marks, 1)
+							require.Equal(t, "gemini_usage_unavailable_after_disconnect", marks[0].Code)
+						}
+						return
+					}
+					require.NotNil(t, result)
+					require.True(t, result.HasObservedUsage())
+					require.Equal(t, clientGone, result.ClientDisconnect)
+					require.Equal(t, tc.input, result.Usage.InputTokens)
+					require.Equal(t, tc.output, result.Usage.OutputTokens)
+					require.Equal(t, tc.images, result.ImageCount)
+					require.Equal(t, tc.searches, result.SearchCount)
+				})
+			}
+		}
+	}
+}
+
 func TestGeminiForwardNative_UpstreamReadErrorWithLiveClientStaysError(t *testing.T) {
 	reqBody := []byte(`{"contents":[{"role":"user","parts":[{"text":"hi"}]}]}`)
 	svc, c, _ := newGeminiAbortingStreamService(t, "/v1beta/models/gemini-3-flash-preview:streamGenerateContent", reqBody, geminiAbortTextChunk+geminiAbortFinalChunk, false)
 
 	result, err := svc.ForwardNative(context.Background(), c, geminiVertexAPIKeyTestAccount(""), "gemini-3-flash-preview", "streamGenerateContent", true, reqBody)
 	require.ErrorIs(t, err, io.ErrUnexpectedEOF)
-	require.Nil(t, result)
+	require.NotNil(t, result)
+	require.False(t, result.ClientDisconnect)
+	require.Equal(t, 10, result.Usage.InputTokens)
+	require.Equal(t, 5, result.Usage.OutputTokens)
 }
 
 func TestGeminiForwardNative_ClientDisconnectBillsOnlyDeliveredImages(t *testing.T) {
@@ -133,7 +202,10 @@ func TestGeminiCompatForward_ClientDisconnectAfterFinalChunkBillsCollectedUsage(
 		svc, c, _ := newGeminiAbortingStreamService(t, "/v1/messages", reqBody, geminiAbortTextChunk+geminiAbortFinalChunk, false)
 		result, err := svc.Forward(context.Background(), c, geminiVertexAPIKeyTestAccount(""), reqBody)
 		require.ErrorIs(t, err, io.ErrUnexpectedEOF)
-		require.Nil(t, result)
+		require.NotNil(t, result)
+		require.False(t, result.ClientDisconnect)
+		require.Equal(t, 10, result.Usage.InputTokens)
+		require.Equal(t, 5, result.Usage.OutputTokens)
 	})
 }
 

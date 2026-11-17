@@ -29,6 +29,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/audit-sdk/auditclient"
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/latencytrace"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/proxyurl"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/proxyutil"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/servertiming"
@@ -64,8 +65,6 @@ const (
 	// 上游域名被解析到 443 不可达的 IP 时（DNS 污染/路由异常），单个账号就要卡满
 	// 内核超时；而多账号故障转移是串行的，一次请求会阻塞数分钟且不写中间错误。
 	defaultUpstreamDialTimeout = 10 * time.Second
-	// defaultUpstreamDialKeepAlive: TCP keepalive 探测间隔，与 Go 默认值保持一致
-	defaultUpstreamDialKeepAlive = 30 * time.Second
 	// defaultUpstreamTLSHandshakeTimeout: TLS 握手超时（10秒）
 	// 与建连超时同量级，避免 TCP 已连通但对端不推进握手时无限等待
 	defaultUpstreamTLSHandshakeTimeout = 10 * time.Second
@@ -203,8 +202,10 @@ func NewHTTPUpstream(cfg *config.Config) service.HTTPUpstream {
 //   - 调用方必须关闭 resp.Body，否则会导致 inFlight 计数泄漏
 //   - inFlight > 0 的客户端不会被淘汰，确保活跃请求不被中断
 func (s *httpUpstreamService) Do(req *http.Request, proxyURL string, accountID int64, accountConcurrency int) (*http.Response, error) {
+	req, traceDone := latencytrace.ObserveHTTP(req, accountID)
 	applyGrokCLIProxyHeaders(req)
 	if err := s.validateRequestHost(req); err != nil {
+		traceDone(nil, err)
 		return nil, err
 	}
 	profile := service.HTTPUpstreamProfileDefault
@@ -215,6 +216,7 @@ func (s *httpUpstreamService) Do(req *http.Request, proxyURL string, accountID i
 	// 获取或创建对应的客户端，并标记请求占用
 	entry, err := s.acquireClientWithProfile(proxyURL, accountID, accountConcurrency, profile)
 	if err != nil {
+		traceDone(nil, err)
 		return nil, err
 	}
 
@@ -224,6 +226,7 @@ func (s *httpUpstreamService) Do(req *http.Request, proxyURL string, accountID i
 	resp, err := auditclient.ObserveUpstream(req, accountID, func(r *http.Request) (*http.Response, error) {
 		return doUpstreamRequest(client, r, s.upstreamDrainTimeout())
 	})
+	traceDone(resp, err)
 	if err != nil {
 		s.recordOpenAIHTTP2Failure(profile, entry.protocolMode, entry.proxyKey, err)
 		// 请求失败，立即减少计数
@@ -258,6 +261,7 @@ func (s *httpUpstreamService) DoWithTLS(req *http.Request, proxyURL string, acco
 	}
 	applyGrokCLIProxyHeaders(req)
 	upstreamProfile := service.HTTPUpstreamProfileDefault
+	req, traceDone := latencytrace.ObserveHTTP(req, accountID)
 	if req != nil {
 		upstreamProfile = service.HTTPUpstreamProfileFromContext(req.Context())
 	}
@@ -273,11 +277,13 @@ func (s *httpUpstreamService) DoWithTLS(req *http.Request, proxyURL string, acco
 	slog.Debug("tls_fingerprint_enabled", "account_id", accountID, "target", targetHost, "proxy", proxyInfo, "profile", profile.Name)
 
 	if err := s.validateRequestHost(req); err != nil {
+		traceDone(nil, err)
 		return nil, err
 	}
 
 	entry, err := s.acquireClientWithTLS(proxyURL, accountID, accountConcurrency, profile, upstreamProfile)
 	if err != nil {
+		traceDone(nil, err)
 		slog.Debug("tls_fingerprint_acquire_client_failed", "account_id", accountID, "error", err)
 		return nil, err
 	}
@@ -287,6 +293,7 @@ func (s *httpUpstreamService) DoWithTLS(req *http.Request, proxyURL string, acco
 	resp, err := auditclient.ObserveUpstream(req, accountID, func(r *http.Request) (*http.Response, error) {
 		return doUpstreamRequest(client, r, s.upstreamDrainTimeout())
 	})
+	traceDone(resp, err)
 	if err != nil {
 		atomic.AddInt64(&entry.inFlight, -1)
 		atomic.StoreInt64(&entry.lastUsed, time.Now().UnixNano())
@@ -1373,8 +1380,14 @@ func defaultPoolSettings(cfg *config.Config) poolSettings {
 // 建连没有任何超时上限，只能等内核 TCP 重传耗尽（Linux 约 130 秒）。
 func newUpstreamDialer() *net.Dialer {
 	return &net.Dialer{
-		Timeout:   defaultUpstreamDialTimeout,
-		KeepAlive: defaultUpstreamDialKeepAlive,
+		Timeout: defaultUpstreamDialTimeout,
+		KeepAliveConfig: net.KeepAliveConfig{
+			Enable:   true,
+			Idle:     upstreamKeepAliveIdle,
+			Interval: upstreamKeepAliveInterval,
+			Count:    upstreamKeepAliveCount,
+		},
+		Control: upstreamDialControl,
 	}
 }
 

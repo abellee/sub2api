@@ -20,6 +20,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/latencytrace"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -471,6 +472,7 @@ func setOpsSelectedAccount(c *gin.Context, accountID int64, platform ...string) 
 	service.ClearOpsUpstreamModel(c)
 	c.Set(opsAccountIDKey, accountID)
 	if c.Request != nil {
+		latencytrace.From(c.Request.Context()).SelectAccount(accountID)
 		ctx := context.WithValue(c.Request.Context(), ctxkey.AccountID, accountID)
 		if len(platform) > 0 {
 			p := strings.TrimSpace(platform[0])
