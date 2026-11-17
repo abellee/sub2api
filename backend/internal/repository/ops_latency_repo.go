@@ -68,7 +68,7 @@ func (r *opsRepository) StopLatencySession(ctx context.Context, id string) error
 }
 
 func scanLatencySessions(rows *sql.Rows) ([]latencytrace.Session, error) {
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]latencytrace.Session, 0)
 	for rows.Next() {
 		var s latencytrace.Session
@@ -136,7 +136,7 @@ func (r *opsRepository) ListLatencyRecords(ctx context.Context, id, requestID st
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]latencytrace.Record, 0)
 	for rows.Next() {
 		var rowID int64

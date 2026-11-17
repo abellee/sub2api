@@ -12,7 +12,10 @@ import (
 func TestLatencyStoppedCollectionRejectsQueuedRecord(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	t.Cleanup(func() {
+		mock.ExpectClose()
+		require.NoError(t, db.Close())
+	})
 	mock.ExpectBegin()
 	mock.ExpectQuery(`SELECT stopped_at IS NULL,record_count .* FOR UPDATE`).WithArgs("collection").WillReturnRows(sqlmock.NewRows([]string{"active", "count"}).AddRow(false, 9))
 	mock.ExpectRollback()
@@ -24,7 +27,10 @@ func TestLatencyStoppedCollectionRejectsQueuedRecord(t *testing.T) {
 func TestLatencyInsertLocksAndCapsCollection(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	t.Cleanup(func() {
+		mock.ExpectClose()
+		require.NoError(t, db.Close())
+	})
 	mock.ExpectBegin()
 	mock.ExpectQuery(`SELECT stopped_at IS NULL,record_count .* FOR UPDATE`).WithArgs("collection").WillReturnRows(sqlmock.NewRows([]string{"active", "count"}).AddRow(true, 9999))
 	mock.ExpectExec(`INSERT INTO ops_latency_records`).WithArgs("collection", "request", "client", sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(1, 1))
@@ -40,7 +46,10 @@ func TestLatencyCreateRejectsMissingScopeAndDuplicate(t *testing.T) {
 		t.Run(map[bool]string{false: "missing", true: "duplicate"}[valid], func(t *testing.T) {
 			db, mock, err := sqlmock.New()
 			require.NoError(t, err)
-			defer db.Close()
+			t.Cleanup(func() {
+				mock.ExpectClose()
+				require.NoError(t, db.Close())
+			})
 			mock.ExpectBegin()
 			mock.ExpectExec(`SELECT pg_advisory_xact_lock`).WillReturnResult(sqlmock.NewResult(0, 1))
 			mock.ExpectQuery(`SELECT EXISTS`).WithArgs(int64(2), int64(145), int64(748)).WillReturnRows(sqlmock.NewRows([]string{"valid"}).AddRow(valid))
@@ -63,7 +72,10 @@ func TestLatencyCreateRejectsMissingScopeAndDuplicate(t *testing.T) {
 func TestLatencyRequestSearchAcceptsClientPrefixAndCursor(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	t.Cleanup(func() {
+		mock.ExpectClose()
+		require.NoError(t, db.Close())
+	})
 	mock.ExpectQuery(`SELECT id,detail FROM ops_latency_records`).WithArgs("collection", "client:abc", "abc", int64(50)).WillReturnRows(sqlmock.NewRows([]string{"id", "detail"}).AddRow(49, `{"collection_id":"collection","client_request_id":"abc","events":[],"attempts":[]}`))
 	repo := &opsRepository{db: db}
 	items, err := repo.ListLatencyRecords(context.Background(), "collection", "client:abc", 50)
