@@ -28,22 +28,24 @@ func (NoopSink) Settle(SettleRequest) error { return nil }
 
 // settleEvent 是 mediad 终态回调的 body(契约见 mediad/README.md)。
 type settleEvent struct {
-	Event          string         `json:"event"`
-	TaskID         string         `json:"task_id"`
-	UpstreamTaskID string         `json:"upstream_task_id"`
-	SchemaID       string         `json:"schema_id"`
-	Model          string         `json:"model"`
-	UserID         string         `json:"user_id"`
-	KeyID          string         `json:"key_id"`
-	GroupID        string         `json:"group_id"`
-	Status         string         `json:"status"`
-	Usage          *Usage         `json:"usage"`
-	Result         map[string]any `json:"result"`
-	ErrorMessage   string         `json:"error_message"`
-	CreatedAt      string         `json:"created_at"`
-	CompletedAt    string         `json:"completed_at"`
-	Files          []ResultFile   `json:"files"`
-	Parameters     map[string]any `json:"parameters"`
+	InboundEndpoint  string         `json:"inbound_endpoint"`
+	UpstreamEndpoint string         `json:"upstream_endpoint"`
+	Event            string         `json:"event"`
+	TaskID           string         `json:"task_id"`
+	UpstreamTaskID   string         `json:"upstream_task_id"`
+	SchemaID         string         `json:"schema_id"`
+	Model            string         `json:"model"`
+	UserID           string         `json:"user_id"`
+	KeyID            string         `json:"key_id"`
+	GroupID          string         `json:"group_id"`
+	Status           string         `json:"status"`
+	Usage            *Usage         `json:"usage"`
+	Result           map[string]any `json:"result"`
+	ErrorMessage     string         `json:"error_message"`
+	CreatedAt        string         `json:"created_at"`
+	CompletedAt      string         `json:"completed_at"`
+	Files            []ResultFile   `json:"files"`
+	Parameters       map[string]any `json:"parameters"`
 }
 
 // SettleServer 处理 mediad 的终态回调:
@@ -159,18 +161,20 @@ func (s *SettleServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer func() { s.mu.Lock(); delete(s.processing, ev.TaskID); s.mu.Unlock() }()
 
 	req := SettleRequest{
-		TaskID:     ev.TaskID,
-		RequestID:  "media_task_settle:" + ev.TaskID,
-		UserID:     parseID(ev.UserID),
-		APIKeyID:   parseID(ev.KeyID),
-		GroupID:    parseID(ev.GroupID),
-		Model:      ev.Model,
-		Usage:      ev.Usage,
-		Status:     ev.Status,
-		Result:     ev.Result,
-		Files:      ev.Files,
-		Parameters: ev.Parameters,
-		Ctx:        r.Context(),
+		TaskID:           ev.TaskID,
+		RequestID:        "media_task_settle:" + ev.TaskID,
+		UserID:           parseID(ev.UserID),
+		APIKeyID:         parseID(ev.KeyID),
+		GroupID:          parseID(ev.GroupID),
+		Model:            ev.Model,
+		InboundEndpoint:  ev.InboundEndpoint,
+		UpstreamEndpoint: ev.UpstreamEndpoint,
+		Usage:            ev.Usage,
+		Status:           ev.Status,
+		Result:           ev.Result,
+		Files:            ev.Files,
+		Parameters:       ev.Parameters,
+		Ctx:              r.Context(),
 	}
 	created, createdErr := time.Parse(time.RFC3339Nano, ev.CreatedAt)
 	completed, completedErr := time.Parse(time.RFC3339Nano, ev.CompletedAt)

@@ -33,3 +33,15 @@ func TestMediaHubVideoUsesMainSiteVideoFields(t *testing.T) {
 		t.Fatalf("image billing mapping=%+v %v", r, err)
 	}
 }
+
+func TestMediaUsageEndpoint(t *testing.T) {
+	const fallback = "/v1/images/generations"
+	for _, path := range []string{"", "https://provider.test/private", "//provider.test/path", "/path?key=test"} {
+		if got := mediaUsageEndpoint(path, fallback); got != fallback {
+			t.Fatal(got)
+		}
+	}
+	if got := mediaUsageEndpoint("/v1/images/edits", fallback); got != "/v1/images/edits" {
+		t.Fatal(got)
+	}
+}

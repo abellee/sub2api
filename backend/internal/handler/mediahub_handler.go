@@ -258,20 +258,21 @@ func (h *MediaHubRelayHandler) Relay(c *gin.Context) {
 	defer cancel()
 
 	resp, err := mediahub.Forward(ctx, h.client, mediahub.ForwardInput{
-		MediadBaseURL:  h.cfg.MediadBaseURL,
-		RelaySecret:    h.cfg.RelaySecret,
-		SchemaID:       binding.SchemaID,
-		UpstreamURL:    upstreamURL,
-		Credential:     credential,
-		ClientPath:     clientPath,
-		Protocol:       strings.TrimSuffix(c.GetString(mediaProtocolKey), "_async"),
-		Body:           body,
-		ContentType:    contentType,
-		UpstreamModel:  model,
-		UserID:         subject.UserID,
-		KeyID:          apiKey.ID,
-		GroupID:        gid,
-		IdempotencyKey: c.GetHeader("X-Idempotency-Key"),
+		MediadBaseURL:   h.cfg.MediadBaseURL,
+		RelaySecret:     h.cfg.RelaySecret,
+		SchemaID:        binding.SchemaID,
+		UpstreamURL:     upstreamURL,
+		Credential:      credential,
+		ClientPath:      clientPath,
+		InboundEndpoint: c.Request.URL.EscapedPath(),
+		Protocol:        strings.TrimSuffix(c.GetString(mediaProtocolKey), "_async"),
+		Body:            body,
+		ContentType:     contentType,
+		UpstreamModel:   model,
+		UserID:          subject.UserID,
+		KeyID:           apiKey.ID,
+		GroupID:         gid,
+		IdempotencyKey:  c.GetHeader("X-Idempotency-Key"),
 	})
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": gin.H{"type": "api_error", "message": err.Error()}})
@@ -291,15 +292,17 @@ func (h *MediaHubRelayHandler) Relay(c *gin.Context) {
 	// 使在途预留与扣费原子抵扣;结算经 worker pool 提交(强制不丢弃),不阻塞响应。
 	if resp.Usage != nil && resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		req := mediahub.SettleRequest{
-			RequestID: fmt.Sprintf("media_sync_%d_%d", apiKey.ID, time.Now().UnixNano()),
-			APIKeyID:  apiKey.ID,
-			UserID:    subject.UserID,
-			GroupID:   gid,
-			Model:     model,
-			Usage:     resp.Usage,
-			Status:    "succeeded",
-			Duration:  time.Since(started),
-			Ctx:       c.Request.Context(),
+			InboundEndpoint:  c.Request.URL.EscapedPath(),
+			UpstreamEndpoint: resp.Header.Get("X-Media-Upstream-Endpoint"),
+			RequestID:        fmt.Sprintf("media_sync_%d_%d", apiKey.ID, time.Now().UnixNano()),
+			APIKeyID:         apiKey.ID,
+			UserID:           subject.UserID,
+			GroupID:          gid,
+			Model:            model,
+			Usage:            resp.Usage,
+			Status:           "succeeded",
+			Duration:         time.Since(started),
+			Ctx:              c.Request.Context(),
 		}
 		if err := h.billingSink.Settle(req); err != nil {
 			// 构建结算任务失败(而非计费本身):记录以便对账兜底。
@@ -567,8 +570,8 @@ func (s *mediaHubBillingSink) Settle(req mediahub.SettleRequest) error {
 		APIKey:           apiKey,
 		User:             apiKey.User,
 		Account:          account,
-		InboundEndpoint:  endpoint,
-		UpstreamEndpoint: endpoint,
+		InboundEndpoint:  mediaUsageEndpoint(req.InboundEndpoint, endpoint),
+		UpstreamEndpoint: mediaUsageEndpoint(req.UpstreamEndpoint, endpoint),
 		APIKeyService:    s.h.oai.apiKeyService,
 	})
 }
@@ -611,4 +614,12 @@ func mediaHubUsageResult(req mediahub.SettleRequest) (*service.OpenAIForwardResu
 		return nil, fmt.Errorf("mediahub: unsupported billing unit %q", req.Usage.Unit)
 	}
 	return result, nil
+}
+
+// Older media callbacks have no path; retain their historical billing label.
+func mediaUsageEndpoint(path, fallback string) string {
+	if len(path) == 0 || len(path) > 128 || path[0] != '/' || strings.HasPrefix(path, "//") || strings.ContainsAny(path, "?#\r\n\x00") {
+		return fallback
+	}
+	return path
 }

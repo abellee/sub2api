@@ -59,6 +59,8 @@ type ResultFile struct {
 
 // SettleRequest 是结算请求:由同步 usage 头或异步回调触发。
 type SettleRequest struct {
+	InboundEndpoint  string
+	UpstreamEndpoint string
 	// TaskID 是 mediad 内部任务号(异步);同步请求为空。
 	TaskID string
 	// RequestID 用作幂等键(usage 记录 request_id),形如 media_task_settle:{task_id}。

@@ -25,7 +25,8 @@ type ForwardInput struct {
 	UpstreamURL string
 	Credential  string
 	// ClientPath 是客户端请求的子路径(用于 mediad 日志/审计)。
-	ClientPath string
+	ClientPath      string
+	InboundEndpoint string
 	// ResultFormat requests a protocol-compatible result after settlement.
 	ResultFormat string
 	// ClientQuery marks public status/content queries, excluding internal waits and diagnostics.
@@ -81,6 +82,7 @@ func Forward(ctx context.Context, client *http.Client, in ForwardInput) (*Forwar
 	req.Header.Set(HeaderTimestamp, ts)
 	req.Header.Set(HeaderSignature, sig)
 	req.Header.Set(HeaderUpstreamURL, in.UpstreamURL)
+	req.Header.Set("X-Media-Inbound-Endpoint", in.InboundEndpoint)
 	req.Header.Set(HeaderCredential, in.Credential)
 	req.Header.Set(HeaderUserID, strconv.FormatInt(in.UserID, 10))
 	req.Header.Set(HeaderKeyID, strconv.FormatInt(in.KeyID, 10))

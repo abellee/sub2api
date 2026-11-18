@@ -30,6 +30,9 @@ func TestForwardSignsAndParsesUsage(t *testing.T) {
 		gotUser = r.Header.Get(HeaderUserID)
 		gotCred = r.Header.Get(HeaderCredential)
 		gotUpstream = r.Header.Get(HeaderUpstreamURL)
+		if r.Header.Get("X-Media-Inbound-Endpoint") != "/v1/images/generations/async" {
+			t.Error("missing inbound path")
+		}
 		gotPath = r.URL.Path
 		gotBody, _ = io.ReadAll(r.Body)
 		w.Header().Set(HeaderUsage, `{"quantity":4,"unit":"image"}`)
@@ -38,18 +41,19 @@ func TestForwardSignsAndParsesUsage(t *testing.T) {
 	t.Cleanup(upstream.Close)
 
 	resp, err := Forward(context.Background(), nil, ForwardInput{
-		MediadBaseURL: upstream.URL,
-		RelaySecret:   "shared",
-		SchemaID:      "mj-proxy-v1",
-		UpstreamURL:   "https://relay.example.com",
-		Credential:    "sk-acc",
-		ClientPath:    "v1/images/generations",
-		Body:          []byte(`{"model":"mj-v8.2","prompt":"p"}`),
-		ContentType:   "application/json",
-		UpstreamModel: "mj-v8.2",
-		UserID:        42,
-		KeyID:         7,
-		GroupID:       3,
+		MediadBaseURL:   upstream.URL,
+		RelaySecret:     "shared",
+		SchemaID:        "mj-proxy-v1",
+		UpstreamURL:     "https://relay.example.com",
+		Credential:      "sk-acc",
+		ClientPath:      "v1/images/generations",
+		InboundEndpoint: "/v1/images/generations/async",
+		Body:            []byte(`{"model":"mj-v8.2","prompt":"p"}`),
+		ContentType:     "application/json",
+		UpstreamModel:   "mj-v8.2",
+		UserID:          42,
+		KeyID:           7,
+		GroupID:         3,
 	})
 	if err != nil {
 		t.Fatalf("Forward: %v", err)
@@ -76,7 +80,7 @@ func TestSettleServerVerifiesAndDedups(t *testing.T) {
 	})
 	srv := NewSettleServer(func() string { return "cb-secret" }, sink, time.Minute)
 
-	callbackBody := []byte(`{"event":"task.completed","task_id":"mtask_1","user_id":"42","key_id":"7","group_id":"3","model":"mj-v8.2","status":"succeeded","created_at":"2026-11-08T10:00:00.125Z","completed_at":"2026-11-08T10:00:12.875Z","usage":{"quantity":4,"unit":"image"}}`)
+	callbackBody := []byte(`{"event":"task.completed","task_id":"mtask_1","inbound_endpoint":"/v1/images/edits/async","upstream_endpoint":"/provider/v1/images/edits","user_id":"42","key_id":"7","group_id":"3","model":"mj-v8.2","status":"succeeded","created_at":"2026-11-08T10:00:00.125Z","completed_at":"2026-11-08T10:00:12.875Z","usage":{"quantity":4,"unit":"image"}}`)
 	post := func(sig string) *httptest.ResponseRecorder {
 		ts := fmt.Sprintf("%d", time.Now().Unix())
 		req := httptest.NewRequest("POST", "/internal/media/settle", strings.NewReader(string(callbackBody)))
@@ -94,6 +98,9 @@ func TestSettleServerVerifiesAndDedups(t *testing.T) {
 	}
 	if len(settled) != 1 || settled[0].RequestID != "media_task_settle:mtask_1" || settled[0].UserID != 42 {
 		t.Fatalf("settled = %+v", settled)
+	}
+	if settled[0].InboundEndpoint != "/v1/images/edits/async" || settled[0].UpstreamEndpoint != "/provider/v1/images/edits" {
+		t.Fatal("callback lost endpoint")
 	}
 	if settled[0].Duration != 12750*time.Millisecond {
 		t.Fatalf("callback duration = %v", settled[0].Duration)
