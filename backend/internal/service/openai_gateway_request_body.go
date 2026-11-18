@@ -9,6 +9,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"net/http"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/MoeForge/moego/ojson"
@@ -2577,7 +2578,8 @@ func openAIJSONValueMayContainImageInput(value gjson.Result) bool {
 }
 
 func openAIRequestBodyMayContainEmptyBase64InputImage(body []byte) bool {
-	if len(body) == 0 || !openAIRequestBodyMayContainInputImageToken(body) {
+	if len(body) == 0 || !openAIRequestBodyMayContainInputImageToken(body) ||
+		!openAIRequestBodyMayContainEmptyBase64DataURI(body) {
 		return false
 	}
 	input := parseRawJSONView(body).Get("input")
@@ -2585,6 +2587,23 @@ func openAIRequestBodyMayContainEmptyBase64InputImage(body []byte) bool {
 		return false
 	}
 	return openAIJSONValueMayContainEmptyBase64InputImage(input)
+}
+
+// This is only a negative prefilter. Escaped or possibly empty values still
+// go through the structural check; ordinary nonempty image payloads do not.
+func openAIRequestBodyMayContainEmptyBase64DataURI(body []byte) bool {
+	remaining := body
+	for {
+		index := bytes.Index(remaining, []byte("base64,"))
+		if index < 0 {
+			return JSONMayEscapePlainASCII(body)
+		}
+		remaining = remaining[index+len("base64,"):]
+		tail := bytes.TrimLeftFunc(remaining, unicode.IsSpace)
+		if len(tail) == 0 || tail[0] == '"' || tail[0] == '\\' {
+			return true
+		}
+	}
 }
 
 func openAIRequestBodyMayContainInputImageToken(body []byte) bool {

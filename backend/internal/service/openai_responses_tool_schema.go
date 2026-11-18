@@ -40,29 +40,18 @@ func shouldSanitizeOpenAIResponsesToolSchemaPatterns(platform string) bool {
 }
 
 func sanitizeOpenAIResponsesToolSchemasForPlatform(body []byte, platform string) ([]byte, bool, error) {
-	normalized := body
-	changed := false
-	if shouldRepairOpenAIResponsesNullToolSchemaType(platform) {
-		next, repaired, err := sanitizeOpenAIResponsesToolParameterTypes(normalized)
-		if err != nil {
-			return body, false, fmt.Errorf("sanitize OpenAI Responses tool parameters: %w", err)
-		}
-		if repaired {
-			normalized = next
-			changed = true
-		}
+	repairTypes := shouldRepairOpenAIResponsesNullToolSchemaType(platform)
+	removePatterns := shouldSanitizeOpenAIResponsesToolSchemaPatterns(platform)
+	if len(body) == 0 || (!repairTypes && !removePatterns) {
+		return body, false, nil
 	}
-	if shouldSanitizeOpenAIResponsesToolSchemaPatterns(platform) {
-		next, sanitized, err := sanitizeOpenAIResponsesToolSchemaPatterns(normalized)
-		if err != nil {
-			return body, false, fmt.Errorf("sanitize OpenAI Responses tool schema patterns: %w", err)
-		}
-		if sanitized {
-			normalized = next
-			changed = true
-		}
-	}
-	return normalized, changed, nil
+	// Both repairs use the same byte spans; scan and patch the document only once.
+	return sanitizeOpenAIResponsesToolSchemas(body, openAIResponsesToolSchemaOptions{
+		replaceNullParameterTypes:       repairTypes,
+		injectObjectUnionRootObjectType: repairTypes,
+		dropNullRequired:                repairTypes,
+		removeUnsupportedRegexPatterns:  removePatterns,
+	})
 }
 
 // sanitizeOpenAIResponsesToolSchemaPatterns removes schema constraints whose
@@ -220,6 +209,10 @@ func sanitizeOpenAIResponsesToolSchemas(
 	if !utf8.Valid(body) {
 		return nil, false, fmt.Errorf("sanitize OpenAI Responses tool schemas: invalid UTF-8")
 	}
+	// Validate before the span parser so it can skip escaped strings without revalidating them.
+	if !json.Valid(body) {
+		return nil, false, fmt.Errorf("sanitize OpenAI Responses tool schemas: invalid JSON")
+	}
 	p := openAIResponsesToolSchemaParser{body: body, options: options}
 	if err := p.parseValue(openAIResponsesToolSchemaDocument, false, 0); err != nil {
 		if errors.Is(err, errOpenAIResponsesToolSchemaLimit) {
@@ -230,9 +223,6 @@ func sanitizeOpenAIResponsesToolSchemas(
 	p.skipWhitespace()
 	if p.pos != len(body) {
 		return nil, false, fmt.Errorf("sanitize OpenAI Responses tool schemas: trailing data at byte %d", p.pos)
-	}
-	if !json.Valid(body) {
-		return nil, false, fmt.Errorf("sanitize OpenAI Responses tool schemas: invalid JSON")
 	}
 	if len(p.edits) == 0 {
 		return body, false, nil
@@ -630,46 +620,23 @@ func (p *openAIResponsesToolSchemaParser) parseString() (int, int, error) {
 		return 0, 0, p.syntaxError("expected string")
 	}
 	start := p.pos
-	p.pos++
-	for p.pos < len(p.body) {
-		switch p.body[p.pos] {
-		case '"':
-			p.pos++
-			return start, p.pos, nil
-		case '\\':
-			p.pos++
-			if p.pos >= len(p.body) {
-				return 0, 0, p.syntaxError("unterminated string escape")
-			}
-			switch p.body[p.pos] {
-			case 'u':
-				if p.pos+4 >= len(p.body) {
-					return 0, 0, p.syntaxError("short unicode escape")
-				}
-				for _, digit := range p.body[p.pos+1 : p.pos+5] {
-					if !isOpenAIResponsesJSONHexDigit(digit) {
-						return 0, 0, p.syntaxError("invalid unicode escape")
-					}
-				}
-				p.pos += 5
-				continue
-			case '"', '\\', '/', 'b', 'f', 'n', 'r', 't':
-				p.pos++
-			default:
-				return 0, 0, p.syntaxError("invalid string escape")
-			}
-		default:
-			if p.body[p.pos] < 0x20 {
-				return 0, 0, p.syntaxError("control character in string")
-			}
-			p.pos++
+	for search := start + 1; search < len(p.body); {
+		next := bytes.IndexByte(p.body[search:], '"')
+		if next < 0 {
+			break
 		}
+		end := search + next
+		backslashes := 0
+		for i := end - 1; i > start && p.body[i] == '\\'; i-- {
+			backslashes++
+		}
+		if backslashes%2 == 0 {
+			p.pos = end + 1
+			return start, p.pos, nil
+		}
+		search = end + 1
 	}
 	return 0, 0, p.syntaxError("unterminated string")
-}
-
-func isOpenAIResponsesJSONHexDigit(value byte) bool {
-	return value >= '0' && value <= '9' || value >= 'a' && value <= 'f' || value >= 'A' && value <= 'F'
 }
 
 func (p *openAIResponsesToolSchemaParser) parseKeyword(keyword string) error {

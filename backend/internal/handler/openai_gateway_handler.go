@@ -838,7 +838,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		if service.GetOpsCyberPolicy(c) != nil {
 			cyberBlockBodyHTTP = sessionHashBody
 		}
-		h.recordCyberPolicyIfMarked(c, apiKey, account, subscription, reqModel, err != nil, cyberBlockBodyHTTP, clientRequestedUsageFields(c, channelMapping, reqModel, ""), service.HashUsageRequestPayload(body))
+		h.recordCyberPolicyIfMarked(c, apiKey, account, subscription, reqModel, err != nil, cyberBlockBodyHTTP, clientRequestedUsageFields(c, channelMapping, reqModel, ""), openAICyberPolicyRequestPayloadHash(c, body))
 		forwardDurationMs := time.Since(forwardStart).Milliseconds()
 		upstreamLatencyMs, _ := getContextInt64(c, service.OpsUpstreamLatencyMsKey)
 		responseLatencyMs := forwardDurationMs
@@ -1444,7 +1444,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		if service.GetOpsCyberPolicy(c) != nil {
 			cyberBlockBodyMsg = body
 		}
-		h.recordCyberPolicyIfMarked(c, apiKey, account, subscription, reqModel, err != nil, cyberBlockBodyMsg, clientRequestedUsageFields(c, channelMappingMsg, reqModel, ""), service.HashUsageRequestPayload(body))
+		h.recordCyberPolicyIfMarked(c, apiKey, account, subscription, reqModel, err != nil, cyberBlockBodyMsg, clientRequestedUsageFields(c, channelMappingMsg, reqModel, ""), openAICyberPolicyRequestPayloadHash(c, body))
 		forwardDurationMs := time.Since(forwardStart).Milliseconds()
 		upstreamLatencyMs, _ := getContextInt64(c, service.OpsUpstreamLatencyMsKey)
 		responseLatencyMs := forwardDurationMs
@@ -4352,6 +4352,15 @@ func (h *OpenAIGatewayHandler) enqueueCyberSessionBlockedOpsEntry(c *gin.Context
 		meta.UserID = apiKey.User.ID
 	}
 	enqueueOpsErrorLog(h.opsService, buildCyberSessionBlockedOpsEntry(meta))
+}
+
+// Most forwards have no cyber mark; do not hash a potentially large body on
+// every failover just to pass it to a recorder that immediately returns.
+func openAICyberPolicyRequestPayloadHash(c *gin.Context, body []byte) string {
+	if service.GetOpsCyberPolicy(c) == nil || c.GetBool(cyberPolicyRecordedKey) {
+		return ""
+	}
+	return service.HashUsageRequestPayload(body)
 }
 
 // recordCyberPolicyIfMarked 在 gateway forward 返回后检查 cyber 标记，异步写风控日志/邮件，
