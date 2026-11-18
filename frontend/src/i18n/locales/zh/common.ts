@@ -291,6 +291,8 @@ export default {
     sessionExpiredDesc: '请返回注册页面重新开始。',
     verificationCode: '验证码',
     verificationCodeHint: '请输入发送到您邮箱的6位验证码',
+    emailVerificationSpamNotice: '没收到验证码？请检查邮箱的垃圾邮件文件夹。',
+    emailVerificationSupport: '如有问题，请联系客服：{contact}。',
     sendingCode: '发送中...',
     sendCode: '发送验证码',
     clickToResend: '点击重新发送验证码',

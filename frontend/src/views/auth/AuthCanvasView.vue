@@ -51,7 +51,7 @@
     <div v-if="announceText" class="ac-announce">✳ {{ announceText }}</div>
 
     <main class="ac-center">
-      <div class="ac-glass">
+      <div class="ac-glass" :class="{ 'ac-glass-register': isRegister }">
         <div class="ac-brand-row">
           <div v-if="settingsLoaded" class="ac-logo-chip">
             <img :src="siteLogo || '/logo.svg'" alt="Logo" />
@@ -327,7 +327,8 @@ onUnmounted(() => {
   backdrop-filter: blur(14px);
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
   font-family: var(--tf-mono);
-  animation: ac-float 9s ease-in-out infinite;
+  opacity: 0.48;
+  animation: ac-float 14s ease-in-out infinite;
 }
 .fc-head {
   display: flex;
@@ -365,7 +366,7 @@ onUnmounted(() => {
     transform: translateY(0);
   }
   50% {
-    transform: translateY(-13px);
+    transform: translateY(-7px);
   }
 }
 
@@ -727,6 +728,9 @@ onUnmounted(() => {
   backdrop-filter: blur(18px);
   box-shadow: 0 40px 90px rgba(0, 0, 0, 0.5);
   animation: ac-rise 0.8s 0.1s both;
+}
+.ac-glass-register {
+  max-width: 480px;
 }
 @keyframes ac-rise {
   from {

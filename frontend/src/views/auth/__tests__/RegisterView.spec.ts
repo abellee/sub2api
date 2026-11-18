@@ -1,6 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import RegisterView from '@/views/auth/RegisterView.vue'
+import RegisterCanvasPanel from '@/components/auth/canvas/RegisterCanvasPanel.vue'
 
 const {
   getPublicSettingsMock,
@@ -52,8 +53,8 @@ vi.mock('vue-i18n', () => ({
     }
   }),
   useI18n: () => ({
-    t: (key: string) =>
-      key === 'auth.emailDomainRegistrationLimit'
+    t: (key: string, params?: Record<string, string>) =>
+      key === 'auth.emailVerificationSupport' ? params?.contact : key === 'auth.emailDomainRegistrationLimit'
         ? '该邮箱域名无法注册新账户。请使用主流邮箱注册；如需使用企业邮箱，请联系客服添加域名白名单。'
         : key,
     locale: { value: 'en' }
@@ -73,8 +74,8 @@ vi.mock('@/api/auth', async () => {
   }
 })
 
-function mountRegister() {
-  return mount(RegisterView, {
+function mountRegister(component: typeof RegisterView | typeof RegisterCanvasPanel = RegisterView) {
+  return mount(component, {
     global: {
       stubs: {
         AuthLayout: { template: '<div><slot /><slot name="footer" /></div>' },
@@ -107,6 +108,20 @@ describe('RegisterView', () => {
     verifyActionMock.mockResolvedValue({ token: 'ticket', randstr: 'randstr' })
     getPublicSettingsMock.mockResolvedValue(publicSettings)
     registerMock.mockResolvedValue({})
+  })
+
+  it.each([true, false])('shows email verification help on the live registration page only when enabled (%s)', async (enabled) => {
+    getPublicSettingsMock.mockResolvedValueOnce({
+      ...publicSettings,
+      email_verify_enabled: enabled,
+      contact_info: '123456789'
+    })
+    const wrapper = mountRegister(RegisterCanvasPanel)
+    await flushPromises()
+
+    expect(wrapper.text().includes('auth.emailVerificationSpamNotice')).toBe(enabled)
+    expect(wrapper.text().includes('QQ 123456789')).toBe(enabled)
+    wrapper.unmount()
   })
 
   it('does not flash the promo-code field before disabled settings finish loading', async () => {

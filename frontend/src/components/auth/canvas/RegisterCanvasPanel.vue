@@ -17,6 +17,8 @@
 
     <!-- Registration Form -->
     <form v-else @submit.prevent="handleRegister" class="space-y-5">
+      <EmailVerificationNotice v-if="emailVerifyEnabled" :contact-info="contactInfo" />
+
       <!-- Email Input -->
       <div>
         <label for="email" class="input-label">
@@ -351,6 +353,7 @@ import WechatOAuthSection from '@/components/auth/WechatOAuthSection.vue'
 import EmailOAuthButtons from '@/components/auth/EmailOAuthButtons.vue'
 import LoginAgreementPrompt from '@/components/auth/LoginAgreementPrompt.vue'
 import Icon from '@/components/icons/Icon.vue'
+import EmailVerificationNotice from '@/components/auth/EmailVerificationNotice.vue'
 import TurnstileWidget from '@/components/CaptchaChallenge.vue'
 import { useAuthStore, useAppStore } from '@/stores'
 import {
@@ -417,6 +420,7 @@ const aliyunCaptchaSceneId = ref<string>('')
 const aliyunCaptchaPrefix = ref<string>('')
 const aliyunCaptchaRegion = ref<string>('cn')
 const siteName = ref<string>('Sub2API')
+const contactInfo = ref('')
 const linuxdoOAuthEnabled = ref<boolean>(false)
 const wechatOAuthEnabled = ref<boolean>(false)
 const oidcOAuthEnabled = ref<boolean>(false)
@@ -539,6 +543,7 @@ onMounted(async () => {
 
   try {
     const settings = await getPublicSettings()
+    contactInfo.value = settings.contact_info || ''
     registrationEnabled.value = settings.registration_enabled
     emailVerifyEnabled.value = settings.email_verify_enabled
     promoCodeEnabled.value = settings.promo_code_enabled

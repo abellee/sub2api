@@ -292,6 +292,8 @@ export default {
     sessionExpiredDesc: 'Please go back to the registration page and start again.',
     verificationCode: 'Verification Code',
     verificationCodeHint: 'Enter the 6-digit code sent to your email',
+    emailVerificationSpamNotice: 'Can’t find your verification code? Check your spam or junk folder.',
+    emailVerificationSupport: 'Need help? Contact support: {contact}.',
     sendingCode: 'Sending...',
     sendCode: 'Send code',
     clickToResend: 'Click to resend code',

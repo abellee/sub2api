@@ -61,6 +61,9 @@ vi.mock('vue-i18n', () => ({
   }),
   useI18n: () => ({
     t: (key: string, params?: Record<string, string | number>) => {
+      if (key === 'auth.emailVerificationSupport') {
+        return params?.contact
+      }
       if (key === 'auth.accountCreatedSuccess') {
         return `Account created for ${params?.siteName ?? 'Sub2API'}`
       }
@@ -133,6 +136,20 @@ describe('EmailVerifyView', () => {
     sendVerifyCodeMock.mockResolvedValue({ countdown: 60 })
     sendPendingOAuthVerifyCodeMock.mockResolvedValue({ countdown: 60 })
     setTokenMock.mockResolvedValue({})
+  })
+
+  it('shows spam and support instructions next to the code input even if sending fails', async () => {
+    sessionStorage.setItem('register_data', JSON.stringify({ email: 'test@example.com', password: 'test-password' }))
+    getPublicSettingsMock.mockResolvedValue({ contact_info: 'QQ: 123456789' })
+    sendVerifyCodeMock.mockRejectedValue(new Error('test delivery failure'))
+    const wrapper = mount(EmailVerifyView, {
+      global: { stubs: { AuthLayout: { template: '<div><slot /></div>' }, Icon: true, TurnstileWidget: true, RouterLink: true } }
+    })
+    await flushPromises()
+
+    expect(wrapper.get('form aside').text()).toContain('auth.emailVerificationSpamNotice')
+    expect(wrapper.get('form aside').text()).toContain('QQ: 123456789')
+    wrapper.unmount()
   })
 
   it('acquires a fresh Tencent proof for each resend action', async () => {
