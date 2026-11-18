@@ -252,14 +252,28 @@ func TestMediaResultWaitFailureReturnsRecoveryTask(t *testing.T) {
 				}
 				relay.finishStandard(c, &mediahub.ForwardResponse{StatusCode: 202, Body: []byte(`{"task_id":"mtask_wait"}`)}, nil, 2, 7, 3)
 				body := w.Body.String()
-				if w.Code != 502 || w.Header().Get("X-Task-Id") != "mtask_wait" || gjson.Get(body, "task_id").String() != "mtask_wait" || gjson.Get(body, "poll_url").String() != "/v1/images/tasks/mtask_wait" {
+				wantStatus := 502
+				wantMessage := "waiting for image result: connection to media service failed"
+				wantGemini := "INTERNAL"
+				switch cause {
+				case context.DeadlineExceeded:
+					wantStatus = 504
+					wantGemini = "DEADLINE_EXCEEDED"
+					wantMessage = "waiting for image result: media service timed out"
+				case context.Canceled:
+					wantMessage = "waiting for image result: request was canceled"
+				}
+				if w.Code != wantStatus || w.Header().Get("X-Task-Id") != "mtask_wait" || gjson.Get(body, "task_id").String() != "mtask_wait" || gjson.Get(body, "poll_url").String() != "/v1/images/tasks/mtask_wait" {
 					t.Fatalf("missing recovery information: %d %s", w.Code, body)
 				}
-				if gjson.Get(body, "error.message").String() != "media result unavailable; task continues in background" {
+				if gjson.Get(body, "error.message").String() != wantMessage {
 					t.Fatal("lost public error", body)
 				}
-				if protocol == "gemini" && (gjson.Get(body, "error.code").Int() != 502 || gjson.Get(body, "error.status").String() != "INTERNAL") {
+				if protocol == "gemini" && (gjson.Get(body, "error.code").Int() != int64(wantStatus) || gjson.Get(body, "error.status").String() != wantGemini) {
 					t.Fatal("lost Gemini error format", body)
+				}
+				if _, recorded := c.Get(service.OpsUpstreamStatusCodeKey); recorded {
+					t.Fatal("transport failure has no upstream HTTP response")
 				}
 				if len(c.Errors) != 1 || !errors.Is(c.Errors[0].Err, cause) {
 					t.Fatal("lost underlying connection error", c.Errors)

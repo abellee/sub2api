@@ -275,7 +275,12 @@ func (h *MediaHubRelayHandler) Relay(c *gin.Context) {
 		IdempotencyKey:  c.GetHeader("X-Idempotency-Key"),
 	})
 	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": gin.H{"type": "api_error", "message": err.Error()}})
+		h.transportFailure(c, "submitting media request", "", err)
+		return
+	}
+	if resp.StatusCode >= 400 {
+		copyMediaTaskQueryHeaders(c, resp.Header)
+		h.directMediaError(c, resp.StatusCode, resp.Body, "")
 		return
 	}
 	if resp.StatusCode == http.StatusAccepted {
@@ -339,12 +344,16 @@ func (h *MediaHubRelayHandler) taskStatus(c *gin.Context, userID, keyID, groupID
 		ClientQuery:   "status",
 	}, taskID)
 	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": gin.H{"type": "api_error", "message": err.Error()}})
+		h.transportFailure(c, "querying media task", taskID, err)
 		return
 	}
 	copyMediaTaskQueryHeaders(c, resp.Header)
 	var state map[string]any
 	if resp.StatusCode == http.StatusNotFound && h.deletedTaskResponse(c, userID, taskID) {
+		return
+	}
+	if resp.StatusCode >= 400 {
+		h.queryMediaError(c, ctx, mediahub.ForwardInput{MediadBaseURL: h.cfg.MediadBaseURL, RelaySecret: h.cfg.RelaySecret, UserID: userID, KeyID: keyID, GroupID: groupID}, resp.StatusCode, resp.Body, taskID)
 		return
 	}
 	if json.Unmarshal(resp.Body, &state) == nil {

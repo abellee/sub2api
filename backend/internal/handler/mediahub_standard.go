@@ -1,8 +1,11 @@
 package handler
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -11,6 +14,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/mediahub"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	middleware "github.com/Wei-Shaw/sub2api/internal/server/middleware"
+	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 	"go.uber.org/zap"
@@ -86,12 +90,12 @@ func (h *MediaHubController) TryStandardVideoTask(c *gin.Context, content bool) 
 	}
 	result, err := h.relay.standardFetch(ctx, in, id, "grok_video")
 	if err != nil {
-		mediaStandardError(c, 502, "media task query unavailable")
+		h.relay.transportFailure(c, "querying media task", id, err)
 		return true
 	}
 	copyMediaTaskQueryHeaders(c, result.Header)
 	if result.StatusCode == http.StatusTooManyRequests || result.StatusCode == http.StatusGone {
-		c.Data(result.StatusCode, "application/json", result.Body)
+		h.relay.queryMediaError(c, ctx, in, result.StatusCode, result.Body, id)
 		return true
 	}
 	if result.StatusCode == http.StatusNotFound && h.relay.deletedTaskResponse(c, subject.UserID, id) {
@@ -100,11 +104,8 @@ func (h *MediaHubController) TryStandardVideoTask(c *gin.Context, content bool) 
 	if result.StatusCode >= http.StatusBadRequest {
 		c.Header("X-Task-Id", id)
 		upstreamStatus, matchBody := h.relay.taskFailureContext(c, ctx, in, id, nil)
-		message := gjson.GetBytes(result.Body, "error.message").String()
-		if status, message, rewritten := h.relay.applyTaskFailureRule(c, upstreamStatus, matchBody, result.StatusCode, message); rewritten {
-			mediaStandardError(c, status, message)
-			return true
-		}
+		h.relay.finishMediaFailure(c, result.StatusCode, result.Body, upstreamStatus, matchBody, id)
+		return true
 	}
 	if content && result.StatusCode == 200 {
 		if url := gjson.GetBytes(result.Body, "video.url").String(); url != "" {
@@ -178,7 +179,10 @@ func (h *MediaHubRelayHandler) finishStandard(c *gin.Context, accepted *mediahub
 	}
 	id := gjson.GetBytes(accepted.Body, "task_id").String()
 	if id == "" {
-		mediaStandardError(c, 502, "media service did not return a task ID")
+		const msg = "media service accepted the request without a task ID"
+		recordMediaDiagnostic(c, 0, []byte(msg), accepted.Body)
+		status, message, _ := h.applyTaskFailureRule(c, 0, []byte(msg), 502, msg)
+		mediaStandardError(c, status, message)
 		return
 	}
 	queryExpiresAt := gjson.GetBytes(accepted.Body, "query_expires_at").String()
@@ -217,10 +221,9 @@ func (h *MediaHubRelayHandler) finishStandard(c *gin.Context, accepted *mediahub
 	in.Wait = true
 	response, err := mediahub.OpenTaskResult(ctx, h.client, in, id)
 	if err != nil {
-		_ = c.Error(err)
 		logger.L().Warn("mediahub: result wait failed", zap.String("task_id", id),
 			zap.Int64("user_id", userID), zap.Int64("group_id", groupID), zap.Error(err))
-		mediaStandardError(c, 502, "media result unavailable; task continues in background", id)
+		h.transportFailure(c, "waiting for image result", id, err)
 		return
 	}
 	defer func() { _ = response.Body.Close() }()
@@ -228,16 +231,10 @@ func (h *MediaHubRelayHandler) finishStandard(c *gin.Context, accepted *mediahub
 		upstreamStatus, matchBody := h.taskFailureContext(c, ctx, in, id, nil)
 		raw, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
 		if err != nil {
-			mediaStandardError(c, 502, "media error response unavailable")
+			h.transportFailure(c, "reading media error response", id, err)
 			return
 		}
-		message := gjson.GetBytes(raw, "error.message").String()
-		c.Header("X-Task-Id", id)
-		if status, message, rewritten := h.applyTaskFailureRule(c, upstreamStatus, matchBody, response.StatusCode, message); rewritten {
-			mediaStandardError(c, status, message)
-		} else {
-			c.Data(response.StatusCode, "application/json", raw)
-		}
+		h.finishMediaFailure(c, response.StatusCode, raw, upstreamStatus, matchBody, id)
 		return
 	}
 	c.Header("X-Task-Id", id)
@@ -253,9 +250,19 @@ func (h *MediaHubRelayHandler) finishStandard(c *gin.Context, accepted *mediahub
 	writer := io.Writer(c.Writer)
 	if stream {
 		writer = mediaFlushWriter{c}
+		if err := h.copyMediaEvents(c, ctx, in, id, writer, response.Body); err != nil {
+			status, msg := h.transportErrorRule(c, "reading image event stream", err)
+			writeMediaStreamError(c, writer, id, status, msg, "")
+		}
+		return
 	}
 	if _, err := io.Copy(writer, response.Body); err != nil {
-		_ = c.Error(err)
+		status, msg := h.transportErrorRule(c, "reading image result", err)
+		if !c.Writer.Written() {
+			mediaStandardError(c, status, msg, id)
+		} else {
+			service.MarkOpsStreamFailure(c, "api_error", "", msg, status)
+		}
 	}
 
 }
@@ -282,7 +289,7 @@ func (h *MediaHubController) TryStandardImageTask(c *gin.Context) bool {
 	in.ClientQuery = "status"
 	state, err := h.relay.standardFetch(ctx, in, id, "state")
 	if err != nil {
-		mediaStandardError(c, 502, "media task query unavailable")
+		h.relay.transportFailure(c, "querying media task", id, err)
 		return true
 	}
 	copyMediaTaskQueryHeaders(c, state.Header)
@@ -290,7 +297,7 @@ func (h *MediaHubController) TryStandardImageTask(c *gin.Context) bool {
 		if state.StatusCode == http.StatusNotFound && h.relay.deletedTaskResponse(c, subject.UserID, id) {
 			return true
 		}
-		c.Data(state.StatusCode, "application/json", state.Body)
+		h.relay.queryMediaError(c, ctx, in, state.StatusCode, state.Body, id)
 		return true
 	}
 	out := gin.H{"id": id, "task_id": id, "status": "processing", "poll_interval_seconds": 3, "query_expires_at": gjson.GetBytes(state.Body, "query_expires_at").String()}
@@ -307,7 +314,11 @@ func (h *MediaHubController) TryStandardImageTask(c *gin.Context) bool {
 		in.ClientQuery = ""
 		result, err := h.relay.standardFetch(ctx, in, id, "openai_url")
 		if err != nil {
-			mediaStandardError(c, 502, "media result unavailable")
+			h.relay.transportFailure(c, "reading completed image result", id, err)
+			return true
+		}
+		if result.StatusCode >= 400 {
+			h.relay.directMediaError(c, result.StatusCode, result.Body, id)
 			return true
 		}
 		out["http_status"] = result.StatusCode
@@ -325,4 +336,56 @@ func (w mediaFlushWriter) Write(p []byte) (int, error) {
 	n, err := w.c.Writer.Write(p)
 	w.c.Writer.Flush()
 	return n, err
+}
+
+// mediad emits heartbeat comments, then either completed images or one error event.
+// Stream large image lines untouched. Only inspect the bounded error frame.
+func (h *MediaHubRelayHandler) copyMediaEvents(c *gin.Context, ctx context.Context, in mediahub.ForwardInput, id string, w io.Writer, src io.Reader) error {
+	r := bufio.NewReader(src)
+	for {
+		line, err := r.ReadSlice('\n')
+		if err == io.EOF {
+			return io.ErrUnexpectedEOF
+		}
+		if err != nil {
+			return err
+		}
+		if string(bytes.TrimSpace(line)) == "event: error" {
+			const limit = 1 << 20
+			data, err := bufio.NewReader(io.LimitReader(r, limit+1)).ReadBytes('\n')
+			if len(data) > limit {
+				return fmt.Errorf("media error frame exceeds %d bytes", limit)
+			}
+			if err != nil {
+				return err
+			}
+			body := bytes.TrimSpace(bytes.TrimPrefix(data, []byte("data:")))
+			code, raw := h.taskFailureContext(c, ctx, in, id, nil)
+			if len(raw) == 0 {
+				raw = body
+				code = 502
+				recordMediaDiagnostic(c, 0, raw, raw)
+			}
+			msg := publicMediaFailureMessage(body, raw, code)
+			status, msg, _ := h.applyTaskFailureRule(c, code, raw, 502, msg)
+			return writeMediaStreamError(c, w, id, status, msg, gjson.GetBytes(body, "error.code").String())
+		}
+		if _, err := w.Write(line); err != nil {
+			return err
+		}
+		if bytes.HasPrefix(line, []byte("event: ")) {
+			_, err := io.Copy(w, r)
+			return err
+		}
+	}
+}
+func writeMediaStreamError(c *gin.Context, w io.Writer, id string, status int, msg, code string) error {
+	service.MarkOpsStreamFailure(c, "api_error", code, msg, status)
+	detail := gin.H{"message": msg}
+	if code != "" {
+		detail["code"] = code
+	}
+	b, _ := json.Marshal(gin.H{"type": "error", "error": detail, "http_status": status, "task_id": id})
+	_, err := fmt.Fprintf(w, "event: error\ndata: %s\n\n", b)
+	return err
 }

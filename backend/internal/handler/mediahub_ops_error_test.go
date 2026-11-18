@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -29,7 +30,7 @@ func TestMediaFailurePersistsPrivateUpstreamDiagnostics(t *testing.T) {
 		{"sync gemini", "POST", "/v1beta/models/test:generateContent", "gemini", "failed", `{"error":{"message":"` + invalidSize + `"}}`, requestMessage, 400, 400},
 		{"image polling", "GET", "/v1/images/tasks/mtask_diagnostic", "", "failed", `{"error":{"message":"account forbidden"}}`, genericMessage, 403, 502},
 		{"media polling", "GET", "/media/tasks/mtask_diagnostic", "", "failed", `{"error":{"message":"` + invalidSize + `"}}`, requestMessage, 400, 400},
-		{"recovery polling", "GET", "/v1/images/tasks/mtask_diagnostic", "", "recovery_required", "provider unavailable", "Generation result is unavailable. Please contact support with the task ID before retrying.", 503, 502},
+		{"recovery polling", "GET", "/v1/images/tasks/mtask_diagnostic", "", "recovery_required", "provider unavailable", "The media task needs verification before it can be retried.", 503, 502},
 		{"video polling", "GET", "/v1/videos/mtask_diagnostic", "", "failed", `{"error":{"message":"upstream route missing"}}`, genericMessage, 404, 502},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -51,7 +52,8 @@ func TestMediaFailurePersistsPrivateUpstreamDiagnostics(t *testing.T) {
 						_, _ = w.Write([]byte(`{"error":{"type":"invalid_format","message":"unsupported result format"}}`))
 						return
 					}
-					_ = json.NewEncoder(w).Encode(gin.H{"status_code": tc.upstream, "message": "upstream request failed", "body": tc.raw})
+					w.Header().Set("X-Media-Error-Status", fmt.Sprint(tc.upstream))
+					_, _ = w.Write([]byte(tc.raw))
 				case "state", "":
 					_ = json.NewEncoder(w).Encode(gin.H{"status": tc.state, "error_message": "Generation failed.", "files_acknowledged": true})
 				default:
@@ -129,7 +131,7 @@ func TestMediaFailureUnavailableDiagnosticsPreservesClientResponse(t *testing.T)
 	relay := &MediaHubRelayHandler{cfg: MediaHubConfig{MediadBaseURL: media.URL, ForwardTimeout: time.Second}, client: media.Client()}
 	relay.finishStandard(c, &mediahub.ForwardResponse{StatusCode: 202, Body: []byte(`{"task_id":"mtask_diagnostic"}`)}, nil, 42, 7, 3)
 	require.Equal(t, 400, w.Code)
-	require.JSONEq(t, `{"error":{"message":"Generation failed."}}`, w.Body.String())
+	require.Contains(t, w.Body.String(), "Generation failed.")
 	_, recorded := c.Get(service.OpsUpstreamStatusCodeKey)
 	require.False(t, recorded, "a failed diagnostic lookup must not be attributed to the provider")
 }

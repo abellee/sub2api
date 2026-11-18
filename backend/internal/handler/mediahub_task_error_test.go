@@ -40,8 +40,8 @@ func TestMediaTaskFailureRulesAndPrivacy(t *testing.T) {
 		{name: "legacy service", status: "failed", legacy: true, upstream: 400, wantCode: 502, wantMessage: custom},
 		{name: "unknown failure", status: "failed", wantCode: 502, wantMessage: "Generation failed. Please contact support with the task ID."},
 		{name: "rate limited", status: "failed", raw: "too many requests", upstream: 429, wantCode: 429, wantMessage: "Generation service is busy. Please try again later."},
-		{name: "recovery required", status: "recovery_required", wantCode: 502, wantMessage: "Generation result is unavailable. Please contact support with the task ID before retrying."},
-		{name: "interrupted", status: "interrupted", wantCode: 502, wantMessage: "Generation result is unavailable. Please contact support with the task ID before retrying."},
+		{name: "recovery required", status: "recovery_required", wantCode: 502, wantMessage: "The media task needs verification before it can be retried."},
+		{name: "interrupted", status: "interrupted", wantCode: 502, wantMessage: "The media task needs verification before it can be retried."},
 		{name: "successful result expired", status: "succeeded", wantCode: 410, wantMessage: "media files have expired"},
 		{name: "pending with cleanup flag", status: "processing", wantCode: 200},
 	} {
@@ -195,5 +195,42 @@ func TestMediaStandardFailureRules(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestMediaHeartbeatThenErrorUsesMainSiteRule(t *testing.T) {
+	for _, tc := range []struct {
+		name, keyword string
+		broken        bool
+	}{{"upstream rejection", "temporarily unavailable", false}, {"truncated stream", "unexpected EOF", true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			const private = `{"error":{"type":"upstream_error","message":"Upstream service temporarily unavailable"},"api_key":"sk-private-token"}`
+			media := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Query().Get("response_format") == "error_context" {
+					w.Header().Set("X-Media-Error-Status", "502")
+					_, _ = w.Write([]byte(private))
+					return
+				}
+				w.Header().Set("Content-Type", "text/event-stream")
+				_, _ = w.Write([]byte(": keep-alive\n\n"))
+				w.(http.Flusher).Flush()
+				if !tc.broken {
+					_, _ = w.Write([]byte("event: error\ndata: {\"error\":{\"message\":\"Generation failed\"}}\n\n"))
+				}
+			}))
+			defer media.Close()
+			status, msg := 503, "Please try later."
+			rule := &model.ErrorPassthroughRule{Enabled: true, MatchMode: model.MatchModeAny, Keywords: []string{tc.keyword}, ResponseCode: &status, CustomMessage: &msg}
+			h := &MediaHubRelayHandler{cfg: MediaHubConfig{MediadBaseURL: media.URL, ForwardTimeout: time.Second}, client: media.Client(), oai: newBodyLimitPassthroughHandler(t, rule)}
+			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+			c.Request = httptest.NewRequest("POST", "/v1/images/generations", nil)
+			c.Set(mediaProtocolKey, "openai")
+			h.finishStandard(c, &mediahub.ForwardResponse{StatusCode: 202, Body: []byte(`{"task_id":"mtask_stream"}`)}, []byte(`{"stream":true}`), 2, 7, 3)
+			b := w.Body.String()
+			if w.Code != 200 || !strings.HasPrefix(b, ": keep-alive\n\nevent: error\n") || !strings.Contains(b, msg) || !strings.Contains(b, `"http_status":503`) || strings.Contains(b, "sk-private-token") || !strings.Contains(c.GetString(service.OpsUpstreamErrorMessageKey), tc.keyword) {
+				t.Fatalf("lost stream failure: %s; %s", b, c.GetString(service.OpsUpstreamErrorMessageKey))
+			}
+		})
 	}
 }
