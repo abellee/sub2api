@@ -27,7 +27,7 @@ func (h *RelayHandler) waitStandardResult(w http.ResponseWriter, r *http.Request
 	defer ticker.Stop()
 	lastHeartbeat := time.Now()
 	for {
-		if task.Status == StatusFailed || (task.Status == StatusSucceeded && task.CallbackState == CallbackConfirmed) {
+		if task.Status == StatusFailed || task.Status == StatusRecoveryRequired || task.Status == StatusInterrupted || (task.Status == StatusSucceeded && task.CallbackState == CallbackConfirmed) {
 			var ok bool
 			task, ok = h.store.Get(task.ID)
 			if !ok {

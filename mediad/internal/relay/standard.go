@@ -10,6 +10,10 @@ import (
 
 // Standard results become readable only after the main site confirms billing.
 func (h *RelayHandler) handleStandardResult(w http.ResponseWriter, r *http.Request, task *Task, format string) {
+	if format == "error_context" {
+		h.writeErrorContext(w, task)
+		return
+	}
 	if writeStagingFailure(w, task) {
 		return
 	}
@@ -25,8 +29,12 @@ func (h *RelayHandler) handleStandardResult(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusGone, "result_expired", "media files have expired")
 		return
 	}
+	if task.Status == StatusRecoveryRequired || task.Status == StatusInterrupted {
+		writeError(w, 502, "generation_unavailable", "The media task needs verification before it can be retried.")
+		return
+	}
 	if task.Status == StatusFailed {
-		if (task.ResponseStatus >= 400 || (format == "gemini" && task.ResponseStatus == 200)) && json.Valid(task.Response) {
+		if task.ResponseStatus >= 400 && json.Valid(task.Response) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(task.ResponseStatus)
 			_, _ = w.Write(task.Response)

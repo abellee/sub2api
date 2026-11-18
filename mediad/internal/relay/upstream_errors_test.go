@@ -112,6 +112,23 @@ func TestCreateErrorRecordsSurviveCallbackRestartAndTaskGC(t *testing.T) {
 			if saved.Status != expected {
 				t.Fatalf("changed failure policy: %s", saved.Status)
 			}
+			// A recovery response must resolve a synchronous wait without resubmission.
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			h := NewRelayHandler(nil, store, nil, relaySecret, nil)
+			result := httptest.NewRecorder()
+			h.waitStandardResult(result, httptest.NewRequest("GET", "/", nil).WithContext(ctx), saved, "openai_url")
+			if result.Code < 400 {
+				t.Fatalf("wait hid the upstream failure: %d", result.Code)
+			}
+			{
+				saved.Response = nil // simulate a compacted task snapshot
+				diag := httptest.NewRecorder()
+				h.handleStandardResult(diag, httptest.NewRequest("GET", "/", nil), saved, "error_context")
+				if diag.Header().Get("X-Media-Error-Status") != fmt.Sprint(tc.status) || !bytes.Equal(diag.Body.Bytes(), tc.body) {
+					t.Fatalf("lost original diagnostic: %d %q", diag.Code, diag.Body.Bytes())
+				}
+			}
 			// Simulate callback acknowledgement / cleanup, then a restart and task expiry.
 			saved.Status, saved.CallbackState, saved.FilesAcknowledged = StatusFailed, CallbackConfirmed, true
 			old := time.Now().Add(-48 * time.Hour)
@@ -302,5 +319,33 @@ func TestErrorRecordStorageFailureDoesNotChangeHTTPFailurePolicy(t *testing.T) {
 	}
 	if !strings.Contains(logs.String(), "persist upstream error") {
 		t.Fatal("storage failure was not reported")
+	}
+}
+
+func TestPrivateDiagnosticDoesNotReuseHTTPErrorAfterDisconnect(t *testing.T) {
+	store, tracker, task := diagnosticTracker(t)
+	_, err := tracker.readUpstreamResponse(task, "create", &http.Response{StatusCode: 400, Body: io.NopCloser(strings.NewReader("old input error"))}, 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { conn, _, _ := w.(http.Hijacker).Hijack(); conn.Close() }))
+	defer upstream.Close()
+	task.Request = &UpstreamRequest{Method: "POST", URL: upstream.URL + "/image?key=private"}
+	if err := store.Create(task); err != nil {
+		t.Fatal(err)
+	}
+	tracker.submit(task, task.Schema)
+	saved, _ := store.Get(task.ID)
+	if saved.Status != StatusRecoveryRequired {
+		t.Fatal(saved.Status)
+	}
+	w := httptest.NewRecorder()
+	NewRelayHandler(nil, store, nil, relaySecret, nil).writeErrorContext(w, saved)
+	var diag struct {
+		Message string
+		Status  int `json:"status_code"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &diag); err != nil || !strings.Contains(diag.Message, "EOF") || strings.Contains(diag.Message, "private") || diag.Status != 0 {
+		t.Fatalf("unexpected transport diagnostic: %s", w.Body.String())
 	}
 }

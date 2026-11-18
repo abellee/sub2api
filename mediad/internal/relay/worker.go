@@ -3,8 +3,10 @@ package relay
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -15,6 +17,15 @@ func (t *Tracker) taskSchema(task *Task) (*Schema, bool) {
 		return task.Schema, true
 	}
 	return t.schemas(task.SchemaID)
+}
+
+// Drop the URL (it may contain provider credentials), retain the transport failure.
+func upstreamCause(err error) string {
+	var u *url.Error
+	if errors.As(err, &u) {
+		err = u.Err
+	}
+	return err.Error()
 }
 
 func (t *Tracker) recovery(task *Task, reason string) {
@@ -82,6 +93,7 @@ func (t *Tracker) submit(task *Task, schema *Schema) {
 		t.recovery(task, "missing saved upstream request")
 		return
 	}
+	task.ErrorArchive, task.PrivateCause, task.ResponseStatus = "-", "", 0
 	task.Status = StatusSubmitting
 	if err := t.store.Update(task); err != nil {
 		t.logger.Printf("[mediad] persist before submit %s: %v", task.ID, err)
@@ -98,6 +110,7 @@ func (t *Tracker) submit(task *Task, schema *Schema) {
 	defer cancel()
 	r, err := http.NewRequestWithContext(ctx, task.Request.Method, task.Request.URL, bytes.NewReader(task.Request.Body))
 	if err != nil {
+		task.PrivateCause = "invalid saved upstream request: " + upstreamCause(err)
 		t.recovery(task, "invalid saved request")
 		return
 	}
@@ -109,6 +122,7 @@ func (t *Tracker) submit(task *Task, schema *Schema) {
 	if err != nil {
 		// 不把断线当成生成失败：上游可能已接受并产生费用。
 		if t.ctx.Err() == nil {
+			task.PrivateCause = "submitting upstream request: " + upstreamCause(err)
 			t.recovery(task, "upstream response unavailable; verify upstream before retry")
 		}
 		return
@@ -117,6 +131,9 @@ func (t *Tracker) submit(task *Task, schema *Schema) {
 	body, err := t.readUpstreamResponse(task, "create", resp, 64<<20)
 	if err != nil || len(body) > 64<<20 {
 		if t.ctx.Err() == nil {
+			if err != nil {
+				task.PrivateCause = "reading upstream response: " + upstreamCause(err)
+			}
 			t.recovery(task, "upstream response incomplete; verify upstream before retry")
 		}
 		return
@@ -191,7 +208,11 @@ func (t *Tracker) finishFiles(task *Task) {
 		if ctx.Err() != nil {
 			break
 		}
+		task.ErrorArchive = "-"
 		files, err := t.stager.Stage(ctx, task)
+		if err != nil {
+			task.PrivateCause = "retrieving result files: " + upstreamCause(err)
+		}
 		if t.ctx.Err() != nil {
 			return
 		}
@@ -214,7 +235,10 @@ func (t *Tracker) finishFiles(task *Task) {
 		}
 		// 可查询的上游重新读取结果，刷新可能过期的下载地址。
 		if schema, ok := t.taskSchema(task); ok && task.UpstreamTaskID != "" && attempt+1 < attempts {
-			if status, body, qerr := t.pollOnceContext(ctx, task, schema); qerr == nil && schema.IsTerminalSuccess(status) {
+			archive := task.ErrorArchive
+			status, body, qerr := t.pollOnceContext(ctx, task, schema)
+			task.ErrorArchive = archive
+			if qerr == nil && schema.IsTerminalSuccess(status) {
 				task.Result = ExtractResult(schema, body)
 				if err := t.store.Update(task); err != nil {
 					return

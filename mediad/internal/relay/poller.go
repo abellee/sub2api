@@ -225,6 +225,9 @@ func (t *Tracker) trackLoop(taskID string) {
 		}
 		// 停机可能超过原等待上限，恢复时先查一次，不能丢掉已完成的结果。
 		if time.Since(started) > deadline {
+			if err != nil {
+				task.PrivateCause = "poll timeout; last upstream query: " + upstreamCause(err)
+			}
 			t.recovery(task, "poll_timeout: result is unknown; resume query after checking upstream")
 			return
 		}
@@ -245,6 +248,7 @@ func (t *Tracker) pollOnce(task *Task, schema *Schema) (string, []byte, error) {
 }
 
 func (t *Tracker) pollOnceContext(parent context.Context, task *Task, schema *Schema) (string, []byte, error) {
+	task.ErrorArchive = "-"
 	q := schema.Upstream.Query
 	if q == nil {
 		return "", nil, fmt.Errorf("schema %q has no query spec", task.SchemaID)

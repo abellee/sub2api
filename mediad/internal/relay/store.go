@@ -15,6 +15,9 @@ import (
 // → 回调 sub2api(confirmed)→ TTL 回收。
 // interrupted 表示持久化恢复时缺少凭证、无法继续轮询的任务。
 type Task struct {
+	// Private diagnostic for the final attempt. A dash means that attempt had no archived HTTP response.
+	ErrorArchive      string           `json:"error_archive,omitempty"`
+	PrivateCause      string           `json:"private_cause,omitempty"`
 	InboundEndpoint   string           `json:"inbound_endpoint,omitempty"`
 	UpstreamEndpoint  string           `json:"upstream_endpoint,omitempty"`
 	DeletedFileIDs    []string         `json:"deleted_file_ids,omitempty"`

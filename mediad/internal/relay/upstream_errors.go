@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 )
 
@@ -77,6 +78,7 @@ func (s *MemoryStore) recordUpstreamError(task *Task, phase string, resp *http.R
 	if err := WriteState(name+".json", record); err != nil {
 		return name, err
 	}
+	task.ErrorArchive = filepath.Base(name)
 	for _, err := range []error{readErr, syncErr, closeErr} {
 		if err != nil {
 			return name, err
@@ -134,4 +136,55 @@ func (t *Tracker) readUpstreamResponse(task *Task, phase string, resp *http.Resp
 		readErr = fmt.Errorf("upstream response exceeds %d bytes", limit)
 	}
 	return raw, readErr
+}
+
+// Called only after the signed task lookup and ownership checks. Never forward provider headers.
+func (h *RelayHandler) writeErrorContext(w http.ResponseWriter, task *Task) {
+	if task.Status != StatusFailed && task.Status != StatusInterrupted && task.Status != StatusRecoveryRequired {
+		writeError(w, http.StatusConflict, "no_task_error", "task has no terminal error")
+		return
+	}
+	// Use the last recorded failure (async tasks may have both create and query responses).
+	var latest upstreamErrorRecord
+	if task.ErrorArchive != "-" && h.store.root != "" && filepath.Base(task.ID) == task.ID && task.ID != "." && task.ID != ".." {
+		dir := filepath.Join(h.store.root, "upstream-errors", task.ID)
+		var names []string
+		if task.ErrorArchive == "" { // Old snapshots have no pointer to their final response.
+			if !task.stagingFailed() && task.Status != StatusInterrupted {
+				entries, _ := os.ReadDir(dir)
+				for _, e := range entries {
+					if !e.IsDir() && filepath.Ext(e.Name()) == ".json" {
+						names = append(names, e.Name())
+					}
+				}
+			}
+		} else if filepath.Base(task.ErrorArchive) == task.ErrorArchive {
+			names = []string{task.ErrorArchive + ".json"}
+		}
+		for _, name := range names {
+			b, err := os.ReadFile(filepath.Join(dir, name))
+			if err != nil {
+				continue
+			}
+			var rec upstreamErrorRecord
+			if json.Unmarshal(b, &rec) == nil && rec.TaskID == task.ID && rec.UserID == task.UserID && rec.RecordedAt.After(latest.RecordedAt) && rec.BodyFile != "" && filepath.Base(rec.BodyFile) == rec.BodyFile && rec.BodyFile+".json" == name {
+				latest = rec
+			}
+		}
+		if latest.BodyFile != "" {
+			if f, err := os.Open(filepath.Join(dir, latest.BodyFile)); err == nil {
+				defer f.Close()
+				w.Header().Set("Content-Type", "application/octet-stream")
+				w.Header().Set("X-Media-Error-Status", strconv.Itoa(latest.StatusCode))
+				_, _ = io.Copy(w, f)
+				return
+			}
+		}
+	}
+	// Pre-archive tasks and transport failures have only the task snapshot.
+	body := ""
+	if task.ResponseStatus >= 400 || (task.Status == StatusFailed && task.ResponseStatus == 200) {
+		body = string(task.Response)
+	}
+	writeJSON(w, 200, map[string]any{"status_code": task.ResponseStatus, "body": body, "message": firstNonEmpty(task.PrivateCause, task.ErrorMessage)})
 }
