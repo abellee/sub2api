@@ -758,17 +758,6 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageTokenCost(
 	longContextBillingGate *bool,
 	modelLongContextExempt bool,
 ) (*CostBreakdown, error) {
-	if apiKey != nil && apiKey.Group != nil && apiKey.Group.ForceOpenAIUltrafast &&
-		groupSupportsOpenAIFast(apiKey.Group.Platform) && normalizeBillingServiceTier(serviceTier) == OpenAIFastTierUltrafast {
-		// Use the same Standard pricing policy, including channel and long-context prices.
-		cost, err := s.calculateOpenAIRecordUsageTokenCost(ctx, apiKey, billingModel, multiplier, pricingAt,
-			tokens, "", reasoningEffort, longContextBillingGate, modelLongContextExempt)
-		if err == nil && cost != nil && (cost.BillingMode == "" || cost.BillingMode == string(BillingModeToken)) {
-			applyCostBreakdownMultiplier(cost, 6)
-		}
-		return cost, err
-	}
-
 	input := CostInput{
 		Ctx: ctx, Model: billingModel, Tokens: tokens, RequestCount: 1, RateMultiplier: multiplier,
 		PricingAt: pricingAt, ServiceTier: serviceTier, LongContextBillingEnabled: longContextBillingGate,

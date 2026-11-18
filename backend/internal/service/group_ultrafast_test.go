@@ -114,6 +114,50 @@ func TestGroupUltrafastRecordUsageIgnoresFreeFast(t *testing.T) {
 	require.InDelta(t, usageRepo.lastLog.TotalCost*0.5, usageRepo.lastLog.ActualCost, 1e-10)
 }
 
+func TestGroupUltrafastHonorsChannelMultiplier(t *testing.T) {
+	const groupID int64 = 133
+	const rate = 0.13
+	price, longPrice, flat := 8e-6, 16e-6, 1.0
+	cache := newEmptyChannelCache()
+	cache.channelByGroupID[groupID] = &Channel{ID: 32, Status: StatusActive}
+	cache.groupPlatform[groupID] = PlatformOpenAI
+	cache.loadedAt = time.Now()
+	channelService := &ChannelService{}
+	channelService.cache.Store(cache)
+	svc := &OpenAIGatewayService{billingService: newTestBillingService()}
+	svc.resolver = NewModelPricingResolver(channelService, svc.billingService)
+	key := &APIKey{Group: &Group{ID: groupID, Platform: PlatformOpenAI, ForceOpenAIUltrafast: true, LongContextPricingEnabled: true, RateMultiplier: rate}}
+	at := time.Date(2027, 3, 1, 8, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		model      string
+		multiplier float64
+		interval   PricingInterval
+	}{
+		{"gpt-6.1-sol", 6, PricingInterval{InputMultiplier: &flat}},
+		{"gpt-6-astra", 6, PricingInterval{InputMultiplier: &flat}},
+		{"gpt-6.2-sol", 3, PricingInterval{MinTokens: 272000, InputPrice: &longPrice}},
+		{"gpt-6.2-astra", 3, PricingInterval{MinTokens: 272000, InputPrice: &longPrice}},
+	} {
+		cache.pricingByGroupModel[channelModelKey{groupID: groupID, platform: PlatformOpenAI, model: tc.model}] = &ChannelModelPricing{
+			BillingMode: BillingModeToken, InputPrice: &price, UltrafastMultiplier: &tc.multiplier, Intervals: []PricingInterval{tc.interval},
+		}
+		t.Run(tc.model, func(t *testing.T) {
+			for _, inputTokens := range []int{272000, 272001} {
+				tokens := UsageTokens{InputTokens: inputTokens}
+				cost, err := svc.calculateOpenAIRecordUsageTokenCost(context.Background(), key, tc.model, rate, at, tokens, OpenAIFastTierUltrafast, "", nil, true)
+				require.NoError(t, err)
+				wantPrice := price
+				if inputTokens > 272000 && tc.multiplier == 3 {
+					wantPrice = longPrice
+				}
+				want := float64(inputTokens) * wantPrice * tc.multiplier
+				require.InDelta(t, want, cost.TotalCost, 1e-12)
+				require.InDelta(t, want*rate, cost.ActualCost, 1e-12)
+			}
+		})
+	}
+}
+
 func TestGroupUltrafastLeavesNonTokenFeesUnchanged(t *testing.T) {
 	svc := &OpenAIGatewayService{billingService: newTestBillingService()}
 	svc.resolver = NewModelPricingResolver(nil, svc.billingService)

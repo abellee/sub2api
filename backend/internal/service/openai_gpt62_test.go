@@ -218,7 +218,7 @@ func TestGPT62RecordUsageUsesRequestPricingAt(t *testing.T) {
 			tier := "ultrafast"
 			err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
 				Result: &OpenAIForwardResult{RequestID: fmt.Sprint(at.Unix(), withResolver), Model: "gpt-6.2-sol", UpstreamModel: "gpt-6.2-sol", ServiceTier: &tier, Usage: OpenAIUsage{InputTokens: 1000, OutputTokens: 500}},
-				APIKey: &APIKey{ID: 1007, GroupID: i64p(17), Group: &Group{ID: 17, RateMultiplier: 1, SubscriptionType: SubscriptionTypeSubscription}},
+				APIKey: &APIKey{ID: 1007, GroupID: i64p(17), Group: &Group{ID: 17, Platform: PlatformOpenAI, ForceOpenAIUltrafast: true, RateMultiplier: 1, SubscriptionType: SubscriptionTypeSubscription}},
 				User:   &User{ID: 2007}, Account: &Account{ID: 3007, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}, PricingAt: at,
 			})
 			require.NoError(t, err)

@@ -1373,8 +1373,8 @@ export default {
       openaiFast: {
         title: 'OpenAI Fast mode',
         force: 'Force Fast (priority)',
-        ultrafast: 'Force Ultrafast (6× pricing)',
-        ultrafastHint: 'Forces service_tier=ultrafast and charges 6× Standard token prices, then applies the group multiplier. Mutually exclusive with Force Fast and unaffected by Free Fast. Global policies can still filter or block it. Supported for GPT-6 Astra and GPT-6.1 Sol with upstream account access; reconnect existing WebSocket sessions.',
+        ultrafast: 'Force Ultrafast',
+        ultrafastHint: 'Forces service_tier=ultrafast and applies the configured or model-default Ultrafast multiplier, then the group multiplier. Mutually exclusive with Force Fast and unaffected by Free Fast. Global policies can still filter or block it. Supported for GPT-6 Astra, GPT-6.1 Sol, and GPT-6.2 Sol / Astra with upstream account access; reconnect existing WebSocket sessions.',
         hint: 'Forces service_tier=priority on OpenAI requests in this group. The global Fast/Flex policy can still filter or block it. New requests update immediately after saving; existing WebSocket sessions must reconnect.',
         forceUltrafast: 'Force Ultra Fast (ultrafast)',
         free: 'Free Fast',
