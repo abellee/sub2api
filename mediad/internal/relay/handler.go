@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"strconv"
 	"sync"
 	"time"
@@ -103,6 +104,8 @@ func (h *RelayHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	task := &Task{ID: newTaskID(h.now()), Schema: schema, SchemaID: schema.ID, SchemaVersion: schema.Version, Request: assembled, Model: in.Model, UserID: in.UserID, KeyID: in.KeyID, GroupID: in.GroupID, UpstreamURL: in.UpstreamURL, Credential: in.Credential, Status: StatusQueued, CreatedAt: h.now(), CallbackState: CallbackPending}
+	task.InboundEndpoint = endpointPath(firstNonEmpty(r.Header.Get("X-Media-Inbound-Endpoint"), in.ClientPath))
+	task.UpstreamEndpoint = endpointPath(assembled.URL)
 	var params map[string]any
 	_ = json.Unmarshal(in.Body, &params)
 	task.Parameters = map[string]any{}
@@ -214,4 +217,13 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 }
 func writeError(w http.ResponseWriter, status int, typ, msg string) {
 	writeJSON(w, status, map[string]any{"error": map[string]any{"type": typ, "message": msg}})
+}
+
+// Store only the path; provider URLs can contain credentials or signed queries.
+func endpointPath(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	return u.EscapedPath()
 }

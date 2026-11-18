@@ -299,3 +299,34 @@ func TestExtractorTaskIDMissing(t *testing.T) {
 		t.Fatal("empty task_id should error")
 	}
 }
+
+func TestCallbackKeepsOnlyEndpointPathsAfterClearingRequest(t *testing.T) {
+	for _, action := range []string{"edits", "generations"} {
+		path := "/v1/images/" + action
+		up, err := Assemble(AssembleInput{Schema: &Schema{Upstream: UpstreamSpec{Create: CallSpec{Path: "/v1/images/generations"}}, Request: RequestSpec{BodyMode: "passthrough"}}, UpstreamURL: "https://example.test/provider", ClientPath: path, Body: []byte(`{}`)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		task := Task{InboundEndpoint: endpointPath(path + "/async?secret=x"), UpstreamEndpoint: endpointPath(up.URL + "?token=x"), Request: up}
+		task.Request = nil
+		data, err := json.Marshal(task)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var restored Task
+		if err = json.Unmarshal(data, &restored); err != nil {
+			t.Fatal(err)
+		}
+		body, err := BuildCallbackPayload(&restored)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var ev map[string]any
+		if err = json.Unmarshal(body, &ev); err != nil {
+			t.Fatal(err)
+		}
+		if ev["inbound_endpoint"] != path+"/async" || ev["upstream_endpoint"] != "/provider"+path {
+			t.Fatalf("wrong endpoints: %s", body)
+		}
+	}
+}

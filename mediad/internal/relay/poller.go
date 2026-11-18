@@ -500,20 +500,22 @@ func BuildCallbackPayload(task *Task) ([]byte, error) {
 		}
 	}
 	payload := map[string]any{
-		"event":            CallbackEventTaskCompleted,
-		"task_id":          task.ID,
-		"upstream_task_id": task.UpstreamTaskID,
-		"schema_id":        task.SchemaID,
-		"model":            task.Model,
-		"user_id":          task.UserID,
-		"key_id":           task.KeyID,
-		"group_id":         task.GroupID,
-		"status":           task.Status,
-		"files":            task.Files,
-		"parameters":       task.Parameters,
-		"result":           result,
-		"error_message":    task.ErrorMessage,
-		"created_at":       task.CreatedAt.UTC().Format(time.RFC3339Nano),
+		"event":             CallbackEventTaskCompleted,
+		"inbound_endpoint":  task.InboundEndpoint,
+		"upstream_endpoint": task.UpstreamEndpoint,
+		"task_id":           task.ID,
+		"upstream_task_id":  task.UpstreamTaskID,
+		"schema_id":         task.SchemaID,
+		"model":             task.Model,
+		"user_id":           task.UserID,
+		"key_id":            task.KeyID,
+		"group_id":          task.GroupID,
+		"status":            task.Status,
+		"files":             task.Files,
+		"parameters":        task.Parameters,
+		"result":            result,
+		"error_message":     task.ErrorMessage,
+		"created_at":        task.CreatedAt.UTC().Format(time.RFC3339Nano),
 	}
 	if task.CompletedAt != nil {
 		payload["completed_at"] = task.CompletedAt.UTC().Format(time.RFC3339Nano)
