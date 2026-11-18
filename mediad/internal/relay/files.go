@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"mime"
 	"net/http"
 	"net/url"
@@ -113,6 +114,7 @@ func (h *RelayHandler) handleDownload(w http.ResponseWriter, r *http.Request) {
 }
 
 type ResultStager struct {
+	store    *MemoryStore
 	Root     string
 	MaxBytes int64
 	Client   *http.Client
@@ -250,7 +252,11 @@ func (s *ResultStager) save(ctx context.Context, task *Task, id, ref string) (Re
 			return ResultFile{}, err
 		}
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			_, saveErr := s.store.recordUpstreamError(task, "download", resp, resp.Body, nil)
 			resp.Body.Close()
+			if saveErr != nil {
+				log.Printf("[mediad] persist upstream error %s (download): %v", task.ID, saveErr)
+			}
 			return ResultFile{}, fmt.Errorf("download status %d", resp.StatusCode)
 		}
 		reader = resp.Body

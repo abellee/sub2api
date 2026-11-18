@@ -111,7 +111,7 @@ func (t *Tracker) SetCallback(cfg CallbackConfig) error {
 }
 
 func (t *Tracker) ConfigureFiles(root string, maxBytes int64) {
-	t.stager = &ResultStager{Root: root, MaxBytes: maxBytes, Client: &http.Client{Timeout: 120 * time.Second}}
+	t.stager = &ResultStager{Root: root, MaxBytes: maxBytes, store: t.store, Client: &http.Client{Timeout: 120 * time.Second}}
 }
 
 func (t *Tracker) LoadCallback(path string) error {
@@ -274,7 +274,7 @@ func (t *Tracker) pollOnceContext(parent context.Context, task *Task, schema *Sc
 		return "", nil, err
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 16<<20))
+	body, err := t.readUpstreamResponse(task, "query", resp, 16<<20)
 	if err != nil {
 		return "", nil, err
 	}

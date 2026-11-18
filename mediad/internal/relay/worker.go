@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"net/http"
 	"time"
 )
@@ -115,7 +114,7 @@ func (t *Tracker) submit(task *Task, schema *Schema) {
 		return
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 64<<20+1))
+	body, err := t.readUpstreamResponse(task, "create", resp, 64<<20)
 	if err != nil || len(body) > 64<<20 {
 		if t.ctx.Err() == nil {
 			t.recovery(task, "upstream response incomplete; verify upstream before retry")
