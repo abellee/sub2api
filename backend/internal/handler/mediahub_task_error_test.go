@@ -213,7 +213,10 @@ func TestMediaHeartbeatThenErrorUsesMainSiteRule(t *testing.T) {
 				}
 				w.Header().Set("Content-Type", "text/event-stream")
 				_, _ = w.Write([]byte(": keep-alive\n\n"))
-				w.(http.Flusher).Flush()
+				if err := http.NewResponseController(w).Flush(); err != nil {
+					t.Error(err)
+					return
+				}
 				if !tc.broken {
 					_, _ = w.Write([]byte("event: error\ndata: {\"error\":{\"message\":\"Generation failed\"}}\n\n"))
 				}

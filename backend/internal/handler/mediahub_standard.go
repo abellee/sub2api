@@ -252,7 +252,7 @@ func (h *MediaHubRelayHandler) finishStandard(c *gin.Context, accepted *mediahub
 		writer = mediaFlushWriter{c}
 		if err := h.copyMediaEvents(c, ctx, in, id, writer, response.Body); err != nil {
 			status, msg := h.transportErrorRule(c, "reading image event stream", err)
-			writeMediaStreamError(c, writer, id, status, msg, "")
+			_ = writeMediaStreamError(c, writer, id, status, msg, "")
 		}
 		return
 	}
