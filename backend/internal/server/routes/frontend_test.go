@@ -2,10 +2,11 @@ package routes
 
 import (
 	"context"
-	"github.com/Wei-Shaw/sub2api/internal/service"
-	"github.com/gin-gonic/gin"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/gin-gonic/gin"
 )
 
 type frontendTestSettings struct{ enabled bool }
