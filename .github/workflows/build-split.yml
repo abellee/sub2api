@@ -92,6 +92,17 @@ jobs:
             org.opencontainers.image.version=${{ steps.image.outputs.version }}
           cache-from: type=gha,scope=split-${{ matrix.component }}
           cache-to: type=gha,mode=max,scope=split-${{ matrix.component }}
+      - name: Verify backend binary identity
+        if: steps.selected.outputs.build == 'true' && matrix.component == 'backend'
+        env:
+          IMAGE: ${{ steps.image.outputs.name }}
+          SDK_COMMIT: ${{ steps.audit.outputs.commit }}
+          VERSION: ${{ steps.image.outputs.version }}
+        run: |
+          docker run --rm --entrypoint /app/sub2api "$IMAGE" --version > "$RUNNER_TEMP/backend-version.txt" 2>&1
+          grep -F "$GITHUB_SHA" "$RUNNER_TEMP/backend-version.txt"
+          grep -F "$VERSION" "$RUNNER_TEMP/backend-version.txt"
+          grep -F "${SDK_COMMIT:0:12}" "$RUNNER_TEMP/backend-version.txt"
       - name: Export frontend release files
         if: steps.selected.outputs.build == 'true' && matrix.component == 'frontend'
         env:
