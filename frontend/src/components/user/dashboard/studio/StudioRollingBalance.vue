@@ -30,8 +30,7 @@ watch(formatted, (next, previous) => {
     if (!/\d/.test(character)) return { character }
     const target = Number(character)
     const start = Number(oldDigits[--position] ?? target)
-    // A full turn also animates digits whose final value stays the same.
-    const steps = previous === undefined ? 0 : 10 + (target - start + 10) % 10
+    const steps = previous === undefined || target === start ? 0 : 10 + (target - start + 10) % 10
     return { character, digits: Array.from({ length: steps + 1 }, (_, step) => (start + step) % 10) }
   })
   revision.value++
