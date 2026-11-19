@@ -1,0 +1,29 @@
+# syntax=docker/dockerfile:1.7
+ARG NODE_IMAGE=node:24-alpine
+ARG NGINX_IMAGE=nginx:stable-alpine
+FROM --platform=$BUILDPLATFORM ${NODE_IMAGE} AS frontend-builder
+ARG NPM_CONFIG_REGISTRY
+WORKDIR /app/frontend
+RUN corepack enable && corepack prepare pnpm@9 --activate
+COPY frontend/package.json frontend/pnpm-lock.yaml ./
+RUN --mount=type=cache,id=sub2api-split-pnpm,target=/root/.local/share/pnpm/store \
+    if [ -n "${NPM_CONFIG_REGISTRY}" ]; then pnpm config set registry "${NPM_CONFIG_REGISTRY}"; fi && \
+    pnpm install --frozen-lockfile --prefer-offline
+COPY frontend/ ./
+COPY docs/legal/ /app/docs/legal/
+# The browser always calls the same origin; nginx forwards to the API container.
+ENV VITE_API_BASE_URL=/api/v1
+RUN pnpm run build
+
+FROM ${NGINX_IMAGE}
+COPY --from=frontend-builder /app/backend/internal/web/dist /usr/share/nginx/html
+COPY deploy/split/default.conf.template /etc/nginx/templates/default.conf.template
+COPY deploy/split/proxy.conf /etc/nginx/snippets/sub2api-proxy.conf
+ENV FRONTEND_LISTEN=8080 \
+    BACKEND_UPSTREAM=backend:8080 \
+    PUBLIC_SCHEME=http \
+    TRUSTED_PROXY_CIDR=127.0.0.1/32 \
+    NGINX_ENVSUBST_FILTER="^(FRONTEND_LISTEN|BACKEND_UPSTREAM|PUBLIC_SCHEME|TRUSTED_PROXY_CIDR)$"
+EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD wget -q -T 3 -O /dev/null http://127.0.0.1:8080/frontend-health || exit 1
