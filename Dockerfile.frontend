@@ -13,6 +13,7 @@ COPY frontend/ ./
 COPY docs/legal/ /app/docs/legal/
 # The browser always calls the same origin; nginx forwards to the API container.
 ENV VITE_API_BASE_URL=/api/v1
+ENV NODE_OPTIONS=--max-old-space-size=4096
 RUN pnpm run build
 
 FROM ${NGINX_IMAGE}
