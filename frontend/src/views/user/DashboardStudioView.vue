@@ -4,18 +4,24 @@
     <div class="dashboard-studio">
       <div v-if="preview" class="studio-preview" role="status"><span>{{ t('dashboard.studio.previewData') }}</span><a href="/dashboard">{{ t('dashboard.studio.backToLive') }}<span aria-hidden="true"> ↗</span></a></div>
       <div v-if="statsError" class="studio-error" role="alert">{{ t('dashboard.studio.statsError') }}<button type="button" @click="loadStats">{{ t('common.tryAgain') }}</button></div>
-      <div v-if="loadingStats && !stats" class="studio-loading"><LoadingSpinner />{{ t('common.loading') }}</div>
-      <div v-if="stats" class="summary-grid">
+      <div v-if="loadingStats && !stats" class="summary-grid summary-loading" role="status" :aria-label="t('common.loading')" aria-busy="true">
+        <article v-for="card in summaryCards" :key="card.title" class="studio-card" :class="card.className">
+          <div class="metric-title"><h3>{{ t(card.title) }}</h3><Icon :name="card.icon" size="md" /></div>
+          <Skeleton width="58%" :height="32" aria-hidden="true" /><Skeleton width="44%" :height="12" aria-hidden="true" /><Skeleton :height="64" aria-hidden="true" />
+        </article>
+      </div>
+      <div v-if="stats" class="summary-grid summary-ready">
         <article v-if="!authStore.isSimpleMode" class="studio-card balance-card">
           <div class="metric-title"><h3>{{ t('dashboard.balance') }}</h3><Icon name="creditCard" size="md" /></div>
           <p class="metric-value">${{ balance }}</p><div class="balance-note"><p class="metric-note">{{ t('common.available') }} · USD</p><router-link v-if="availableBalance < 10" to="/purchase" class="balance-recharge">{{ t('nav.recharge') }}<Icon name="arrowRight" size="sm" /></router-link></div>
-          <StudioMetricChart kind="balance" :value="availableBalance" />
+          <StudioMetricChart kind="balance" :value="availableBalance" :concurrency-limit="authStore.user?.concurrency" />
         </article>
         <article class="studio-card request-card">
           <div class="metric-title"><h3>{{ t('dashboard.todayRequests') }}</h3><Icon name="chart" size="md" /></div>
           <p class="metric-value" :title="formatNumber(stats.today_requests)">{{ formatNumber(stats.today_requests) }}</p>
           <p class="metric-note">{{ t('dashboard.studio.todayOnly') }}</p>
-          <StudioMetricChart kind="requests" :value="stats.today_requests" :points="requestTrend.map(point => point.requests)" :labels="requestTrend.map(point => point.date)" :caption="requestError ? t('dashboard.studio.chartError') : `${requestDates[0]?.slice(5)} — ${requestEndDate.slice(5)} · ${t('dashboard.studio.lastSevenDays')}`" />
+          <StudioChartSkeleton v-if="!preview && liveRequestTrend === null && !requestError" kind="requests" />
+          <StudioMetricChart v-else class="data-reveal" kind="requests" :value="stats.today_requests" :points="requestTrend.map(point => point.requests)" :labels="requestTrend.map(point => point.date)" :caption="requestError ? t('dashboard.studio.chartError') : `${requestDates[0]?.slice(5)} — ${requestEndDate.slice(5)} · ${t('dashboard.studio.lastSevenDays')}`" />
         </article>
         <article class="studio-card cost-card">
           <div class="metric-title"><h3>{{ t('dashboard.todayCost') }}</h3><Icon name="dollar" size="md" /></div>
@@ -32,14 +38,14 @@
         </article>
       </div>
 
-      <div class="analysis-grid" :class="{ 'without-stats': !stats }">
-        <section class="studio-card model-card" :aria-busy="loadingCharts">
+      <div class="analysis-grid" :class="{ 'without-stats': !stats && !loadingStats }">
+        <section class="studio-card model-card" :aria-busy="loadingModels">
           <div class="section-heading"><div><span class="eyebrow">MODEL MIX</span><h3>{{ t('dashboard.modelDistribution') }}</h3></div><span class="section-tag">3D / TOKEN</span></div>
           <div v-if="modelError" class="chart-state" role="alert"><p>{{ t('dashboard.studio.chartError') }}</p><button type="button" @click="loadCharts">{{ t('common.tryAgain') }}</button></div>
-          <div v-else-if="loadingCharts" class="chart-state"><LoadingSpinner /></div>
-          <ModelPieScene v-else :models="models" />
+          <StudioChartSkeleton v-else-if="loadingModels" kind="model" />
+          <ModelPieScene v-else class="data-reveal" :models="models" />
         </section>
-        <aside v-if="stats" class="secondary-metrics">
+        <aside v-if="stats" class="secondary-metrics secondary-ready">
           <article class="studio-card total-card">
             <div class="metric-title"><h3>{{ t('dashboard.totalTokens') }}</h3><span class="micro-label">ALL TIME</span></div>
             <p class="metric-value" :title="formatNumber(stats.total_tokens)">{{ formatTokens(stats.total_tokens) }}</p>
@@ -53,12 +59,24 @@
           </article>
           <article class="studio-card response-card"><div><h3>{{ t('dashboard.avgResponse') }}</h3><span class="metric-note">{{ t('dashboard.averageTime') }}</span></div><strong>{{ formatDuration(stats.average_duration_ms) }}</strong><Icon name="clock" size="md" /></article></div>
         </aside>
+        <aside v-else-if="loadingStats" class="secondary-metrics secondary-loading" role="status" :aria-label="t('common.loading')" aria-busy="true">
+          <article class="studio-card total-card">
+            <div class="metric-title"><h3>{{ t('dashboard.totalTokens') }}</h3><span class="micro-label">ALL TIME</span></div>
+            <Skeleton class="total-value-placeholder" width="45%" :height="36" aria-hidden="true" />
+            <div class="total-breakdown" aria-hidden="true"><div v-for="row in 3" :key="row" class="breakdown-row"><Skeleton width="65%" :height="12" /><Skeleton :width="42" :height="12" /><Skeleton class="breakdown-track" :height="5" /></div></div>
+          </article>
+          <div class="live-metrics">
+            <article class="studio-card performance-card"><div class="metric-title"><h3>{{ t('dashboard.performance') }}</h3><span class="micro-label">{{ t('dashboard.studio.lastFiveMinutes') }}</span></div><Skeleton width="80%" :height="28" aria-hidden="true" /></article>
+            <article class="studio-card response-card"><div><h3>{{ t('dashboard.avgResponse') }}</h3><span class="metric-note">{{ t('dashboard.averageTime') }}</span></div><Skeleton width="65%" :height="28" aria-hidden="true" /></article>
+          </div>
+        </aside>
       </div>
 
-      <section class="studio-card trend-card" :aria-busy="loadingCharts">
+      <section class="studio-card trend-card" :aria-busy="loadingTrend">
         <div class="section-heading"><div><span class="eyebrow">TOKEN ACTIVITY</span><h3>{{ t('dashboard.tokenUsageTrend') }}</h3></div><span class="range-label"><span>{{ startDate }} — {{ endDate }}</span><small class="granularity-tag">{{ t(granularity === 'day' ? 'dashboard.day' : 'dashboard.hour') }}</small></span></div>
         <div v-if="trendError" class="chart-state" role="alert"><p>{{ t('dashboard.studio.chartError') }}</p><button type="button" @click="loadCharts">{{ t('common.tryAgain') }}</button></div>
-        <StudioTokenTrend v-else :trend-data="trend" :loading="loadingCharts" />
+        <StudioChartSkeleton v-else-if="loadingTrend" kind="trend" />
+        <StudioTokenTrend v-else class="data-reveal" :trend-data="trend" />
       </section>
     </div>
   </DashboardStudioLayout>
@@ -75,7 +93,8 @@ import DashboardStudioLayout from '@/components/user/dashboard/studio/DashboardS
 import StudioFilters from '@/components/user/dashboard/studio/StudioFilters.vue'
 import StudioMetricChart from '@/components/user/dashboard/studio/StudioMetricChart.vue'
 import Icon from '@/components/icons/Icon.vue'
-import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
+import Skeleton from '@/components/common/Skeleton.vue'
+import StudioChartSkeleton from '@/components/user/dashboard/studio/StudioChartSkeleton.vue'
 import ModelPieScene from '@/components/user/dashboard/studio/ModelPieScene.vue'
 import StudioTokenTrend from '@/components/user/dashboard/studio/StudioTokenTrend.vue'
 
@@ -104,8 +123,16 @@ const requestTrend = computed(() => {
   const counts = new Map(source.map(point => [point.date, point.requests]))
   return requestDates.value.map(date => ({ date, requests: counts.get(date) ?? 0 }))
 })
-const loadingStats = ref(false)
-const loadingCharts = ref(false)
+const loadingStats = ref(true)
+const loadingTrend = ref(true)
+const loadingModels = ref(true)
+const loadingCharts = computed(() => loadingTrend.value || loadingModels.value)
+const summaryCards = computed(() => [
+  ...(!authStore.isSimpleMode ? [{ title: 'dashboard.balance', className: 'balance-card', icon: 'creditCard' as const }] : []),
+  { title: 'dashboard.todayRequests', className: 'request-card', icon: 'chart' as const },
+  { title: 'dashboard.todayCost', className: 'cost-card', icon: 'dollar' as const },
+  { title: 'dashboard.todayTokens', className: 'today-token-card', icon: 'cube' as const }
+])
 const statsError = ref(false)
 const trendError = ref(false)
 const modelError = ref(false)
@@ -146,20 +173,23 @@ async function loadStats() {
 async function loadCharts() {
   if (previewRequested) return
   const version = ++chartVersion
-  loadingCharts.value = true
+  loadingTrend.value = true
+  loadingModels.value = true
   trendError.value = false
   modelError.value = false
   const dates = { start_date: startDate.value, end_date: endDate.value }
-  const results = await Promise.allSettled([
-    usageAPI.getDashboardTrend({ ...dates, granularity: granularity.value }),
-    usageAPI.getDashboardModels(dates)
+  await Promise.all([
+    usageAPI.getDashboardTrend({ ...dates, granularity: granularity.value }).then(result => {
+      if (version === chartVersion) liveTrend.value = result.trend || []
+    }, () => {
+      if (version === chartVersion) { liveTrend.value = []; trendError.value = true }
+    }).finally(() => { if (version === chartVersion) loadingTrend.value = false }),
+    usageAPI.getDashboardModels(dates).then(result => {
+      if (version === chartVersion) liveModels.value = result.models || []
+    }, () => {
+      if (version === chartVersion) { liveModels.value = []; modelError.value = true }
+    }).finally(() => { if (version === chartVersion) loadingModels.value = false })
   ])
-  if (version !== chartVersion) return
-  if (results[0].status === 'fulfilled') liveTrend.value = results[0].value.trend || []
-  else { liveTrend.value = []; trendError.value = true }
-  if (results[1].status === 'fulfilled') liveModels.value = results[1].value.models || []
-  else { liveModels.value = []; modelError.value = true }
-  loadingCharts.value = false
 }
 async function loadRequestTrend() {
   requestEndDate.value = formatDateLocalInput(new Date())
@@ -175,7 +205,12 @@ async function loadRequestTrend() {
 }
 function refreshAll() { void loadStats(); void loadCharts(); void loadRequestTrend() }
 onMounted(async () => {
-  if (previewRequested) previewFactory.value = (await import('@/components/user/dashboard/studio/studioPreview')).createStudioPreview
+  if (previewRequested) {
+    previewFactory.value = (await import('@/components/user/dashboard/studio/studioPreview')).createStudioPreview
+    loadingStats.value = false
+    loadingTrend.value = false
+    loadingModels.value = false
+  }
   else refreshAll()
 })
 onBeforeUnmount(() => { statsVersion++; chartVersion++; requestVersion++ })
@@ -191,7 +226,7 @@ onBeforeUnmount(() => { statsVersion++; chartVersion++; requestVersion++ })
 .metric-title{display:flex;align-items:center;justify-content:space-between;gap:8px}.metric-title h3,.response-card h3{font-size:14px;font-weight:500}.metric-title :deep(svg){color:var(--studio-muted);opacity:.7}
 .metric-value{font-size:32px;letter-spacing:-1.1px;font-weight:600;font-variant-numeric:tabular-nums;line-height:40px;margin-top:0;overflow-wrap:anywhere}.metric-note{font-size:12px;color:var(--studio-muted);line-height:1.6;margin-top:7px}.summary-grid .metric-note{margin:0;line-height:20px}
 .balance-card .metric-value{color:var(--studio-ink)}
-.balance-note{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}.balance-recharge{display:inline-flex;align-items:center;gap:4px;font-size:12px;white-space:nowrap;color:var(--tf-console-active-ink);border-radius:6px;padding:2px 6px}.balance-recharge:hover{background:var(--tf-console-hover)}.balance-recharge:focus-visible{outline:2px solid #8297f5;outline-offset:2px}
+.balance-note{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}.balance-recharge{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;gap:4px;min-height:30px;font-size:12px;font-weight:600;line-height:20px;white-space:nowrap;color:var(--studio-nav-bg);background:var(--tf-console-active-ink);border-radius:8px;padding:5px 8px;box-shadow:0 2px 8px color-mix(in srgb,var(--tf-console-active-ink) 18%,transparent);transition:filter .16s}.balance-recharge:hover{filter:brightness(1.1)}.balance-recharge:focus-visible{outline:2px solid var(--tf-console-active-ink);outline-offset:3px}
 .request-card{--studio-accent:#4d7bfa}.cost-card{--studio-accent:#ff9657}
 .token-visual{display:grid;grid-template-rows:44px 20px;gap:8px;min-width:0}.token-plot{display:flex;align-items:center}.token-strip{width:100%;height:9px;background:var(--studio-haze);border-radius:5px;display:flex;gap:3px;overflow:hidden}.token-strip i{flex-basis:0;min-width:0}.token-caption{display:flex;align-items:center;gap:8px;white-space:nowrap;overflow-x:auto;scrollbar-width:none;font-size:12px}.token-caption::-webkit-scrollbar{display:none}.token-caption span+span::before{content:'/';margin-right:8px;color:var(--studio-muted)}
 
@@ -201,7 +236,12 @@ onBeforeUnmount(() => { statsVersion++; chartVersion++; requestVersion++ })
 .live-metrics{display:grid;grid-template-columns:1.15fr 1fr;gap:12px}.performance-card,.response-card{padding:18px;min-width:0;display:grid;grid-template-rows:43px 32px;gap:12px;align-content:start}.performance-card .metric-title{display:block}.performance-card .micro-label{display:block;margin-top:5px}.performance-values{display:flex;flex-wrap:wrap;gap:10px 18px;margin-top:0;align-items:center;flex-wrap:nowrap}.performance-values p{display:flex;align-items:baseline;gap:5px}.performance-values strong{font-size:24px;font-weight:600;letter-spacing:-.5px;line-height:32px}.performance-values span{font-size:12px;color:var(--studio-muted)}
 .response-card{position:relative}.response-card strong{font-size:24px;font-weight:600;letter-spacing:-.5px;line-height:32px;margin:0;padding:0}.response-card :deep(svg){display:none}.response-card .metric-note{display:block;font-size:12px;margin-top:5px}
 .trend-card{padding:24px 28px;position:relative}.trend-card .section-heading{margin-bottom:20px}.range-label{display:flex;align-items:center;justify-content:flex-end;gap:10px;color:var(--studio-muted);font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}.granularity-tag{display:inline-flex;align-items:center;padding:3px 9px;border-radius:6px;background:var(--studio-haze);color:var(--tf-console-active-ink);font-size:12px;line-height:20px}
-.chart-state{min-height:322px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;color:var(--studio-muted);font-size:14px}.studio-error{padding:12px 16px;border-radius:12px;font-size:14px;color:var(--studio-ink);display:flex;justify-content:space-between;gap:15px}.studio-error button,.chart-state button{color:var(--tf-console-active-ink);text-decoration:underline;text-underline-offset:3px}.studio-loading{min-height:150px;display:flex;align-items:center;justify-content:center;gap:12px;color:var(--studio-muted);font-size:14px}
+.chart-state{min-height:322px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;color:var(--studio-muted);font-size:14px}.studio-error{padding:12px 16px;border-radius:12px;font-size:14px;color:var(--studio-ink);display:flex;justify-content:space-between;gap:15px}.studio-error button,.chart-state button{color:var(--tf-console-active-ink);text-decoration:underline;text-underline-offset:3px}
+.summary-loading :deep(.animate-pulse),.secondary-loading :deep(.animate-pulse){background:linear-gradient(90deg,transparent 30%,color-mix(in srgb,var(--studio-muted) 8%,transparent) 50%,transparent 70%) 200% 0/200% 100% no-repeat var(--studio-haze);animation:studio-skeleton-shimmer 3.6s ease-in-out infinite}.summary-loading>.studio-card>:not(.metric-title){align-self:center}.total-value-placeholder{margin-top:12px}
+.data-reveal,.summary-ready .metric-value,.summary-ready .metric-note,.summary-ready .metric-chart,.summary-ready .token-visual,.secondary-ready .metric-value,.secondary-ready .total-breakdown,.secondary-ready .performance-values,.secondary-ready .response-card>strong{animation:studio-data-in var(--studio-reveal-duration,320ms) ease-out both}
+@keyframes studio-data-in{from{opacity:0}to{opacity:1}}
+@keyframes studio-skeleton-shimmer{from{background-position:200% 0}to{background-position:-200% 0}}
+@media(prefers-reduced-motion:reduce){.dashboard-studio{--studio-reveal-duration:0ms}.summary-loading :deep(.animate-pulse),.secondary-loading :deep(.animate-pulse){animation:none}}
 @media(max-width:1250px){.summary-grid{gap:12px}.summary-grid>.studio-card{padding:18px}.metric-value{font-size:28px}.analysis-grid{grid-template-columns:minmax(0,1fr) minmax(300px,.65fr);gap:16px}.model-card{padding:20px 0}.model-card :deep(.model-distribution){grid-template-columns:minmax(0,1fr) minmax(170px,1fr);gap:0}.performance-values{gap:8px}.live-metrics{grid-template-columns:1.1fr 1fr}.performance-card,.response-card{padding:15px}}
 @media(max-width:1050px){.analysis-grid{grid-template-columns:1fr}.secondary-metrics{display:grid;grid-template-columns:1fr 1.2fr;gap:16px}.live-metrics{align-self:stretch}.model-card :deep(.model-distribution){grid-template-columns:minmax(0,1.4fr) minmax(220px,1fr)}.model-card{min-height:360px}}
 @media(max-width:700px){.summary-grid,.summary-grid:not(:has(.balance-card)){grid-template-columns:repeat(2,minmax(0,1fr))}.secondary-metrics{display:flex}.model-card :deep(.model-distribution){grid-template-columns:1fr}.model-card{padding:16px 0}.trend-card{padding:20px 16px}.dashboard-studio{gap:18px}.metric-value{font-size:28px}.summary-grid>.studio-card{padding:16px;}.section-heading h3{font-size:16px}.trend-card .section-heading{flex-wrap:wrap}.range-label{margin-left:auto}.live-metrics{grid-template-columns:minmax(0,1.25fr) minmax(0,1fr)}.performance-values{gap:6px}.performance-values strong,.response-card strong{font-size:20px}.metric-title h3{font-size:13px}.total-breakdown{margin-top:16px}}

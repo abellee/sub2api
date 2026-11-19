@@ -7,9 +7,14 @@ describe('StudioMetricChart', () => {
     const wrapper = mount(StudioMetricChart, { props: { kind: 'balance', value: 75, reference: 25 } })
     expect(wrapper.find('.balance-detail').text()).toBe('common.points—')
     expect(wrapper.find('.balance-detail img').exists()).toBe(true)
+    expect(wrapper.find('.balance-concurrency strong').text()).toBe('—')
     expect(wrapper.text()).not.toContain('$25.00')
     expect(wrapper.find('circle').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('%')
+  })
+  it('shows zero concurrency limit as a real value', () => {
+    const wrapper = mount(StudioMetricChart, { props: { kind: 'balance', value: 75, concurrencyLimit: 0 } })
+    expect(wrapper.find('.balance-concurrency strong').text()).toBe('0')
   })
   it('compares actual cost with standard cost without capping actual cost', () => {
     const wrapper = mount(StudioMetricChart, { props: { kind: 'cost', value: 4, reference: 2 } })

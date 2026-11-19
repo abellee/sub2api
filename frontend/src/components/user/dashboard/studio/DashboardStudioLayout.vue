@@ -183,11 +183,12 @@ defineExpose({ replayTour })
 </script>
 
 <style scoped>
-.dashboard-studio-shell{--studio-sidebar-width:248px;--studio-motion:240ms;--studio-ease:cubic-bezier(.22,.68,.24,1);--studio-nav-bg:#f7f8fcf5;--studio-ink:#20273e;--studio-muted:#69748d;--studio-haze:#536de512;--studio-grid:#dce2f0;min-height:100vh;background:#f7f8fc;color:var(--studio-ink);font-size:14px}
-:global(.dark .dashboard-studio-shell){--studio-nav-bg:#0c101bf5;--studio-ink:#e9edfa;--studio-muted:#a0abc4;--studio-haze:#6f84ed16;--studio-grid:#303c56;--studio-menu-surface:#1b1e32;background:#0c101b}
+.dashboard-studio-shell{--studio-sidebar-width:248px;--studio-motion:240ms;--studio-ease:cubic-bezier(.22,.68,.24,1);--studio-nav-bg:#f7f8fce6;--studio-ink:#20273e;--studio-muted:#69748d;--studio-haze:#536de512;--studio-grid:#dce2f0;min-height:100vh;background:#f7f8fc;color:var(--studio-ink);font-size:14px}
+:global(.dark .dashboard-studio-shell){--studio-nav-bg:#0c101be6;--studio-ink:#e9edfa;--studio-muted:#a0abc4;--studio-haze:#6f84ed16;--studio-grid:#303c56;--studio-menu-surface:#1b1e32;background:#0c101b}
 .studio-workspace{position:relative;margin-left:var(--studio-sidebar-width);min-height:100vh}
 .studio-page-glow{pointer-events:none}
-.studio-navigation{position:sticky;top:0;z-index:30;display:flex;align-items:center;justify-content:space-between;gap:20px;min-height:86px;padding:18px 32px;background:var(--studio-nav-bg);backdrop-filter:blur(18px)}
+.studio-navigation{position:sticky;top:0;z-index:30;display:flex;align-items:center;justify-content:space-between;gap:20px;min-height:86px;padding:18px 32px;background:var(--studio-nav-bg);-webkit-backdrop-filter:blur(24px);backdrop-filter:blur(24px);border-bottom:0;box-shadow:none}
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){.studio-navigation{background:var(--tf-console-surface)}}
 .studio-page-title{display:flex;align-items:center;gap:12px;flex-shrink:0}.studio-page-title h1{font-size:22px;font-weight:600;letter-spacing:-.7px}.studio-menu-toggle{display:none;border:0;background:transparent;color:inherit;padding:8px}
 main{padding:10px 32px 32px}
 .dashboard-studio-shell :deep(.sidebar){width:88px;left:0;top:0;bottom:0;height:100dvh;border:0;border-radius:0;box-shadow:none;background:var(--tf-console-surface);z-index:50;overflow:visible;transition:width var(--studio-motion) var(--studio-ease),transform .18s,box-shadow var(--studio-motion)}
