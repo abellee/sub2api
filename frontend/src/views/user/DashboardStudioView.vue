@@ -2,6 +2,7 @@
   <DashboardStudioLayout>
     <template #filters><StudioFilters v-model:start-date="startDate" v-model:end-date="endDate" v-model:granularity="granularity" :loading="loadingStats || loadingCharts" @range-change="loadCharts" @granularity-change="loadCharts" @refresh="refreshAll" /></template>
     <div class="dashboard-studio">
+      <div v-if="balanceDemo" class="studio-preview" role="status"><span>余额动画演示 · 每 3 秒模拟更新，仅用于本地预览</span><a href="/dashboard">退出演示</a></div>
       <div v-if="preview" class="studio-preview" role="status"><span>{{ t('dashboard.studio.previewData') }}</span><a href="/dashboard">{{ t('dashboard.studio.backToLive') }}<span aria-hidden="true"> ↗</span></a></div>
       <div v-if="statsError" class="studio-error" role="alert">{{ t('dashboard.studio.statsError') }}<button type="button" @click="loadStats">{{ t('common.tryAgain') }}</button></div>
       <div v-if="loadingStats && !stats" class="summary-grid summary-loading" role="status" :aria-label="t('common.loading')" aria-busy="true">
@@ -13,7 +14,8 @@
       <div v-if="stats" class="summary-grid summary-ready">
         <article v-if="!authStore.isSimpleMode" class="studio-card balance-card">
           <div class="metric-title"><h3>{{ t('dashboard.balance') }}</h3><Icon name="creditCard" size="md" /></div>
-          <p class="metric-value">${{ balance }}</p><div class="balance-note"><p class="metric-note">{{ t('common.available') }} · USD</p><router-link v-if="availableBalance < 10" to="/purchase" class="balance-recharge">{{ t('nav.recharge') }}<Icon name="arrowRight" size="sm" /></router-link></div>
+          <div class="balance-amount"><p class="metric-value" :class="{ 'balance-warning': availableBalance >= 5 && availableBalance < 10, 'balance-critical': availableBalance < 5 }"><StudioRollingBalance :value="availableBalance" /></p><router-link v-if="availableBalance < 10" to="/purchase" class="balance-recharge">{{ t('nav.recharge') }}<Icon name="arrowRight" size="sm" /></router-link></div>
+          <p class="metric-note">{{ t('common.available') }} · USD</p>
           <StudioMetricChart kind="balance" :value="availableBalance" :concurrency-limit="authStore.user?.concurrency" />
         </article>
         <article class="studio-card request-card">
@@ -91,6 +93,8 @@ import type { ModelStat, TrendDataPoint } from '@/types'
 import { formatDateLocalInput, formatCostFixed as formatCost, formatTokensK as formatTokens, formatNumberLocaleString as formatNumber } from '@/utils/format'
 import DashboardStudioLayout from '@/components/user/dashboard/studio/DashboardStudioLayout.vue'
 import StudioFilters from '@/components/user/dashboard/studio/StudioFilters.vue'
+import StudioRollingBalance from '@/components/user/dashboard/studio/StudioRollingBalance.vue'
+import { useBalancePreview } from '@/components/user/dashboard/studio/useBalancePreview'
 import StudioMetricChart from '@/components/user/dashboard/studio/StudioMetricChart.vue'
 import Icon from '@/components/icons/Icon.vue'
 import Skeleton from '@/components/common/Skeleton.vue'
@@ -139,8 +143,7 @@ const modelError = ref(false)
 const startDate = ref(formatDateLocalInput(new Date(Date.now() - 6 * 86400000)))
 const endDate = ref(formatDateLocalInput(new Date()))
 const granularity = ref<'day' | 'hour'>('day')
-const availableBalance = computed(() => Math.max(0, preview.value?.balance ?? authStore.user?.balance ?? 0))
-const balance = computed(() => new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(availableBalance.value))
+const { balance: availableBalance, balanceDemo } = useBalancePreview(() => Math.max(0, preview.value?.balance ?? authStore.user?.balance ?? 0))
 const split = (input: number, output: number, cache: number) => [
   { label: t('dashboard.input'), value: input, color: '#4d7bfa' },
   { label: t('dashboard.output'), value: output, color: '#ff9657' },
@@ -225,8 +228,8 @@ onBeforeUnmount(() => { statsVersion++; chartVersion++; requestVersion++ })
 .summary-grid{display:grid;align-items:stretch;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px}.summary-grid>.studio-card{padding:22px;position:relative;overflow:hidden;display:grid;grid-template-rows:20px 40px 20px 72px;row-gap:10px}.summary-grid:not(:has(.balance-card)){grid-template-columns:repeat(3,minmax(0,1fr))}
 .metric-title{display:flex;align-items:center;justify-content:space-between;gap:8px}.metric-title h3,.response-card h3{font-size:14px;font-weight:500}.metric-title :deep(svg){color:var(--studio-muted);opacity:.7}
 .metric-value{font-size:32px;letter-spacing:-1.1px;font-weight:600;font-variant-numeric:tabular-nums;line-height:40px;margin-top:0;overflow-wrap:anywhere}.metric-note{font-size:12px;color:var(--studio-muted);line-height:1.6;margin-top:7px}.summary-grid .metric-note{margin:0;line-height:20px}
-.balance-card .metric-value{color:var(--studio-ink)}
-.balance-note{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}.balance-recharge{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;gap:4px;min-height:30px;font-size:12px;font-weight:600;line-height:20px;white-space:nowrap;color:var(--studio-nav-bg);background:var(--tf-console-active-ink);border-radius:8px;padding:5px 8px;box-shadow:0 2px 8px color-mix(in srgb,var(--tf-console-active-ink) 18%,transparent);transition:filter .16s}.balance-recharge:hover{filter:brightness(1.1)}.balance-recharge:focus-visible{outline:2px solid var(--tf-console-active-ink);outline-offset:3px}
+.balance-card .metric-value{color:var(--studio-ink)}.balance-card .balance-warning{color:#c65d13}.balance-card .balance-critical{color:#dc2626}:global(.dark .balance-card .balance-warning){color:#fb923c}:global(.dark .balance-card .balance-critical){color:#f87171}
+.balance-amount{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}.balance-recharge{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;gap:4px;height:36px;font-size:12px;font-weight:600;line-height:20px;white-space:nowrap;color:var(--studio-nav-bg);background:var(--tf-console-active-ink);border-radius:8px;padding:5px 8px;box-shadow:0 2px 8px color-mix(in srgb,var(--tf-console-active-ink) 18%,transparent);transition:filter .16s}.balance-recharge:hover{filter:brightness(1.1)}.balance-recharge:focus-visible{outline:2px solid var(--tf-console-active-ink);outline-offset:3px}
 .request-card{--studio-accent:#4d7bfa}.cost-card{--studio-accent:#ff9657}
 .token-visual{display:grid;grid-template-rows:44px 20px;gap:8px;min-width:0}.token-plot{display:flex;align-items:center}.token-strip{width:100%;height:9px;background:var(--studio-haze);border-radius:5px;display:flex;gap:3px;overflow:hidden}.token-strip i{flex-basis:0;min-width:0}.token-caption{display:flex;align-items:center;gap:8px;white-space:nowrap;overflow-x:auto;scrollbar-width:none;font-size:12px}.token-caption::-webkit-scrollbar{display:none}.token-caption span+span::before{content:'/';margin-right:8px;color:var(--studio-muted)}
 
@@ -238,11 +241,11 @@ onBeforeUnmount(() => { statsVersion++; chartVersion++; requestVersion++ })
 .trend-card{padding:24px 28px;position:relative}.trend-card .section-heading{margin-bottom:20px}.range-label{display:flex;align-items:center;justify-content:flex-end;gap:10px;color:var(--studio-muted);font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}.granularity-tag{display:inline-flex;align-items:center;padding:3px 9px;border-radius:6px;background:var(--studio-haze);color:var(--tf-console-active-ink);font-size:12px;line-height:20px}
 .chart-state{min-height:322px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;color:var(--studio-muted);font-size:14px}.studio-error{padding:12px 16px;border-radius:12px;font-size:14px;color:var(--studio-ink);display:flex;justify-content:space-between;gap:15px}.studio-error button,.chart-state button{color:var(--tf-console-active-ink);text-decoration:underline;text-underline-offset:3px}
 .summary-loading :deep(.animate-pulse),.secondary-loading :deep(.animate-pulse){background:linear-gradient(90deg,transparent 30%,color-mix(in srgb,var(--studio-muted) 8%,transparent) 50%,transparent 70%) 200% 0/200% 100% no-repeat var(--studio-haze);animation:studio-skeleton-shimmer 3.6s ease-in-out infinite}.summary-loading>.studio-card>:not(.metric-title){align-self:center}.total-value-placeholder{margin-top:12px}
-.data-reveal,.summary-ready .metric-value,.summary-ready .metric-note,.summary-ready .metric-chart,.summary-ready .token-visual,.secondary-ready .metric-value,.secondary-ready .total-breakdown,.secondary-ready .performance-values,.secondary-ready .response-card>strong{animation:studio-data-in var(--studio-reveal-duration,320ms) ease-out both}
+.data-reveal,.summary-ready .metric-value,.summary-ready .balance-recharge,.summary-ready .metric-note,.summary-ready .metric-chart,.summary-ready .token-visual,.secondary-ready .metric-value,.secondary-ready .total-breakdown,.secondary-ready .performance-values,.secondary-ready .response-card>strong{animation:studio-data-in var(--studio-reveal-duration,320ms) ease-out both}
 @keyframes studio-data-in{from{opacity:0}to{opacity:1}}
 @keyframes studio-skeleton-shimmer{from{background-position:200% 0}to{background-position:-200% 0}}
 @media(prefers-reduced-motion:reduce){.dashboard-studio{--studio-reveal-duration:0ms}.summary-loading :deep(.animate-pulse),.secondary-loading :deep(.animate-pulse){animation:none}}
-@media(max-width:1250px){.summary-grid{gap:12px}.summary-grid>.studio-card{padding:18px}.metric-value{font-size:28px}.analysis-grid{grid-template-columns:minmax(0,1fr) minmax(300px,.65fr);gap:16px}.model-card{padding:20px 0}.model-card :deep(.model-distribution){grid-template-columns:minmax(0,1fr) minmax(170px,1fr);gap:0}.performance-values{gap:8px}.live-metrics{grid-template-columns:1.1fr 1fr}.performance-card,.response-card{padding:15px}}
+@media(max-width:1250px){.balance-recharge{height:32px}.summary-grid{gap:12px}.summary-grid>.studio-card{padding:18px}.metric-value{font-size:28px}.analysis-grid{grid-template-columns:minmax(0,1fr) minmax(300px,.65fr);gap:16px}.model-card{padding:20px 0}.model-card :deep(.model-distribution){grid-template-columns:minmax(0,1fr) minmax(170px,1fr);gap:0}.performance-values{gap:8px}.live-metrics{grid-template-columns:1.1fr 1fr}.performance-card,.response-card{padding:15px}}
 @media(max-width:1050px){.analysis-grid{grid-template-columns:1fr}.secondary-metrics{display:grid;grid-template-columns:1fr 1.2fr;gap:16px}.live-metrics{align-self:stretch}.model-card :deep(.model-distribution){grid-template-columns:minmax(0,1.4fr) minmax(220px,1fr)}.model-card{min-height:360px}}
 @media(max-width:700px){.summary-grid,.summary-grid:not(:has(.balance-card)){grid-template-columns:repeat(2,minmax(0,1fr))}.secondary-metrics{display:flex}.model-card :deep(.model-distribution){grid-template-columns:1fr}.model-card{padding:16px 0}.trend-card{padding:20px 16px}.dashboard-studio{gap:18px}.metric-value{font-size:28px}.summary-grid>.studio-card{padding:16px;}.section-heading h3{font-size:16px}.trend-card .section-heading{flex-wrap:wrap}.range-label{margin-left:auto}.live-metrics{grid-template-columns:minmax(0,1.25fr) minmax(0,1fr)}.performance-values{gap:6px}.performance-values strong,.response-card strong{font-size:20px}.metric-title h3{font-size:13px}.total-breakdown{margin-top:16px}}
 </style>

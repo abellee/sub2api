@@ -3,7 +3,7 @@ import { mount } from '@vue/test-utils'
 import { ref } from 'vue'
 import StudioAccountMenu from '../StudioAccountMenu.vue'
 
-const mocks = vi.hoisted(() => ({ logout: vi.fn(), push: vi.fn(), copy: vi.fn(), feature: vi.fn(() => false), mobile: vi.fn(), replay: vi.fn(), setTheme: vi.fn() }))
+const mocks = vi.hoisted(() => ({ balance: 286.5, simpleMode: false, logout: vi.fn(), push: vi.fn(), copy: vi.fn(), feature: vi.fn(() => false), mobile: vi.fn(), replay: vi.fn(), setTheme: vi.fn() }))
 vi.mock('@/composables/usePushNotificationTour', () => ({ OPEN_USER_MENU_EVENT: 'open-user-menu', PUSH_TOUR_UNLOCK_EVENT: 'push-tour-unlock', OPEN_QQ_GROUP_EVENT: 'open-qq-group', CLOSE_QQ_GROUP_EVENT: 'close-qq-group' }))
 vi.mock('@/components/common/AnnouncementBell.vue', () => ({ default: { template: '<button aria-label="announcements" />' } }))
 vi.mock('@/components/common/SubscriptionProgressMini.vue', () => ({ default: { template: '<div />' } }))
@@ -14,7 +14,7 @@ vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
 vi.mock('pinia', () => ({ storeToRefs: (store: unknown) => store }))
 vi.mock('@/stores', () => ({
   useAppStore: () => ({ docUrl: 'https://example.com/docs', contactInfo: 'support', setMobileOpen: mocks.mobile }),
-  useAuthStore: () => ({ user: { username: 'Demo', role: 'user', balance: 286.5, frozen_balance: 63.5 }, logout: mocks.logout, isAdmin: false }),
+  useAuthStore: () => ({ user: { username: 'Demo', role: 'user', balance: mocks.balance, frozen_balance: 63.5 }, logout: mocks.logout, isAdmin: false, isSimpleMode: mocks.simpleMode }),
   useOnboardingStore: () => ({ replay: mocks.replay }),
   useRemoteWidgetsStore: () => ({ headerConfig: ref({ qq: { groupName: 'QQ', groupNumber: '123', qrUrl: '/qq.png' }, telegram: { groupName: 'Telegram', link: 'https://t.me/demo', qrUrl: '/tg.png' } }) })
 }))
@@ -25,7 +25,7 @@ vi.mock('@/utils/featureFlags', () => ({ FeatureFlags: {}, isFeatureFlagEnabled:
 const wrappers: ReturnType<typeof mount>[] = []
 function render(expanded = true) {
   const wrapper = mount(StudioAccountMenu, { props: { expanded }, attachTo: document.body, global: { stubs: {
-    RouterLink: { template: '<a><slot /></a>' }, Icon: true, QqBrandIcon: true,
+    RouterLink: { props: ['to'], template: '<a :href="to" @click.prevent><slot /></a>' }, Icon: true, QqBrandIcon: true,
     StudioPopover: { props: ['anchor', 'side'], template: '<div><slot /></div>' },
     AnnouncementBell: { template: '<button aria-label="announcements" />' },
     StudioLocaleMenu: { template: '<button aria-label="language" />' },
@@ -34,9 +34,42 @@ function render(expanded = true) {
   wrappers.push(wrapper)
   return wrapper
 }
-beforeEach(() => { vi.clearAllMocks(); window.matchMedia = vi.fn().mockReturnValue({ matches: false }) })
+beforeEach(() => { vi.clearAllMocks(); mocks.balance = 286.5; mocks.simpleMode = false; window.matchMedia = vi.fn().mockReturnValue({ matches: false }) })
 afterEach(() => { wrappers.forEach(wrapper => wrapper.unmount()); wrappers.length = 0 })
 describe('StudioAccountMenu', () => {
+  it.each([0, 4.99, 5, 9.99, 10, 10.01])('colors available balance at the warning thresholds: %s', amount => {
+    mocks.balance = amount
+    const wrapper = render()
+    const recharge = wrapper.find('.wallet-recharge')
+    expect(recharge.exists()).toBe(amount < 10)
+    if (amount < 10) {
+      expect(recharge.attributes('href')).toBe('/purchase')
+      expect(wrapper.find('.wallet-heading .wallet-recharge').exists()).toBe(true)
+      expect(wrapper.find('.wallet-heading .wallet-label').text()).toBe('common.availableBalance')
+    }
+    const available = wrapper.find('.wallet-available strong')
+    expect(available.classes().includes('balance-warning')).toBe(amount >= 5 && amount < 10)
+    expect(available.classes().includes('balance-critical')).toBe(amount < 5)
+    expect(wrapper.find('.wallet-frozen strong').classes()).not.toContain('balance-warning')
+    expect(wrapper.find('.wallet-frozen strong').classes()).not.toContain('balance-critical')
+  })
+
+  it('hides recharge in simple mode', () => {
+    mocks.balance = 4
+    mocks.simpleMode = true
+    expect(render().find('.wallet-recharge').exists()).toBe(false)
+  })
+
+  it('keeps recharge inaccessible while collapsed and closes the mobile sidebar on click', async () => {
+    mocks.balance = 4
+    const wrapper = render(false)
+    expect(wrapper.find('.studio-wallet').attributes()).toHaveProperty('inert')
+    await wrapper.setProps({ expanded: true })
+    expect(wrapper.find('.studio-wallet').attributes()).not.toHaveProperty('inert')
+    await wrapper.find('.wallet-recharge').trigger('click')
+    expect(mocks.mobile).toHaveBeenCalledWith(false)
+  })
+
   it('closes every flyout immediately when the sidebar collapses, without moving focus', async () => {
     window.matchMedia = vi.fn().mockReturnValue({ matches: true })
     const wrapper = render()
@@ -76,14 +109,14 @@ describe('StudioAccountMenu', () => {
       expect(wrapper.find(selector).attributes()).toHaveProperty('inert')
     }
     const tools = wrapper.find('.studio-utilities').findAll('button, a')
-    expect(tools.map(item => item.attributes('aria-label'))).toEqual(['language', 'announcements', 'nav.darkMode', '加入 QQ 群', '加入 Telegram'])
+    expect(tools.map(item => item.attributes('aria-label'))).toEqual(['announcements', 'nav.darkMode', '加入 QQ 群', '加入 Telegram', 'language'])
     await wrapper.setProps({ expanded: true })
     for (const selector of details) {
       expect(wrapper.find(selector).attributes('aria-hidden')).toBe('false')
       expect(wrapper.find(selector).attributes()).not.toHaveProperty('inert')
     }
     expect(wrapper.findAll('[aria-label="announcements"]')).toHaveLength(1)
-    expect(wrapper.find('.studio-utilities').findAll('button, a').map(item => item.attributes('aria-label'))).toEqual(['language', 'announcements', 'nav.darkMode', '加入 QQ 群', '加入 Telegram'])
+    expect(wrapper.find('.studio-utilities').findAll('button, a').map(item => item.attributes('aria-label'))).toEqual(['announcements', 'nav.darkMode', '加入 QQ 群', '加入 Telegram', 'language'])
   })
   it('keeps community panels reachable and switches theme directly without a flyout', async () => {
     vi.useFakeTimers()

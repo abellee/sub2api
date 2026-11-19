@@ -117,11 +117,14 @@ describe('DashboardStudioView', () => {
     expect(wrapper.findComponent({ name: 'StudioTokenTrend' }).props('trendData')).toEqual([{ date: 'current' }])
   })
 
-  it('shows recharge below 10 and links to the existing purchase page', async () => {
-    for (const amount of [0, 9.99, 10, 10.01]) {
+  it('colors low balances at the 5 and 10 thresholds and links to recharge', async () => {
+    for (const amount of [0, 4.99, 5, 9.99, 10, 10.01]) {
       api.user.balance = amount
       const wrapper = mount(DashboardStudioView, { global: { stubs } })
       await flushPromises()
+      const balanceClasses = wrapper.find('.balance-card .metric-value').classes()
+      expect(balanceClasses.includes('balance-warning')).toBe(amount >= 5 && amount < 10)
+      expect(balanceClasses.includes('balance-critical')).toBe(amount < 5)
       const link = wrapper.find('.balance-recharge')
       expect(link.exists()).toBe(amount < 10)
       if (amount < 10) expect(link.attributes('href')).toBe('/purchase')
