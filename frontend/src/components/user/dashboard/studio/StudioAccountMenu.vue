@@ -63,7 +63,6 @@ import Icon from '@/components/icons/Icon.vue'
 import QqBrandIcon from '@/components/icons/QqBrandIcon.vue'
 import pointsIcon from '@/assets/icons/points-image-color.svg'
 import StudioRollingBalance from './StudioRollingBalance.vue'
-import { useBalancePreview } from './useBalancePreview'
 import StudioLocaleMenu from './StudioLocaleMenu.vue'
 import StudioPopover from './StudioPopover.vue'
 
@@ -94,7 +93,7 @@ const toolCount = computed(() => 2 + Number(!!headerWidgetConfig.value) + Number
 const avatarUrl = computed(() => user.value?.avatar_url?.trim() || '')
 const displayName = computed(() => user.value?.username || user.value?.email?.split('@')[0] || '')
 const userInitials = computed(() => displayName.value.substring(0, 2).toUpperCase())
-const { balance: availableBalance } = useBalancePreview(() => Number(user.value?.balance || 0))
+const availableBalance = computed(() => Number(user.value?.balance || 0))
 const frozenBalance = computed(() => Number(user.value?.frozen_balance || 0))
 const docUrl = computed(() => sanitizeUrl(appStore.docUrl))
 const contactInfo = computed(() => appStore.contactInfo)

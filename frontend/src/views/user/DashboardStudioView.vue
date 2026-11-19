@@ -2,7 +2,6 @@
   <DashboardStudioLayout>
     <template #filters><StudioFilters v-model:start-date="startDate" v-model:end-date="endDate" v-model:granularity="granularity" :loading="loadingStats || loadingCharts" @range-change="loadCharts" @granularity-change="loadCharts" @refresh="refreshAll" /></template>
     <div class="dashboard-studio">
-      <div v-if="balanceDemo" class="studio-preview" role="status"><span>余额动画演示 · 每 3 秒模拟更新，仅用于本地预览</span><a href="/dashboard">退出演示</a></div>
       <div v-if="preview" class="studio-preview" role="status"><span>{{ t('dashboard.studio.previewData') }}</span><a href="/dashboard">{{ t('dashboard.studio.backToLive') }}<span aria-hidden="true"> ↗</span></a></div>
       <div v-if="statsError" class="studio-error" role="alert">{{ t('dashboard.studio.statsError') }}<button type="button" @click="loadStats">{{ t('common.tryAgain') }}</button></div>
       <div v-if="loadingStats && !stats" class="summary-grid summary-loading" role="status" :aria-label="t('common.loading')" aria-busy="true">
@@ -94,7 +93,6 @@ import { formatDateLocalInput, formatCostFixed as formatCost, formatTokensK as f
 import DashboardStudioLayout from '@/components/user/dashboard/studio/DashboardStudioLayout.vue'
 import StudioFilters from '@/components/user/dashboard/studio/StudioFilters.vue'
 import StudioRollingBalance from '@/components/user/dashboard/studio/StudioRollingBalance.vue'
-import { useBalancePreview } from '@/components/user/dashboard/studio/useBalancePreview'
 import StudioMetricChart from '@/components/user/dashboard/studio/StudioMetricChart.vue'
 import Icon from '@/components/icons/Icon.vue'
 import Skeleton from '@/components/common/Skeleton.vue'
@@ -143,7 +141,7 @@ const modelError = ref(false)
 const startDate = ref(formatDateLocalInput(new Date(Date.now() - 6 * 86400000)))
 const endDate = ref(formatDateLocalInput(new Date()))
 const granularity = ref<'day' | 'hour'>('day')
-const { balance: availableBalance, balanceDemo } = useBalancePreview(() => Math.max(0, preview.value?.balance ?? authStore.user?.balance ?? 0))
+const availableBalance = computed(() => Math.max(0, preview.value?.balance ?? authStore.user?.balance ?? 0))
 const split = (input: number, output: number, cache: number) => [
   { label: t('dashboard.input'), value: input, color: '#4d7bfa' },
   { label: t('dashboard.output'), value: output, color: '#ff9657' },
