@@ -94,7 +94,18 @@
                 <span v-if="!compactModel" class="model-plaza-table__logo-wrap" aria-hidden="true">
                   <ModelIcon :model="m.platform" size="18px" />
                 </span>
-                <span class="model-plaza-table__name font-medium text-gray-900 dark:text-white">{{ m.name }}</span>
+                <span class="inline-flex min-w-0 items-center gap-1">
+                  <span class="model-plaza-table__name min-w-0 break-words font-medium text-gray-900 dark:text-white">{{ m.name }}</span>
+                  <button
+                    type="button"
+                    class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-500 transition-colors hover:bg-gray-100 hover:text-primary-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:text-dark-300 dark:hover:bg-dark-700 dark:hover:text-primary-400"
+                    :title="t('modelPlaza.table.copyModelId', { model: m.name })"
+                    :aria-label="t('modelPlaza.table.copyModelId', { model: m.name })"
+                    @click="copyToClipboard(m.name)"
+                  >
+                    <Icon name="copy" size="sm" aria-hidden="true" />
+                  </button>
+                </span>
                 <button
                   v-if="hasLongContext(m)"
                   type="button"
@@ -558,6 +569,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import Icon from '@/components/icons/Icon.vue'
+import { useClipboard } from '@/composables/useClipboard'
 import { formatScaled, resolveIntervalPrices } from '@/utils/pricing'
 import ModelIcon from '@/components/common/ModelIcon.vue'
 import Select from '@/components/common/Select.vue'
@@ -617,6 +630,7 @@ const props = withDefaults(defineProps<{
 })
 
 const { t } = useI18n()
+const { copyToClipboard } = useClipboard()
 
 /** 实付分区只从平台拿一个主色,浅底/标题/下划线全部由 scoped CSS 用 color-mix 派生。 */
 const accentStyle = computed(() => ({ '--plaza-accent': platformAccentColor(props.platform ?? '') }))

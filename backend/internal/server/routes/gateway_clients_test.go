@@ -43,5 +43,5 @@ func TestGatewayBlockedClientsCoversEveryChain(t *testing.T) {
 	for _, group := range []string{"gemini", "antigravityV1", "antigravityV1Beta"} {
 		require.Regexp(t, regexp.QuoteMeta(group+".Use(groupClientFilter)")+`\s*`+regexp.QuoteMeta(group+".Use(groupProtocol)"), source)
 	}
-	require.Contains(t, source, "gin.HandlerFunc(apiKeyAuth), groupClientFilter, groupProtocol, groupModelAllowlist, compositeTarget")
+	require.Contains(t, source, "gin.HandlerFunc(apiKeyAuth), groupClientFilter, groupProtocol, groupModelAllowlist, rejectConflictingFields, compositeTarget")
 }

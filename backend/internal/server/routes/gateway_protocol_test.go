@@ -50,5 +50,5 @@ func TestGatewayRequiredProtocolCoversEveryChainBeforeModelRouting(t *testing.T)
 	for _, group := range []string{"gateway", "gemini", "antigravityV1", "antigravityV1Beta"} {
 		require.Regexp(t, regexp.QuoteMeta(group+".Use(groupProtocol)")+`\s*`+regexp.QuoteMeta(group+".Use(groupModelAllowlist)"), source)
 	}
-	require.Contains(t, source, "gin.HandlerFunc(apiKeyAuth), groupClientFilter, groupProtocol, groupModelAllowlist, compositeTarget")
+	require.Contains(t, source, "gin.HandlerFunc(apiKeyAuth), groupClientFilter, groupProtocol, groupModelAllowlist, rejectConflictingFields, compositeTarget")
 }

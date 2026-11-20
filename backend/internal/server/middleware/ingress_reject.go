@@ -31,6 +31,8 @@ const (
 	IngressRejectModelNotAllowed        IngressRejectReason = "model_not_allowed"
 	IngressRejectProtocolMismatch       IngressRejectReason = "protocol_mismatch"
 	IngressRejectClientBlocked          IngressRejectReason = "client_blocked"
+	// IngressRejectConflictingRequestFields：请求体同名字段重复声明（GHSA-p3r4-jcm3-2hph）。
+	IngressRejectConflictingRequestFields IngressRejectReason = "conflicting_request_fields"
 )
 
 const ingressRejectReasonContextKey = "ingress_reject_reason"
