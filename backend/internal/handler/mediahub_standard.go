@@ -235,8 +235,8 @@ func (h *MediaHubRelayHandler) finishStandard(c *gin.Context, accepted *mediahub
 	var stopWait func()
 	if !stream {
 		wait := mediaSyncWait
-		if started, ok := c.Get(mediaRequestStartedKey); ok {
-			wait -= time.Since(started.(time.Time))
+		if started := c.GetTime(mediaRequestStartedKey); !started.IsZero() {
+			wait -= time.Since(started)
 		}
 		if wait <= 0 {
 			if !mediaClientGone(c, "waiting for image result", id) {
