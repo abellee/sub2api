@@ -96,7 +96,9 @@ describe('Account matching', () => {
 })
 
 describe('Input token restriction settings', () => {
-  it('saves all three thresholds, groups and exactly two accounts independently of manual matching', async () => {
+  it.each([1, 2, 4])('saves all three thresholds, groups and %i restricted accounts independently of manual matching', async count => {
+    const accountIDs = Array.from({ length: count }, (_, index) => 20 + index)
+    mocks.accounts.mockResolvedValue({ items: accountIDs.map(id => ({ id, name: `Account ${id}`, platform: 'openai' })), pages: 1, page: 1, total: count })
     const wrapper = await render()
     await button(wrapper, 'admin.accountMatching.inputRoutingTitle').trigger('click')
     const form = wrapper.get('#input-routing-form')
@@ -105,13 +107,16 @@ describe('Input token restriction settings', () => {
     await form.get('#input-routing-output-threshold').setValue(20000)
     await form.get('#input-routing-output-input-threshold').setValue(60000)
     await form.get('input[value="10"]').setValue(true)
-    await form.get('input[value="20"]').setValue(true)
     await form.trigger('submit')
     expect(mocks.saveInputRouting).not.toHaveBeenCalled()
-    await form.get('input[value="21"]').setValue(true)
+    for (const id of accountIDs) {
+      const checkbox = form.get(`input[value="${id}"]`)
+      expect((checkbox.element as HTMLInputElement).disabled).toBe(false)
+      await checkbox.setValue(true)
+    }
     await form.trigger('submit')
     await flushPromises()
-    expect(mocks.saveInputRouting).toHaveBeenCalledWith({ enabled: true, threshold: 120000, output_threshold: 20000, output_input_threshold: 60000, group_ids: [10], account_ids: [20, 21] })
+    expect(mocks.saveInputRouting).toHaveBeenCalledWith({ enabled: true, threshold: 120000, output_threshold: 20000, output_input_threshold: 60000, group_ids: [10], account_ids: accountIDs })
     expect(mocks.save).not.toHaveBeenCalled()
     expect(wrapper.find('#input-routing-form').exists()).toBe(false)
     expect(wrapper.text()).toContain('admin.accountMatching.inputRoutingActive')

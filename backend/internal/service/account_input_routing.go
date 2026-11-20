@@ -76,7 +76,7 @@ func (s *AccountInputRoutingService) Settings(ctx context.Context) (AccountInput
 		if _, ok := fields["output_input_threshold"]; !ok {
 			cfg.OutputInputThreshold = cfg.Threshold
 		}
-		if cfg.Threshold <= 0 || cfg.Threshold > 100000000 || cfg.OutputThreshold <= 0 || cfg.OutputThreshold > 100000000 || cfg.OutputInputThreshold <= 0 || cfg.OutputInputThreshold > 100000000 || (cfg.Enabled && (len(cfg.GroupIDs) == 0 || len(cfg.AccountIDs) != 2 || cfg.Revision == "")) {
+		if cfg.Threshold <= 0 || cfg.Threshold > 100000000 || cfg.OutputThreshold <= 0 || cfg.OutputThreshold > 100000000 || cfg.OutputInputThreshold <= 0 || cfg.OutputInputThreshold > 100000000 || (cfg.Enabled && (len(cfg.GroupIDs) == 0 || len(cfg.AccountIDs) == 0 || cfg.Revision == "")) {
 			return cfg, fmt.Errorf("invalid input routing settings")
 		}
 	}
@@ -90,13 +90,13 @@ func cloneAccountInputRoutingSettings(cfg AccountInputRoutingSettings) AccountIn
 	return cfg
 }
 
-var ErrAccountInputRoutingInvalid = infraerrors.BadRequest("ACCOUNT_INPUT_ROUTING_INVALID", "请填写有效的输入阈值、输出阈值及输出超限时的输入阈值、分组和两个不同的账号")
+var ErrAccountInputRoutingInvalid = infraerrors.BadRequest("ACCOUNT_INPUT_ROUTING_INVALID", "请填写有效的输入阈值、输出阈值及输出超限时的输入阈值、分组和至少一个不重复的账号")
 
 func (s *AccountInputRoutingService) SaveSettings(ctx context.Context, cfg AccountInputRoutingSettings) (AccountInputRoutingSettings, error) {
-	if cfg.Threshold <= 0 || cfg.Threshold > 100000000 || cfg.OutputThreshold <= 0 || cfg.OutputThreshold > 100000000 || cfg.OutputInputThreshold <= 0 || cfg.OutputInputThreshold > 100000000 || len(cfg.GroupIDs) > 10000 || len(cfg.AccountIDs) > 2 {
+	if cfg.Threshold <= 0 || cfg.Threshold > 100000000 || cfg.OutputThreshold <= 0 || cfg.OutputThreshold > 100000000 || cfg.OutputInputThreshold <= 0 || cfg.OutputInputThreshold > 100000000 || len(cfg.GroupIDs) > 10000 {
 		return cfg, ErrAccountInputRoutingInvalid
 	}
-	if cfg.Enabled && (len(cfg.GroupIDs) == 0 || len(cfg.AccountIDs) != 2) {
+	if cfg.Enabled && (len(cfg.GroupIDs) == 0 || len(cfg.AccountIDs) == 0) {
 		return cfg, ErrAccountInputRoutingInvalid
 	}
 	for _, ids := range [][]int64{cfg.GroupIDs, cfg.AccountIDs} {
@@ -123,7 +123,7 @@ func (s *AccountInputRoutingService) SaveSettings(ctx context.Context, cfg Accou
 		if err != nil {
 			return cfg, err
 		}
-		if len(accounts) != 2 || accounts[0] == nil || accounts[1] == nil {
+		if len(accounts) != len(cfg.AccountIDs) || slices.Contains(accounts, nil) {
 			return cfg, ErrAccountInputRoutingInvalid
 		}
 	}

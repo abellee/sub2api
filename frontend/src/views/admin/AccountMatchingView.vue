@@ -111,7 +111,7 @@
             <legend class="input-label">{{ t('admin.accountMatching.inputRoutingAccounts', { count: inputRoutingForm.account_ids.length }) }}</legend>
             <input v-model="inputAccountSearch" class="input mb-2" :aria-label="t('admin.accountMatching.searchAccounts')" :placeholder="t('admin.accountMatching.searchAccounts')" />
             <div class="max-h-48 overflow-y-auto rounded-lg border p-2 dark:border-dark-600">
-              <label v-for="account in inputAccounts" :key="account.id" class="flex items-center gap-2 p-2"><input v-model="inputRoutingForm.account_ids" type="checkbox" :value="account.id" :disabled="inputRoutingForm.account_ids.length >= 2 && !inputRoutingForm.account_ids.includes(account.id)" />{{ account.name }} <span class="text-xs text-gray-400">#{{ account.id }} · {{ account.platform }}</span></label>
+              <label v-for="account in inputAccounts" :key="account.id" class="flex items-center gap-2 p-2"><input v-model="inputRoutingForm.account_ids" type="checkbox" :value="account.id" />{{ account.name }} <span class="text-xs text-gray-400">#{{ account.id }} · {{ account.platform }}</span></label>
               <label v-for="id in inputRoutingForm.account_ids.filter(id => !accountMap.has(id))" :key="id" class="flex items-center gap-2 p-2 text-red-600"><input v-model="inputRoutingForm.account_ids" type="checkbox" :value="id" />{{ accountName(id) }}</label>
             </div>
           </fieldset>
@@ -192,7 +192,7 @@ const canSaveInputRouting = computed(() => {
   return Number.isInteger(cfg.threshold) && cfg.threshold > 0 && cfg.threshold <= 100000000 &&
     Number.isInteger(cfg.output_threshold) && cfg.output_threshold > 0 && cfg.output_threshold <= 100000000 &&
     Number.isInteger(cfg.output_input_threshold) && cfg.output_input_threshold > 0 && cfg.output_input_threshold <= 100000000 &&
-    (!cfg.enabled || (cfg.group_ids.length > 0 && cfg.account_ids.length === 2 && cfg.group_ids.every(id => groupMap.value.has(id)) && cfg.account_ids.every(id => accountMap.value.has(id))))
+    (!cfg.enabled || (cfg.group_ids.length > 0 && cfg.account_ids.length > 0 && cfg.group_ids.every(id => groupMap.value.has(id)) && cfg.account_ids.every(id => accountMap.value.has(id))))
 })
 function openInputRouting() {
   inputRoutingForm.value = { ...inputRouting.value, group_ids: [...inputRouting.value.group_ids], account_ids: [...inputRouting.value.account_ids] }
