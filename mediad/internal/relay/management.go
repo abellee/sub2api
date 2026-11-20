@@ -36,6 +36,7 @@ func (h *ManagementHandler) Register(mux *http.ServeMux) {
 	mux.Handle("POST /management/files/delete", h.auth(h.handleLibrary))
 	if h.Settings != nil {
 		h.tracker.runtimeSettings = h.Settings
+		ConfigureMemoryLimit(h.Settings.Active().MemoryLimitMiB)
 		mux.Handle("GET /management/config", h.auth(h.handleConfig))
 		mux.Handle("PUT /management/config", h.auth(h.handleConfig))
 	}
@@ -85,8 +86,11 @@ func (h *ManagementHandler) handleConfig(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		h.tracker.slots.setLimit(h.Settings.Active().MaxConcurrent)
+		ConfigureMemoryLimit(h.Settings.Active().MemoryLimitMiB)
 	}
-	writeJSON(w, 200, h.Settings.View())
+	view := h.Settings.View()
+	view["memory_status"] = memoryStatus()
+	writeJSON(w, 200, view)
 }
 
 func (h *ManagementHandler) auth(next http.HandlerFunc) http.Handler {

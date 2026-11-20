@@ -50,7 +50,8 @@
 | persist_credentials | true，可靠恢复必须开启 |
 | max_file_mib | 512；单个媒体文件上限 |
 | max_sync_seconds | 600；上游创建默认超时，规则可覆盖 |
-| max_concurrent | 8；任务超出后持久排队 |
+| max_concurrent | 默认 8，任意正整数，无固定上限；保存立即生效，超出后持久排队 |
+| memory_limit_mib | 默认 0（自动）；图片处理内存预算，MiB，保存立即生效。计入进程用量和待分配内存；空间不足时暂停读图、解析。调低不取消在途任务；不是进程硬上限，仍受主机及容器限制 |
 | poll_interval_seconds / max_poll_seconds | 5 / 1800；默认查询间隔及总等待，规则可覆盖 |
 | download_timeout_seconds / download_attempts | 120 / 3；单文件下载等待及总尝试次数 |
 | file_retention_hours | 默认 1 小时，无时长上限，0 为永久；按生成完成时间保留指定小时数，保存立即生效，只删除主站已确认成功的结果 |

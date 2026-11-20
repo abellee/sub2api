@@ -15,7 +15,8 @@ func TestSettingsPersistRedactAndLiveUpdate(t *testing.T) {
 		t.Fatal(err)
 	}
 	next := store.Active()
-	next.MaxConcurrent = 3
+	next.MaxConcurrent = 1000000
+	next.MemoryLimitMiB = 2048
 	next.MaxSyncSeconds = 90
 	next.PollIntervalSeconds = 2
 	next.MaxPollSeconds = 300
@@ -31,7 +32,7 @@ func TestSettingsPersistRedactAndLiveUpdate(t *testing.T) {
 	if err = store.Update(next); err != nil {
 		t.Fatal(err)
 	}
-	if store.Active().MaxConcurrent != 3 {
+	if store.Active().MaxConcurrent != 1000000 || store.Active().MemoryLimitMiB != 2048 {
 		t.Fatal("concurrency was not applied immediately")
 	}
 	if store.FileRetentionHours() != 72 {
@@ -53,7 +54,7 @@ func TestSettingsPersistRedactAndLiveUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reopened.Active().MaxConcurrent != 3 || reopened.Active().ManagementToken != "private-management" || reopened.View()["restart_required"].(bool) {
+	if reopened.Active().MaxConcurrent != 1000000 || reopened.Active().MemoryLimitMiB != 2048 || reopened.Active().ManagementToken != "private-management" || reopened.View()["restart_required"].(bool) {
 		t.Fatal("saved configuration was not applied at restart")
 	}
 	next = reopened.Active()
@@ -62,8 +63,24 @@ func TestSettingsPersistRedactAndLiveUpdate(t *testing.T) {
 		t.Fatal("invalid concurrency accepted")
 	}
 	again, err := OpenSettings(path, defaults)
-	if err != nil || again.Active().MaxConcurrent != 3 {
+	if err != nil || again.Active().MaxConcurrent != 1000000 {
 		t.Fatal("rejected update changed disk")
+	}
+}
+
+func TestMemoryLimitValidation(t *testing.T) {
+	s := DefaultSettings(Config{PersistCredentials: true})
+	for _, value := range []int64{0, 1, 4096, (1<<63 - 1) >> 20} {
+		s.MemoryLimitMiB = value
+		if err := s.Validate(); err != nil {
+			t.Fatalf("valid budget %d: %v", value, err)
+		}
+	}
+	for _, value := range []int64{-1, 1 << 43} {
+		s.MemoryLimitMiB = value
+		if s.Validate() == nil {
+			t.Fatalf("unsafe budget accepted: %d", value)
+		}
 	}
 }
 

@@ -37,6 +37,7 @@ func New(cfg config.Config, logger *log.Logger) (*Server, error) {
 		return nil, fmt.Errorf("load settings: %w", err)
 	}
 	cfg = settings.Active().Config()
+	relay.ConfigureMemoryLimit(settings.Active().MemoryLimitMiB)
 	if !cfg.PersistCredentials {
 		return nil, fmt.Errorf("durable recovery requires MEDIAD_PERSIST_CREDENTIALS=true; protect the data directory")
 	}

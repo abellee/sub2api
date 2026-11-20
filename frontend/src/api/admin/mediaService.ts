@@ -6,6 +6,7 @@ export interface ConfigView {
   active: Fields
   restart_required: boolean
   pending_fields: string[]
+  memory_status?: { configured_limit_mib: number; container_limit_mib: number; process_used_mib: number; reserved_mib: number }
 }
 export interface Binding {
   group_id: number

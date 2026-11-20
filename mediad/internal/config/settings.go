@@ -21,6 +21,7 @@ type Settings struct {
 	MaxFileMiB             int    `json:"max_file_mib"`
 	MaxSyncSeconds         int    `json:"max_sync_seconds"`
 	MaxConcurrent          int    `json:"max_concurrent"`
+	MemoryLimitMiB         int64  `json:"memory_limit_mib"`
 	PollIntervalSeconds    int    `json:"poll_interval_seconds"`
 	MaxPollSeconds         int    `json:"max_poll_seconds"`
 	DownloadTimeoutSeconds int    `json:"download_timeout_seconds"`
@@ -75,12 +76,18 @@ func (s Settings) Validate() error {
 	if s.FileRetentionHours < 0 {
 		return fmt.Errorf("file_retention_hours must be non-negative")
 	}
+	if s.MaxConcurrent < 1 {
+		return fmt.Errorf("max_concurrent must be positive")
+	}
+	if s.MemoryLimitMiB < 0 || s.MemoryLimitMiB > (1<<63-1)>>20 {
+		return fmt.Errorf("memory_limit_mib is outside the supported byte range")
+	}
 	limits := []struct {
 		name            string
 		value, min, max int
 	}{
 		{"max_file_mib", s.MaxFileMiB, 1, 10240}, {"max_sync_seconds", s.MaxSyncSeconds, 1, 86400},
-		{"max_concurrent", s.MaxConcurrent, 1, 128}, {"poll_interval_seconds", s.PollIntervalSeconds, 1, 3600},
+		{"poll_interval_seconds", s.PollIntervalSeconds, 1, 3600},
 		{"max_poll_seconds", s.MaxPollSeconds, 1, 604800}, {"download_timeout_seconds", s.DownloadTimeoutSeconds, 1, 86400},
 		{"download_attempts", s.DownloadAttempts, 1, 100}, {"task_retention_hours", s.TaskRetentionHours, 1, 87600}, {"gc_minutes", s.GCMinutes, 1, 1440},
 	}

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
+	"runtime/metrics"
 	"strconv"
 	"strings"
 	"sync"
@@ -15,9 +17,65 @@ type memoryBudget struct {
 	mu        sync.Mutex
 	reserved  int64
 	available func() int64
+	used      func() int64
+	limit     int64
 }
 
-var mediaMemory = memoryBudget{available: availableMemory}
+var mediaMemory = memoryBudget{available: availableMemory, used: processMemoryUsed}
+var defaultGoMemoryLimit = debug.SetMemoryLimit(-1)
+
+// This is an admission budget, not a replacement for the container's hard cap.
+func ConfigureMemoryLimit(mib int64) {
+	mediaMemory.mu.Lock()
+	defer mediaMemory.mu.Unlock()
+	limit := mib << 20
+	if limit == mediaMemory.limit {
+		return
+	}
+	mediaMemory.limit = limit
+	goLimit := defaultGoMemoryLimit
+	if limit > 0 {
+		goLimit = limit - limit/10
+		if containerLimit := containerMemoryLimit(); containerLimit > 0 {
+			goLimit = min(goLimit, containerLimit-containerLimit/10)
+		}
+	}
+	debug.SetMemoryLimit(goLimit)
+}
+
+func processMemoryUsed() int64 {
+	if raw, err := os.ReadFile("/proc/self/statm"); err == nil {
+		fields := strings.Fields(string(raw))
+		if len(fields) > 1 {
+			pages, err := strconv.ParseInt(fields[1], 10, 64)
+			if err == nil {
+				return pages * int64(os.Getpagesize())
+			}
+		}
+	}
+	// Portable fallback for development hosts without procfs.
+	samples := []metrics.Sample{{Name: "/memory/classes/total:bytes"}, {Name: "/memory/classes/heap/released:bytes"}}
+	metrics.Read(samples)
+	return int64(samples[0].Value.Uint64() - samples[1].Value.Uint64())
+}
+
+func containerMemoryLimit() int64 {
+	for _, path := range []string{"/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory/memory.limit_in_bytes"} {
+		if raw, err := os.ReadFile(path); err == nil {
+			n, err := strconv.ParseInt(strings.TrimSpace(string(raw)), 10, 64)
+			if err == nil && n > 0 && n < 1<<60 {
+				return n
+			}
+		}
+	}
+	return 0
+}
+
+func memoryStatus() map[string]int64 {
+	mediaMemory.mu.Lock()
+	defer mediaMemory.mu.Unlock()
+	return map[string]int64{"configured_limit_mib": mediaMemory.limit >> 20, "container_limit_mib": containerMemoryLimit() >> 20, "process_used_mib": processMemoryUsed() >> 20, "reserved_mib": mediaMemory.reserved >> 20}
+}
 
 func availableMemory() int64 {
 	var available int64
@@ -56,7 +114,15 @@ func (b *memoryBudget) try(n int64) (func(), bool) {
 	defer b.mu.Unlock()
 	// Leave memory for SSH, the OS, task metadata and other services. Subtract
 	// reservations too: admitted readers may not have allocated their buffers yet.
-	if n < 0 || n > b.available()-(512<<20)-b.reserved {
+	available := b.available() - (512 << 20)
+	if b.limit > 0 {
+		var used int64
+		if b.used != nil {
+			used = b.used()
+		}
+		available = min(available, b.limit-used)
+	}
+	if n < 0 || n > available-b.reserved {
 		return nil, false
 	}
 	b.reserved += n
