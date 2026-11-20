@@ -33,12 +33,13 @@
         <h2 class="text-lg font-medium">{{ t('mediaService.tabs.runtime') }}</h2>
         <p class="text-sm text-gray-500">{{ t('mediaService.runtimeHint') }}</p>
         <p v-if="runtimeView?.restart_required" class="rounded bg-amber-50 p-3 text-sm text-amber-900">{{ t('mediaService.agentRestart') }} {{ runtimeView.pending_fields.map(fieldLabel).join('、') }}</p>
+        <p v-if="runtimeView?.memory_status?.container_limit_mib" class="text-sm text-gray-500">{{ t('mediaService.containerMemoryLimit', { mib: runtimeView.memory_status.container_limit_mib }) }}</p>
         <form class="space-y-5" @submit.prevent="saveRuntime">
           <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <label v-for="f in runtimeFields" :key="f.key" class="flex flex-col gap-2 text-sm">
               <span>{{ fieldLabel(f.key) }}<MediaSettingInfo :title="fieldLabel(f.key)" :content="fieldHelp(f.key)" /> <span v-if="runtime[f.key + '_configured']" class="text-green-600">{{ t('mediaService.configured') }}</span></span>
               <input v-if="f.type === 'checkbox'" v-model="runtime[f.key]" type="checkbox" class="h-5 w-5" :disabled="f.key === 'persist_credentials'" />
-              <input v-else-if="f.type === 'number'" v-model.number="runtime[f.key]" type="number" :min="f.min ?? 1" :max="f.max" required class="input w-full" />
+              <input v-else-if="f.type === 'number'" v-model.number="runtime[f.key]" :data-testid="`runtime-${f.key}`" type="number" :min="f.min ?? 1" :max="f.max" required class="input w-full" />
               <select v-else-if="f.key === 'log_level'" v-model="runtime[f.key]" class="input"><option v-for="level in ['debug', 'info', 'warn', 'error']" :key="level">{{ level }}</option></select>
               <input v-else v-model="runtime[f.key]" :type="f.type || 'text'" :autocomplete="f.type === 'password' ? 'new-password' : 'off'" :placeholder="f.type === 'password' ? t('mediaService.keepSecret') : ''" class="input w-full" />
             </label>
@@ -129,7 +130,7 @@ const mainFields: Field[] = [
   { key: 'bindings_path' }, numeric('forward_timeout_seconds', 86400), numeric('management_timeout_seconds', 600)
 ]
 const runtimeFields: Field[] = [
-  { key: 'listen' }, { key: 'data_dir' }, { key: 'result_dir' }, { key: 'download_base_url', type: 'url' }, numeric('max_file_mib', 10240), numeric('max_sync_seconds', 86400), numeric('max_concurrent', 128),
+  { key: 'listen' }, { key: 'data_dir' }, { key: 'result_dir' }, { key: 'download_base_url', type: 'url' }, numeric('max_file_mib', 10240), numeric('max_sync_seconds', 86400), { key: 'max_concurrent', type: 'number' }, { key: 'memory_limit_mib', type: 'number', min: 0 },
   numeric('poll_interval_seconds', 3600), numeric('max_poll_seconds', 604800), numeric('download_timeout_seconds', 86400), numeric('download_attempts', 100), { key: 'file_retention_hours', type: 'number', min: 0 }, numeric('task_retention_hours', 87600), numeric('gc_minutes', 1440),
   { key: 'persist_credentials', type: 'checkbox' }, { key: 'log_level' }, secret('relay_secret'), secret('management_token')
 ]

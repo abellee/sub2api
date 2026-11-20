@@ -180,11 +180,17 @@ func (*inputRoutingGroups) GetByID(_ context.Context, id int64) (*Group, error) 
 	return &Group{ID: id}, nil
 }
 
-type inputRoutingAccounts struct{ AccountRepository }
+type inputRoutingAccounts struct {
+	AccountRepository
+	missingID int64
+}
 
-func (*inputRoutingAccounts) GetByIDs(_ context.Context, ids []int64) ([]*Account, error) {
+func (r *inputRoutingAccounts) GetByIDs(_ context.Context, ids []int64) ([]*Account, error) {
 	out := make([]*Account, 0, len(ids))
 	for _, id := range ids {
+		if id == r.missingID {
+			continue
+		}
 		out = append(out, &Account{ID: id})
 	}
 	return out, nil
@@ -203,7 +209,7 @@ func TestAccountInputRoutingSettingsValidationAndDisable(t *testing.T) {
 	cfg.Enabled = true
 	cfg.GroupIDs = []int64{10}
 	cfg.AccountIDs = []int64{20, 21}
-	for _, ids := range [][]int64{{20}, {20, 20}, {0, 21}, {20, 21, 22}} {
+	for _, ids := range [][]int64{nil, {}, {20, 20}, {0, 21}, {20, 21, 20}} {
 		bad := cfg
 		bad.AccountIDs = ids
 		_, err = s.SaveSettings(context.Background(), bad)
@@ -254,6 +260,36 @@ func TestAccountInputRoutingSettingsValidationAndDisable(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, AccountMatchingAllows(ctx, 99))
 	require.Equal(t, 1, store.reads)
+}
+
+func TestAccountInputRoutingAccountCountsPersistAndRestrict(t *testing.T) {
+	for _, ids := range [][]int64{{20}, {20, 21, 22, 23}} {
+		repo := &inputRoutingSettingsRepo{}
+		s := NewAccountInputRoutingService(repo, nil, &inputRoutingGroups{}, &inputRoutingAccounts{})
+		cfg := AccountInputRoutingSettings{Enabled: true, Threshold: 100000, OutputThreshold: 10000, OutputInputThreshold: 50000, GroupIDs: []int64{10}, AccountIDs: ids}
+		_, err := s.SaveSettings(context.Background(), cfg)
+		require.NoError(t, err)
+
+		reloaded := NewAccountInputRoutingService(repo, &inputRoutingStoreStub{restricted: true}, nil, nil)
+		persisted, err := reloaded.Settings(context.Background())
+		require.NoError(t, err)
+		require.Equal(t, ids, persisted.AccountIDs)
+		ctx, err := reloaded.apply(context.Background(), 2, 10, nil)
+		require.NoError(t, err)
+		for _, id := range ids {
+			require.True(t, AccountMatchingAllows(ctx, id))
+		}
+		require.False(t, AccountMatchingAllows(ctx, 99))
+	}
+}
+
+func TestAccountInputRoutingRejectsMissingAccountBeyondSecond(t *testing.T) {
+	repo := &inputRoutingSettingsRepo{}
+	s := NewAccountInputRoutingService(repo, nil, &inputRoutingGroups{}, &inputRoutingAccounts{missingID: 22})
+	cfg := AccountInputRoutingSettings{Enabled: true, Threshold: 100000, OutputThreshold: 10000, OutputInputThreshold: 50000, GroupIDs: []int64{10}, AccountIDs: []int64{20, 21, 22}}
+	_, err := s.SaveSettings(context.Background(), cfg)
+	require.ErrorIs(t, err, ErrAccountInputRoutingInvalid)
+	require.Empty(t, repo.raw)
 }
 
 func TestAccountInputRoutingLoadsLegacySettingsWithOutputDefault(t *testing.T) {

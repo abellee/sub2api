@@ -1,0 +1,122 @@
+name: Build split images
+on:
+  workflow_dispatch:
+    inputs:
+      component:
+        type: choice
+        options: [both, frontend, backend]
+        default: both
+        required: true
+      publish:
+        type: boolean
+        default: false
+        required: true
+permissions:
+  contents: read
+  packages: write
+concurrency:
+  group: split-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  validate:
+    if: ${{ github.event.repository.private }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y nginx
+          python3 -m pip install -r .github/release-tools/requirements-release.txt
+          python3 -B -m unittest discover -s deploy/tests -p 'test_split_deployment.py' -v
+  build:
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        component: [frontend, backend]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          submodules: false
+      - name: Select component
+        id: selected
+        run: echo "build=${{ inputs.component == 'both' || inputs.component == matrix.component }}" >> "$GITHUB_OUTPUT"
+      - name: Resolve pinned audit SDK
+        if: steps.selected.outputs.build == 'true' && matrix.component == 'backend'
+        id: audit
+        run: python3 .github/release-tools/audit_sdk.py ref
+      - name: Restore pinned audit SDK
+        if: steps.selected.outputs.build == 'true' && matrix.component == 'backend'
+        env:
+          AUDIT_SDK_BUNDLE: ${{ secrets[format('AUDIT_SDK_{0}', steps.audit.outputs.commit)] }}
+          AUDIT_SDK_BUNDLE_PART2: ${{ secrets[format('AUDIT_SDK_{0}_PART2', steps.audit.outputs.commit)] }}
+          AUDIT_SDK_BUNDLE_PART3: ${{ secrets[format('AUDIT_SDK_{0}_PART3', steps.audit.outputs.commit)] }}
+          AUDIT_SDK_BUNDLE_PART4: ${{ secrets[format('AUDIT_SDK_{0}_PART4', steps.audit.outputs.commit)] }}
+          AUDIT_SDK_BUNDLE_PART5: ${{ secrets[format('AUDIT_SDK_{0}_PART5', steps.audit.outputs.commit)] }}
+        run: python3 .github/release-tools/audit_sdk.py restore
+      - name: Image identity
+        id: image
+        run: |
+          repository="${GITHUB_REPOSITORY,,}"
+          echo "name=ghcr.io/${repository}-${{ matrix.component }}:sha-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          echo "version=$(cat backend/cmd/server/VERSION)" >> "$GITHUB_OUTPUT"
+          echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+        if: steps.selected.outputs.build == 'true'
+      - uses: docker/login-action@v3
+        if: steps.selected.outputs.build == 'true' && inputs.publish
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        if: steps.selected.outputs.build == 'true'
+        with:
+          context: .
+          file: Dockerfile.${{ matrix.component }}
+          platforms: linux/amd64
+          load: true
+          push: ${{ inputs.publish }}
+          tags: ${{ steps.image.outputs.name }}
+          build-args: |
+            COMMIT=${{ github.sha }}
+            DATE=${{ steps.image.outputs.date }}
+            GOPROXY=https://proxy.golang.org,direct
+            GOSUMDB=sum.golang.org
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.image.outputs.version }}
+          cache-from: type=gha,scope=split-${{ matrix.component }}
+          cache-to: type=gha,mode=max,scope=split-${{ matrix.component }}
+      - name: Verify backend binary identity
+        if: steps.selected.outputs.build == 'true' && matrix.component == 'backend'
+        env:
+          IMAGE: ${{ steps.image.outputs.name }}
+          SDK_COMMIT: ${{ steps.audit.outputs.commit }}
+          VERSION: ${{ steps.image.outputs.version }}
+        run: |
+          docker run --rm --entrypoint /app/sub2api "$IMAGE" --version > "$RUNNER_TEMP/backend-version.txt" 2>&1
+          grep -F "$GITHUB_SHA" "$RUNNER_TEMP/backend-version.txt"
+          grep -F "$VERSION" "$RUNNER_TEMP/backend-version.txt"
+          grep -F "${SDK_COMMIT:0:12}" "$RUNNER_TEMP/backend-version.txt"
+      - name: Export frontend release files
+        if: steps.selected.outputs.build == 'true' && matrix.component == 'frontend'
+        env:
+          IMAGE: ${{ steps.image.outputs.name }}
+        run: |
+          id=$(docker create "$IMAGE")
+          docker cp "$id:/usr/share/nginx/html" frontend-dist
+          docker rm "$id"
+      - uses: actions/upload-artifact@v7
+        if: steps.selected.outputs.build == 'true' && matrix.component == 'frontend'
+        with:
+          name: split-frontend-dist
+          path: frontend-dist/
+      - name: Record immutable source
+        run: |
+          echo 'Image: ${{ steps.image.outputs.name }}' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Version: ${{ steps.image.outputs.version }}' >> "$GITHUB_STEP_SUMMARY"

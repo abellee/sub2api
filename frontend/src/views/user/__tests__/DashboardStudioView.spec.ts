@@ -3,7 +3,7 @@ import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import DashboardStudioView from '../DashboardStudioView.vue'
 
 enableAutoUnmount(afterEach)
-const api = vi.hoisted(() => ({ stats: vi.fn(), trend: vi.fn(), models: vi.fn(), refreshUser: vi.fn(), user: { balance: 12.5 } }))
+const api = vi.hoisted(() => ({ stats: vi.fn(), trend: vi.fn(), models: vi.fn(), refreshUser: vi.fn(), user: { balance: 12.5, concurrency: 8 } }))
 vi.mock('@/api/usage', () => ({ usageAPI: { getDashboardStats: api.stats, getDashboardTrend: api.trend, getDashboardModels: api.models } }))
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => ({ user: api.user, isSimpleMode: false, refreshUser: api.refreshUser }) }))
 vi.mock('vue-i18n', async () => ({ ...await vi.importActual('vue-i18n'), useI18n: () => ({ t: (key: string) => key }) }))
@@ -22,6 +22,7 @@ function deferred<T>() { let resolve!: (value: T) => void; const promise = new P
 beforeEach(() => {
   vi.resetAllMocks()
   api.user.balance = 12.5
+  api.user.concurrency = 8
   api.refreshUser.mockResolvedValue(undefined)
   api.stats.mockResolvedValue(stats)
   api.trend.mockResolvedValue({ trend: [] })
@@ -29,11 +30,101 @@ beforeEach(() => {
 })
 
 describe('DashboardStudioView', () => {
-  it('shows recharge below 10 and links to the existing purchase page', async () => {
-    for (const amount of [0, 9.99, 10, 10.01]) {
+  it('shows the account concurrency limit and updates it after refresh', async () => {
+    const wrapper = mount(DashboardStudioView, { global: { stubs } })
+    await flushPromises()
+    expect(wrapper.find('.balance-concurrency .balance-label').text()).toBe('profile.concurrencyLimit')
+    expect(wrapper.find('.balance-concurrency strong').text()).toBe('8')
+    api.refreshUser.mockImplementationOnce(async () => { api.user.concurrency = 12 })
+    await wrapper.find('.refresh-button').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.balance-concurrency strong').text()).toBe('12')
+  })
+
+  it('keeps each pending region as a skeleton until its own data arrives', async () => {
+    const overview = deferred<typeof stats>()
+    const modelData = deferred<{ models: unknown[] }>()
+    const trendData = deferred<{ trend: unknown[] }>()
+    const requestData = deferred<{ trend: unknown[] }>()
+    api.stats.mockReturnValueOnce(overview.promise)
+    api.models.mockReturnValueOnce(modelData.promise)
+    api.trend.mockReturnValueOnce(trendData.promise).mockReturnValueOnce(requestData.promise)
+    const wrapper = mount(DashboardStudioView, { global: { stubs } })
+    await flushPromises()
+    expect(wrapper.findAll('.summary-loading > article')).toHaveLength(4)
+    expect(wrapper.find('.secondary-loading').exists()).toBe(true)
+    expect(wrapper.find('.analysis-grid').classes()).not.toContain('without-stats')
+    expect(wrapper.find('.skeleton-model').exists()).toBe(true)
+    expect(wrapper.find('.skeleton-trend').exists()).toBe(true)
+    expect(wrapper.find('.metric-value').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('dashboard.noDataAvailable')
+
+    overview.resolve(stats)
+    await flushPromises()
+    expect(wrapper.find('.summary-loading').exists()).toBe(false)
+    expect(wrapper.find('.secondary-loading').exists()).toBe(false)
+    expect(wrapper.find('.request-card .metric-value').text()).toBe('7')
+    expect(wrapper.find('.request-card .skeleton-requests').exists()).toBe(true)
+    expect(wrapper.find('.request-card .spark-empty').exists()).toBe(false)
+
+    modelData.resolve({ models: [{ model: 'ready' }] })
+    await flushPromises()
+    expect(wrapper.find('.skeleton-model').exists()).toBe(false)
+    expect(wrapper.findComponent({ name: 'ModelPieScene' }).props('models')).toEqual([{ model: 'ready' }])
+    expect(wrapper.find('.skeleton-trend').exists()).toBe(true)
+
+    trendData.resolve({ trend: [] })
+    requestData.resolve({ trend: [] })
+    await flushPromises()
+    expect(wrapper.find('.studio-chart-skeleton').exists()).toBe(false)
+    expect(wrapper.findComponent({ name: 'StudioTokenTrend' }).props('trendData')).toEqual([])
+    expect(wrapper.findAll('.request-bar')).toHaveLength(7)
+  })
+
+  it('replaces a failed region with its retry state while other regions are pending', async () => {
+    const pendingTrend = deferred<{ trend: unknown[] }>()
+    api.stats.mockRejectedValueOnce(new Error('offline'))
+    api.models.mockRejectedValueOnce(new Error('offline'))
+    api.trend.mockReturnValueOnce(pendingTrend.promise)
+    const wrapper = mount(DashboardStudioView, { global: { stubs } })
+    await flushPromises()
+    expect(wrapper.find('.summary-loading').exists()).toBe(false)
+    expect(wrapper.find('.secondary-loading').exists()).toBe(false)
+    expect(wrapper.find('.studio-error').exists()).toBe(true)
+    expect(wrapper.find('.skeleton-model').exists()).toBe(false)
+    expect(wrapper.find('.model-card [role="alert"]').exists()).toBe(true)
+    expect(wrapper.find('.skeleton-trend').exists()).toBe(true)
+    pendingTrend.resolve({ trend: [] })
+    await flushPromises()
+    expect(wrapper.find('.skeleton-trend').exists()).toBe(false)
+  })
+
+  it('keeps the latest range skeleton visible when a stale response finishes', async () => {
+    const oldTrend = deferred<{ trend: unknown[] }>()
+    const newTrend = deferred<{ trend: unknown[] }>()
+    api.trend.mockReturnValueOnce(oldTrend.promise).mockResolvedValueOnce({ trend: [] }).mockReturnValueOnce(newTrend.promise)
+    const wrapper = mount(DashboardStudioView, { global: { stubs } })
+    await flushPromises()
+    wrapper.findComponent({ name: 'Select' }).vm.$emit('update:modelValue', 'hour')
+    await flushPromises()
+    oldTrend.resolve({ trend: [{ date: 'stale' }] })
+    await flushPromises()
+    expect(wrapper.find('.skeleton-trend').exists()).toBe(true)
+    expect(wrapper.findComponent({ name: 'StudioTokenTrend' }).exists()).toBe(false)
+    newTrend.resolve({ trend: [{ date: 'current' }] })
+    await flushPromises()
+    expect(wrapper.find('.skeleton-trend').exists()).toBe(false)
+    expect(wrapper.findComponent({ name: 'StudioTokenTrend' }).props('trendData')).toEqual([{ date: 'current' }])
+  })
+
+  it('colors low balances at the 5 and 10 thresholds and links to recharge', async () => {
+    for (const amount of [0, 4.99, 5, 9.99, 10, 10.01]) {
       api.user.balance = amount
       const wrapper = mount(DashboardStudioView, { global: { stubs } })
       await flushPromises()
+      const balanceClasses = wrapper.find('.balance-card .metric-value').classes()
+      expect(balanceClasses.includes('balance-warning')).toBe(amount >= 5 && amount < 10)
+      expect(balanceClasses.includes('balance-critical')).toBe(amount < 5)
       const link = wrapper.find('.balance-recharge')
       expect(link.exists()).toBe(amount < 10)
       if (amount < 10) expect(link.attributes('href')).toBe('/purchase')

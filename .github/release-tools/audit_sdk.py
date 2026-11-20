@@ -15,8 +15,8 @@ import tempfile
 
 SDK_PATH = 'backend/audit-sdk'
 MAX_PAYLOAD = 2 * 1024 * 1024
-# Four repository-secret parts, each under GitHub's 48 KiB secret limit.
-MAX_ENCODED = 192 * 1024
+# Five repository-secret parts, each under GitHub's 48 KiB secret limit.
+MAX_ENCODED = 240 * 1024
 
 
 def expected_commit():
@@ -86,7 +86,7 @@ def main():
             output.write('commit=' + expected + '\n')
     else:
         restore(''.join(os.environ.get(name, '') for name in
-                        ('AUDIT_SDK_BUNDLE', 'AUDIT_SDK_BUNDLE_PART2', 'AUDIT_SDK_BUNDLE_PART3', 'AUDIT_SDK_BUNDLE_PART4')), expected, SDK_PATH)
+                        ('AUDIT_SDK_BUNDLE', 'AUDIT_SDK_BUNDLE_PART2', 'AUDIT_SDK_BUNDLE_PART3', 'AUDIT_SDK_BUNDLE_PART4', 'AUDIT_SDK_BUNDLE_PART5')), expected, SDK_PATH)
 
 
 if __name__ == '__main__':

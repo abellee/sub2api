@@ -1,15 +1,15 @@
 <template>
   <div ref="accountRoot" class="studio-account" :class="{ 'is-expanded': expanded }" :style="{ '--studio-tool-count': toolCount }" @mouseenter="cancelHoverClose" @mouseleave="scheduleHoverClose" @keydown.esc.stop="dismissPanels">
     <div class="studio-utilities" aria-label="常用工具">
-      <StudioLocaleMenu :expanded="expanded" @opened="dismissPanels" />
       <AnnouncementBell v-if="user" class="studio-announcement" @click="closeDropdown(); communityOpen = null" />
       <button type="button" class="utility-button" :title="isDark ? t('nav.lightMode') : t('nav.darkMode')" :aria-label="isDark ? t('nav.lightMode') : t('nav.darkMode')" @click="toggleTheme"><Icon :name="isDark ? 'sun' : 'moon'" size="md" /></button>
       <a v-if="headerWidgetConfig" href="https://qm.qq.com/q/iX3TeHnckw" target="_blank" rel="noopener noreferrer" class="utility-button" title="加入 QQ 群" aria-label="加入 QQ 群" ref="qqTrigger" data-tour="join-qq-group" :aria-expanded="communityOpen === 'qq'" @mouseenter="openOnHover('qq', $event)"><QqBrandIcon /></a>
       <a v-if="headerWidgetConfig?.telegram" :href="headerWidgetConfig.telegram.link" target="_blank" rel="noopener noreferrer" class="utility-button" title="加入 Telegram" aria-label="加入 Telegram" :aria-expanded="communityOpen === 'telegram'" @mouseenter="openOnHover('telegram', $event)"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M9.78 18.65l.28-4.23 7.68-6.92c.34-.3-.07-.45-.52-.18L7.74 13.3l-4.1-1.28c-.89-.28-.9-.89.19-1.32l16-6.17c.74-.27 1.39.18 1.15 1.32l-2.72 12.81c-.2.91-.74 1.13-1.5.7l-4.14-3.06-2 1.93c-.22.22-.41.41-.84.41z" /></svg></a>
+      <StudioLocaleMenu :expanded="expanded" @opened="dismissPanels" />
     </div>
     <section v-if="user" class="studio-user-card" :aria-label="t('common.userMenu')">
       <div class="studio-wallet" :inert="expanded ? undefined : true" :aria-hidden="!expanded" :title="`${t('common.availableBalance')}: ${formatMoney(availableBalance)} · ${t('common.frozenBalance')}: ${formatMoney(frozenBalance)}`">
-        <div class="wallet-available"><span class="wallet-label">{{ t('common.availableBalance') }}</span><strong>{{ formatMoney(availableBalance) }}</strong></div>
+        <div class="wallet-available"><div class="wallet-heading"><span class="wallet-label">{{ t('common.availableBalance') }}</span><router-link v-if="!authStore.isSimpleMode && availableBalance < 10" to="/purchase" class="wallet-recharge" @click="dismissPanels(); appStore.setMobileOpen(false)">{{ t('nav.recharge') }}</router-link></div><strong :class="{ 'balance-warning': availableBalance >= 5 && availableBalance < 10, 'balance-critical': availableBalance < 5 }"><StudioRollingBalance :value="availableBalance" /></strong></div>
         <div class="wallet-frozen"><span class="wallet-label">{{ t('common.frozenBalance') }}</span><strong>{{ formatMoney(frozenBalance) }}</strong></div>
       </div>
       <div class="studio-points" :inert="expanded ? undefined : true" :aria-hidden="!expanded"><span><img :src="pointsIcon" alt="" />{{ t('common.points') }}</span><strong>—</strong></div>
@@ -62,6 +62,7 @@ import PushNotificationToggle from '@/components/common/PushNotificationToggle.v
 import Icon from '@/components/icons/Icon.vue'
 import QqBrandIcon from '@/components/icons/QqBrandIcon.vue'
 import pointsIcon from '@/assets/icons/points-image-color.svg'
+import StudioRollingBalance from './StudioRollingBalance.vue'
 import StudioLocaleMenu from './StudioLocaleMenu.vue'
 import StudioPopover from './StudioPopover.vue'
 
@@ -210,7 +211,7 @@ onBeforeUnmount(() => {
 .studio-announcement :deep(button:focus-visible){outline:2px solid #8796db;outline-offset:2px}
 .studio-user-card{position:relative;height:40px;overflow:hidden;background:transparent;border-radius:14px;transition:height var(--studio-motion,240ms) var(--studio-ease,ease),background-color var(--studio-motion,240ms)}
 .studio-wallet{position:absolute;top:14px;left:12px;width:calc(var(--studio-account-width) - 24px);display:flex;justify-content:space-between;gap:8px;font-variant-numeric:tabular-nums}
-.wallet-available{min-width:0;text-align:left}.wallet-frozen{text-align:right}.wallet-label{display:block;margin-bottom:4px;font-size:12px;color:var(--studio-muted);white-space:nowrap}
+.wallet-available{flex:1;min-width:0;text-align:left}.wallet-frozen{flex-shrink:0;text-align:right}.wallet-label{display:block;margin-bottom:4px;line-height:20px;font-size:12px;color:var(--studio-muted);white-space:nowrap}
 .studio-wallet strong{display:block;font-size:16px;font-weight:500;line-height:24px;letter-spacing:normal;white-space:nowrap}
 .studio-points{position:absolute;top:66px;left:12px;width:calc(var(--studio-account-width) - 24px);display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--studio-muted)}
 .studio-points>span{display:flex;align-items:center;gap:6px}.studio-points img{width:15px;height:15px}
@@ -226,6 +227,8 @@ onBeforeUnmount(() => {
 .studio-account.is-expanded .studio-utilities> *{transform:translate(calc(var(--tool-index)*(var(--studio-account-width) - 36px)/(var(--studio-tool-count) - 1)),0)}
 .studio-utilities> :has(.studio-popover){z-index:3}
 .is-expanded .studio-user-card{height:154px;background:var(--studio-menu-surface,var(--tf-console-hover))}
+.wallet-available .balance-warning{color:#c65d13}.wallet-available .balance-critical{color:#dc2626}:global(.dark .wallet-available .balance-warning){color:#fb923c}:global(.dark .wallet-available .balance-critical){color:#f87171}
+.wallet-heading{display:flex;align-items:center;gap:6px;margin-bottom:4px;min-width:0}.wallet-heading .wallet-label{min-width:0;margin-bottom:0;overflow:hidden;text-overflow:ellipsis}.wallet-recharge{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;min-height:20px;padding:0 6px;border-radius:6px;background:var(--tf-console-active-ink);color:var(--studio-nav-bg);font-size:12px;font-weight:600;line-height:20px;white-space:nowrap}.wallet-recharge:hover{filter:brightness(1.1)}.wallet-recharge:focus-visible{outline:2px solid var(--tf-console-active-ink);outline-offset:2px}
 .wallet-frozen strong{color:var(--studio-muted)}
 .is-expanded .studio-identity{left:12px;bottom:10px}.is-expanded .studio-identity::before{opacity:1}
 .studio-flyout{width:280px;max-height:calc(100dvh - 32px);overflow-y:auto;padding:8px;border-radius:16px;background:var(--tf-console-surface);color:var(--studio-ink);scrollbar-width:thin}

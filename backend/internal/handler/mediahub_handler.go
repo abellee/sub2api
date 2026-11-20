@@ -146,6 +146,7 @@ func (h *MediaHubRelayHandler) Config() MediaHubConfig { return h.cfg }
 // /media/files/* 返回用户的下载记录或跳转到中转服务，其余转发 mediad。
 func (h *MediaHubRelayHandler) Relay(c *gin.Context) {
 	started := time.Now()
+	c.Set(mediaRequestStartedKey, started)
 	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
 	if !ok || apiKey == nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": gin.H{"type": "authentication_error", "message": "invalid api key"}})
