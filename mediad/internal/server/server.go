@@ -91,6 +91,7 @@ func (s *Server) Run(ctx context.Context) error {
 	defer s.tracker.Stop()
 	errCh := make(chan error, 1)
 	go func() { errCh <- s.httpServer.ListenAndServe() }()
+	changed := s.settings.Changed()
 	gc := time.NewTicker(time.Duration(s.settings.Active().GCMinutes) * time.Minute)
 	defer gc.Stop()
 	expiry := time.NewTicker(time.Minute)
@@ -101,6 +102,9 @@ func (s *Server) Run(ctx context.Context) error {
 			shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			return s.httpServer.Shutdown(shutdown)
+		case <-changed:
+			changed = s.settings.Changed()
+			gc.Reset(time.Duration(s.settings.Active().GCMinutes) * time.Minute)
 		case <-expiry.C:
 			s.tracker.ExpireRecovery()
 		case <-gc.C:

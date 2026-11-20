@@ -82,7 +82,7 @@ func (t *Tracker) run(id string) {
 	case StatusSubmitting:
 		if len(task.Response) > 0 || task.ResponseData != nil {
 			t.consumeResponse(task, schema)
-			return
+			break
 		}
 		if schema.Request.IdempotencyHeader != "" {
 			t.submit(task, schema)
@@ -90,13 +90,16 @@ func (t *Tracker) run(id string) {
 			t.recovery(task, "upstream response lost; attach upstream task ID or response; unsafe to submit again")
 		}
 	case StatusProcessing:
-		t.trackLoop(id)
+		// Poll below, after any submission buffers have been released.
 	case StatusDownloading:
 		t.finishFiles(task)
 	case StatusSucceeded, StatusFailed:
 		if task.CallbackState != CallbackConfirmed {
 			t.deliver(task)
 		}
+	}
+	if saved, ok := t.store.Get(id); ok && saved.Status == StatusProcessing {
+		t.trackLoop(id)
 	}
 }
 
@@ -113,7 +116,7 @@ func (t *Tracker) submit(task *Task, schema *Schema) {
 	}
 	timeout := time.Duration(schema.Upstream.Create.TimeoutSeconds) * time.Second
 	if timeout <= 0 {
-		timeout = t.createTimeout
+		timeout = t.creationTimeout()
 	}
 	if timeout <= 0 {
 		timeout = 10 * time.Minute
@@ -147,7 +150,8 @@ func (t *Tracker) submit(task *Task, schema *Schema) {
 		return
 	}
 	defer resp.Body.Close()
-	body, err := t.readUpstreamResponse(task, "create", resp, 64<<20)
+	body, release, err := t.bufferedResponse(t.ctx, task, "create", resp, 64<<20)
+	defer release()
 	if err != nil || len(body) > 64<<20 {
 		if t.ctx.Err() == nil {
 			if err != nil {
@@ -172,10 +176,17 @@ func (t *Tracker) submit(task *Task, schema *Schema) {
 	if !t.saveResult(task) {
 		return
 	}
+	body = nil
+	release()
 	t.consumeResponse(task, schema)
 }
 
 func (t *Tracker) consumeResponse(task *Task, schema *Schema) {
+	release, err := reserveSavedResults(t.ctx, task, true)
+	if err != nil {
+		return
+	}
+	defer release()
 	if err := t.loadSavedResults(t.ctx, task, true, false); err != nil {
 		t.recovery(task, "saved response unavailable")
 		return
@@ -191,7 +202,12 @@ func (t *Tracker) consumeResponse(task *Task, schema *Schema) {
 		if err == nil {
 			usage = &Usage{Quantity: quantity, Unit: unit}
 		}
-		t.complete(task, StatusSucceeded, usage, ExtractResult(schema, task.Response), "")
+		task.Result = ExtractResult(schema, task.Response)
+		if !t.saveResult(task) {
+			return
+		}
+		release()
+		t.complete(task, StatusSucceeded, usage, nil, "")
 		return
 	}
 	id, err := ExtractTaskID(schema, task.Response)
@@ -207,7 +223,6 @@ func (t *Tracker) consumeResponse(task *Task, schema *Schema) {
 	if !t.saveResult(task) {
 		return
 	}
-	t.trackLoop(task.ID)
 }
 
 func (t *Tracker) finishFiles(task *Task) {
@@ -224,11 +239,14 @@ func (t *Tracker) finishFiles(task *Task) {
 	}
 	ctx, cancel := context.WithDeadline(t.ctx, task.CompletedAt.Add(resultStagingTimeout))
 	defer cancel()
-	attempts := t.downloadAttempts
-	if attempts <= 0 {
-		attempts = 3
-	}
-	for attempt := 0; attempt < attempts; attempt++ {
+	for attempt := 0; ; attempt++ {
+		attempts := t.stagingAttempts()
+		if attempts <= 0 {
+			attempts = 3
+		}
+		if attempt >= attempts {
+			break
+		}
 		if ctx.Err() != nil {
 			break
 		}
@@ -236,11 +254,7 @@ func (t *Tracker) finishFiles(task *Task) {
 		if task.ResponseData != nil {
 			task.Response = nil
 		}
-		if err := t.loadSavedResults(ctx, task, false, true); err != nil {
-			t.recovery(task, "saved result unavailable")
-			return
-		}
-		files, err := t.stager.Stage(ctx, task)
+		files, err := t.stageSavedResult(ctx, task)
 		if err != nil {
 			task.PrivateCause = "retrieving result files: " + upstreamCause(err)
 		}
@@ -267,14 +281,17 @@ func (t *Tracker) finishFiles(task *Task) {
 		// 可查询的上游重新读取结果，刷新可能过期的下载地址。
 		if schema, ok := t.taskSchema(task); ok && task.UpstreamTaskID != "" && attempt+1 < attempts {
 			archive := task.ErrorArchive
-			status, body, qerr := t.pollOnceContext(ctx, task, schema)
+			status, body, release, qerr := t.pollOnceContext(ctx, task, schema)
 			task.ErrorArchive = archive
 			if qerr == nil && schema.IsTerminalSuccess(status) {
 				task.Result = ExtractResult(schema, body)
 				if err := t.store.Update(task); err != nil {
+					release()
 					return
 				}
 			}
+			body = nil
+			release()
 		}
 		if attempt+1 == attempts {
 			break
@@ -317,4 +334,19 @@ func (t *Tracker) loadSavedResults(ctx context.Context, task *Task, response, re
 		case <-time.After(time.Second):
 		}
 	}
+}
+
+func (t *Tracker) stageSavedResult(ctx context.Context, task *Task) ([]ResultFile, error) {
+	release, err := reserveSavedResults(ctx, task, false)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	if task.ResultData != nil {
+		defer func() { task.Result = nil }()
+	}
+	if err := t.loadSavedResults(ctx, task, false, true); err != nil {
+		return nil, err
+	}
+	return t.resultStager().Stage(ctx, task)
 }

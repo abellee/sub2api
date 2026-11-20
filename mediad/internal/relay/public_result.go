@@ -11,7 +11,7 @@ import (
 
 // The link grants access to one task's status and image links, never account credentials.
 func (h *RelayHandler) resultToken(id string) string {
-	m := hmac.New(sha256.New, []byte(h.secret))
+	m := hmac.New(sha256.New, []byte(h.relaySecret()))
 	m.Write([]byte("task-result/" + id))
 	return hex.EncodeToString(m.Sum(nil))
 }
@@ -39,7 +39,7 @@ func publicMediaHeaders(w http.ResponseWriter) {
 func (h *RelayHandler) handlePublicResult(w http.ResponseWriter, r *http.Request) {
 	publicMediaHeaders(w)
 	id := r.PathValue("taskID")
-	if h.secret == "" || !hmac.Equal([]byte(h.resultToken(id)), []byte(r.URL.Query().Get("token"))) {
+	if h.relaySecret() == "" || !hmac.Equal([]byte(h.resultToken(id)), []byte(r.URL.Query().Get("token"))) {
 		http.NotFound(w, r)
 		return
 	}

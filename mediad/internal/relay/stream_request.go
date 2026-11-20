@@ -32,7 +32,7 @@ func (h *RelayHandler) streamRequest(w http.ResponseWriter, r *http.Request, in 
 		return nil, nil, nil, "", err
 	}
 	f.Seek(0, io.SeekStart)
-	if err = signature.VerifyReader(h.secret, r.Header.Get(HeaderTimestamp), r.Method, r.URL.Path, f, r.Header.Get(HeaderSignature), h.now()); err != nil {
+	if err = signature.VerifyReader(h.relaySecret(), r.Header.Get(HeaderTimestamp), r.Method, r.URL.Path, f, r.Header.Get(HeaderSignature), h.now()); err != nil {
 		return nil, nil, nil, "", err
 	}
 	f.Seek(0, io.SeekStart)

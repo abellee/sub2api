@@ -101,6 +101,7 @@ type SettingsStore struct {
 	mu              sync.RWMutex
 	path            string
 	active, desired Settings
+	changed         chan struct{}
 }
 
 func OpenSettings(path string, cfg Config) (*SettingsStore, error) {
@@ -116,7 +117,7 @@ func OpenSettings(path string, cfg Config) (*SettingsStore, error) {
 	if err := s.Validate(); err != nil {
 		return nil, err
 	}
-	return &SettingsStore{path: path, active: s, desired: s}, nil
+	return &SettingsStore{path: path, active: s, desired: s, changed: make(chan struct{})}, nil
 }
 
 func (s *SettingsStore) Active() Settings { s.mu.RLock(); defer s.mu.RUnlock(); return s.active }
@@ -126,7 +127,7 @@ func (s *SettingsStore) StorageChangePending() bool {
 	return s.active.DataDir != s.desired.DataDir || s.active.ResultDir != s.desired.ResultDir
 }
 
-// Runtime configuration changes take effect together on restart, without mutating active workers.
+// Publish operational settings after the durable write. Listener and storage paths need a restart.
 func (s *SettingsStore) Update(next Settings) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -165,8 +166,14 @@ func (s *SettingsStore) Update(next Settings) error {
 		return err
 	}
 	s.desired = next
-	// Retention only affects completed tasks and can safely change without restarting workers.
-	s.active.FileRetentionHours = next.FileRetentionHours
+	// Never redirect existing task files or the listening socket in place.
+	previous := s.active
+	s.active = next
+	s.active.Listen = previous.Listen
+	s.active.DataDir = previous.DataDir
+	s.active.ResultDir = previous.ResultDir
+	close(s.changed)
+	s.changed = make(chan struct{})
 	return nil
 }
 
@@ -202,4 +209,11 @@ func (s *SettingsStore) View() map[string]any {
 
 func (s Settings) Config() Config {
 	return Config{Listen: s.Listen, DataDir: s.DataDir, ResultDir: s.ResultDir, DownloadBaseURL: s.DownloadBaseURL, MaxFileBytes: int64(s.MaxFileMiB) << 20, MaxSyncSeconds: s.MaxSyncSeconds, PersistCredentials: s.PersistCredentials, LogLevel: s.LogLevel, RelaySecret: s.RelaySecret, ManagementToken: s.ManagementToken}
+}
+
+// Changed broadcasts successful updates without blocking management requests.
+func (s *SettingsStore) Changed() <-chan struct{} {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.changed
 }

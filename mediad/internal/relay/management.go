@@ -84,20 +84,21 @@ func (h *ManagementHandler) handleConfig(w http.ResponseWriter, r *http.Request)
 			writeError(w, 400, "config_rejected", err.Error())
 			return
 		}
+		h.tracker.slots.setLimit(h.Settings.Active().MaxConcurrent)
 	}
 	writeJSON(w, 200, h.Settings.View())
 }
 
 func (h *ManagementHandler) auth(next http.HandlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.TrimSpace(h.token) == "" {
+		if strings.TrimSpace(h.managementToken()) == "" {
 			writeError(w, http.StatusServiceUnavailable, "management_disabled",
 				"management token is not configured; management API is disabled")
 			return
 		}
 		auth := r.Header.Get("Authorization")
 		const prefix = "Bearer "
-		if !strings.HasPrefix(auth, prefix) || strings.TrimSpace(strings.TrimPrefix(auth, prefix)) != h.token {
+		if !strings.HasPrefix(auth, prefix) || strings.TrimSpace(strings.TrimPrefix(auth, prefix)) != h.managementToken() {
 			writeError(w, http.StatusUnauthorized, "unauthorized", "valid management bearer token required")
 			return
 		}

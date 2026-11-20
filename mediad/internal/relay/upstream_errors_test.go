@@ -182,7 +182,8 @@ func TestQueryErrorHistoryRetainedAfterSuccess(t *testing.T) {
 	defer upstream.Close()
 	task.UpstreamURL = upstream.URL
 	for i := 0; i < 3; i++ {
-		status, _, err := tracker.pollOnce(task, task.Schema)
+		status, _, release, err := tracker.pollOnce(task, task.Schema)
+		defer release()
 		if i < 2 && err == nil {
 			t.Fatal("query HTTP error lost")
 		}

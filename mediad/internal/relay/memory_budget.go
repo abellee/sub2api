@@ -11,9 +11,6 @@ import (
 	"time"
 )
 
-// Reserve for decoding and temporary copies as well as the input itself.
-const workerMemory = int64(768 << 20)
-
 type memoryBudget struct {
 	mu        sync.Mutex
 	reserved  int64
@@ -68,6 +65,9 @@ func (b *memoryBudget) try(n int64) (func(), bool) {
 }
 func (b *memoryBudget) wait(ctx context.Context, n int64) (func(), error) {
 	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if release, ok := b.try(n); ok {
 			return release, nil
 		}

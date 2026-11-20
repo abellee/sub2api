@@ -64,7 +64,7 @@ func (h *RelayHandler) Register(mux *http.ServeMux) {
 
 // 图片、视频统一先持久化受理，实际生成与客户端连接断开无关。
 func (h *RelayHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
-	if h.secret == "" {
+	if h.relaySecret() == "" {
 		writeError(w, 503, "relay_disabled", "relay secret is not configured")
 		return
 	}
@@ -204,7 +204,7 @@ func (h *RelayHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *RelayHandler) handleTaskStatus(w http.ResponseWriter, r *http.Request) {
-	if h.secret == "" {
+	if h.relaySecret() == "" {
 		writeError(w, 503, "relay_disabled", "relay secret is not configured")
 		return
 	}
@@ -244,7 +244,7 @@ func (h *RelayHandler) handleTaskStatus(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *RelayHandler) verify(r *http.Request, body []byte) error {
-	return signature.Verify(h.secret, r.Header.Get(HeaderTimestamp), r.Method, r.URL.Path, body, r.Header.Get(HeaderSignature), h.now())
+	return signature.Verify(h.relaySecret(), r.Header.Get(HeaderTimestamp), r.Method, r.URL.Path, body, r.Header.Get(HeaderSignature), h.now())
 }
 
 func newTaskID(now time.Time) string {
