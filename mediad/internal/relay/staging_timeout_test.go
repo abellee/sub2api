@@ -99,6 +99,9 @@ func TestStagingFailureDeadlineRetriesRestartAndShutdown(t *testing.T) {
 				tracker.finishFiles(task)
 			}
 			got, _ := store.Get(task.ID)
+			if err := store.loadPayloadFields(got, true, false); err != nil {
+				t.Fatal(err)
+			}
 			switch mode {
 			case "success":
 				if got.Status != StatusSucceeded || len(got.Files) != 1 || got.Usage == nil {

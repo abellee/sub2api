@@ -1,12 +1,12 @@
 package relay
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"time"
 )
 
@@ -30,6 +30,10 @@ func upstreamCause(err error) string {
 
 func (t *Tracker) recovery(task *Task, reason string) {
 	task.Status = StatusRecoveryRequired
+	if task.RecoveryAt == nil {
+		now := t.now()
+		task.RecoveryAt = &now
+	}
 	task.ErrorMessage = reason
 	if err := t.store.Update(task); err != nil {
 		t.logger.Printf("[mediad] persist recovery status %s: %v", task.ID, err)
@@ -42,6 +46,8 @@ func (t *Tracker) saveResult(task *Task) bool {
 	for {
 		if err := t.store.Update(task); err == nil {
 			return true
+		} else if errors.Is(err, errTaskExpired) {
+			return false
 		} else if !logged {
 			t.logger.Printf("[mediad] waiting for result storage %s: %v", task.ID, err)
 			logged = true
@@ -59,6 +65,12 @@ func (t *Tracker) run(id string) {
 	if !ok {
 		return
 	}
+	if task.Status == StatusFailed || task.Status == StatusSucceeded {
+		if task.CallbackState != CallbackConfirmed {
+			t.deliver(task)
+		}
+		return
+	}
 	schema, ok := t.taskSchema(task)
 	if !ok {
 		t.recovery(task, "schema_missing")
@@ -68,7 +80,7 @@ func (t *Tracker) run(id string) {
 	case StatusQueued:
 		t.submit(task, schema)
 	case StatusSubmitting:
-		if len(task.Response) > 0 {
+		if len(task.Response) > 0 || task.ResponseData != nil {
 			t.consumeResponse(task, schema)
 			return
 		}
@@ -108,12 +120,19 @@ func (t *Tracker) submit(task *Task, schema *Schema) {
 	}
 	ctx, cancel := context.WithTimeout(t.ctx, timeout)
 	defer cancel()
-	r, err := http.NewRequestWithContext(ctx, task.Request.Method, task.Request.URL, bytes.NewReader(task.Request.Body))
+	bodyReader, bodySize, err := t.store.requestReader(task)
+	if err != nil {
+		t.recovery(task, "saved request body unavailable")
+		return
+	}
+	defer bodyReader.Close()
+	r, err := http.NewRequestWithContext(ctx, task.Request.Method, task.Request.URL, bodyReader)
 	if err != nil {
 		task.PrivateCause = "invalid saved upstream request: " + upstreamCause(err)
 		t.recovery(task, "invalid saved request")
 		return
 	}
+	r.ContentLength = bodySize
 	r.Header = task.Request.Header.Clone()
 	if name := schema.Request.IdempotencyHeader; name != "" {
 		r.Header.Set(name, task.ID)
@@ -157,6 +176,10 @@ func (t *Tracker) submit(task *Task, schema *Schema) {
 }
 
 func (t *Tracker) consumeResponse(task *Task, schema *Schema) {
+	if err := t.loadSavedResults(t.ctx, task, true, false); err != nil {
+		t.recovery(task, "saved response unavailable")
+		return
+	}
 	if schema.Mode == "sync" {
 		quantity, unit, err := ExtractUsage(schema, task.Response)
 		if err == nil && quantity == 0 && schema.Response.Usage.Quantity == "$result_files" {
@@ -180,6 +203,7 @@ func (t *Tracker) consumeResponse(task *Task, schema *Schema) {
 	task.Status = StatusProcessing
 	task.PollStartedAt = time.Now()
 	task.Request = nil
+	task.RequestData = nil
 	if !t.saveResult(task) {
 		return
 	}
@@ -209,6 +233,13 @@ func (t *Tracker) finishFiles(task *Task) {
 			break
 		}
 		task.ErrorArchive = "-"
+		if task.ResponseData != nil {
+			task.Response = nil
+		}
+		if err := t.loadSavedResults(ctx, task, false, true); err != nil {
+			t.recovery(task, "saved result unavailable")
+			return
+		}
 		files, err := t.stager.Stage(ctx, task)
 		if err != nil {
 			task.PrivateCause = "retrieving result files: " + upstreamCause(err)
@@ -263,4 +294,27 @@ func (t *Tracker) finishFiles(task *Task) {
 		message = "Media result retrieval exceeded 10 minutes. Stop polling and contact support with the task ID."
 	}
 	t.complete(task, StatusFailed, nil, nil, message)
+}
+
+func (t *Tracker) loadSavedResults(ctx context.Context, task *Task, response, result bool) error {
+	logged := false
+	for {
+		err := t.store.loadPayloadFields(task, response, result)
+		if err == nil {
+			return nil
+		}
+		var pathErr *os.PathError
+		if !errors.As(err, &pathErr) {
+			return err
+		}
+		if !logged {
+			t.logger.Printf("[mediad] waiting for saved payload task=%s: %v", task.ID, err)
+			logged = true
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Second):
+		}
+	}
 }

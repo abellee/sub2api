@@ -3,6 +3,7 @@ package relay
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -47,6 +48,7 @@ func TestCompletedRequestsReleasedWithoutLosingRecoveryOrResults(t *testing.T) {
 				}
 				if operation != "legacy_restart" {
 					got, _ := store.Get(task.ID)
+					hydrateTaskForTest(t, store, got)
 					if !reflect.DeepEqual(got, want) {
 						t.Fatal("in-memory request retention changed recovery data or results")
 					}
@@ -56,6 +58,7 @@ func TestCompletedRequestsReleasedWithoutLosingRecoveryOrResults(t *testing.T) {
 					t.Fatal(err)
 				}
 				got, _ := reopened.Get(task.ID)
+				hydrateTaskForTest(t, reopened, got)
 				if !reflect.DeepEqual(got, want) {
 					t.Fatal("restart changed recovery data or results")
 				}
@@ -67,6 +70,10 @@ func TestCompletedRequestsReleasedWithoutLosingRecoveryOrResults(t *testing.T) {
 				if err := json.Unmarshal(data, &saved); err != nil {
 					t.Fatal(err)
 				}
+				if len(data) > 8192 {
+					t.Fatal("task metadata contains image body")
+				}
+				hydrateTaskForTest(t, reopened, &saved)
 				if !reflect.DeepEqual(&saved, want) {
 					t.Fatal("disk still retains a completed request or lost recovery data")
 				}
@@ -77,4 +84,26 @@ func TestCompletedRequestsReleasedWithoutLosingRecoveryOrResults(t *testing.T) {
 			})
 		}
 	}
+}
+
+func hydrateTaskForTest(t *testing.T, store *MemoryStore, task *Task) {
+	t.Helper()
+	if task.Request != nil && task.RequestData != nil {
+		r, _, err := store.requestReader(task)
+		if err != nil {
+			t.Fatal(err)
+		}
+		task.Request.Body, err = io.ReadAll(r)
+		r.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := store.loadResults(task); err != nil {
+		t.Fatal(err)
+	}
+	task.RequestData = nil
+	task.ResponseData = nil
+	task.ResultData = nil
+	task.ResponseSummary = nil
 }

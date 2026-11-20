@@ -182,6 +182,12 @@ func (h *RelayHandler) writeErrorContext(w http.ResponseWriter, task *Task) {
 		}
 	}
 	// Pre-archive tasks and transport failures have only the task snapshot.
+	release, err := h.store.errorResponse(task)
+	if err != nil {
+		writeError(w, 503, "memory_busy", err.Error())
+		return
+	}
+	defer release()
 	body := ""
 	if task.ResponseStatus >= 400 || (task.Status == StatusFailed && task.ResponseStatus == 200) {
 		body = string(task.Response)

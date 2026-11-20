@@ -92,6 +92,8 @@ func (s *MemoryStore) deleteResultFile(taskID, fileID, owner, root string) error
 		task.DeletedFileIDs = append(task.DeletedFileIDs, fileID)
 	}
 	task.Response, task.Result = nil, nil
+	task.ResponseData, task.ResultData = nil, nil
+	task.ResponseSummary = nil
 	if len(task.Files) == 0 {
 		task.FilesAcknowledged = true
 	}

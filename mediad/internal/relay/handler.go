@@ -5,11 +5,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"sync"
 	"time"
@@ -66,19 +68,39 @@ func (h *RelayHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 503, "relay_disabled", "relay secret is not configured")
 		return
 	}
-	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, MaxRelayBody))
-	if err != nil {
-		writeError(w, 413, "body_too_large", err.Error())
-		return
-	}
-	if err := h.verify(r, body); err != nil {
-		writeError(w, 401, "invalid_signature", err.Error())
-		return
-	}
 	schema, ok := h.registry.Get(r.PathValue("schemaID"))
 	if !ok {
 		writeError(w, 400, "unknown_schema", "schema is not registered")
 		return
+	}
+	streamed := canStreamRequest(schema, r, h.store)
+	need := r.ContentLength
+	limit := int64(MaxRelayBody)
+	if streamed {
+		need = 0
+	}
+	release, err := reserveRequest(need, limit)
+	if err != nil {
+		w.Header().Set("Retry-After", "3")
+		writeError(w, 503, "memory_busy", err.Error())
+		return
+	}
+	defer release()
+	var body []byte
+	if !streamed {
+		readLimit := int64(MaxRelayBody)
+		if r.ContentLength >= 0 && r.ContentLength < readLimit {
+			readLimit = r.ContentLength
+		}
+		body, err = io.ReadAll(http.MaxBytesReader(w, r.Body, readLimit))
+		if err != nil {
+			writeError(w, 413, "body_too_large", err.Error())
+			return
+		}
+		if err = h.verify(r, body); err != nil {
+			writeError(w, 401, "invalid_signature", err.Error())
+			return
+		}
 	}
 	if v := r.Header.Get(HeaderSchemaVersion); v != "" {
 		if want, _ := strconv.Atoi(v); want != schema.Version {
@@ -91,23 +113,45 @@ func (h *RelayHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "missing_required_headers", "upstream and identity headers are required")
 		return
 	}
-	if r.Header.Get(HeaderProtocol) != "" {
-		in.Body, in.ContentType, err = normalizeStandardRequest(in, r.Header.Get(HeaderProtocol))
+	id := newTaskID(h.now())
+	var assembled *UpstreamRequest
+	var ref *payloadRef
+	var params map[string]any
+	var streamedFingerprint string
+	if streamed {
+		assembled, ref, params, streamedFingerprint, err = h.streamRequest(w, r, in, id)
 		if err != nil {
-			writeError(w, 400, "invalid_request_error", err.Error())
+			code := 400
+			if errors.Is(err, signature.ErrMismatch) || errors.Is(err, signature.ErrExpired) || errors.Is(err, signature.ErrBadFormat) {
+				code = 401
+			}
+			writeError(w, code, "invalid_request_error", err.Error())
 			return
 		}
+	} else {
+		if r.Header.Get(HeaderProtocol) != "" {
+			in.Body, in.ContentType, err = normalizeStandardRequest(in, r.Header.Get(HeaderProtocol))
+			if err != nil {
+				writeError(w, 400, "invalid_request_error", err.Error())
+				return
+			}
+		}
+		assembled, err = Assemble(in)
+		if err != nil {
+			writeError(w, 400, "assemble_failed", err.Error())
+			return
+		}
+		_ = json.Unmarshal(compactRequestParameters(in.Body), &params)
 	}
-	assembled, err := Assemble(in)
-	if err != nil {
-		writeError(w, 400, "assemble_failed", err.Error())
-		return
-	}
-	task := &Task{ID: newTaskID(h.now()), Schema: schema, SchemaID: schema.ID, SchemaVersion: schema.Version, Request: assembled, Model: in.Model, UserID: in.UserID, KeyID: in.KeyID, GroupID: in.GroupID, UpstreamURL: in.UpstreamURL, Credential: in.Credential, Status: StatusQueued, CreatedAt: h.now(), CallbackState: CallbackPending}
+	committed := false
+	defer func() {
+		if streamed && !committed {
+			_ = os.RemoveAll(h.store.payloadDir(id))
+		}
+	}()
+	task := &Task{ID: id, Schema: schema, SchemaID: schema.ID, SchemaVersion: schema.Version, Request: assembled, RequestData: ref, Model: in.Model, UserID: in.UserID, KeyID: in.KeyID, GroupID: in.GroupID, UpstreamURL: in.UpstreamURL, Credential: in.Credential, Status: StatusQueued, CreatedAt: h.now(), CallbackState: CallbackPending}
 	task.InboundEndpoint = endpointPath(firstNonEmpty(r.Header.Get("X-Media-Inbound-Endpoint"), in.ClientPath))
 	task.UpstreamEndpoint = endpointPath(assembled.URL)
-	var params map[string]any
-	_ = json.Unmarshal(in.Body, &params)
 	task.Parameters = map[string]any{}
 	for _, k := range []string{"duration", "resolution", "size", "n"} {
 		if v, ok := params[k]; ok {
@@ -121,6 +165,9 @@ func (h *RelayHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	fingerprint := sha256.Sum256(append([]byte(schema.ID+"\x00"+in.Model+"\x00"+in.UpstreamURL+"\x00"), body...))
 	task.Fingerprint = hex.EncodeToString(fingerprint[:])
+	if streamed {
+		task.Fingerprint = streamedFingerprint
+	}
 	if key := r.Header.Get(HeaderIdempotencyKey); key != "" {
 		scope, _ := json.Marshal([]string{in.UserID, in.KeyID, in.GroupID, schema.ID, key})
 		sum := sha256.Sum256(scope)
@@ -151,6 +198,7 @@ func (h *RelayHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 503, "task_store_failed", err.Error())
 		return
 	}
+	committed = true
 	h.tracker.Track(task)
 	h.writeAccepted(w, task, false)
 }

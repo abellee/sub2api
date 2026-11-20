@@ -33,6 +33,10 @@ func (h *RelayHandler) waitStandardResult(w http.ResponseWriter, r *http.Request
 			if !ok {
 				return
 			}
+			if stream && task.Status == StatusSucceeded && task.CallbackState == CallbackConfirmed && !task.FilesAcknowledged && len(task.Files) > 0 {
+				h.handleStandardResult(w, r, task, format)
+				return
+			}
 			if stream {
 				recorder := newResultRecorder()
 				h.handleStandardResult(recorder, r, task, "openai_b64_json")

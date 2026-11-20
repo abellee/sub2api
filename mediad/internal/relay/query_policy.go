@@ -66,7 +66,7 @@ func (h *RelayHandler) allowTaskQuery(w http.ResponseWriter, task *Task, content
 }
 
 func writeStagingFailure(w http.ResponseWriter, task *Task) bool {
-	if !task.stagingFailed() {
+	if !task.stagingFailed() && task.ErrorCode != "recovery_expired" {
 		return false
 	}
 	w.Header().Set("Cache-Control", "private, no-store")

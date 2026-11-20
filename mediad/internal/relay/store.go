@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 )
@@ -15,6 +16,11 @@ import (
 // → 回调 sub2api(confirmed)→ TTL 回收。
 // interrupted 表示持久化恢复时缺少凭证、无法继续轮询的任务。
 type Task struct {
+	RequestData     *payloadRef `json:"request_data,omitempty"`
+	ResponseData    *payloadRef `json:"response_data,omitempty"`
+	ResultData      *payloadRef `json:"result_data,omitempty"`
+	ResponseSummary []byte      `json:"response_summary,omitempty"`
+	RecoveryAt      *time.Time  `json:"recovery_at,omitempty"`
 	// Private diagnostic for the final attempt. A dash means that attempt had no archived HTTP response.
 	ErrorArchive      string           `json:"error_archive,omitempty"`
 	PrivateCause      string           `json:"private_cause,omitempty"`
@@ -151,18 +157,26 @@ func (s *MemoryStore) PublicTask(id string) (*Task, bool) {
 func (s *MemoryStore) Update(task *Task) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if prev := s.tasks[task.ID]; prev != nil && prev.ErrorCode == "recovery_expired" && task.ErrorCode != "recovery_expired" {
+		return errTaskExpired
+	}
 	if prev := s.tasks[task.ID]; prev != nil && len(prev.DeletedFileIDs) > 0 {
 		task.DeletedFileIDs = slices.Clone(prev.DeletedFileIDs)
 		task.Files = slices.DeleteFunc(task.Files, func(f ResultFile) bool { return slices.Contains(task.DeletedFileIDs, f.ID) })
 		task.Response, task.Result = nil, nil
+		task.ResponseData, task.ResultData = nil, nil
+		task.ResponseSummary = nil
 	}
 	if prev := s.tasks[task.ID]; prev != nil && prev.FilesAcknowledged {
 		task.FilesAcknowledged = true
 		task.FilesDeletedAt = prev.FilesDeletedAt
 		if !task.stagingFailed() {
 			task.Response = nil
+			task.ResponseData = nil
+			task.ResponseSummary = nil
 		}
 		task.Result = nil
+		task.ResultData = nil
 	}
 	task.releaseCompletedRequest()
 	if err := s.persist(task); err != nil {
@@ -235,6 +249,9 @@ func (s *MemoryStore) Delete(id string) error {
 			return err
 		}
 	}
+	if s.root != "" {
+		_ = os.RemoveAll(s.payloadDir(id))
+	}
 	delete(s.tasks, id)
 	s.onDirty()
 	return nil
@@ -280,7 +297,10 @@ func (s *MemoryStore) GCFiles(hours int, root string) (int, error) {
 		task.FilesDeletedAt = &ev.DeletedAt
 		// Raw upstream responses can also contain the expired image as base64.
 		task.Response = nil
+		task.ResponseData = nil
+		task.ResponseSummary = nil
 		task.Result = nil
+		task.ResultData = nil
 		if err := s.persist(task); err != nil {
 			return removed, err
 		}
@@ -313,6 +333,9 @@ func (s *MemoryStore) GC(ttl time.Duration) int {
 					continue
 				}
 			}
+			if s.root != "" {
+				_ = os.RemoveAll(s.payloadDir(id))
+			}
 			delete(s.tasks, id)
 			removed++
 		}
@@ -340,10 +363,11 @@ func cloneTask(t *Task) *Task {
 
 // Completed tasks never submit again; keep their results, not reference image bodies.
 func (t *Task) releaseCompletedRequest() bool {
-	if t.Request == nil || (t.Status != StatusSucceeded && t.Status != StatusFailed) {
+	if (t.Request == nil && t.RequestData == nil) || (t.Status != StatusSucceeded && t.Status != StatusFailed) {
 		return false
 	}
 	t.Request = nil
+	t.RequestData = nil
 	return true
 }
 
@@ -369,23 +393,11 @@ func NewDiskStore(root string) (*MemoryStore, error) {
 		if filepath.Ext(e.Name()) != ".json" {
 			continue
 		}
-		buf, err := os.ReadFile(filepath.Join(root, e.Name()))
+		task, err := s.readTask(filepath.Join(root, e.Name()), strings.TrimSuffix(e.Name(), ".json"))
 		if err != nil {
-			return nil, err
-		}
-		var task Task
-		if err := json.Unmarshal(buf, &task); err != nil {
 			return nil, fmt.Errorf("read task %s: %w", e.Name(), err)
 		}
-		if task.ID+".json" != e.Name() {
-			return nil, fmt.Errorf("invalid task filename %s", e.Name())
-		}
-		if task.releaseCompletedRequest() {
-			if err := s.persist(&task); err != nil {
-				return nil, fmt.Errorf("release completed request %s: %w", e.Name(), err)
-			}
-		}
-		s.tasks[task.ID] = &task
+		s.tasks[task.ID] = task
 	}
 	return s, nil
 }
@@ -397,7 +409,14 @@ func (s *MemoryStore) persist(t *Task) error {
 	if filepath.Base(t.ID) != t.ID || t.ID == "." || t.ID == "" {
 		return fmt.Errorf("invalid task id")
 	}
-	return WriteState(filepath.Join(s.root, t.ID+".json"), t)
+	if err := s.offload(t); err != nil {
+		return err
+	}
+	if err := WriteState(filepath.Join(s.root, t.ID+".json"), t); err != nil {
+		return err
+	}
+	_ = s.cleanPayloads(t)
+	return nil
 }
 
 func (s *MemoryStore) ListAll() []*Task {
@@ -482,6 +501,13 @@ func SaveSnapshot(path string, store *MemoryStore, stripCredential bool) error {
 // LoadSnapshot 从 path 恢复任务表。缺失凭证且仍在轮询的任务标记为
 // interrupted,避免静默丢失;其冻结由 sub2api 侧预留 TTL 到期自然释放。
 func LoadSnapshot(path string, store *MemoryStore) (int, error) {
+	if info, err := os.Stat(path); err == nil {
+		release, err := reserveRequest(info.Size(), info.Size())
+		if err != nil {
+			return 0, err
+		}
+		defer release()
+	}
 	buf, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {

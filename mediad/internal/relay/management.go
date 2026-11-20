@@ -246,6 +246,12 @@ func (h *ManagementHandler) handleCallbackTest(w http.ResponseWriter, r *http.Re
 
 // handleDryRun 组装上游请求但不发送;带 upstream_response 时同时演示提取。
 func (h *ManagementHandler) handleDryRun(w http.ResponseWriter, r *http.Request) {
+	release, err := reserveRequest(r.ContentLength, 32<<20)
+	if err != nil {
+		writeError(w, 503, "memory_busy", err.Error())
+		return
+	}
+	defer release()
 	var in struct {
 		SchemaID         string            `json:"schema_id"`
 		Method           string            `json:"method"`
@@ -354,6 +360,12 @@ func (h *ManagementHandler) handlePending(w http.ResponseWriter, r *http.Request
 
 // 不自动重发不确定请求；管理员可补录上游任务号/原响应，或重试文件与通知交接。
 func (h *ManagementHandler) handleRecover(w http.ResponseWriter, r *http.Request) {
+	release, err := reserveRequest(r.ContentLength, 64<<20)
+	if err != nil {
+		writeError(w, 503, "memory_busy", err.Error())
+		return
+	}
+	defer release()
 	var in struct {
 		UpstreamTaskID string          `json:"upstream_task_id"`
 		Response       json.RawMessage `json:"response"`
@@ -372,6 +384,10 @@ func (h *ManagementHandler) handleRecover(w http.ResponseWriter, r *http.Request
 	task, ok := h.store.Get(id)
 	if !ok {
 		http.NotFound(w, r)
+		return
+	}
+	if task.ErrorCode == "recovery_expired" {
+		writeError(w, 409, "recovery_expired", "verification window expired")
 		return
 	}
 	if task.CallbackState == CallbackConfirmed {

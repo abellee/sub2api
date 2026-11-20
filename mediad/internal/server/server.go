@@ -85,6 +85,7 @@ func New(cfg config.Config, logger *log.Logger) (*Server, error) {
 }
 
 func (s *Server) Run(ctx context.Context) error {
+	s.tracker.ExpireRecovery()
 	s.tracker.ResumeAll()
 	s.tracker.StartFileDeletionNotifications()
 	defer s.tracker.Stop()
@@ -92,12 +93,16 @@ func (s *Server) Run(ctx context.Context) error {
 	go func() { errCh <- s.httpServer.ListenAndServe() }()
 	gc := time.NewTicker(time.Duration(s.settings.Active().GCMinutes) * time.Minute)
 	defer gc.Stop()
+	expiry := time.NewTicker(time.Minute)
+	defer expiry.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			return s.httpServer.Shutdown(shutdown)
+		case <-expiry.C:
+			s.tracker.ExpireRecovery()
 		case <-gc.C:
 			if n, err := s.store.GCFiles(s.settings.FileRetentionHours(), s.settings.Active().ResultDir); err != nil {
 				s.logger.Printf("[mediad] file cleanup: %v", err)

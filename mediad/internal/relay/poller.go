@@ -153,6 +153,15 @@ func (t *Tracker) Track(task *Task) {
 			return
 		}
 		defer func() { <-t.slots }()
+		need := workerMemory
+		if task.Status == StatusFailed || task.Status == StatusSucceeded {
+			need = 32 << 20
+		}
+		release, err := mediaMemory.wait(t.ctx, need)
+		if err != nil {
+			return
+		}
+		defer release()
 		t.run(task.ID)
 	}()
 }
@@ -329,7 +338,13 @@ func (t *Tracker) deliver(task *Task) {
 	// Older completed jobs can be repaired without submitting generation again.
 	if task.Status == StatusSucceeded && task.Usage == nil {
 		if schema, ok := t.taskSchema(task); ok {
-			if quantity, unit, err := extractTaskUsage(schema, task, task.Response); err == nil && quantity > 0 {
+			quantity, unit, err := extractTaskUsage(schema, task, t.store.responseMetadata(task))
+			if schema.Response.Usage.Quantity == "$result_files" && len(task.Files) > 0 {
+				quantity = float64(len(task.Files))
+				unit = usageUnit(schema)
+				err = nil
+			}
+			if err == nil && quantity > 0 {
 				task.Usage = &Usage{Quantity: quantity, Unit: unit}
 				if !t.saveResult(task) {
 					return
