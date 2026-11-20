@@ -13,10 +13,12 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/mediahub"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	middleware "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
+	"go.uber.org/zap"
 )
 
 func mediaTaskFailed(status string) bool {
@@ -161,8 +163,19 @@ func mediaTaskErrorMessage(body []byte) string {
 // Transport errors may carry a private URL. Keep the cause for Ops and match rules on it,
 // while using a stage-specific message without infrastructure details in the public response.
 func (h *MediaHubRelayHandler) transportFailure(c *gin.Context, stage, id string, err error) {
+	if mediaClientGone(c, stage, id) {
+		return
+	}
 	status, msg := h.transportErrorRule(c, stage, err)
 	mediaStandardError(c, status, msg, id)
+}
+
+func mediaClientGone(c *gin.Context, stage, id string) bool {
+	if !failoverClientGone(c) {
+		return false
+	}
+	logger.L().Info("mediahub: client disconnected", zap.String("stage", stage), zap.String("task_id", id), zap.Error(c.Request.Context().Err()))
+	return true
 }
 func (h *MediaHubRelayHandler) transportErrorRule(c *gin.Context, stage string, err error) (int, string) {
 	_ = c.Error(err)

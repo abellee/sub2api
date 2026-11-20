@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -22,6 +23,19 @@ import (
 
 const mediaProtocolKey = "mediahub.standard_protocol"
 const mediaModelKey = "mediahub.standard_model"
+const mediaRequestStartedKey = "mediahub.request_started"
+const mediaSyncWait = 90 * time.Second
+
+var errMediaSyncWait = errors.New("media synchronous wait elapsed")
+
+func mediaTaskAccepted(c *gin.Context, id, queryExpiresAt string) {
+	pollURL := "/v1/images/tasks/" + id
+	c.Header("Location", pollURL)
+	c.Header("X-Task-Id", id)
+	c.Header("Retry-After", "3")
+	c.Header("Cache-Control", "private, no-store")
+	c.JSON(http.StatusAccepted, gin.H{"id": id, "task_id": id, "object": "image.generation.task", "status": "processing", "poll_url": pollURL, "poll_interval_seconds": 3, "query_expires_at": queryExpiresAt})
+}
 
 func (h *MediaHubController) standardEnabled(c *gin.Context) bool {
 	if h == nil || h.relay == nil {
@@ -187,10 +201,7 @@ func (h *MediaHubRelayHandler) finishStandard(c *gin.Context, accepted *mediahub
 	}
 	queryExpiresAt := gjson.GetBytes(accepted.Body, "query_expires_at").String()
 	if strings.HasSuffix(c.GetString(mediaProtocolKey), "_async") {
-		c.Header("Location", "/v1/images/tasks/"+id)
-		c.Header("Retry-After", "3")
-		pollURL := "/v1/images/tasks/" + id
-		c.JSON(202, gin.H{"id": id, "task_id": id, "object": "image.generation.task", "status": "processing", "poll_url": pollURL, "poll_interval_seconds": 3, "query_expires_at": queryExpiresAt})
+		mediaTaskAccepted(c, id, queryExpiresAt)
 		return
 	}
 	if c.GetString(mediaProtocolKey) == "grok_video" {
@@ -219,8 +230,52 @@ func (h *MediaHubRelayHandler) finishStandard(c *gin.Context, accepted *mediahub
 
 	in.ResultFormat = format
 	in.Wait = true
+	// Cancel only the result GET, never the persisted generation task. Stop the
+	// timer at response headers so a large image download keeps its full timeout.
+	var stopWait func()
+	if !stream {
+		wait := mediaSyncWait
+		if started, ok := c.Get(mediaRequestStartedKey); ok {
+			wait -= time.Since(started.(time.Time))
+		}
+		if wait <= 0 {
+			if !mediaClientGone(c, "waiting for image result", id) {
+				mediaTaskAccepted(c, id, queryExpiresAt)
+			}
+			return
+		}
+		waitCtx, cancelWait := context.WithCancelCause(ctx)
+		defer cancelWait(nil)
+		ctx = waitCtx
+		done := make(chan struct{})
+		timer := time.AfterFunc(wait, func() {
+			cancelWait(errMediaSyncWait)
+			close(done)
+		})
+		stopWait = func() {
+			if !timer.Stop() {
+				<-done
+			}
+		}
+	}
 	response, err := mediahub.OpenTaskResult(ctx, h.client, in, id)
+	if stopWait != nil {
+		stopWait()
+	}
+	if errors.Is(context.Cause(ctx), errMediaSyncWait) {
+		if response != nil {
+			_ = response.Body.Close()
+		}
+		if !mediaClientGone(c, "waiting for image result", id) {
+			logger.L().Info("mediahub: continuing task by polling", zap.String("task_id", id), zap.Int64("user_id", userID))
+			mediaTaskAccepted(c, id, queryExpiresAt)
+		}
+		return
+	}
 	if err != nil {
+		if mediaClientGone(c, "waiting for image result", id) {
+			return
+		}
 		logger.L().Warn("mediahub: result wait failed", zap.String("task_id", id),
 			zap.Int64("user_id", userID), zap.Int64("group_id", groupID), zap.Error(err))
 		h.transportFailure(c, "waiting for image result", id, err)
@@ -251,12 +306,18 @@ func (h *MediaHubRelayHandler) finishStandard(c *gin.Context, accepted *mediahub
 	if stream {
 		writer = mediaFlushWriter{c}
 		if err := h.copyMediaEvents(c, ctx, in, id, writer, response.Body); err != nil {
+			if mediaClientGone(c, "reading image event stream", id) {
+				return
+			}
 			status, msg := h.transportErrorRule(c, "reading image event stream", err)
 			_ = writeMediaStreamError(c, writer, id, status, msg, "")
 		}
 		return
 	}
 	if _, err := io.Copy(writer, response.Body); err != nil {
+		if mediaClientGone(c, "reading image result", id) {
+			return
+		}
 		status, msg := h.transportErrorRule(c, "reading image result", err)
 		if !c.Writer.Written() {
 			mediaStandardError(c, status, msg, id)

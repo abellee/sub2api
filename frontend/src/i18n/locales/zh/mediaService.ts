@@ -8,9 +8,10 @@ export default {
     tabsLabel: '配置分类', tabs: { main: '主站连接与记录', runtime: '微服务运行参数', rules: '生成规则', bindings: '分组绑定', callback: '结果通知', tasks: '待处理任务', records: '下载记录' },
     checkConnection: '检查连接', configured: '已设置', keepSecret: '留空保持原值',
     mainHint: '主站只记录下载链接、用户归属和文件信息，不保存媒体文件。管理连接保存后立即可用；中转及签名设置重启主站后生效。',
-    runtimeHint: '文件保存在微服务的存储目录，按任务分开保存，超过文件保留时长后自动删除。线上请填写用户可访问的对外下载地址。文件保留时长保存后立即生效，其余参数重启微服务生效；目录已有文件时请停机迁移。',
+    containerMemoryLimit: '容器内存硬上限：{mib} MiB。页面预算不能突破此限制。',
+    runtimeHint: '文件保存在微服务的存储目录，按任务分开保存，超过文件保留时长后自动删除。线上请填写用户可访问的对外下载地址。并发、超时、下载及清理参数保存后在线生效；监听地址和存储目录仍需重启，目录已有文件时请停机迁移。',
     mainRestart: '主站重启后生效：', agentRestart: '微服务重启后生效：', activeSettings: '查看当前生效参数（密钥已隐藏）',
-    saveMain: '保存主站配置', saveRuntime: '保存运行参数', saved: '保存成功，已生效', mainSavedRestart: '配置已保存。管理连接立即使用新配置；中转及签名配置请重启主站后生效。', runtimeSavedRestart: '配置已保存，请重启微服务后生效。',
+    saveMain: '保存主站配置', saveRuntime: '保存运行参数', saved: '保存成功，已生效', mainSavedRestart: '配置已保存。管理连接立即使用新配置；中转及签名配置请重启主站后生效。', runtimeSavedRestart: '运行参数已在线生效；提示的监听地址或存储目录变更仍需重启。',
     failed: '操作失败，请重试', connected: '管理接口连接正常，身份验证通过。',
     imageTemplate: '新建图片规则', videoTemplate: '新建视频规则', rulesHint: '图片和视频对客户端均异步返回任务号。这里选择的是上游的返回方式。模板仅作起点，请按上游文档修改；修改已有规则时请增加版本号。',
     noRules: '还没有生成规则，可用模板新建。', ruleId: '规则名称', ruleVersion: '版本号', upstreamMode: '上游返回方式', syncUpstream: '上游一次返回结果', asyncUpstream: '上游返回任务号，需查询',
@@ -28,7 +29,7 @@ export default {
     fields: {
       enabled: '启用媒体中转', mediad_base_url: '微服务地址', management_token: '管理令牌', relay_secret: '中转签名密钥', callback_secret: '通知签名密钥', bindings_path: '分组绑定文件路径',
       forward_timeout_seconds: '主站请求等待上限（秒）', management_timeout_seconds: '管理请求等待上限（秒）',
-      listen: '微服务监听地址', data_dir: '微服务任务状态目录', result_dir: '微服务文件存储目录', download_base_url: '对外下载地址', max_file_mib: '单个结果文件上限（MiB）', max_sync_seconds: '默认生成等待上限（秒）', max_concurrent: '同时处理任务数', poll_interval_seconds: '默认查询间隔（秒）', max_poll_seconds: '默认查询最长等待（秒）', download_timeout_seconds: '单次文件下载等待（秒）', download_attempts: '文件下载重试次数', file_retention_hours: '文件保留时长（小时，0 为永久）', task_retention_hours: '可清理任务记录保留（小时）', gc_minutes: '文件及任务清理间隔（分钟）', persist_credentials: '保存凭证以支持重启恢复', log_level: '日志级别'
+      listen: '微服务监听地址', data_dir: '微服务任务状态目录', result_dir: '微服务文件存储目录', download_base_url: '对外下载地址', max_file_mib: '单个结果文件上限（MiB）', max_sync_seconds: '默认生成等待上限（秒）', max_concurrent: '同时处理任务数', memory_limit_mib: '内存预算（MiB，0 为自动）', poll_interval_seconds: '默认查询间隔（秒）', max_poll_seconds: '默认查询最长等待（秒）', download_timeout_seconds: '单次文件下载等待（秒）', download_attempts: '文件下载重试次数', file_retention_hours: '文件保留时长（小时，0 为永久）', task_retention_hours: '可清理任务记录保留（小时）', gc_minutes: '文件及任务清理间隔（分钟）', persist_credentials: '保存凭证以支持重启恢复', log_level: '日志级别'
     }
   }
 }
