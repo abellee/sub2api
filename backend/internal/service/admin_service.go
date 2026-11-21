@@ -260,6 +260,7 @@ type CreateGroupInput struct {
 	ImageCountBilling            bool
 	ImageAutoSizeFromReference   bool
 	AccountErrorFailoverEnabled  bool
+	SyncIsolationEnabled         bool
 	ImageRateIndependent         bool
 	ImageRateMultiplier          *float64
 	BatchImageDiscountMultiplier *float64
@@ -350,6 +351,7 @@ type UpdateGroupInput struct {
 	ImageCountBilling            *bool
 	ImageAutoSizeFromReference   *bool
 	AccountErrorFailoverEnabled  *bool
+	SyncIsolationEnabled         *bool
 	ImageRateIndependent         *bool
 	ImageRateMultiplier          *float64
 	BatchImageDiscountMultiplier *float64

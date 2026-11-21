@@ -554,6 +554,13 @@
         </div>
         <div class="flex items-center justify-between gap-4">
           <div>
+            <label for="create-group-sync-isolation" class="input-label">{{ t("admin.groups.syncIsolation") }}</label>
+            <p class="input-hint">{{ t("admin.groups.syncIsolationHint") }}</p>
+          </div>
+          <Toggle id="create-group-sync-isolation" v-model="createForm.sync_isolation_enabled" data-testid="create-group-sync-isolation" />
+        </div>
+        <div class="flex items-center justify-between gap-4">
+          <div>
             <label for="create-group-account-error-failover" class="input-label">
               {{ t("admin.groups.accountErrorFailover") }}
             </label>
@@ -2286,6 +2293,13 @@
             :placeholder="t('admin.groups.blockedClients.placeholder')"
           />
           <p class="input-hint">{{ t("admin.groups.blockedClients.hint") }}</p>
+        </div>
+        <div class="flex items-center justify-between gap-4">
+          <div>
+            <label for="edit-group-sync-isolation" class="input-label">{{ t("admin.groups.syncIsolation") }}</label>
+            <p class="input-hint">{{ t("admin.groups.syncIsolationHint") }}</p>
+          </div>
+          <Toggle id="edit-group-sync-isolation" v-model="editForm.sync_isolation_enabled" data-testid="edit-group-sync-isolation" />
         </div>
         <div class="flex items-center justify-between gap-4">
           <div>
@@ -5409,6 +5423,7 @@ const createForm = reactive({
   allow_image_generation: false,
   allow_batch_image_generation: false,
   image_auto_size_from_reference: false,
+  sync_isolation_enabled: false,
   account_error_failover_enabled: false,
   image_count_billing: false,
   image_rate_independent: false,
@@ -5782,6 +5797,7 @@ const editForm = reactive({
   allow_image_generation: false,
   allow_batch_image_generation: false,
   image_auto_size_from_reference: false,
+  sync_isolation_enabled: false,
   account_error_failover_enabled: false,
   image_count_billing: false,
   image_rate_independent: false,
@@ -6408,6 +6424,7 @@ const closeCreateModal = () => {
   createForm.allow_batch_image_generation = false;
   createForm.image_count_billing = false;
   createForm.image_auto_size_from_reference = false;
+  createForm.sync_isolation_enabled = false;
   createForm.account_error_failover_enabled = false;
   createForm.image_rate_independent = false;
   createForm.image_rate_multiplier = 1;
@@ -6672,6 +6689,7 @@ const handleCreateGroup = async () => {
           description: createForm.description,
           i18n: createForm.i18n,
           platform: createForm.platform,
+          sync_isolation_enabled: createForm.sync_isolation_enabled,
           account_error_failover_enabled: createForm.account_error_failover_enabled,
           required_protocol: createForm.required_protocol,
           blocked_user_agents: createForm.blocked_user_agents,
@@ -6729,6 +6747,7 @@ const handleEdit = async (group: AdminGroup) => {
     group.allow_batch_image_generation ?? false;
   editForm.image_count_billing = group.image_count_billing ?? false;
   editForm.image_auto_size_from_reference = group.image_auto_size_from_reference ?? false;
+  editForm.sync_isolation_enabled = group.sync_isolation_enabled ?? false;
   editForm.account_error_failover_enabled = group.account_error_failover_enabled ?? false;
   editForm.image_rate_independent = group.image_rate_independent ?? false;
   editForm.image_rate_multiplier = group.image_rate_multiplier ?? 1;
@@ -7061,6 +7080,7 @@ const handleUpdateGroup = async () => {
           name: editForm.name,
           description: editForm.description,
           i18n: editForm.i18n,
+          sync_isolation_enabled: editForm.sync_isolation_enabled,
           account_error_failover_enabled: editForm.account_error_failover_enabled,
           required_protocol: editForm.required_protocol,
           blocked_user_agents: editForm.blocked_user_agents,

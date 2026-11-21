@@ -40,6 +40,10 @@ const (
 	FieldPeakEnd = "peak_end"
 	// FieldPeakRateMultiplier holds the string denoting the peak_rate_multiplier field in the database.
 	FieldPeakRateMultiplier = "peak_rate_multiplier"
+	// FieldSyncIsolationEnabled holds the string denoting the sync_isolation_enabled field in the database.
+	FieldSyncIsolationEnabled = "sync_isolation_enabled"
+	// FieldSyncIsolationSourceGroupID holds the string denoting the sync_isolation_source_group_id field in the database.
+	FieldSyncIsolationSourceGroupID = "sync_isolation_source_group_id"
 	// FieldIsExclusive holds the string denoting the is_exclusive field in the database.
 	FieldIsExclusive = "is_exclusive"
 	// FieldStatus holds the string denoting the status field in the database.
@@ -253,6 +257,8 @@ var Columns = []string{
 	FieldPeakStart,
 	FieldPeakEnd,
 	FieldPeakRateMultiplier,
+	FieldSyncIsolationEnabled,
+	FieldSyncIsolationSourceGroupID,
 	FieldIsExclusive,
 	FieldStatus,
 	FieldDuplicateOperationID,
@@ -371,6 +377,10 @@ var (
 	PeakEndValidator func(string) error
 	// DefaultPeakRateMultiplier holds the default value on creation for the "peak_rate_multiplier" field.
 	DefaultPeakRateMultiplier float64
+	// DefaultSyncIsolationEnabled holds the default value on creation for the "sync_isolation_enabled" field.
+	DefaultSyncIsolationEnabled bool
+	// DefaultSyncIsolationSourceGroupID holds the default value on creation for the "sync_isolation_source_group_id" field.
+	DefaultSyncIsolationSourceGroupID int64
 	// DefaultIsExclusive holds the default value on creation for the "is_exclusive" field.
 	DefaultIsExclusive bool
 	// DefaultStatus holds the default value on creation for the "status" field.
@@ -539,6 +549,16 @@ func ByPeakEnd(opts ...sql.OrderTermOption) OrderOption {
 // ByPeakRateMultiplier orders the results by the peak_rate_multiplier field.
 func ByPeakRateMultiplier(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldPeakRateMultiplier, opts...).ToFunc()
+}
+
+// BySyncIsolationEnabled orders the results by the sync_isolation_enabled field.
+func BySyncIsolationEnabled(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSyncIsolationEnabled, opts...).ToFunc()
+}
+
+// BySyncIsolationSourceGroupID orders the results by the sync_isolation_source_group_id field.
+func BySyncIsolationSourceGroupID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSyncIsolationSourceGroupID, opts...).ToFunc()
 }
 
 // ByIsExclusive orders the results by the is_exclusive field.

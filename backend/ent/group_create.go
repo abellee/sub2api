@@ -174,6 +174,34 @@ func (_c *GroupCreate) SetNillablePeakRateMultiplier(v *float64) *GroupCreate {
 	return _c
 }
 
+// SetSyncIsolationEnabled sets the "sync_isolation_enabled" field.
+func (_c *GroupCreate) SetSyncIsolationEnabled(v bool) *GroupCreate {
+	_c.mutation.SetSyncIsolationEnabled(v)
+	return _c
+}
+
+// SetNillableSyncIsolationEnabled sets the "sync_isolation_enabled" field if the given value is not nil.
+func (_c *GroupCreate) SetNillableSyncIsolationEnabled(v *bool) *GroupCreate {
+	if v != nil {
+		_c.SetSyncIsolationEnabled(*v)
+	}
+	return _c
+}
+
+// SetSyncIsolationSourceGroupID sets the "sync_isolation_source_group_id" field.
+func (_c *GroupCreate) SetSyncIsolationSourceGroupID(v int64) *GroupCreate {
+	_c.mutation.SetSyncIsolationSourceGroupID(v)
+	return _c
+}
+
+// SetNillableSyncIsolationSourceGroupID sets the "sync_isolation_source_group_id" field if the given value is not nil.
+func (_c *GroupCreate) SetNillableSyncIsolationSourceGroupID(v *int64) *GroupCreate {
+	if v != nil {
+		_c.SetSyncIsolationSourceGroupID(*v)
+	}
+	return _c
+}
+
 // SetIsExclusive sets the "is_exclusive" field.
 func (_c *GroupCreate) SetIsExclusive(v bool) *GroupCreate {
 	_c.mutation.SetIsExclusive(v)
@@ -1185,6 +1213,14 @@ func (_c *GroupCreate) defaults() error {
 		v := group.DefaultPeakRateMultiplier
 		_c.mutation.SetPeakRateMultiplier(v)
 	}
+	if _, ok := _c.mutation.SyncIsolationEnabled(); !ok {
+		v := group.DefaultSyncIsolationEnabled
+		_c.mutation.SetSyncIsolationEnabled(v)
+	}
+	if _, ok := _c.mutation.SyncIsolationSourceGroupID(); !ok {
+		v := group.DefaultSyncIsolationSourceGroupID
+		_c.mutation.SetSyncIsolationSourceGroupID(v)
+	}
 	if _, ok := _c.mutation.IsExclusive(); !ok {
 		v := group.DefaultIsExclusive
 		_c.mutation.SetIsExclusive(v)
@@ -1406,6 +1442,12 @@ func (_c *GroupCreate) check() error {
 	}
 	if _, ok := _c.mutation.PeakRateMultiplier(); !ok {
 		return &ValidationError{Name: "peak_rate_multiplier", err: errors.New(`ent: missing required field "Group.peak_rate_multiplier"`)}
+	}
+	if _, ok := _c.mutation.SyncIsolationEnabled(); !ok {
+		return &ValidationError{Name: "sync_isolation_enabled", err: errors.New(`ent: missing required field "Group.sync_isolation_enabled"`)}
+	}
+	if _, ok := _c.mutation.SyncIsolationSourceGroupID(); !ok {
+		return &ValidationError{Name: "sync_isolation_source_group_id", err: errors.New(`ent: missing required field "Group.sync_isolation_source_group_id"`)}
 	}
 	if _, ok := _c.mutation.IsExclusive(); !ok {
 		return &ValidationError{Name: "is_exclusive", err: errors.New(`ent: missing required field "Group.is_exclusive"`)}
@@ -1670,6 +1712,14 @@ func (_c *GroupCreate) createSpec() (*Group, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.PeakRateMultiplier(); ok {
 		_spec.SetField(group.FieldPeakRateMultiplier, field.TypeFloat64, value)
 		_node.PeakRateMultiplier = value
+	}
+	if value, ok := _c.mutation.SyncIsolationEnabled(); ok {
+		_spec.SetField(group.FieldSyncIsolationEnabled, field.TypeBool, value)
+		_node.SyncIsolationEnabled = value
+	}
+	if value, ok := _c.mutation.SyncIsolationSourceGroupID(); ok {
+		_spec.SetField(group.FieldSyncIsolationSourceGroupID, field.TypeInt64, value)
+		_node.SyncIsolationSourceGroupID = value
 	}
 	if value, ok := _c.mutation.IsExclusive(); ok {
 		_spec.SetField(group.FieldIsExclusive, field.TypeBool, value)
@@ -2232,6 +2282,36 @@ func (u *GroupUpsert) UpdatePeakRateMultiplier() *GroupUpsert {
 // AddPeakRateMultiplier adds v to the "peak_rate_multiplier" field.
 func (u *GroupUpsert) AddPeakRateMultiplier(v float64) *GroupUpsert {
 	u.Add(group.FieldPeakRateMultiplier, v)
+	return u
+}
+
+// SetSyncIsolationEnabled sets the "sync_isolation_enabled" field.
+func (u *GroupUpsert) SetSyncIsolationEnabled(v bool) *GroupUpsert {
+	u.Set(group.FieldSyncIsolationEnabled, v)
+	return u
+}
+
+// UpdateSyncIsolationEnabled sets the "sync_isolation_enabled" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateSyncIsolationEnabled() *GroupUpsert {
+	u.SetExcluded(group.FieldSyncIsolationEnabled)
+	return u
+}
+
+// SetSyncIsolationSourceGroupID sets the "sync_isolation_source_group_id" field.
+func (u *GroupUpsert) SetSyncIsolationSourceGroupID(v int64) *GroupUpsert {
+	u.Set(group.FieldSyncIsolationSourceGroupID, v)
+	return u
+}
+
+// UpdateSyncIsolationSourceGroupID sets the "sync_isolation_source_group_id" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateSyncIsolationSourceGroupID() *GroupUpsert {
+	u.SetExcluded(group.FieldSyncIsolationSourceGroupID)
+	return u
+}
+
+// AddSyncIsolationSourceGroupID adds v to the "sync_isolation_source_group_id" field.
+func (u *GroupUpsert) AddSyncIsolationSourceGroupID(v int64) *GroupUpsert {
+	u.Add(group.FieldSyncIsolationSourceGroupID, v)
 	return u
 }
 
@@ -3470,6 +3550,41 @@ func (u *GroupUpsertOne) AddPeakRateMultiplier(v float64) *GroupUpsertOne {
 func (u *GroupUpsertOne) UpdatePeakRateMultiplier() *GroupUpsertOne {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdatePeakRateMultiplier()
+	})
+}
+
+// SetSyncIsolationEnabled sets the "sync_isolation_enabled" field.
+func (u *GroupUpsertOne) SetSyncIsolationEnabled(v bool) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetSyncIsolationEnabled(v)
+	})
+}
+
+// UpdateSyncIsolationEnabled sets the "sync_isolation_enabled" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateSyncIsolationEnabled() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateSyncIsolationEnabled()
+	})
+}
+
+// SetSyncIsolationSourceGroupID sets the "sync_isolation_source_group_id" field.
+func (u *GroupUpsertOne) SetSyncIsolationSourceGroupID(v int64) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetSyncIsolationSourceGroupID(v)
+	})
+}
+
+// AddSyncIsolationSourceGroupID adds v to the "sync_isolation_source_group_id" field.
+func (u *GroupUpsertOne) AddSyncIsolationSourceGroupID(v int64) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.AddSyncIsolationSourceGroupID(v)
+	})
+}
+
+// UpdateSyncIsolationSourceGroupID sets the "sync_isolation_source_group_id" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateSyncIsolationSourceGroupID() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateSyncIsolationSourceGroupID()
 	})
 }
 
@@ -5042,6 +5157,41 @@ func (u *GroupUpsertBulk) AddPeakRateMultiplier(v float64) *GroupUpsertBulk {
 func (u *GroupUpsertBulk) UpdatePeakRateMultiplier() *GroupUpsertBulk {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdatePeakRateMultiplier()
+	})
+}
+
+// SetSyncIsolationEnabled sets the "sync_isolation_enabled" field.
+func (u *GroupUpsertBulk) SetSyncIsolationEnabled(v bool) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetSyncIsolationEnabled(v)
+	})
+}
+
+// UpdateSyncIsolationEnabled sets the "sync_isolation_enabled" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateSyncIsolationEnabled() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateSyncIsolationEnabled()
+	})
+}
+
+// SetSyncIsolationSourceGroupID sets the "sync_isolation_source_group_id" field.
+func (u *GroupUpsertBulk) SetSyncIsolationSourceGroupID(v int64) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetSyncIsolationSourceGroupID(v)
+	})
+}
+
+// AddSyncIsolationSourceGroupID adds v to the "sync_isolation_source_group_id" field.
+func (u *GroupUpsertBulk) AddSyncIsolationSourceGroupID(v int64) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.AddSyncIsolationSourceGroupID(v)
+	})
+}
+
+// UpdateSyncIsolationSourceGroupID sets the "sync_isolation_source_group_id" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateSyncIsolationSourceGroupID() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateSyncIsolationSourceGroupID()
 	})
 }
 

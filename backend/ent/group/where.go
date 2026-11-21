@@ -105,6 +105,16 @@ func PeakRateMultiplier(v float64) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldPeakRateMultiplier, v))
 }
 
+// SyncIsolationEnabled applies equality check predicate on the "sync_isolation_enabled" field. It's identical to SyncIsolationEnabledEQ.
+func SyncIsolationEnabled(v bool) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldSyncIsolationEnabled, v))
+}
+
+// SyncIsolationSourceGroupID applies equality check predicate on the "sync_isolation_source_group_id" field. It's identical to SyncIsolationSourceGroupIDEQ.
+func SyncIsolationSourceGroupID(v int64) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldSyncIsolationSourceGroupID, v))
+}
+
 // IsExclusive applies equality check predicate on the "is_exclusive" field. It's identical to IsExclusiveEQ.
 func IsExclusive(v bool) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldIsExclusive, v))
@@ -863,6 +873,56 @@ func PeakRateMultiplierLT(v float64) predicate.Group {
 // PeakRateMultiplierLTE applies the LTE predicate on the "peak_rate_multiplier" field.
 func PeakRateMultiplierLTE(v float64) predicate.Group {
 	return predicate.Group(sql.FieldLTE(FieldPeakRateMultiplier, v))
+}
+
+// SyncIsolationEnabledEQ applies the EQ predicate on the "sync_isolation_enabled" field.
+func SyncIsolationEnabledEQ(v bool) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldSyncIsolationEnabled, v))
+}
+
+// SyncIsolationEnabledNEQ applies the NEQ predicate on the "sync_isolation_enabled" field.
+func SyncIsolationEnabledNEQ(v bool) predicate.Group {
+	return predicate.Group(sql.FieldNEQ(FieldSyncIsolationEnabled, v))
+}
+
+// SyncIsolationSourceGroupIDEQ applies the EQ predicate on the "sync_isolation_source_group_id" field.
+func SyncIsolationSourceGroupIDEQ(v int64) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldSyncIsolationSourceGroupID, v))
+}
+
+// SyncIsolationSourceGroupIDNEQ applies the NEQ predicate on the "sync_isolation_source_group_id" field.
+func SyncIsolationSourceGroupIDNEQ(v int64) predicate.Group {
+	return predicate.Group(sql.FieldNEQ(FieldSyncIsolationSourceGroupID, v))
+}
+
+// SyncIsolationSourceGroupIDIn applies the In predicate on the "sync_isolation_source_group_id" field.
+func SyncIsolationSourceGroupIDIn(vs ...int64) predicate.Group {
+	return predicate.Group(sql.FieldIn(FieldSyncIsolationSourceGroupID, vs...))
+}
+
+// SyncIsolationSourceGroupIDNotIn applies the NotIn predicate on the "sync_isolation_source_group_id" field.
+func SyncIsolationSourceGroupIDNotIn(vs ...int64) predicate.Group {
+	return predicate.Group(sql.FieldNotIn(FieldSyncIsolationSourceGroupID, vs...))
+}
+
+// SyncIsolationSourceGroupIDGT applies the GT predicate on the "sync_isolation_source_group_id" field.
+func SyncIsolationSourceGroupIDGT(v int64) predicate.Group {
+	return predicate.Group(sql.FieldGT(FieldSyncIsolationSourceGroupID, v))
+}
+
+// SyncIsolationSourceGroupIDGTE applies the GTE predicate on the "sync_isolation_source_group_id" field.
+func SyncIsolationSourceGroupIDGTE(v int64) predicate.Group {
+	return predicate.Group(sql.FieldGTE(FieldSyncIsolationSourceGroupID, v))
+}
+
+// SyncIsolationSourceGroupIDLT applies the LT predicate on the "sync_isolation_source_group_id" field.
+func SyncIsolationSourceGroupIDLT(v int64) predicate.Group {
+	return predicate.Group(sql.FieldLT(FieldSyncIsolationSourceGroupID, v))
+}
+
+// SyncIsolationSourceGroupIDLTE applies the LTE predicate on the "sync_isolation_source_group_id" field.
+func SyncIsolationSourceGroupIDLTE(v int64) predicate.Group {
+	return predicate.Group(sql.FieldLTE(FieldSyncIsolationSourceGroupID, v))
 }
 
 // IsExclusiveEQ applies the EQ predicate on the "is_exclusive" field.

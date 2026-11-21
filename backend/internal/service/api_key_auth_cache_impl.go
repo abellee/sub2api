@@ -14,7 +14,7 @@ import (
 	"github.com/dgraph-io/ristretto"
 )
 
-const apiKeyAuthSnapshotVersion = 29 // v29: blocked client user agents and force_openai_ultrafast
+const apiKeyAuthSnapshotVersion = 30 // v30: sync isolation policy and source group
 
 type apiKeyAuthCacheConfig struct {
 	l1Size        int
@@ -385,6 +385,8 @@ func (s *APIKeyService) snapshotFromAPIKey(ctx context.Context, apiKey *APIKey) 
 			Platform:                        apiKey.Group.Platform,
 			RequiredProtocol:                apiKey.Group.RequiredProtocol,
 			BlockedUserAgents:               apiKey.Group.BlockedUserAgents,
+			SyncIsolationEnabled:            apiKey.Group.SyncIsolationEnabled,
+			SyncIsolationSourceGroupID:      apiKey.Group.SyncIsolationSourceGroupID,
 			IsExclusive:                     apiKey.Group.IsExclusive,
 			Status:                          apiKey.Group.Status,
 			SubscriptionType:                apiKey.Group.SubscriptionType,
@@ -495,6 +497,8 @@ func (s *APIKeyService) snapshotToAPIKey(key string, snapshot *APIKeyAuthSnapsho
 			Platform:                        snapshot.Group.Platform,
 			RequiredProtocol:                snapshot.Group.RequiredProtocol,
 			BlockedUserAgents:               snapshot.Group.BlockedUserAgents,
+			SyncIsolationEnabled:            snapshot.Group.SyncIsolationEnabled,
+			SyncIsolationSourceGroupID:      snapshot.Group.SyncIsolationSourceGroupID,
 			IsExclusive:                     snapshot.Group.IsExclusive,
 			Status:                          snapshot.Group.Status,
 			Hydrated:                        true,

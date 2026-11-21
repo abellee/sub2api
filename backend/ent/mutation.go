@@ -22096,6 +22096,9 @@ type GroupMutation struct {
 	peak_end                                *string
 	peak_rate_multiplier                    *float64
 	addpeak_rate_multiplier                 *float64
+	sync_isolation_enabled                  *bool
+	sync_isolation_source_group_id          *int64
+	addsync_isolation_source_group_id       *int64
 	is_exclusive                            *bool
 	status                                  *string
 	duplicate_operation_id                  *string
@@ -22820,6 +22823,98 @@ func (m *GroupMutation) AddedPeakRateMultiplier() (r float64, exists bool) {
 func (m *GroupMutation) ResetPeakRateMultiplier() {
 	m.peak_rate_multiplier = nil
 	m.addpeak_rate_multiplier = nil
+}
+
+// SetSyncIsolationEnabled sets the "sync_isolation_enabled" field.
+func (m *GroupMutation) SetSyncIsolationEnabled(b bool) {
+	m.sync_isolation_enabled = &b
+}
+
+// SyncIsolationEnabled returns the value of the "sync_isolation_enabled" field in the mutation.
+func (m *GroupMutation) SyncIsolationEnabled() (r bool, exists bool) {
+	v := m.sync_isolation_enabled
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSyncIsolationEnabled returns the old "sync_isolation_enabled" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldSyncIsolationEnabled(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSyncIsolationEnabled is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSyncIsolationEnabled requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSyncIsolationEnabled: %w", err)
+	}
+	return oldValue.SyncIsolationEnabled, nil
+}
+
+// ResetSyncIsolationEnabled resets all changes to the "sync_isolation_enabled" field.
+func (m *GroupMutation) ResetSyncIsolationEnabled() {
+	m.sync_isolation_enabled = nil
+}
+
+// SetSyncIsolationSourceGroupID sets the "sync_isolation_source_group_id" field.
+func (m *GroupMutation) SetSyncIsolationSourceGroupID(i int64) {
+	m.sync_isolation_source_group_id = &i
+	m.addsync_isolation_source_group_id = nil
+}
+
+// SyncIsolationSourceGroupID returns the value of the "sync_isolation_source_group_id" field in the mutation.
+func (m *GroupMutation) SyncIsolationSourceGroupID() (r int64, exists bool) {
+	v := m.sync_isolation_source_group_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSyncIsolationSourceGroupID returns the old "sync_isolation_source_group_id" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldSyncIsolationSourceGroupID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSyncIsolationSourceGroupID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSyncIsolationSourceGroupID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSyncIsolationSourceGroupID: %w", err)
+	}
+	return oldValue.SyncIsolationSourceGroupID, nil
+}
+
+// AddSyncIsolationSourceGroupID adds i to the "sync_isolation_source_group_id" field.
+func (m *GroupMutation) AddSyncIsolationSourceGroupID(i int64) {
+	if m.addsync_isolation_source_group_id != nil {
+		*m.addsync_isolation_source_group_id += i
+	} else {
+		m.addsync_isolation_source_group_id = &i
+	}
+}
+
+// AddedSyncIsolationSourceGroupID returns the value that was added to the "sync_isolation_source_group_id" field in this mutation.
+func (m *GroupMutation) AddedSyncIsolationSourceGroupID() (r int64, exists bool) {
+	v := m.addsync_isolation_source_group_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetSyncIsolationSourceGroupID resets all changes to the "sync_isolation_source_group_id" field.
+func (m *GroupMutation) ResetSyncIsolationSourceGroupID() {
+	m.sync_isolation_source_group_id = nil
+	m.addsync_isolation_source_group_id = nil
 }
 
 // SetIsExclusive sets the "is_exclusive" field.
@@ -26270,7 +26365,7 @@ func (m *GroupMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *GroupMutation) Fields() []string {
-	fields := make([]string, 0, 75)
+	fields := make([]string, 0, 77)
 	if m.created_at != nil {
 		fields = append(fields, group.FieldCreatedAt)
 	}
@@ -26306,6 +26401,12 @@ func (m *GroupMutation) Fields() []string {
 	}
 	if m.peak_rate_multiplier != nil {
 		fields = append(fields, group.FieldPeakRateMultiplier)
+	}
+	if m.sync_isolation_enabled != nil {
+		fields = append(fields, group.FieldSyncIsolationEnabled)
+	}
+	if m.sync_isolation_source_group_id != nil {
+		fields = append(fields, group.FieldSyncIsolationSourceGroupID)
 	}
 	if m.is_exclusive != nil {
 		fields = append(fields, group.FieldIsExclusive)
@@ -26528,6 +26629,10 @@ func (m *GroupMutation) Field(name string) (ent.Value, bool) {
 		return m.PeakEnd()
 	case group.FieldPeakRateMultiplier:
 		return m.PeakRateMultiplier()
+	case group.FieldSyncIsolationEnabled:
+		return m.SyncIsolationEnabled()
+	case group.FieldSyncIsolationSourceGroupID:
+		return m.SyncIsolationSourceGroupID()
 	case group.FieldIsExclusive:
 		return m.IsExclusive()
 	case group.FieldStatus:
@@ -26687,6 +26792,10 @@ func (m *GroupMutation) OldField(ctx context.Context, name string) (ent.Value, e
 		return m.OldPeakEnd(ctx)
 	case group.FieldPeakRateMultiplier:
 		return m.OldPeakRateMultiplier(ctx)
+	case group.FieldSyncIsolationEnabled:
+		return m.OldSyncIsolationEnabled(ctx)
+	case group.FieldSyncIsolationSourceGroupID:
+		return m.OldSyncIsolationSourceGroupID(ctx)
 	case group.FieldIsExclusive:
 		return m.OldIsExclusive(ctx)
 	case group.FieldStatus:
@@ -26905,6 +27014,20 @@ func (m *GroupMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetPeakRateMultiplier(v)
+		return nil
+	case group.FieldSyncIsolationEnabled:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSyncIsolationEnabled(v)
+		return nil
+	case group.FieldSyncIsolationSourceGroupID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSyncIsolationSourceGroupID(v)
 		return nil
 	case group.FieldIsExclusive:
 		v, ok := value.(bool)
@@ -27361,6 +27484,9 @@ func (m *GroupMutation) AddedFields() []string {
 	if m.addpeak_rate_multiplier != nil {
 		fields = append(fields, group.FieldPeakRateMultiplier)
 	}
+	if m.addsync_isolation_source_group_id != nil {
+		fields = append(fields, group.FieldSyncIsolationSourceGroupID)
+	}
 	if m.adddaily_limit_usd != nil {
 		fields = append(fields, group.FieldDailyLimitUsd)
 	}
@@ -27448,6 +27574,8 @@ func (m *GroupMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedRateMultiplier()
 	case group.FieldPeakRateMultiplier:
 		return m.AddedPeakRateMultiplier()
+	case group.FieldSyncIsolationSourceGroupID:
+		return m.AddedSyncIsolationSourceGroupID()
 	case group.FieldDailyLimitUsd:
 		return m.AddedDailyLimitUsd()
 	case group.FieldWeeklyLimitUsd:
@@ -27520,6 +27648,13 @@ func (m *GroupMutation) AddField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddPeakRateMultiplier(v)
+		return nil
+	case group.FieldSyncIsolationSourceGroupID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddSyncIsolationSourceGroupID(v)
 		return nil
 	case group.FieldDailyLimitUsd:
 		v, ok := value.(float64)
@@ -27893,6 +28028,12 @@ func (m *GroupMutation) ResetField(name string) error {
 		return nil
 	case group.FieldPeakRateMultiplier:
 		m.ResetPeakRateMultiplier()
+		return nil
+	case group.FieldSyncIsolationEnabled:
+		m.ResetSyncIsolationEnabled()
+		return nil
+	case group.FieldSyncIsolationSourceGroupID:
+		m.ResetSyncIsolationSourceGroupID()
 		return nil
 	case group.FieldIsExclusive:
 		m.ResetIsExclusive()

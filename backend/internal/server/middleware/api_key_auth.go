@@ -171,8 +171,18 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 		if abortIfAPIKeyGroupNotAllowed(c, apiKey) {
 			return
 		}
+		observeSyncIsolationRequest(c, apiKeyService, apiKey, cfg)
+		if c.IsAborted() {
+			return
+		}
+
 		ctx := context.WithValue(c.Request.Context(), ctxkey.UserID, apiKey.User.ID)
-		ctx, matchingErr := apiKeyService.WithAccountMatching(ctx, apiKey.User.ID, apiKey.GroupID)
+		matchingGroupID := apiKey.GroupID
+		if apiKey.Group != nil {
+			id := apiKey.Group.PolicyGroupID()
+			matchingGroupID = &id
+		}
+		ctx, matchingErr := apiKeyService.WithAccountMatching(ctx, apiKey.User.ID, matchingGroupID)
 		if matchingErr != nil {
 			AbortWithError(c, http.StatusServiceUnavailable, "ACCOUNT_MATCHING_UNAVAILABLE", "Unable to load account matching rules")
 			return
@@ -211,7 +221,7 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 			sub, subErr := subscriptionService.GetActiveSubscription(
 				c.Request.Context(),
 				apiKey.User.ID,
-				apiKey.Group.ID,
+				apiKey.Group.PolicyGroupID(),
 			)
 			if subErr != nil {
 				if !skipBilling {
@@ -442,6 +452,9 @@ func validateAPIKeyGroupAllowed(apiKey *service.APIKey) bool {
 		return true
 	}
 	group := apiKey.Group
+	if group.SyncIsolationSourceGroupID > 0 && !apiKey.User.CanBindGroup(group.ID, true) {
+		return false
+	}
 	if group.IsSubscriptionType() {
 		return true
 	}

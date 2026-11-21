@@ -844,7 +844,7 @@ func (s *BillingCacheService) checkFixedChargeSubscription(ctx context.Context, 
 	if s.subRepo != nil {
 		read = s.getSubscriptionFromDB
 	}
-	subData, err := read(ctx, userID, group.ID)
+	subData, err := read(ctx, userID, group.PolicyGroupID())
 	if err != nil {
 		return ErrBillingServiceUnavailable.WithCause(err)
 	}
@@ -958,7 +958,7 @@ func (s *BillingCacheService) checkRPM(ctx context.Context, user *User, group *G
 		if override != nil {
 			// override=0 → 该用户在该分组免检（但 user 级仍会在下面检查）。
 			if *override > 0 {
-				count, incErr := s.userRPMCache.IncrementUserGroupRPM(ctx, user.ID, group.ID)
+				count, incErr := s.userRPMCache.IncrementUserGroupRPM(ctx, user.ID, group.PolicyGroupID())
 				if incErr != nil {
 					logger.LegacyPrintf(
 						"service.billing_cache",
@@ -973,7 +973,7 @@ func (s *BillingCacheService) checkRPM(ctx context.Context, user *User, group *G
 			// override 命中后跳过 group.rpm_limit（override 替代 group），但不 return——继续检查 user 级。
 		} else if group.RPMLimit > 0 {
 			// 无 override，检查 group.rpm_limit。
-			count, err := s.userRPMCache.IncrementUserGroupRPM(ctx, user.ID, group.ID)
+			count, err := s.userRPMCache.IncrementUserGroupRPM(ctx, user.ID, group.PolicyGroupID())
 			if err != nil {
 				logger.LegacyPrintf(
 					"service.billing_cache",
@@ -1045,7 +1045,7 @@ func (s *BillingCacheService) checkBalanceEligibility(ctx context.Context, userI
 // checkSubscriptionEligibility 检查订阅模式资格
 func (s *BillingCacheService) checkSubscriptionEligibility(ctx context.Context, userID int64, group *Group, subscription *UserSubscription) error {
 	// 获取订阅缓存数据
-	subData, err := s.GetSubscriptionStatus(ctx, userID, group.ID)
+	subData, err := s.GetSubscriptionStatus(ctx, userID, group.PolicyGroupID())
 	if err != nil {
 		if s.circuitBreaker != nil {
 			s.circuitBreaker.OnFailure(err)

@@ -540,6 +540,7 @@ func provideCleanup(
 			}},
 			{"AuthCacheInvalidationSubscriber", func() error {
 				if apiKeyService != nil {
+					apiKeyService.StopSyncIsolation()
 					apiKeyService.StopAuthCacheInvalidationSubscriber()
 				}
 				return nil

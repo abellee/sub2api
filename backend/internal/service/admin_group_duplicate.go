@@ -123,6 +123,7 @@ func cloneGroupForDuplicate(source *Group, operationID string) *Group {
 		ImageCountBilling:               source.ImageCountBilling,
 		ImageAutoSizeFromReference:      source.ImageAutoSizeFromReference,
 		AccountErrorFailoverEnabled:     source.AccountErrorFailoverEnabled,
+		SyncIsolationEnabled:            source.SyncIsolationEnabled,
 		ImageRateIndependent:            source.ImageRateIndependent,
 		ImageRateMultiplier:             source.ImageRateMultiplier,
 		ImagePrice1K:                    cloneGroupValuePointer(source.ImagePrice1K),

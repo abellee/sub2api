@@ -100,6 +100,8 @@ func createGroupRecord(ctx context.Context, client *dbent.Client, groupIn *servi
 		SetPlatform(groupIn.Platform).
 		SetRequiredProtocol(groupIn.RequiredProtocol).
 		SetBlockedUserAgents(groupIn.BlockedUserAgents).
+		SetSyncIsolationEnabled(groupIn.SyncIsolationEnabled).
+		SetSyncIsolationSourceGroupID(groupIn.SyncIsolationSourceGroupID).
 		SetRateSyncGroupIds(append([]int64{}, groupIn.RateSyncGroupIDs...)).
 		SetRateMultiplier(groupIn.RateMultiplier).
 		SetSortOrder(groupIn.SortOrder).
@@ -310,6 +312,8 @@ func updateGroupRecord(ctx context.Context, client *dbent.Client, groupIn *servi
 		SetPlatform(groupIn.Platform).
 		SetRequiredProtocol(groupIn.RequiredProtocol).
 		SetBlockedUserAgents(groupIn.BlockedUserAgents).
+		SetSyncIsolationEnabled(groupIn.SyncIsolationEnabled).
+		SetSyncIsolationSourceGroupID(groupIn.SyncIsolationSourceGroupID).
 		SetRateSyncGroupIds(append([]int64{}, groupIn.RateSyncGroupIDs...)).
 		SetRateMultiplier(groupIn.RateMultiplier).
 		SetIsExclusive(groupIn.IsExclusive).

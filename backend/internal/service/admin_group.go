@@ -380,7 +380,7 @@ func normalizeCreateGroupInputForSimpleMode(input *CreateGroupInput) {
 		return
 	}
 	*input = CreateGroupInput{
-		Name: input.Name, Description: input.Description, I18n: input.I18n, BlockedUserAgents: input.BlockedUserAgents, RequiredProtocol: input.RequiredProtocol, Platform: input.Platform,
+		Name: input.Name, Description: input.Description, I18n: input.I18n, SyncIsolationEnabled: input.SyncIsolationEnabled, BlockedUserAgents: input.BlockedUserAgents, RequiredProtocol: input.RequiredProtocol, Platform: input.Platform,
 		RateMultiplier: 1, SubscriptionType: SubscriptionTypeStandard,
 	}
 }
@@ -389,7 +389,7 @@ func normalizeUpdateGroupInputForSimpleMode(input *UpdateGroupInput) {
 	if input == nil {
 		return
 	}
-	*input = UpdateGroupInput{Name: input.Name, Description: input.Description, I18n: input.I18n, BlockedUserAgents: input.BlockedUserAgents, RequiredProtocol: input.RequiredProtocol}
+	*input = UpdateGroupInput{Name: input.Name, Description: input.Description, I18n: input.I18n, SyncIsolationEnabled: input.SyncIsolationEnabled, BlockedUserAgents: input.BlockedUserAgents, RequiredProtocol: input.RequiredProtocol}
 }
 
 func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupInput) (*Group, error) {
@@ -605,6 +605,7 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		ImageCountBilling:               imageCountBilling,
 		ImageAutoSizeFromReference:      input.ImageAutoSizeFromReference,
 		AccountErrorFailoverEnabled:     input.AccountErrorFailoverEnabled,
+		SyncIsolationEnabled:            input.SyncIsolationEnabled,
 		ImageRateIndependent:            input.ImageRateIndependent,
 		ImageRateMultiplier:             imageRateMultiplier,
 		BatchImageDiscountMultiplier:    batchImageDiscountMultiplier,
@@ -880,6 +881,9 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	}
 	if !group.AllowImageGeneration || group.Platform != PlatformGemini {
 		group.AllowBatchImageGeneration = false
+	}
+	if input.SyncIsolationEnabled != nil {
+		group.SyncIsolationEnabled = *input.SyncIsolationEnabled
 	}
 	if input.AccountErrorFailoverEnabled != nil {
 		group.AccountErrorFailoverEnabled = *input.AccountErrorFailoverEnabled

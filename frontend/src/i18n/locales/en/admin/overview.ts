@@ -847,6 +847,8 @@ export default {
 
     // Groups
     groups: {
+      syncIsolation: 'Non-streaming isolation',
+      syncIsolationHint: 'Move a user to a private sync group after more than 10 consecutive non-streaming requests within 60 seconds. Return when over 90% of requests within 60 seconds are streaming. Pricing and settings follow the source group.',
       accountErrorFailover: 'Retry and switch accounts on errors',
       accountErrorFailoverHint: 'Requires the matching system setting. With multiple available accounts, upstream errors switch accounts immediately, including 404 and provider credit failures. Try each available account once, without a six-attempt cap. Local user balance, invalid input, and content refusals are not retried. Disabled accounts are excluded; with one account, existing rules apply.',
       imageAutoSizeFromReference: 'Use reference dimensions for auto size',

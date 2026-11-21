@@ -97,15 +97,17 @@ type APIKey struct {
 }
 
 type Group struct {
-	BlockedUserAgents string  `json:"blocked_user_agents"`
-	RequiredProtocol  string  `json:"required_protocol"`
-	ID                int64   `json:"id"`
-	Name              string  `json:"name"`
-	Description       string  `json:"description"`
-	Platform          string  `json:"platform"`
-	RateMultiplier    float64 `json:"rate_multiplier"`
-	IsExclusive       bool    `json:"is_exclusive"`
-	Status            string  `json:"status"`
+	BlockedUserAgents          string  `json:"blocked_user_agents"`
+	SyncIsolationEnabled       bool    `json:"sync_isolation_enabled"`
+	SyncIsolationSourceGroupID int64   `json:"sync_isolation_source_group_id"`
+	RequiredProtocol           string  `json:"required_protocol"`
+	ID                         int64   `json:"id"`
+	Name                       string  `json:"name"`
+	Description                string  `json:"description"`
+	Platform                   string  `json:"platform"`
+	RateMultiplier             float64 `json:"rate_multiplier"`
+	IsExclusive                bool    `json:"is_exclusive"`
+	Status                     string  `json:"status"`
 
 	// I18n 名称与描述的各语言译文。只有管理端输出；用户侧接口经 Localized 把
 	// name/description 换成请求语言的版本后清空本字段。

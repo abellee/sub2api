@@ -246,6 +246,15 @@ describe("GroupsView OpenAI forced service tier", () => {
     updateGroup.mockResolvedValue({});
   });
 
+  it.each([false, true])("loads and saves sync isolation %s", async (enabled) => {
+    const wrapper = await openEditDialog({ ...sourceGroup, sync_isolation_enabled: enabled });
+    const isolationToggle = wrapper.get('[data-testid="edit-group-sync-isolation"]');
+    expect(isolationToggle.attributes("aria-checked")).toBe(String(enabled));
+    await isolationToggle.trigger("click");
+    expect(await submit(wrapper)).toMatchObject({ sync_isolation_enabled: !enabled });
+    wrapper.unmount();
+  });
+
   it("shows both switches off for a group that follows the client", async () => {
     const wrapper = await openEditDialog(sourceGroup);
 

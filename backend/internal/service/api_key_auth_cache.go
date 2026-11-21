@@ -61,6 +61,8 @@ type APIKeyAuthUserSnapshot struct {
 // APIKeyAuthGroupSnapshot 分组快照
 type APIKeyAuthGroupSnapshot struct {
 	BlockedUserAgents               string                        `json:"blocked_user_agents"`
+	SyncIsolationEnabled            bool                          `json:"sync_isolation_enabled"`
+	SyncIsolationSourceGroupID      int64                         `json:"sync_isolation_source_group_id"`
 	RequiredProtocol                string                        `json:"required_protocol"`
 	ID                              int64                         `json:"id"`
 	Name                            string                        `json:"name"`

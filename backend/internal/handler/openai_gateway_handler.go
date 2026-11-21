@@ -2824,6 +2824,8 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 	profitVetoCount := 0
 	failedAccountIDs := make(map[int64]struct{})
 	sameAccountRetryCount := make(map[int64]int)
+	var isolationTurn atomic.Int64
+	isolationTurn.Store(1) // The auth middleware counted the first streaming request.
 	var lastFailoverErr *service.UpstreamFailoverError
 	var oauth429FailoverState service.OpenAIOAuth429FailoverState
 	// 与 HTTP Responses 路径保持一致：生图意图请求要求账号支持 Responses API（#4417）。
@@ -3111,6 +3113,11 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			ReasoningEffortMappings:     reasoningEffortMappings,
 			TurnStarted:                 recordTurnStart,
 			BeforeRequest: func(turn int, payload []byte, originalModel string) error {
+				// Count each logical turn once across upstream retries; key moves apply to subsequent HTTP requests too.
+				previous := isolationTurn.Load()
+				if h.apiKeyService != nil && int64(turn) > previous && isolationTurn.CompareAndSwap(previous, int64(turn)) {
+					h.apiKeyService.QueueSyncIsolation(apiKey, true)
+				}
 				c.Set(securityAuditWSTurnContextKey, turn)
 				service.BeginOpsStreamTurn(c, turn)
 				setCyberTurnBody(turn, payload)

@@ -191,6 +191,8 @@ func groupFromServiceBase(g *service.Group) Group {
 		Platform:                        g.Platform,
 		RequiredProtocol:                g.RequiredProtocol,
 		BlockedUserAgents:               g.BlockedUserAgents,
+		SyncIsolationEnabled:            g.SyncIsolationEnabled,
+		SyncIsolationSourceGroupID:      g.SyncIsolationSourceGroupID,
 		RateMultiplier:                  g.RateMultiplier,
 		IsExclusive:                     g.IsExclusive,
 		Status:                          g.Status,

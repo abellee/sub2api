@@ -844,6 +844,8 @@ export default {
 
     // Groups Management
     groups: {
+      syncIsolation: '同步隔离',
+      syncIsolationHint: '同一用户在 60 秒内连续超过 10 次非流式请求，自动转入专属同步分组；隔离后 60 秒内流式占比超过 90% 时切回。倍率和其他设置跟随原分组。',
       accountErrorFailover: '账号报错自动重试换号',
       accountErrorFailoverHint: '需同时开启系统设置中的同名开关。多个可用账号时，上游错误直接换号，包括 404 和上游账号欠费；每个可用账号只试一次，不限六次。本站用户余额不足、参数或内容错误不重试。手动关闭的账号不参与；只有一个可用账号时保持原有逻辑。',
       imageAutoSizeFromReference: 'auto 尺寸跟随参考图',

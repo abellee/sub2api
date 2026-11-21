@@ -199,6 +199,41 @@ func (_u *GroupUpdate) AddPeakRateMultiplier(v float64) *GroupUpdate {
 	return _u
 }
 
+// SetSyncIsolationEnabled sets the "sync_isolation_enabled" field.
+func (_u *GroupUpdate) SetSyncIsolationEnabled(v bool) *GroupUpdate {
+	_u.mutation.SetSyncIsolationEnabled(v)
+	return _u
+}
+
+// SetNillableSyncIsolationEnabled sets the "sync_isolation_enabled" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillableSyncIsolationEnabled(v *bool) *GroupUpdate {
+	if v != nil {
+		_u.SetSyncIsolationEnabled(*v)
+	}
+	return _u
+}
+
+// SetSyncIsolationSourceGroupID sets the "sync_isolation_source_group_id" field.
+func (_u *GroupUpdate) SetSyncIsolationSourceGroupID(v int64) *GroupUpdate {
+	_u.mutation.ResetSyncIsolationSourceGroupID()
+	_u.mutation.SetSyncIsolationSourceGroupID(v)
+	return _u
+}
+
+// SetNillableSyncIsolationSourceGroupID sets the "sync_isolation_source_group_id" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillableSyncIsolationSourceGroupID(v *int64) *GroupUpdate {
+	if v != nil {
+		_u.SetSyncIsolationSourceGroupID(*v)
+	}
+	return _u
+}
+
+// AddSyncIsolationSourceGroupID adds value to the "sync_isolation_source_group_id" field.
+func (_u *GroupUpdate) AddSyncIsolationSourceGroupID(v int64) *GroupUpdate {
+	_u.mutation.AddSyncIsolationSourceGroupID(v)
+	return _u
+}
+
 // SetIsExclusive sets the "is_exclusive" field.
 func (_u *GroupUpdate) SetIsExclusive(v bool) *GroupUpdate {
 	_u.mutation.SetIsExclusive(v)
@@ -1734,6 +1769,15 @@ func (_u *GroupUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.AddedPeakRateMultiplier(); ok {
 		_spec.AddField(group.FieldPeakRateMultiplier, field.TypeFloat64, value)
 	}
+	if value, ok := _u.mutation.SyncIsolationEnabled(); ok {
+		_spec.SetField(group.FieldSyncIsolationEnabled, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.SyncIsolationSourceGroupID(); ok {
+		_spec.SetField(group.FieldSyncIsolationSourceGroupID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedSyncIsolationSourceGroupID(); ok {
+		_spec.AddField(group.FieldSyncIsolationSourceGroupID, field.TypeInt64, value)
+	}
 	if value, ok := _u.mutation.IsExclusive(); ok {
 		_spec.SetField(group.FieldIsExclusive, field.TypeBool, value)
 	}
@@ -2543,6 +2587,41 @@ func (_u *GroupUpdateOne) SetNillablePeakRateMultiplier(v *float64) *GroupUpdate
 // AddPeakRateMultiplier adds value to the "peak_rate_multiplier" field.
 func (_u *GroupUpdateOne) AddPeakRateMultiplier(v float64) *GroupUpdateOne {
 	_u.mutation.AddPeakRateMultiplier(v)
+	return _u
+}
+
+// SetSyncIsolationEnabled sets the "sync_isolation_enabled" field.
+func (_u *GroupUpdateOne) SetSyncIsolationEnabled(v bool) *GroupUpdateOne {
+	_u.mutation.SetSyncIsolationEnabled(v)
+	return _u
+}
+
+// SetNillableSyncIsolationEnabled sets the "sync_isolation_enabled" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillableSyncIsolationEnabled(v *bool) *GroupUpdateOne {
+	if v != nil {
+		_u.SetSyncIsolationEnabled(*v)
+	}
+	return _u
+}
+
+// SetSyncIsolationSourceGroupID sets the "sync_isolation_source_group_id" field.
+func (_u *GroupUpdateOne) SetSyncIsolationSourceGroupID(v int64) *GroupUpdateOne {
+	_u.mutation.ResetSyncIsolationSourceGroupID()
+	_u.mutation.SetSyncIsolationSourceGroupID(v)
+	return _u
+}
+
+// SetNillableSyncIsolationSourceGroupID sets the "sync_isolation_source_group_id" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillableSyncIsolationSourceGroupID(v *int64) *GroupUpdateOne {
+	if v != nil {
+		_u.SetSyncIsolationSourceGroupID(*v)
+	}
+	return _u
+}
+
+// AddSyncIsolationSourceGroupID adds value to the "sync_isolation_source_group_id" field.
+func (_u *GroupUpdateOne) AddSyncIsolationSourceGroupID(v int64) *GroupUpdateOne {
+	_u.mutation.AddSyncIsolationSourceGroupID(v)
 	return _u
 }
 
@@ -4110,6 +4189,15 @@ func (_u *GroupUpdateOne) sqlSave(ctx context.Context) (_node *Group, err error)
 	}
 	if value, ok := _u.mutation.AddedPeakRateMultiplier(); ok {
 		_spec.AddField(group.FieldPeakRateMultiplier, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.SyncIsolationEnabled(); ok {
+		_spec.SetField(group.FieldSyncIsolationEnabled, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.SyncIsolationSourceGroupID(); ok {
+		_spec.SetField(group.FieldSyncIsolationSourceGroupID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedSyncIsolationSourceGroupID(); ok {
+		_spec.AddField(group.FieldSyncIsolationSourceGroupID, field.TypeInt64, value)
 	}
 	if value, ok := _u.mutation.IsExclusive(); ok {
 		_spec.SetField(group.FieldIsExclusive, field.TypeBool, value)

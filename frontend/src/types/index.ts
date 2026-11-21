@@ -653,6 +653,8 @@ export interface Group {
 
 export interface AdminGroup extends Group {
   image_auto_size_from_reference?: boolean
+  sync_isolation_enabled?: boolean
+  sync_isolation_source_group_id?: number
   account_error_failover_enabled?: boolean
   // 管理端的 name / description 始终是原字段，各语言译文另放在 i18n 里
   i18n?: GroupI18n
@@ -850,6 +852,8 @@ export interface CreateGroupRequest {
   allow_image_generation?: boolean
   allow_batch_image_generation?: boolean
   image_auto_size_from_reference?: boolean
+  sync_isolation_enabled?: boolean
+  sync_isolation_source_group_id?: number
   account_error_failover_enabled?: boolean
   image_count_billing?: boolean
   image_rate_independent?: boolean
@@ -925,6 +929,8 @@ export interface UpdateGroupRequest {
   allow_image_generation?: boolean
   allow_batch_image_generation?: boolean
   image_auto_size_from_reference?: boolean
+  sync_isolation_enabled?: boolean
+  sync_isolation_source_group_id?: number
   account_error_failover_enabled?: boolean
   image_count_billing?: boolean
   image_rate_independent?: boolean
