@@ -356,6 +356,8 @@ func TestAPIContracts(t *testing.T) {
 						"required_protocol": "",
 						"blocked_user_agents": "",
 						"rate_multiplier": 1.5,
+						"sync_isolation_enabled": false,
+						"sync_isolation_source_group_id": 0,
 						"peak_rate_enabled": false,
 						"peak_start": "",
 						"peak_end": "",
