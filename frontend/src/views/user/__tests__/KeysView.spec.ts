@@ -367,10 +367,8 @@ describe('user KeysView column settings', () => {
     // 编辑模式与创建一致：额度/限速等区块在「更多设置」折叠区内，先展开
     await getButtonByText(wrapper, 'keys.moreSettings').trigger('click')
     await wrapper.get('[data-tour="key-form-name"]').setValue('Unsaved name')
-    const statusSelect = wrapper.findAllComponents({ name: 'Select' })
-      .find((select) => select.props('options').length === 2 &&
-        select.props('options')[0].value === 'active')!
-    statusSelect.vm.$emit('update:modelValue', 'inactive')
+    const statusSwitch = wrapper.get('button[role="switch"][aria-label="keys.statusLabel"]')
+    if (statusSwitch.attributes('aria-checked') === 'true') await statusSwitch.trigger('click')
     await wrapper.get('button[title="keys.resetQuotaUsed"]').trigger('click')
     const confirmation = wrapper.findAllComponents({ name: 'ConfirmDialog' })
       .find((dialog) => dialog.props('title') === 'keys.resetQuotaTitle')!
@@ -380,13 +378,31 @@ describe('user KeysView column settings', () => {
     expect(updateKey).toHaveBeenNthCalledWith(1, key.id, { reset_quota: true })
     expect(wrapper.findComponent({ name: 'KeyCardGrid' }).props('data')[0])
       .toMatchObject({ status, quota_used: 0 })
-    expect(statusSelect.props('modelValue')).toBe(formStatus)
+    expect(statusSwitch.attributes('aria-checked')).toBe(String(formStatus === 'active'))
     expect((wrapper.get('[data-tour="key-form-name"]').element as HTMLInputElement).value)
       .toBe('Unsaved name')
 
     await wrapper.get('#key-form').trigger('submit')
     await flushPromises()
     expect(updateKey).toHaveBeenNthCalledWith(2, key.id, expect.objectContaining({ name: 'Unsaved name', status: formStatus }))
+    wrapper.unmount()
+  })
+
+  it.each(['active', 'inactive'] as const)('saves the edited status switch from %s', async (status) => {
+    const nextStatus = status === 'active' ? 'inactive' : 'active'
+    const key = { ...createApiKey(), group_id: 1, status }
+    listKeys.mockResolvedValueOnce({ items: [key], total: 1, page: 1, page_size: 20, pages: 1 })
+    updateKey.mockResolvedValue({ ...key, status: nextStatus })
+    const wrapper = await mountView()
+    await getButtonByText(wrapper, 'common.edit').trigger('click')
+    const statusSwitch = wrapper.get('button[role="switch"][aria-label="keys.statusLabel"]')
+    expect(statusSwitch.attributes('aria-checked')).toBe(String(status === 'active'))
+    await statusSwitch.trigger('click')
+    expect(statusSwitch.attributes('aria-checked')).toBe(String(nextStatus === 'active'))
+    expect(updateKey).not.toHaveBeenCalled()
+    await wrapper.get('#key-form').trigger('submit')
+    await flushPromises()
+    expect(updateKey).toHaveBeenCalledWith(key.id, expect.objectContaining({ status: nextStatus }))
     wrapper.unmount()
   })
 

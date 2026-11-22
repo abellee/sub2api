@@ -5,7 +5,7 @@
     width="wide"
     @close="emit('close')"
   >
-    <div class="space-y-4">
+    <div class="key-dialog key-use space-y-4">
       <!-- No Group Assigned Warning -->
       <div v-if="!platform" class="flex items-start gap-3 p-4 rounded-lg bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800">
         <svg class="w-5 h-5 text-yellow-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
@@ -24,24 +24,19 @@
       <!-- Platform-specific content -->
       <template v-else>
         <!-- Description -->
-        <p class="text-sm text-gray-600 dark:text-gray-400">
+        <p class="key-use-description">
           {{ platformDescription }}
         </p>
 
         <!-- Client Tabs -->
-        <div v-if="clientTabs.length" class="overflow-x-auto border-b border-gray-200 dark:border-dark-700">
-          <nav class="-mb-px flex min-w-max gap-4 sm:gap-6" aria-label="Client">
+        <div v-if="clientTabs.length" class="key-use-tabs overflow-x-auto">
+          <nav class="min-w-max" aria-label="Client">
             <button
               v-for="tab in clientTabs"
               :key="tab.id"
               type="button"
               @click="activeClientTab = tab.id"
-              :class="[
-                'whitespace-nowrap py-2.5 px-1 border-b-2 font-medium text-sm transition-colors',
-                activeClientTab === tab.id
-                  ? 'border-primary-500 text-primary-600 dark:text-primary-400'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
-              ]"
+              :aria-pressed="activeClientTab === tab.id"
             >
               <span class="flex items-center gap-2">
                 <component :is="tab.icon" class="w-4 h-4" />
@@ -54,7 +49,7 @@
         <!-- Codex Authentication Mode -->
         <div
           v-if="showCodexAuthMode"
-          class="rounded-lg border border-gray-200 p-3 dark:border-dark-700"
+          class="key-use-auth"
         >
           <div class="mb-2">
             <p class="text-sm font-medium text-gray-900 dark:text-white">
@@ -65,7 +60,7 @@
             </p>
           </div>
           <div
-            class="grid grid-cols-2 gap-1 rounded-lg bg-gray-100 p-1 dark:bg-dark-700"
+            class="key-use-auth-options"
             role="radiogroup"
             :aria-label="t('keys.useKeyModal.openai.authModeTitle')"
           >
@@ -74,12 +69,6 @@
               role="radio"
               data-testid="codex-auth-mode-legacy"
               :aria-checked="codexAuthMode === 'legacy'"
-              :class="[
-                'rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                codexAuthMode === 'legacy'
-                  ? 'bg-white text-primary-700 shadow-sm dark:bg-dark-800 dark:text-primary-300'
-                  : 'text-gray-600 hover:text-gray-900 dark:text-dark-300 dark:hover:text-white'
-              ]"
               @click="codexAuthMode = 'legacy'"
             >
               {{ t('keys.useKeyModal.openai.authModeLegacy') }}
@@ -89,12 +78,6 @@
               role="radio"
               data-testid="codex-auth-mode-api-key"
               :aria-checked="codexAuthMode === 'api-key'"
-              :class="[
-                'rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                codexAuthMode === 'api-key'
-                  ? 'bg-white text-primary-700 shadow-sm dark:bg-dark-800 dark:text-primary-300'
-                  : 'text-gray-600 hover:text-gray-900 dark:text-dark-300 dark:hover:text-white'
-              ]"
               @click="codexAuthMode = 'api-key'"
             >
               {{ t('keys.useKeyModal.openai.authModeApiKey') }}
@@ -111,19 +94,14 @@
         </div>
 
         <!-- OS/Shell Tabs -->
-        <div v-if="showShellTabs" class="overflow-x-auto border-b border-gray-200 dark:border-dark-700">
-          <nav class="-mb-px flex min-w-max gap-4" aria-label="Tabs">
+        <div v-if="showShellTabs" class="key-use-tabs overflow-x-auto">
+          <nav aria-label="Tabs">
             <button
               v-for="tab in currentTabs"
               :key="tab.id"
               type="button"
               @click="activeTab = tab.id"
-              :class="[
-                'whitespace-nowrap py-2.5 px-1 border-b-2 font-medium text-sm transition-colors',
-                activeTab === tab.id
-                  ? 'border-primary-500 text-primary-600 dark:text-primary-400'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
-              ]"
+              :aria-pressed="activeTab === tab.id"
             >
               <span class="flex items-center gap-2">
                 <component :is="tab.icon" class="w-4 h-4" />
@@ -145,17 +123,15 @@
               <Icon name="exclamationCircle" size="sm" class="flex-shrink-0" />
               {{ file.hint }}
             </p>
-            <div class="bg-gray-900 dark:bg-dark-900 rounded-xl overflow-hidden">
+            <div class="key-use-code">
               <!-- Code Header -->
-              <div class="flex items-center justify-between px-4 py-2 bg-gray-800 dark:bg-dark-800 border-b border-gray-700 dark:border-dark-700">
+              <div class="key-use-code-heading">
                 <span class="min-w-0 truncate text-xs text-gray-400 font-mono">{{ file.path }}</span>
                 <button
                   type="button"
                   @click="copyContent(file.content, index)"
-                  class="flex flex-shrink-0 items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg transition-colors"
-                  :class="copiedIndex === index
-                    ? 'bg-green-500/20 text-green-400'
-                    : 'bg-gray-700 hover:bg-gray-600 text-gray-300 hover:text-white'"
+                  class="key-use-copy"
+                  :class="{ 'key-use-copied': copiedIndex === index }"
                 >
                   <svg v-if="copiedIndex === index" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
@@ -175,7 +151,7 @@
         <section
           v-if="showCodexModelCatalog"
           data-testid="codex-model-catalog"
-          class="overflow-hidden rounded-lg border border-gray-200 bg-gray-50 dark:border-dark-700 dark:bg-dark-800/50"
+          class="key-use-catalog"
         >
           <div class="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
             <div class="min-w-0">
@@ -204,7 +180,7 @@
             <button
               v-if="codexModelManifestState === 'ready'"
               type="button"
-              class="btn btn-primary min-h-9 flex-shrink-0 px-3 text-xs"
+              class="key-dialog-button key-dialog-primary flex-shrink-0"
               @click="downloadCodexModelManifest"
             >
               <Icon name="download" size="sm" class="mr-1.5" />
@@ -214,7 +190,7 @@
               v-else
               type="button"
               data-testid="codex-model-catalog-fetch"
-              class="btn btn-primary min-h-9 flex-shrink-0 px-3 text-xs"
+              class="key-dialog-button key-dialog-primary flex-shrink-0"
               :disabled="codexModelManifestState === 'loading' || !apiKey"
               @click="loadCodexModelManifest"
             >
@@ -257,7 +233,7 @@
       <div class="flex justify-end">
         <button
           @click="emit('close')"
-          class="btn btn-secondary"
+          class="key-dialog-button key-dialog-cancel"
         >
           {{ t('common.close') }}
         </button>
@@ -271,6 +247,7 @@ import { ref, computed, h, watch, type Component } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { saveAs } from 'file-saver'
 import BaseDialog from '@/components/common/BaseDialog.vue'
+import '@/styles/key-dialog.css'
 import Icon from '@/components/icons/Icon.vue'
 import { useClipboard } from '@/composables/useClipboard'
 import { buildCodexModelCatalogUrl, fetchCodexModelsManifest } from '@/api/codex'
@@ -2108,3 +2085,33 @@ const copyContent = async (content: string, index: number) => {
   }
 }
 </script>
+
+<style scoped>
+.key-use { min-width: 0; color: var(--key-form-ink); }
+.key-use-description { color: var(--key-form-muted); font-size: 13px; line-height: 1.8; }
+.key-use :is(.text-gray-900, .text-gray-700) { color: var(--key-form-ink); }
+.key-use :is(.text-gray-600, .text-gray-500, .text-gray-400) { color: var(--key-form-muted); }
+.key-use-tabs { overflow-x: auto; padding: 4px; border-radius: 11px; background: var(--key-form-field); }
+.key-use-tabs nav { display: flex; min-width: max-content; gap: 4px; }
+.key-use-tabs button { padding: 9px 12px; border-radius: 8px; color: var(--key-form-muted); font-size: 13px; font-weight: 500; transition: background-color .15s, color .15s; }
+.key-use-tabs button:hover { color: var(--key-form-ink); background: var(--key-form-haze); }
+.key-use-tabs button[aria-pressed=true] { color: #536eff; background: var(--key-form-haze); }
+.key-use-auth, .key-use-catalog { padding: 16px; border-radius: 14px; background: var(--key-form-field); }
+.key-use-catalog { padding: 0; overflow: hidden; }
+.key-use-auth-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; padding: 4px; border-radius: 10px; background: var(--key-form-surface); }
+.key-use-auth-options button { padding: 9px 12px; border-radius: 8px; color: var(--key-form-muted); font-size: 13px; font-weight: 500; }
+.key-use-auth-options button[aria-checked=true] { background: var(--key-form-haze); color: #536eff; }
+.key-use-code { min-width: 0; overflow: hidden; border: 1px solid var(--key-form-line); border-radius: 14px; background: #111528; }
+.key-use-code-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; border-bottom: 1px solid #353d58; background: #1b2138; }
+.key-use-code-heading>span { color: #a0abc4; }
+.key-use-code pre { margin: 0; padding: 16px; color: #e9edfa; font-size: 12px; line-height: 1.8; }
+.key-use-copy { display: flex; flex-shrink: 0; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 8px; background: #ffffff10; color: #bfc9e2; font-size: 12px; }
+.key-use-copy:hover { background: #ffffff20; color: #fff; }
+.key-use-copy.key-use-copied { background: #22c55e20; color: #86efac; }
+.key-use-catalog .input { min-height: 40px; border: 1px solid var(--key-form-line); border-radius: 9px; background: var(--key-form-surface); color: var(--key-form-ink); font-size: 13px; box-shadow: none; }
+.key-use-catalog :is(.border-t, .border-gray-200) { border-color: var(--key-form-line); }
+@media(max-width:640px) {
+  .key-use-tabs button { padding: 8px 10px; }
+  .key-use-auth { padding: 14px; }
+}
+</style>

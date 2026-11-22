@@ -1,6 +1,6 @@
 <template>
   <BaseDialog :show="show" :title="title" width="medium-wide" @close="emit('close')">
-    <form id="key-form" class="key-form space-y-5" @submit.prevent="emit('submit')">
+    <form id="key-form" class="key-dialog key-form space-y-5" @submit.prevent="emit('submit')">
       <!-- 第一行：名称 -->
       <div>
         <label for="key-form-name" class="input-label">{{ t('keys.nameLabel') }}</label>
@@ -180,19 +180,17 @@
       </div>
 
       <!-- 编辑模式：状态（编辑状态专属，直接展示） -->
-      <div v-if="isEdit" class="space-y-3">
-        <label class="input-label">{{ t('keys.statusLabel') }}</label>
-        <Select
-          v-model="formData.status"
-          :options="statusOptions"
-          :placeholder="t('keys.selectStatus')"
+      <div v-if="isEdit" class="key-setting flex items-center justify-between gap-4">
+        <div>
+          <label class="input-label" for="key-status-switch">{{ t('keys.statusLabel') }}</label>
+          <p class="input-hint">{{ t(statusEnabled ? 'common.active' : 'common.inactive') }}</p>
+        </div>
+        <Toggle
+          id="key-status-switch"
+          v-model="statusEnabled"
+          class="key-setting-switch"
           :aria-label="t('keys.statusLabel')"
-        >
-          <template #option="{ option, selected }">
-            <span class="key-status-option">{{ option.label }}</span>
-            <Icon v-if="selected" name="check" size="sm" />
-          </template>
-        </Select>
+        />
       </div>
 
       <div v-if="showMore" id="key-more-settings" class="key-more-settings">
@@ -640,7 +638,8 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import BaseDialog from '@/components/common/BaseDialog.vue'
-import Select from '@/components/common/Select.vue'
+import Toggle from '@/components/common/Toggle.vue'
+import '@/styles/key-dialog.css'
 import Icon from '@/components/icons/Icon.vue'
 import GroupOptionItem from '@/components/common/GroupOptionItem.vue'
 import PlatformIcon from '@/components/common/PlatformIcon.vue'
@@ -732,10 +731,10 @@ const activeCategoryTab = ref('')
 const groupListRef = ref<HTMLElement | null>(null)
 const pendingScrollToSelected = ref(false)
 
-const statusOptions = computed(() => [
-  { value: 'active', label: t('common.active') },
-  { value: 'inactive', label: t('common.inactive') }
-])
+const statusEnabled = computed({
+  get: () => formData.value.status === 'active',
+  set: (enabled: boolean) => { formData.value.status = enabled ? 'active' : 'inactive' }
+})
 
 // 自定义Key验证
 const customKeyError = computed(() => {
@@ -1008,45 +1007,10 @@ const recommendationStarEmoji = (rating: number | undefined, index: number) => {
 </script>
 
 <style scoped>
-/* Teleported dialogs need their own palette; keep these rules local to this form. */
-:global(.modal-overlay:has(.key-form)),
-:global(.select-dropdown-portal:has(.key-status-option)) {
-  --key-form-surface: #fff;
-  --key-form-field: #f7f8fc;
-  --key-form-ink: #20273e;
-  --key-form-muted: #69748d;
-  --key-form-line: #dce2f0;
-  --key-form-haze: #536de512;
-}
-:global(.dark .modal-overlay:has(.key-form)),
-:global(.dark .select-dropdown-portal:has(.key-status-option)) {
-  --key-form-surface: #1b1e32;
-  --key-form-field: #15192b;
-  --key-form-ink: #e9edfa;
-  --key-form-muted: #a0abc4;
-  --key-form-line: #353d58;
-  --key-form-haze: #6f84ed16;
-  color-scheme: dark;
-}
-:global(.modal-overlay:has(.key-form)) { background: #080e2399; backdrop-filter: blur(8px); }
-:global(.modal-overlay:has(.key-form) .modal-content) {
-  background: var(--key-form-surface);
-  color: var(--key-form-ink);
-  border: 1px solid var(--key-form-line);
-  border-radius: 22px;
-  box-shadow: 0 24px 80px #080e2333;
-}
-:global(.modal-overlay:has(.key-form) .modal-header) { padding: 24px 28px 16px; border: 0; }
-:global(.modal-overlay:has(.key-form) .modal-title) { color: var(--key-form-ink); font-size: 20px; font-weight: 600; letter-spacing: -.5px; }
-:global(.modal-overlay:has(.key-form) .modal-header button) { color: var(--key-form-muted); border-radius: 8px; }
-:global(.modal-overlay:has(.key-form) .modal-header button:hover) { color: var(--key-form-ink); background: var(--key-form-haze); }
-:global(.modal-overlay:has(.key-form) .modal-body) { padding: 8px 28px 20px; scrollbar-width: thin; }
-:global(.modal-overlay:has(.key-form) .modal-footer) { padding: 18px 28px; border-color: var(--key-form-line); }
 .key-form { min-width: 0; color: var(--key-form-ink); }
 .key-form .input-label { color: var(--key-form-ink); font-size: 13px; font-weight: 500; }
 .key-form .input-hint { color: var(--key-form-muted); font-size: 12px; line-height: 1.7; }
-.key-form .input,
-.key-form :deep(.select-trigger) {
+.key-form .input {
   min-height: 42px;
   border: 1px solid transparent;
   border-radius: 10px;
@@ -1057,11 +1021,8 @@ const recommendationStarEmoji = (rating: number | undefined, index: number) => {
   --tw-ring-shadow: 0 0 #0000;
 }
 .key-form .input::placeholder { color: var(--key-form-muted); opacity: .7; }
-.key-form .input:hover,
-.key-form :deep(.select-trigger:hover) { border-color: var(--key-form-line); }
-.key-form .input:focus,
-.key-form :deep(.select-trigger:focus-visible),
-.key-form :deep(.select-trigger-open) { border-color: #8297f5; box-shadow: 0 0 0 3px #8297f51a; outline: none; }
+.key-form .input:hover { border-color: var(--key-form-line); }
+.key-form .input:focus { border-color: #8297f5; box-shadow: 0 0 0 3px #8297f51a; outline: none; }
 .key-form .input.border-red-500 { border-color: #ef4444; }
 .key-form textarea { resize: vertical; }
 .key-group-search .input { padding-left: 36px; }
@@ -1106,18 +1067,7 @@ const recommendationStarEmoji = (rating: number | undefined, index: number) => {
 .key-form-cancel:hover { background: var(--key-form-haze); color: var(--key-form-ink); }
 .key-form .btn-secondary { border-color: var(--key-form-line); background: var(--key-form-surface); color: var(--key-form-ink); box-shadow: none; }
 .key-form button:focus-visible,.group-row:focus-visible,.key-form-cancel:focus-visible { outline: 2px solid #8297f5; outline-offset: 3px; }
-.key-status-option { flex: 1; }
-:global(.select-dropdown-portal:has(.key-status-option)) { padding: 6px; border: 1px solid var(--key-form-line); border-radius: 14px; background: var(--key-form-surface); color: var(--key-form-ink); box-shadow: 0 16px 40px -8px #080e2333; }
-:global(.select-dropdown-portal:has(.key-status-option) .select-options) { padding: 0; }
-:global(.select-dropdown-portal:has(.key-status-option) .select-option) { padding: 10px 12px; border-radius: 9px; color: var(--key-form-muted); font-size: 13px; }
-:global(.select-dropdown-portal:has(.key-status-option) .select-option:hover),
-:global(.select-dropdown-portal:has(.key-status-option) .select-option-selected),
-:global(.select-dropdown-portal:has(.key-status-option) .select-option-focused) { background: var(--key-form-haze); color: var(--tf-console-active-ink); }
 @media(max-width:640px) {
-  :global(.modal-overlay:has(.key-form) .modal-content) { border-radius: 18px; }
-  :global(.modal-overlay:has(.key-form) .modal-header) { padding: 20px 18px 14px; }
-  :global(.modal-overlay:has(.key-form) .modal-body) { padding: 6px 18px 18px; }
-  :global(.modal-overlay:has(.key-form) .modal-footer) { padding: 14px 18px; }
   .group-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); gap: 14px; height: min(460px, 56vh); }
   .group-layout-tabs { flex-direction: row; overflow-x: auto; padding: 2px 2px 6px; }
   .group-layout-tab { padding: 8px 10px; white-space: nowrap; }

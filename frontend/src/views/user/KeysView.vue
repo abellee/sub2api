@@ -1233,6 +1233,7 @@
 
     <!-- Delete Confirmation Dialog -->
     <ConfirmDialog
+      studio
       :show="showDeleteDialog"
       :title="t('keys.deleteKey')"
       :message="t('keys.deleteConfirmMessage', { name: selectedKey?.name })"
@@ -1245,6 +1246,7 @@
 
     <!-- Reset Quota Confirmation Dialog -->
     <ConfirmDialog
+      studio
       :show="showResetQuotaDialog"
       :title="t('keys.resetQuotaTitle')"
       :message="t('keys.resetQuotaConfirmMessage', { name: selectedKey?.name, used: selectedKey?.quota_used?.toFixed(4) })"
@@ -1257,6 +1259,7 @@
 
     <!-- Reset Rate Limit Confirmation Dialog -->
     <ConfirmDialog
+      studio
       :show="showResetRateLimitDialog"
       :title="t('keys.resetRateLimitTitle')"
       :message="t('keys.resetRateLimitConfirmMessage', { name: selectedKey?.name })"
