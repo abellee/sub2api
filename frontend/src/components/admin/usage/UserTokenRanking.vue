@@ -74,9 +74,12 @@
               >{{ index + 1 }}</span>
               <span v-else class="inline-block w-6 text-center text-sm tabular-nums text-gray-400">{{ index + 1 }}</span>
             </td>
-            <td class="max-w-[260px] truncate px-4 py-3 text-sm font-medium text-gray-700 dark:text-gray-200" :title="item.email">
-              {{ item.email || `User #${item.user_id}` }}
-              <span class="ml-1 font-normal text-gray-400 dark:text-gray-500">#{{ item.user_id }}</span>
+            <td class="px-4 py-3 text-sm font-medium text-gray-700 dark:text-gray-200">
+              <div class="flex max-w-lg items-center gap-2">
+                <span class="max-w-[260px] truncate" :title="item.email">{{ item.email || `User #${item.user_id}` }}</span>
+                <span v-if="item.notes?.trim()" class="max-w-60 truncate font-normal text-gray-500 dark:text-gray-400" :title="item.notes" data-testid="ranking-user-notes">{{ item.notes }}</span>
+                <span class="shrink-0 font-normal text-gray-400 dark:text-gray-500">#{{ item.user_id }}</span>
+              </div>
             </td>
             <td
               v-for="col in visibleColumns"

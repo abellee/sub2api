@@ -85,6 +85,29 @@ describe('UserTokenRanking', () => {
     expect(getUserBreakdown).toHaveBeenLastCalledWith(expect.objectContaining({ user_id: 9 }))
   })
 
+  it.each(['tokens', 'cost'])('shows user notes beside the email in the %s ranking', async metric => {
+    const notes = '长期合作客户，备注较长时悬停查看 <b>按原文显示</b>'
+    getUserBreakdown.mockResolvedValueOnce({ users: [
+      { ...item(2, 100), notes },
+      { ...item(3, 50), notes: '   ' },
+      item(4, 20),
+    ] })
+    const wrapper = mountRanking({ metric })
+    await flushPromises()
+
+    const rows = wrapper.findAll('tbody tr')
+    const userCell = rows[0].findAll('td')[1]
+    expect(userCell.text()).toContain('u2@test.com')
+    const note = userCell.get('[data-testid="ranking-user-notes"]')
+    expect(note.text()).toBe(notes)
+    expect(note.attributes('title')).toBe(notes)
+    expect(note.find('b').exists()).toBe(false)
+    expect(rows[1].find('[data-testid="ranking-user-notes"]').exists()).toBe(false)
+    expect(rows[2].find('[data-testid="ranking-user-notes"]').exists()).toBe(false)
+    await note.trigger('click')
+    expect(wrapper.emitted('select-user')![0]).toEqual([2, 'u2@test.com'])
+  })
+
   it('reloads when the selected date range changes', async () => {
     const wrapper = mountRanking()
     await flushPromises()

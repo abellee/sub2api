@@ -65,7 +65,7 @@ func TestGetUserBreakdownStatsRequestTypeIncludesLegacyFallback(t *testing.T) {
 	mock.ExpectQuery(regexp.QuoteMeta(legacyFilter)).
 		WithArgs(start, end, requestType).
 		WillReturnRows(sqlmock.NewRows([]string{
-			"user_id", "email", "requests", "input_tokens", "output_tokens",
+			"user_id", "email", "notes", "requests", "input_tokens", "output_tokens",
 			"cache_tokens", "total_tokens", "cost", "actual_cost", "account_cost",
 		}))
 
@@ -88,7 +88,7 @@ func TestGetUserBreakdownStatsFiltersNativeCompactionV2(t *testing.T) {
 	mock.ExpectQuery(regexp.QuoteMeta("AND ul.native_compaction_v2 = $3")).
 		WithArgs(start, end, true).
 		WillReturnRows(sqlmock.NewRows([]string{
-			"user_id", "email", "requests", "input_tokens", "output_tokens",
+			"user_id", "email", "notes", "requests", "input_tokens", "output_tokens",
 			"cache_tokens", "total_tokens", "cost", "actual_cost", "account_cost",
 		}))
 
@@ -98,5 +98,28 @@ func TestGetUserBreakdownStatsFiltersNativeCompactionV2(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Empty(t, rows)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestGetUserBreakdownStatsIncludesUserNotes(t *testing.T) {
+	db, mock := newSQLMock(t)
+	repo := &usageLogRepository{sql: db}
+	start := time.Date(2026, 11, 23, 0, 0, 0, 0, time.UTC)
+	end := start.Add(24 * time.Hour)
+	mock.ExpectQuery(`(?s)COALESCE\(u.notes, ''\) as notes.*GROUP BY ul.user_id, u.email, u.notes ORDER BY total_tokens DESC`).
+		WithArgs(start, end).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"user_id", "email", "notes", "requests", "input_tokens", "output_tokens",
+			"cache_tokens", "total_tokens", "cost", "actual_cost", "account_cost",
+		}).AddRow(2, "noted@test.invalid", "重点客户", 3, 100, 20, 5, 125, 1.5, 1.2, 0.6).
+			AddRow(3, "plain@test.invalid", "", 1, 10, 2, 0, 12, 0.1, 0.08, 0.04))
+
+	rows, err := repo.GetUserBreakdownStats(context.Background(), start, end, usagestats.UserBreakdownDimension{SortBy: "total_tokens"}, 0)
+	require.NoError(t, err)
+	require.Len(t, rows, 2)
+	require.Equal(t, "重点客户", rows[0].Notes)
+	require.Empty(t, rows[1].Notes)
+	require.Equal(t, int64(125), rows[0].TotalTokens)
+	require.Equal(t, 1.2, rows[0].ActualCost)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
