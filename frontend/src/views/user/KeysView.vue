@@ -245,8 +245,8 @@
           </template>
 
           <template #cell-usage="{ row }">
-            <div class="flex flex-wrap gap-x-4 gap-y-0.5 text-sm">
-              <div class="flex items-center gap-1.5 whitespace-nowrap">
+            <div class="text-sm">
+              <div class="flex items-center gap-1.5">
                 <span class="text-gray-500 dark:text-gray-400">{{ t('keys.today') }}:</span>
                 <span
                   v-if="usageLoading && !usageStats[row.id]"
@@ -257,7 +257,7 @@
                   ${{ (usageStats[row.id]?.today_actual_cost ?? 0).toFixed(4) }}
                 </span>
               </div>
-              <div class="flex items-center gap-1.5 whitespace-nowrap">
+              <div class="mt-0.5 flex items-center gap-1.5">
                 <span class="text-gray-500 dark:text-gray-400">{{ t('keys.total') }}:</span>
                 <span
                   v-if="usageLoading && !usageStats[row.id]"
@@ -268,7 +268,7 @@
                 </span>
               </div>
               <!-- Quota progress (if quota is set) -->
-              <div v-if="row.quota > 0" class="mt-1.5 basis-full">
+              <div v-if="row.quota > 0" class="mt-1.5">
                 <div class="flex items-center gap-1.5">
                   <span class="text-gray-500 dark:text-gray-400">{{ t('keys.quota') }}:</span>
                   <span :class="[
