@@ -2625,6 +2625,8 @@ onUnmounted(() => {
 .keys-header-controls :deep(.input::placeholder){color:var(--studio-muted)}
 .keys-page{display:flex;flex-direction:column;gap:24px;min-width:0}
 .keys-summary-actions{flex-shrink:0;gap:12px;margin-left:auto}.keys-bulk-actions{flex-shrink:0;gap:8px;font-size:12px}.keys-bulk-actions .studio-action:disabled{opacity:.4;cursor:default}
+.studio-filters.keys-summary-actions .studio-action{background:var(--keys-card-surface)}
+.studio-filters.keys-summary-actions .studio-action:hover{background:var(--tf-console-hover)}
 .keys-endpoint-row{display:flex;align-items:center;justify-content:space-between;gap:16px;min-width:0}
 .keys-endpoints :deep(.pointer-events-none){max-width:min(24rem,calc(100vw - 80px))}
 .keys-total{flex-shrink:0;font-size:12px;color:var(--studio-muted);white-space:nowrap;font-variant-numeric:tabular-nums}
@@ -2651,10 +2653,12 @@ onUnmounted(() => {
 
 .recommended-groups-heading {
   color: var(--studio-ink);
-  font-size: 22px;
+  font-size: 17px;
   font-weight: 600;
-  letter-spacing: -.7px;
+  letter-spacing: -.3px;
 }
+
+@media(max-width:700px){.recommended-groups-heading{font-size:16px}}
 
 .keys-group-cap-tag {
   @apply inline-flex flex-none items-center whitespace-nowrap rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-300;

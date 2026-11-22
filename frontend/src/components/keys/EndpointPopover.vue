@@ -142,7 +142,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .endpoint-list{display:flex;flex-wrap:wrap;gap:8px 16px;min-width:0}
-.endpoint-item{display:flex;align-items:center;gap:8px;min-width:0;max-width:100%;padding:8px 0;font-size:12px;color:var(--studio-muted)}
+.endpoint-item{display:flex;align-items:center;gap:8px;min-width:0;max-width:100%;padding:8px 10px;border-radius:8px;background:var(--keys-card-surface);font-size:12px;color:var(--studio-muted)}
 .endpoint-name{flex-shrink:0;font-weight:500;color:var(--studio-ink)}
 .endpoint-default{flex-shrink:0;padding:2px 6px;border-radius:5px;background:var(--studio-haze);color:var(--studio-muted);font-size:10px;line-height:16px}
 .endpoint-divider{width:1px;height:12px;flex-shrink:0;background:color-mix(in srgb,var(--studio-muted) 25%,transparent)}
