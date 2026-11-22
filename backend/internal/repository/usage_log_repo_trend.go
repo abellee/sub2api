@@ -725,13 +725,84 @@ func (r *usageLogRepository) GetAllGroupUsageSummary(ctx context.Context, todayS
 }
 
 func (r *usageLogRepository) GetGroupCacheUsageSummary(ctx context.Context, since24h, since7d time.Time) ([]usagestats.GroupCacheUsageSummary, error) {
-	query := `SELECT g.id,
-		COALESCE(SUM(CASE WHEN ul.created_at >= $3 THEN ul.input_tokens ELSE 0 END),0), COALESCE(SUM(CASE WHEN ul.created_at >= $3 THEN ul.cache_creation_tokens ELSE 0 END),0), COALESCE(SUM(CASE WHEN ul.created_at >= $3 THEN ul.cache_read_tokens ELSE 0 END),0),
-		COALESCE(SUM(CASE WHEN ul.created_at >= $1 THEN ul.input_tokens ELSE 0 END),0), COALESCE(SUM(CASE WHEN ul.created_at >= $1 THEN ul.cache_creation_tokens ELSE 0 END),0), COALESCE(SUM(CASE WHEN ul.created_at >= $1 THEN ul.cache_read_tokens ELSE 0 END),0),
-		COALESCE(SUM(CASE WHEN ul.created_at >= $2 THEN ul.input_tokens ELSE 0 END),0), COALESCE(SUM(CASE WHEN ul.created_at >= $2 THEN ul.cache_creation_tokens ELSE 0 END),0), COALESCE(SUM(CASE WHEN ul.created_at >= $2 THEN ul.cache_read_tokens ELSE 0 END),0),
-		COALESCE(SUM(ul.input_tokens),0), COALESCE(SUM(ul.cache_creation_tokens),0), COALESCE(SUM(ul.cache_read_tokens),0)
-		FROM groups g LEFT JOIN usage_logs ul ON ul.group_id = g.id GROUP BY g.id`
-	rows, err := r.sql.QueryContext(ctx, query, since24h, since7d, service.GroupUsageTodayStart(since24h.Add(24*time.Hour)))
+	if db, ok := r.sql.(*sql.DB); ok {
+		// Keep the published watermark and its source tail in the same snapshot.
+		tx, err := db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+		if err != nil {
+			return nil, err
+		}
+		defer tx.Rollback()
+		reader := &usageLogRepository{sql: tx}
+		rows, err := reader.getGroupCacheUsageSummary(ctx, since24h, since7d)
+		if err != nil {
+			return nil, err
+		}
+		if err := tx.Commit(); err != nil {
+			return nil, err
+		}
+		return rows, nil
+	}
+	return r.getGroupCacheUsageSummary(ctx, since24h, since7d)
+}
+
+func (r *usageLogRepository) getGroupCacheUsageSummary(ctx context.Context, since24h, since7d time.Time) ([]usagestats.GroupCacheUsageSummary, error) {
+
+	today := service.GroupUsageTodayStart(since24h.Add(24 * time.Hour))
+	state, err := r.readGroupUsageRollupSnapshot(ctx, service.GroupUsageTimezoneName(), service.GroupUsageDate(today))
+	if err != nil {
+		return nil, err
+	}
+	// A rolling upgrade can contain cost-only buckets. Re-read from their first day
+	// until the background builder has populated tokens too; never treat NULL as zero.
+	var incomplete sql.NullString
+	if state.valid {
+		if err := scanSingleRow(ctx, r.sql, `SELECT MIN(bucket_date)::text FROM usage_group_daily_rollups
+   WHERE bucket_date >= $1::date AND bucket_date < $2::date AND input_tokens IS NULL`, []any{state.retainedDate, state.closedBefore}, &incomplete); err != nil {
+			return nil, err
+		}
+		if incomplete.Valid {
+			state.closedBefore = incomplete.String
+			at, err := service.ParseGroupUsageDate(incomplete.String)
+			if err != nil {
+				return nil, err
+			}
+			if at.After(state.tailStart) {
+				return nil, fmt.Errorf("invalid token rollup boundary")
+			}
+			state.tailStart = at.UTC()
+		}
+	}
+	recentStart := state.tailStart
+	for _, at := range []time.Time{today, since24h, since7d} {
+		if at.Before(recentStart) {
+			recentStart = at
+		}
+	}
+	query := `WITH historical AS (
+ SELECT group_id, SUM(input_tokens) AS input_tokens, SUM(cache_creation_tokens) AS cache_creation_tokens, SUM(cache_read_tokens) AS cache_read_tokens
+ FROM usage_group_daily_rollups WHERE $4::boolean AND bucket_date >= $5::date AND bucket_date < $6::date GROUP BY group_id
+ ), recent AS (
+ SELECT group_id,
+ COALESCE(SUM(input_tokens) FILTER (WHERE created_at >= $3),0) AS today_input,
+ COALESCE(SUM(cache_creation_tokens) FILTER (WHERE created_at >= $3),0) AS today_create,
+ COALESCE(SUM(cache_read_tokens) FILTER (WHERE created_at >= $3),0) AS today_read,
+ COALESCE(SUM(input_tokens) FILTER (WHERE created_at >= $1),0) AS day_input,
+ COALESCE(SUM(cache_creation_tokens) FILTER (WHERE created_at >= $1),0) AS day_create,
+ COALESCE(SUM(cache_read_tokens) FILTER (WHERE created_at >= $1),0) AS day_read,
+ COALESCE(SUM(input_tokens) FILTER (WHERE created_at >= $2),0) AS week_input,
+ COALESCE(SUM(cache_creation_tokens) FILTER (WHERE created_at >= $2),0) AS week_create,
+ COALESCE(SUM(cache_read_tokens) FILTER (WHERE created_at >= $2),0) AS week_read,
+ COALESCE(SUM(input_tokens) FILTER (WHERE created_at >= $7),0) AS tail_input,
+ COALESCE(SUM(cache_creation_tokens) FILTER (WHERE created_at >= $7),0) AS tail_create,
+ COALESCE(SUM(cache_read_tokens) FILTER (WHERE created_at >= $7),0) AS tail_read
+ FROM usage_logs WHERE created_at >= $8 GROUP BY group_id
+ ) SELECT g.id,
+ COALESCE(r.today_input,0),COALESCE(r.today_create,0),COALESCE(r.today_read,0),
+ COALESCE(r.day_input,0),COALESCE(r.day_create,0),COALESCE(r.day_read,0),
+ COALESCE(r.week_input,0),COALESCE(r.week_create,0),COALESCE(r.week_read,0),
+ COALESCE(h.input_tokens,0)+COALESCE(r.tail_input,0),COALESCE(h.cache_creation_tokens,0)+COALESCE(r.tail_create,0),COALESCE(h.cache_read_tokens,0)+COALESCE(r.tail_read,0)
+ FROM groups g LEFT JOIN historical h ON h.group_id=g.id LEFT JOIN recent r ON r.group_id=g.id ORDER BY g.id`
+	rows, err := r.sql.QueryContext(ctx, query, since24h, since7d, today, state.valid, state.retainedDate, state.closedBefore, state.tailStart, recentStart)
 	if err != nil {
 		return nil, err
 	}

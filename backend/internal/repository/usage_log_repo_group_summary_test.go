@@ -101,9 +101,14 @@ func TestUsageLogRepositoryGroupCacheWindowsUseServerTimezone(t *testing.T) {
 	useGroupUsageRepositoryTestTimezone(t, "America/New_York")
 	now := time.Date(2026, 3, 9, 12, 0, 0, 0, time.UTC)
 	since24h, since7d := now.Add(-24*time.Hour), now.Add(-7*24*time.Hour)
-	mock.ExpectQuery(`(?s)SELECT g.id,.*FROM groups g LEFT JOIN usage_logs`).
-		WithArgs(since24h, since7d, time.Date(2026, 3, 9, 4, 0, 0, 0, time.UTC)).
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(`(?s)COUNT\(\*\).*usage_group_rollup_state`).WillReturnRows(sqlmock.NewRows([]string{"count", "closed_before", "retained_from", "timezone_name", "expired_before"}).AddRow(1, "2026-03-09", time.Date(2026, 2, 1, 5, 0, 0, 0, time.UTC), "America/New_York", time.Unix(0, 0).UTC()))
+	mock.ExpectQuery(`SELECT MIN\(bucket_date\)::text`).WithArgs("2026-02-01", "2026-03-09").WillReturnRows(sqlmock.NewRows([]string{"date"}).AddRow(nil))
+	mock.ExpectQuery(`(?s)FROM usage_logs WHERE created_at >= \$8.*FROM groups g LEFT JOIN historical`).
+		WithArgs(since24h, since7d, time.Date(2026, 3, 9, 4, 0, 0, 0, time.UTC), true, "2026-02-01", "2026-03-09", time.Date(2026, 3, 9, 4, 0, 0, 0, time.UTC), since7d).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "today_input", "today_create", "today_read", "day_input", "day_create", "day_read", "week_input", "week_create", "week_read", "total_input", "total_create", "total_read"}).AddRow(7, 10, 20, 70, 20, 30, 50, 30, 40, 30, 40, 50, 10))
+	mock.ExpectCommit()
 	rows, err := repo.GetGroupCacheUsageSummary(context.Background(), since24h, since7d)
 	require.NoError(t, err)
 	require.Len(t, rows, 1)

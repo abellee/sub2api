@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/querycache"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
@@ -18,6 +19,16 @@ const (
 )
 
 func (r *opsRepository) GetDashboardOverview(ctx context.Context, filter *service.OpsDashboardFilter) (*service.OpsDashboardOverview, error) {
+	if r == nil || filter == nil || filter.StartTime.IsZero() || filter.EndTime.IsZero() {
+		return r.getDashboardOverview(ctx, filter)
+	}
+	canonical := cachedOpsFilter(filter)
+	return querycache.Load(ctx, &r.statisticsCache, "overview:"+opsStatisticsKey(&canonical), 30*time.Second, func(ctx context.Context) (*service.OpsDashboardOverview, error) {
+		return r.getDashboardOverview(ctx, &canonical)
+	})
+}
+
+func (r *opsRepository) getDashboardOverview(ctx context.Context, filter *service.OpsDashboardFilter) (*service.OpsDashboardOverview, error) {
 	if r == nil || r.db == nil {
 		return nil, fmt.Errorf("nil ops repository")
 	}
@@ -921,28 +932,25 @@ func (r *opsRepository) queryErrorCounts(ctx context.Context, filter *service.Op
 	upstream529 int64,
 	err error,
 ) {
-	where, args, _ := buildErrorWhere(filter, start, end, 1)
 
-	q := `
-SELECT
-  COALESCE(COUNT(*) FILTER (WHERE COALESCE(status_code, 0) >= 400), 0) AS error_total,
-  COALESCE(COUNT(*) FILTER (WHERE COALESCE(status_code, 0) >= 400 AND is_business_limited), 0) AS business_limited,
-  COALESCE(COUNT(*) FILTER (WHERE COALESCE(status_code, 0) >= 400 AND NOT is_business_limited AND is_sla_sample), 0) AS error_sla,
-  COALESCE(COUNT(*) FILTER (WHERE error_owner = 'provider' AND NOT is_business_limited AND is_sla_sample AND COALESCE(upstream_status_code, status_code, 0) NOT IN (429, 529)), 0) AS upstream_excl,
-  COALESCE(COUNT(*) FILTER (WHERE error_owner = 'provider' AND NOT is_business_limited AND is_sla_sample AND COALESCE(upstream_status_code, status_code, 0) = 429), 0) AS upstream_429,
-  COALESCE(COUNT(*) FILTER (WHERE error_owner = 'provider' AND NOT is_business_limited AND is_sla_sample AND COALESCE(upstream_status_code, status_code, 0) = 529), 0) AS upstream_529
-FROM ops_error_log_metrics
-` + where
-
-	if err := r.db.QueryRowContext(ctx, q, args...).Scan(
-		&errorTotal,
-		&businessLimited,
-		&errorCountSLA,
-		&upstreamExcl429529,
-		&upstream429,
-		&upstream529,
-	); err != nil {
+	rows, err := r.queryErrorSummary(ctx, filter, start, end)
+	if err != nil {
 		return 0, 0, 0, 0, 0, 0, err
+	}
+	for _, row := range rows {
+		errorTotal += row.Total
+		businessLimited += row.BusinessLimited
+		errorCountSLA += row.SLA
+		if row.Owner == "provider" {
+			switch row.Status {
+			case 429:
+				upstream429 += row.ProviderSLA
+			case 529:
+				upstream529 += row.ProviderSLA
+			default:
+				upstreamExcl429529 += row.ProviderSLA
+			}
+		}
 	}
 	return errorTotal, businessLimited, errorCountSLA, upstreamExcl429529, upstream429, upstream529, nil
 }

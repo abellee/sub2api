@@ -10,12 +10,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/querycache"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/lib/pq"
 )
 
 type opsRepository struct {
-	db *sql.DB
+	db              *sql.DB
+	statisticsCache querycache.Cache
 }
 
 const insertOpsErrorLogSQL = `

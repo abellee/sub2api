@@ -7,7 +7,9 @@ import (
 	"strings"
 	"time"
 
+	"encoding/json"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/querycache"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
 )
 
@@ -37,6 +39,7 @@ type PublicTransitService struct {
 	groupRepo      GroupRepository
 	usageRepo      UsageLogRepository
 	passiveRepo    PublicTransitPassiveMonitorRepository
+	snapshotCache  querycache.Cache
 }
 
 func NewPublicTransitService(
@@ -339,7 +342,42 @@ func (s *PublicTransitService) Discovery(ctx context.Context, baseURL string) (*
 	return payload, nil
 }
 
+// PublicTransitGroup.ID is private JSON metadata still needed by the V2 builder.
+type cachedPublicTransitV1 struct {
+	Snapshot *PublicTransitSnapshot
+	GroupIDs []int64
+}
+
+func (s *PublicTransitService) snapshotCacheKey(ctx context.Context, version, baseURL, period string) string {
+	key, _ := json.Marshal([]any{version, baseURL, period, s.settingService.GetChannelMonitorRuntime(ctx), s.settingService.GetPublicTransitRuntime(ctx)})
+	return string(key)
+}
+
 func (s *PublicTransitService) Snapshot(ctx context.Context, baseURL string) (*PublicTransitSnapshot, error) {
+	if !s.Enabled(ctx) {
+		return nil, infraerrors.NotFound("PUBLIC_TRANSIT_DISABLED", "public transit snapshot is disabled")
+	}
+	cached, err := querycache.Load(ctx, &s.snapshotCache, s.snapshotCacheKey(ctx, "v1", baseURL, ""), 60*time.Second, func(ctx context.Context) (cachedPublicTransitV1, error) {
+		snapshot, err := s.snapshot(ctx, baseURL)
+		if err != nil {
+			return cachedPublicTransitV1{}, err
+		}
+		ids := make([]int64, len(snapshot.Groups))
+		for i := range snapshot.Groups {
+			ids[i] = snapshot.Groups[i].ID
+		}
+		return cachedPublicTransitV1{Snapshot: snapshot, GroupIDs: ids}, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	for i, id := range cached.GroupIDs {
+		cached.Snapshot.Groups[i].ID = id
+	}
+	return cached.Snapshot, nil
+}
+
+func (s *PublicTransitService) snapshot(ctx context.Context, baseURL string) (*PublicTransitSnapshot, error) {
 	if !s.Enabled(ctx) {
 		return nil, infraerrors.NotFound("PUBLIC_TRANSIT_DISABLED", "public transit snapshot is disabled")
 	}

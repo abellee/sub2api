@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/querycache"
 	"math"
 	"math/rand/v2"
 	"sort"
@@ -224,6 +225,16 @@ func (s *PublicTransitService) SnapshotV2(ctx context.Context, baseURL string) (
 // public window. The range is deliberately allow-listed so clients cannot
 // turn the public endpoint into an arbitrary historical query.
 func (s *PublicTransitService) SnapshotV2Range(ctx context.Context, baseURL, rawRange string) (*PublicTransitSnapshotV2, error) {
+	if !s.Enabled(ctx) {
+		return nil, infraerrors.NotFound("PUBLIC_TRANSIT_DISABLED", "public transit snapshot is disabled")
+	}
+	period := string(normalizePublicTransitPassiveRange(rawRange))
+	return querycache.Load(ctx, &s.snapshotCache, s.snapshotCacheKey(ctx, "v2", baseURL, period), 60*time.Second, func(ctx context.Context) (*PublicTransitSnapshotV2, error) {
+		return s.snapshotV2Range(ctx, baseURL, period)
+	})
+}
+
+func (s *PublicTransitService) snapshotV2Range(ctx context.Context, baseURL, rawRange string) (*PublicTransitSnapshotV2, error) {
 	if !s.Enabled(ctx) {
 		return nil, infraerrors.NotFound("PUBLIC_TRANSIT_DISABLED", "public transit snapshot is disabled")
 	}

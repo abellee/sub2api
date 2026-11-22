@@ -17,10 +17,10 @@ import (
 )
 
 const (
-	groupRollupPrecheckQuery = `SELECT closed_before::text, timezone_name, building_until IS NULL`
+	groupRollupPrecheckQuery = `(?s)SELECT LEAST\(closed_before,.*timezone_name, building_until IS NULL`
 	groupRollupLockQuery     = `SELECT pg_try_advisory_lock\(hashtext\('usage_group_daily_rollups:build'\)\)`
 	groupRollupUnlockQuery   = `SELECT pg_advisory_unlock\(hashtext\('usage_group_daily_rollups:build'\)\)`
-	groupRollupBeginQuery    = `(?s)SELECT closed_before::text, retained_from, timezone_name, expired_before, building_until::text.*FOR UPDATE`
+	groupRollupBeginQuery    = `(?s)SELECT LEAST\(closed_before,.*retained_from, timezone_name, expired_before, building_until::text.*FOR UPDATE`
 	groupRollupBuildQuery    = `(?s)SELECT building_until::text, timezone_name.*FOR KEY SHARE`
 	groupRollupPublishQuery  = `(?s)SELECT closed_before::text, building_until::text, build_dirty_from::text.*FOR UPDATE`
 	groupRollupRegisterExec  = `(?s)UPDATE usage_group_rollup_state.*building_until = \$4::date`

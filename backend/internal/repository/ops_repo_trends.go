@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -549,58 +550,43 @@ func (r *opsRepository) GetErrorDistribution(ctx context.Context, filter *servic
 	if r == nil || r.db == nil {
 		return nil, fmt.Errorf("nil ops repository")
 	}
-	if filter == nil {
-		return nil, fmt.Errorf("nil filter")
-	}
-	if filter.StartTime.IsZero() || filter.EndTime.IsZero() {
+	if filter == nil || filter.StartTime.IsZero() || filter.EndTime.IsZero() {
 		return nil, fmt.Errorf("start_time/end_time required")
 	}
-
-	start := filter.StartTime.UTC()
-	end := filter.EndTime.UTC()
-	where, args, _ := buildErrorWhere(filter, start, end, 1)
-
-	q := `
-SELECT
-  COALESCE(upstream_status_code, status_code, 0) AS status_code,
-  COUNT(*) AS total,
-  COUNT(*) FILTER (WHERE NOT is_business_limited AND is_sla_sample) AS sla,
-  COUNT(*) FILTER (WHERE is_business_limited) AS business_limited
-FROM ops_error_log_metrics
-` + where + `
-  AND COALESCE(status_code, 0) >= 400
-GROUP BY 1
-ORDER BY total DESC
-LIMIT 20`
-
-	rows, err := r.db.QueryContext(ctx, q, args...)
+	canonical := cachedOpsFilter(filter)
+	rows, err := r.queryErrorSummary(ctx, &canonical, canonical.StartTime, canonical.EndTime)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = rows.Close() }()
-
-	items := make([]*service.OpsErrorDistributionItem, 0, 16)
-	var total int64
-	for rows.Next() {
-		var statusCode int
-		var cntTotal, cntSLA, cntBiz int64
-		if err := rows.Scan(&statusCode, &cntTotal, &cntSLA, &cntBiz); err != nil {
-			return nil, err
+	byStatus := make(map[int]*service.OpsErrorDistributionItem)
+	for _, row := range rows {
+		item := byStatus[row.Status]
+		if item == nil {
+			item = &service.OpsErrorDistributionItem{StatusCode: row.Status}
+			byStatus[row.Status] = item
 		}
-		total += cntTotal
-		items = append(items, &service.OpsErrorDistributionItem{
-			StatusCode:      statusCode,
-			Total:           cntTotal,
-			SLA:             cntSLA,
-			BusinessLimited: cntBiz,
-		})
+		item.Total += row.Total
+		item.SLA += row.SLA
+		item.BusinessLimited += row.BusinessLimited
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
+	items := make([]*service.OpsErrorDistributionItem, 0, len(byStatus))
+	for _, item := range byStatus {
+		if item.Total > 0 {
+			items = append(items, item)
+		}
 	}
-
-	return &service.OpsErrorDistributionResponse{
-		Total: total,
-		Items: items,
-	}, nil
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].Total == items[j].Total {
+			return items[i].StatusCode < items[j].StatusCode
+		}
+		return items[i].Total > items[j].Total
+	})
+	if len(items) > 20 {
+		items = items[:20]
+	}
+	var total int64
+	for _, item := range items {
+		total += item.Total
+	}
+	return &service.OpsErrorDistributionResponse{Total: total, Items: items}, nil
 }

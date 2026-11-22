@@ -283,7 +283,7 @@ func groupUsageRollupsUpToDate(ctx context.Context, q sqlQueryer, todayStart tim
 	var stateTimezoneName string
 	var idle bool
 	err := scanSingleRow(ctx, q, `
-		SELECT closed_before::text, timezone_name, building_until IS NULL
+		SELECT LEAST(closed_before, (SELECT MIN(bucket_date) FROM usage_group_daily_rollups WHERE input_tokens IS NULL AND bucket_date >= (GREATEST(retained_from, expired_before) AT TIME ZONE timezone_name)::date))::text, timezone_name, building_until IS NULL
 		FROM usage_group_rollup_state
 		WHERE id = 1
 	`, nil, &closedBefore, &stateTimezoneName, &idle)
@@ -340,7 +340,7 @@ func beginGroupUsageRollupBuild(ctx context.Context, q sqlExecutor, todayStart t
 	var expiredBefore time.Time
 	var buildingUntil sql.NullString
 	if err := scanSingleRow(ctx, q, `
-		SELECT closed_before::text, retained_from, timezone_name, expired_before, building_until::text
+		SELECT LEAST(closed_before, (SELECT MIN(bucket_date) FROM usage_group_daily_rollups WHERE input_tokens IS NULL AND bucket_date >= (GREATEST(retained_from, expired_before) AT TIME ZONE timezone_name)::date))::text, retained_from, timezone_name, expired_before, building_until::text
 		FROM usage_group_rollup_state
 		WHERE id = 1
 		FOR UPDATE
@@ -460,11 +460,12 @@ func buildGroupUsageRollups(ctx context.Context, q sqlExecutor, plan *groupUsage
 	}
 
 	if _, err := q.ExecContext(ctx, `
-		INSERT INTO usage_group_daily_rollups (bucket_date, group_id, actual_cost, computed_at)
+		INSERT INTO usage_group_daily_rollups (bucket_date, group_id, actual_cost, input_tokens, cache_creation_tokens, cache_read_tokens, computed_at)
 		SELECT
 			(created_at AT TIME ZONE $3::text)::date AS bucket_date,
 			group_id,
 			COALESCE(SUM(actual_cost), 0) AS actual_cost,
+ COALESCE(SUM(input_tokens),0), COALESCE(SUM(cache_creation_tokens),0), COALESCE(SUM(cache_read_tokens),0),
 			NOW()
 		FROM usage_logs
 		WHERE group_id IS NOT NULL
@@ -475,6 +476,7 @@ func buildGroupUsageRollups(ctx context.Context, q sqlExecutor, plan *groupUsage
 		ON CONFLICT (bucket_date, group_id)
 		DO UPDATE SET
 			actual_cost = EXCLUDED.actual_cost,
+ input_tokens = EXCLUDED.input_tokens, cache_creation_tokens = EXCLUDED.cache_creation_tokens, cache_read_tokens = EXCLUDED.cache_read_tokens,
 			computed_at = EXCLUDED.computed_at
 	`, plan.rowsFrom, plan.rowsBefore, plan.timezoneName, plan.startDate); err != nil {
 		return fmt.Errorf("重建分组用量日桶: %w", err)
