@@ -77,8 +77,11 @@
             :title="option.recommendationReason || option.description || option.label"
             @click="createKeyFromRecommendation(option.value)"
           >
-            <span class="truncate font-medium text-primary-700 dark:text-primary-300">{{ option.label }}</span>
-            <span class="shrink-0 text-xs text-gray-500 dark:text-gray-400">{{ formatGroupRate(option) }}x</span>
+            <span class="recommended-group-name font-medium text-primary-700 dark:text-primary-300" :title="option.label">
+              <PlatformIcon :platform="option.platform" size="sm" />
+              <span class="truncate">{{ option.label }}</span>
+            </span>
+            <span class="shrink-0 whitespace-nowrap text-xs text-gray-500 dark:text-gray-400">{{ formatGroupRate(option) }}x</span>
             <span class="line-clamp-1 text-left text-xs text-gray-500 dark:text-gray-400">
               {{ option.recommendationReason || option.description || t('keys.recommendationReasonEmpty') }}
             </span>
@@ -168,16 +171,17 @@
           </template>
 
           <template #cell-group="{ row }">
-            <div class="group/dropdown relative">
+            <div class="key-group">
               <button
                 @click="openGroupSelector(row)"
-                class="-mx-2 -my-1 flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1 transition-all duration-200 hover:bg-gray-100 dark:hover:bg-dark-700"
-                :title="t('keys.clickToChangeGroup')"
+                class="key-group-trigger"
+                :title="row.group ? `${row.group.name} · ${t('keys.clickToChangeGroup')}` : t('keys.clickToChangeGroup')"
               >
                 <GroupBadge
                   v-if="row.group"
+                  class="key-group-badge"
                   :name="row.group.name"
-                  :platform="row.group.platform"
+                  :platform="row.group.platform || 'composite'"
                   :subscription-type="row.group.subscription_type"
                   :rate-multiplier="row.group.rate_multiplier"
                   :user-rate-multiplier="userGroupRates[row.group.id]"
@@ -186,31 +190,16 @@
                   :peak-end="row.group.peak_end"
                   :peak-rate-multiplier="row.group.peak_rate_multiplier"
                 />
-                <span
-                  v-if="row.group && capFor(row.group.id) != null"
-                  class="keys-group-cap-tag"
-                  :title="t('keys.capRateHint')"
-                >
-                  {{ t('keys.capRateTag', { rate: formatCapRate(capFor(row.group.id)!) }) }}
-                </span>
-                <span v-else class="text-sm text-gray-400 dark:text-dark-500">{{
-                  t('keys.noGroup')
-                }}</span>
-                <span class="text-xs text-gray-500 dark:text-gray-400">{{ t('keys.selectGroup') }}</span>
-                <svg
-                  class="h-3.5 w-3.5 text-gray-400 opacity-60 transition-opacity group-hover/dropdown:opacity-100"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  stroke-width="2"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M8.25 15L12 18.75 15.75 15m-7.5-6L12 5.25 15.75 9"
-                  />
-                </svg>
+                <span v-else class="key-group-empty">{{ t('keys.noGroup') }}</span>
+                <Icon name="chevronDown" size="xs" class="shrink-0 text-gray-400" />
               </button>
+              <span
+                v-if="row.group && capFor(row.group.id) != null"
+                class="keys-group-cap-tag mt-1"
+                :title="t('keys.capRateHint')"
+              >
+                {{ t('keys.capRateTag', { rate: formatCapRate(capFor(row.group.id)!) }) }}
+              </span>
             </div>
           </template>
 
@@ -2644,6 +2633,18 @@ onUnmounted(() => {
 }
 
 @media(max-width:700px){.recommended-groups-heading{font-size:16px}}
+
+.key-group{min-width:0}
+.key-group-trigger{display:flex;align-items:center;gap:6px;width:100%;min-width:0;padding:0;border-radius:6px;text-align:left}
+.key-group-trigger:hover{background:var(--tf-console-hover)}
+.key-group-trigger:focus-visible{outline:2px solid var(--tf-console-active-ink);outline-offset:3px}
+.key-group-badge{display:grid;grid-template-columns:14px minmax(0,1fr) auto;align-items:center;flex:1;min-width:0;max-width:100%;gap:6px}
+.key-group-badge :deep(>svg){grid-column:1;grid-row:1}
+.key-group-badge :deep(.group-badge-name){grid-column:2;grid-row:1;min-width:0}
+.key-group-badge :deep(.group-badge-rate){grid-column:3;grid-row:1;white-space:nowrap}
+.key-group-badge :deep(.group-badge-peak){grid-column:2 / -1;justify-self:start;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.key-group-empty{flex:1;min-width:0;color:var(--studio-muted);font-size:12px}
+.recommended-group-name{display:flex;align-items:center;gap:6px;min-width:0}
 
 .keys-group-cap-tag {
   @apply inline-flex flex-none items-center whitespace-nowrap rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-300;

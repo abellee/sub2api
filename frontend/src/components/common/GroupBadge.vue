@@ -8,9 +8,9 @@
     <!-- Platform logo -->
     <PlatformIcon v-if="platform" :platform="platform" size="sm" />
     <!-- Group name -->
-    <span :class="truncate ? 'truncate' : 'min-w-0 whitespace-normal [overflow-wrap:anywhere]'">{{ name }}</span>
+    <span class="group-badge-name" :class="truncate ? 'truncate' : 'min-w-0 whitespace-normal [overflow-wrap:anywhere]'">{{ name }}</span>
     <!-- Right side label -->
-    <span v-if="showLabel" :class="labelClass">
+    <span v-if="showLabel" class="group-badge-rate" :class="labelClass">
       <template v-if="hasCustomRate">
         <!-- 原倍率删除线 + 专属倍率高亮 -->
         <span class="line-through opacity-50 mr-0.5">{{ rateMultiplier }}x</span>
@@ -20,7 +20,7 @@
         {{ labelText }}
       </template>
     </span>
-    <span v-if="hasPeakRate" :class="peakRateClass" :title="peakRateTitle">
+    <span v-if="hasPeakRate" class="group-badge-peak" :class="peakRateClass" :title="peakRateTitle">
       {{ peakRateText }}
     </span>
   </span>
