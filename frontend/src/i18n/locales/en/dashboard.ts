@@ -87,6 +87,8 @@ export default {
 
   // API Keys
   keys: {
+    totalKeys: '{count} keys',
+    allLoaded: 'All keys loaded',
     title: 'API Keys',
     description: 'Manage your API keys and access tokens',
     searchPlaceholder: 'Search name or key...',

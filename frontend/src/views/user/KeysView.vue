@@ -1,107 +1,81 @@
 <template>
-  <StudioLayout>
-    <TablePageLayout>
-      <template #filters>
-        <div class="flex flex-col gap-3">
-          <div class="flex flex-wrap items-center justify-between gap-3" data-test="keys-filter-row">
-            <div class="flex min-w-0 flex-wrap items-center gap-3">
-              <SearchInput
-                v-model="filterSearch"
-                :placeholder="t('keys.searchPlaceholder')"
-                class="w-full sm:w-64"
-                @search="onFilterChange"
-              />
-              <Select
-                :model-value="filterGroupId"
-                class="w-40"
-                :options="groupFilterOptions"
-                @update:model-value="onGroupFilterChange"
-              />
-              <Select
-                :model-value="filterStatus"
-                class="w-40"
-                :options="statusFilterOptions"
-                @update:model-value="onStatusFilterChange"
-              />
-            </div>
-            <div class="flex flex-wrap items-center gap-3">
-              <EndpointPopover
-                v-if="publicSettings?.api_base_url || (publicSettings?.custom_endpoints?.length ?? 0) > 0"
-                class="min-w-0 shrink-0"
-                :api-base-url="publicSettings?.api_base_url || ''"
-                :custom-endpoints="publicSettings?.custom_endpoints || []"
-              />
-              <button
-                @click="loadApiKeys"
-                :disabled="loading"
-                class="btn btn-secondary"
-                :title="t('common.refresh')"
-              >
-                <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
-              </button>
-              <div class="relative" ref="columnDropdownRef">
-                <button
-                  @click="showColumnDropdown = !showColumnDropdown"
-                  class="btn btn-secondary px-2 md:px-3"
-                  :title="t('keys.columnSettings')"
-                >
-                  <svg class="h-4 w-4 md:mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 4.5v15m6-15v15m-10.875 0h15.75c.621 0 1.125-.504 1.125-1.125V5.625c0-.621-.504-1.125-1.125-1.125H4.125C3.504 4.5 3 5.004 3 5.625v12.75c0 .621.504 1.125 1.125 1.125z" />
-                  </svg>
-                  <span class="hidden md:inline">{{ t('keys.columnSettings') }}</span>
-                </button>
-                <div
-                  v-if="showColumnDropdown"
-                  class="absolute right-0 top-full z-50 mt-1 max-h-80 w-48 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-dark-600 dark:bg-dark-800"
-                >
-                  <button
-                    v-for="col in toggleableColumns"
-                    :key="col.key"
-                    @click="toggleColumn(col.key)"
-                    class="flex w-full items-center justify-between px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-dark-700"
-                  >
-                    <span>{{ col.label }}</span>
-                    <Icon
-                      v-if="isColumnVisible(col.key)"
-                      name="check"
-                      size="sm"
-                      class="text-primary-500"
-                      :stroke-width="2"
-                    />
-                  </button>
-                </div>
-              </div>
-              <button @click="openCreateModal" class="btn btn-primary" data-tour="keys-create-btn">
-                <Icon name="plus" size="md" class="mr-2" />
-                {{ t('keys.createKey') }}
-              </button>
-            </div>
-          </div>
-          <div v-if="selectedIds.length" class="flex flex-wrap items-center gap-3 text-sm">
-            <span class="text-gray-600 dark:text-gray-300">
-              {{ t('keys.bulkEdit.selectedCount', { count: selectedIds.length }) }}
-            </span>
+  <StudioLayout class="keys-studio">
+    <template #filters>
+      <div class="studio-filters keys-header-controls" data-test="keys-header-controls">
+        <SearchInput
+          v-model="filterSearch"
+          :placeholder="t('keys.searchPlaceholder')"
+          :aria-label="t('keys.searchPlaceholder')"
+          class="keys-header-search"
+          @search="onFilterChange"
+        />
+        <Select
+          :model-value="filterGroupId"
+          class="keys-header-select"
+          :options="groupFilterOptions"
+          :aria-label="t('keys.allGroups')"
+          @update:model-value="onGroupFilterChange"
+        ><template #option="{ option, selected }"><span class="studio-granularity-option">{{ option.label }}</span><Icon v-if="selected" name="check" size="sm" /></template></Select>
+        <Select
+          :model-value="filterStatus"
+          class="keys-header-select"
+          :options="statusFilterOptions"
+          :aria-label="t('keys.allStatus')"
+          @update:model-value="onStatusFilterChange"
+        ><template #option="{ option, selected }"><span class="studio-granularity-option">{{ option.label }}</span><Icon v-if="selected" name="check" size="sm" /></template></Select>
+        <button
+          @click="loadApiKeys"
+          :disabled="loading"
+          class="refresh-button"
+          :title="t('common.refresh')"
+        >
+          <Icon name="refresh" size="sm" :class="loading ? 'animate-spin' : ''" />
+        </button>
+        <div class="relative" ref="columnDropdownRef">
+          <button
+            @click="showColumnDropdown = !showColumnDropdown"
+            class="studio-action"
+            :title="t('keys.columnSettings')"
+          >
+            <svg class="h-4 w-4 md:mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9 4.5v15m6-15v15m-10.875 0h15.75c.621 0 1.125-.504 1.125-1.125V5.625c0-.621-.504-1.125-1.125-1.125H4.125C3.504 4.5 3 5.004 3 5.625v12.75c0 .621.504 1.125 1.125 1.125z" />
+            </svg>
+            <span class="hidden md:inline">{{ t('keys.columnSettings') }}</span>
+          </button>
+          <div
+            v-if="showColumnDropdown"
+            class="studio-column-menu absolute right-0 top-full z-50 mt-2 max-h-80 w-48 overflow-y-auto"
+          >
             <button
-              class="btn btn-primary btn-sm"
-              :disabled="loading"
-              data-test="bulk-edit-keys"
-              @click="showBulkEditModal = true"
+              v-for="col in toggleableColumns"
+              :key="col.key"
+              @click="toggleColumn(col.key)"
+              class="studio-column-option"
             >
-              {{ t('keys.bulkEdit.title') }}
-            </button>
-            <button class="btn btn-secondary btn-sm" @click="selectedIds = []">
-              {{ t('keys.bulkEdit.clearSelection') }}
+              <span>{{ col.label }}</span>
+              <Icon
+                v-if="isColumnVisible(col.key)"
+                name="check"
+                size="sm"
+                class="text-primary-500"
+                :stroke-width="2"
+              />
             </button>
           </div>
         </div>
-      </template>
-
-      <template #actions>
+        <button @click="openCreateModal" class="studio-action" data-tour="keys-create-btn">
+          <Icon name="plus" size="sm" />
+          {{ t('keys.createKey') }}
+        </button>
+      </div>
+    </template>
+    <div class="keys-page">
+      <div class="keys-recommendations">
         <div class="flex items-center justify-between gap-3">
           <section v-if="recommendedGroupOptions.length" class="recommended-groups-strip w-full">
             <div class="recommended-groups-heading">
               <Icon name="badge" size="lg" class="text-amber-500" />
-              <span class="text-center text-xs font-semibold leading-4 text-gray-800 dark:text-gray-100">{{ t('keys.recommendedGroups') }}</span>
+              <h2>{{ t('keys.recommendedGroups') }}</h2>
             </div>
             <div class="recommended-group-mini-list">
               <button
@@ -124,34 +98,60 @@
             </div>
           </section>
         </div>
-      </template>
+      </div>
 
-      <template #table>
-        <DataTable
+      <div class="keys-content-tools">
+        <div class="flex flex-col gap-3">
+          <div class="keys-endpoint-row" data-test="keys-filter-row">
+            <EndpointPopover
+              v-if="publicSettings?.api_base_url || (publicSettings?.custom_endpoints?.length ?? 0) > 0"
+              class="keys-endpoints min-w-0"
+              :api-base-url="publicSettings?.api_base_url || ''"
+              :custom-endpoints="publicSettings?.custom_endpoints || []"
+            />
+            <span class="keys-total" data-test="keys-total" role="status">{{ t('keys.totalKeys', { count: pagination.total }) }}</span>
+          </div>
+          <div v-if="selectedIds.length" class="flex flex-wrap items-center gap-3 text-sm">
+            <span class="text-gray-600 dark:text-gray-300">
+              {{ t('keys.bulkEdit.selectedCount', { count: selectedIds.length }) }}
+            </span>
+            <button
+              class="btn btn-primary btn-sm"
+              :disabled="loading"
+              data-test="bulk-edit-keys"
+              @click="showBulkEditModal = true"
+            >
+              {{ t('keys.bulkEdit.title') }}
+            </button>
+            <button class="btn btn-secondary btn-sm" @click="selectedIds = []">
+              {{ t('keys.bulkEdit.clearSelection') }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="keys-list">
+        <KeyCardGrid
           :columns="columns"
           :data="apiKeys"
           :loading="loading"
-          selectable
-          row-key="id"
           :selected-keys="selectedIds"
-          :selection-label="(key: ApiKey) => t('keys.bulkEdit.selectKey', { name: key.name })"
           @update:selected-keys="handleSelectionChange"
-          :server-side-sort="true"
-          default-sort-key="created_at"
-          default-sort-order="desc"
+          :sort-by="sortState.sort_by"
+          :sort-order="sortState.sort_order"
           @sort="handleSort"
         >
-          <template #cell-id="{ value }">
-            <span class="font-mono text-xs text-gray-500 dark:text-gray-400">#{{ value }}</span>
+          <template #cell-id="{ row }">
+            <span class="font-mono text-xs text-gray-500 dark:text-gray-400">#{{ row.id }}</span>
           </template>
 
-          <template #cell-key="{ value, row }">
+          <template #cell-key="{ row }">
             <div class="flex items-center gap-2">
               <code class="code text-xs">
-                {{ maskApiKey(value) }}
+                {{ maskApiKey(row.key) }}
               </code>
               <button
-                @click="copyToClipboard(value, row.id)"
+                @click="copyToClipboard(row.key, row.id)"
                 class="rounded-lg p-1 transition-colors hover:bg-gray-100 dark:hover:bg-dark-700"
                 :class="
                   copiedKeyId === row.id
@@ -171,9 +171,9 @@
             </div>
           </template>
 
-          <template #cell-name="{ value, row }">
+          <template #cell-name="{ row }">
             <div class="flex items-center gap-1.5">
-              <span class="font-medium text-gray-900 dark:text-white">{{ value }}</span>
+              <span class="font-medium text-gray-900 dark:text-white">{{ row.name }}</span>
               <Icon
                 v-if="row.ip_whitelist?.length > 0 || row.ip_blacklist?.length > 0"
                 name="shield"
@@ -231,16 +231,16 @@
             </div>
           </template>
 
-          <template #cell-current_concurrency="{ value }">
+          <template #cell-current_concurrency="{ row }">
             <span
               :class="[
                 'inline-flex min-w-8 items-center justify-center rounded px-2 py-1 text-sm font-semibold tabular-nums',
-                (value ?? 0) > 0
+                (row.current_concurrency ?? 0) > 0
                   ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 dark:bg-emerald-900/25 dark:text-emerald-300 dark:ring-emerald-800'
                   : 'bg-gray-100 text-gray-500 dark:bg-dark-700 dark:text-dark-400'
               ]"
             >
-              {{ value ?? 0 }}
+              {{ row.current_concurrency ?? 0 }}
             </span>
           </template>
 
@@ -395,44 +395,44 @@
             <span v-else class="text-sm text-gray-400 dark:text-dark-500">-</span>
           </template>
 
-          <template #cell-expires_at="{ value }">
-            <span v-if="value" :class="[
+          <template #cell-expires_at="{ row }">
+            <span v-if="row.expires_at" :class="[
               'text-sm',
-              new Date(value) < new Date() ? 'text-red-500 dark:text-red-400' : 'text-gray-500 dark:text-dark-400'
+              new Date(row.expires_at) < new Date() ? 'text-red-500 dark:text-red-400' : 'text-gray-500 dark:text-dark-400'
             ]">
-              {{ formatDateTime(value) }}
+              {{ formatDateTime(row.expires_at) }}
             </span>
             <span v-else class="text-sm text-gray-400 dark:text-dark-500">{{ t('keys.noExpiration') }}</span>
           </template>
 
-          <template #cell-status="{ value }">
+          <template #cell-status="{ row }">
             <span :class="[
               'badge',
-              value === 'active' ? 'badge-success' :
-              value === 'quota_exhausted' ? 'badge-warning' :
-              value === 'expired' ? 'badge-danger' :
+              row.status === 'active' ? 'badge-success' :
+              row.status === 'quota_exhausted' ? 'badge-warning' :
+              row.status === 'expired' ? 'badge-danger' :
               'badge-gray'
             ]">
-              {{ t('keys.status.' + value) }}
+              {{ t('keys.status.' + row.status) }}
             </span>
           </template>
 
-          <template #cell-last_used_at="{ value }">
-            <span v-if="value" class="text-sm text-gray-500 dark:text-dark-400">
-              {{ formatDateTime(value) }}
-            </span>
-            <span v-else class="text-sm text-gray-400 dark:text-dark-500">-</span>
-          </template>
-
-          <template #cell-last_used_ip="{ value }">
-            <span v-if="value" class="text-sm text-gray-500 dark:text-dark-400">
-              {{ value }}
+          <template #cell-last_used_at="{ row }">
+            <span v-if="row.last_used_at" class="text-sm text-gray-500 dark:text-dark-400">
+              {{ formatDateTime(row.last_used_at) }}
             </span>
             <span v-else class="text-sm text-gray-400 dark:text-dark-500">-</span>
           </template>
 
-          <template #cell-created_at="{ value }">
-            <span class="text-sm text-gray-500 dark:text-dark-400">{{ formatDateTime(value) }}</span>
+          <template #cell-last_used_ip="{ row }">
+            <span v-if="row.last_used_ip" class="text-sm text-gray-500 dark:text-dark-400">
+              {{ row.last_used_ip }}
+            </span>
+            <span v-else class="text-sm text-gray-400 dark:text-dark-500">-</span>
+          </template>
+
+          <template #cell-created_at="{ row }">
+            <span class="text-sm text-gray-500 dark:text-dark-400">{{ formatDateTime(row.created_at) }}</span>
           </template>
 
           <template #cell-actions="{ row }">
@@ -495,20 +495,15 @@
               @action="openCreateModal"
             />
           </template>
-        </DataTable>
-      </template>
+        </KeyCardGrid>
+      </div>
 
-      <template #pagination>
-        <Pagination
-          v-if="pagination.total > 0"
-          :page="pagination.page"
-          :total="pagination.total"
-          :page-size="pagination.page_size"
-          @update:page="handlePageChange"
-          @update:pageSize="handlePageSizeChange"
-        />
-      </template>
-    </TablePageLayout>
+      <div ref="loadMoreSentinel" class="keys-load-more" data-test="keys-load-more" role="status">
+        <span v-if="loadingMore">{{ t('common.loading') }}</span>
+        <button v-else-if="loadMoreError" type="button" class="studio-retry" data-test="keys-retry-more" @click="loadMore">{{ t('common.tryAgain') }}</button>
+        <span v-else-if="apiKeys.length && !hasMore">{{ t('keys.allLoaded') }}</span>
+      </div>
+    </div>
 
     <!-- Create/Edit Modal（新版，见 components/keys/KeyFormModal.vue） -->
     <KeyFormModal
@@ -1339,16 +1334,13 @@
 	import { useAppStore } from '@/stores/app'
 	import { useOnboardingStore } from '@/stores/onboarding'
 	import { useClipboard } from '@/composables/useClipboard'
-import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 
 const { t } = useI18n()
 import { keysAPI, authAPI, usageAPI, userGroupsAPI } from '@/api'
 import type { GroupCategory, GroupRecommendation, GroupTag } from '@/api/groups'
 import StudioLayout from '@/components/user/dashboard/studio/DashboardStudioLayout.vue'
-import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import BulkEditKeysModal from '@/components/keys/BulkEditKeysModal.vue'
-	import DataTable from '@/components/common/DataTable.vue'
-	import Pagination from '@/components/common/Pagination.vue'
+import KeyCardGrid from '@/components/keys/KeyCardGrid.vue'
 	import BaseDialog from '@/components/common/BaseDialog.vue'
 	import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 	import EmptyState from '@/components/common/EmptyState.vue'
@@ -1526,11 +1518,18 @@ const handleBulkUpdated = (succeededIds: number[]) => {
 
 const groups = ref<Group[]>([])
 const loading = ref(false)
+const loadingMore = ref(false)
+const loadMoreError = ref(false)
+const loadMoreSentinel = ref<HTMLElement | null>(null)
+const hasMore = computed(() => pagination.value.page < pagination.value.pages)
+let loadMoreObserver: IntersectionObserver | null = null
+let usageController = new AbortController()
 const submitting = ref(false)
 const now = ref(new Date())
 let resetTimer: ReturnType<typeof setInterval> | null = null
 const usageStats = ref<Record<string, BatchApiKeyUsageStats>>({})
-const usageLoading = ref(false)
+const pendingUsageRequests = ref(0)
+const usageLoading = computed(() => pendingUsageRequests.value > 0)
 const userGroupRates = ref<Record<number, number>>({})
 const groupRecommendations = ref<GroupRecommendation[]>([])
 const groupCategories = ref<GroupCategory[]>([])
@@ -1553,7 +1552,7 @@ const pendingScrollToSelected = ref(false)
 
 const pagination = ref({
   page: 1,
-  page_size: getPersistedPageSize(),
+  page_size: 20,
   total: 0,
   pages: 0
 })
@@ -1921,13 +1920,27 @@ const isAbortError = (error: unknown) => {
   return name === 'AbortError' || code === 'ERR_CANCELED'
 }
 
-const loadApiKeys = async () => {
+const loadApiKeys = () => loadKeyPage(false)
+const loadMore = () => {
+  if (loading.value || loadingMore.value || !hasMore.value) return
+  return loadKeyPage(true)
+}
+
+const loadKeyPage = async (append: boolean) => {
   abortController?.abort()
   const controller = new AbortController()
   abortController = controller
   const { signal } = controller
-  loading.value = true
-  usageLoading.value = false
+  loadMoreError.value = false
+  const page = append ? pagination.value.page + 1 : 1
+  loading.value = !append
+  loadingMore.value = append
+  if (!append) {
+    usageController.abort()
+    usageController = new AbortController()
+    usageStats.value = {}
+    pendingUsageRequests.value = 0
+  }
   try {
     // Build filters
     const filters: {
@@ -1943,31 +1956,42 @@ const loadApiKeys = async () => {
     filters.sort_by = sortState.value.sort_by
     filters.sort_order = sortState.value.sort_order
 
-    const response = await keysAPI.list(pagination.value.page, pagination.value.page_size, filters, {
+    const response = await keysAPI.list(page, pagination.value.page_size, filters, {
       signal
     })
     if (signal.aborted) return
-    apiKeys.value = response.items
+    apiKeys.value = append
+      ? [...new Map([...apiKeys.value, ...response.items].map(key => [key.id, key])).values()]
+      : response.items
+    pagination.value.page = page
     handleSelectionChange(selectedIds.value)
     pagination.value.total = response.total
-    pagination.value.pages = response.pages
+    pagination.value.pages = response.items.length ? response.pages : page
 
     // 用量统计要聚合 30 天的 usage_logs，可能比列表慢很多：不阻塞表格渲染，单独加载
-    usageLoading.value = response.items.length > 0
     if (response.items.length > 0) {
-      void loadUsageStats(response.items.map((k) => k.id), signal)
+      void loadUsageStats(response.items.map((k) => k.id), usageController.signal)
     }
   } catch (error) {
     if (isAbortError(error)) {
       return
     }
+    loadMoreError.value = append
     appStore.showError(t('keys.failedToLoad'))
   } finally {
     if (abortController === controller) {
       loading.value = false
+      loadingMore.value = false
     }
   }
 }
+
+watch([loadMoreSentinel, loading, loadingMore, hasMore, loadMoreError], () => {
+  loadMoreObserver?.disconnect()
+  if (loadMoreSentinel.value && !loading.value && !loadingMore.value && hasMore.value && !loadMoreError.value) {
+    loadMoreObserver?.observe(loadMoreSentinel.value)
+  }
+}, { flush: 'post' })
 
 // Development-only fixtures keep the card layout inspectable when the local API is unavailable.
 const devGroupFixtures = [
@@ -2106,17 +2130,18 @@ const devGroupRecommendationFixtures: GroupRecommendation[] = [
 ]
 
 const loadUsageStats = async (keyIds: number[], signal: AbortSignal) => {
+  pendingUsageRequests.value++
   try {
     const usageResponse = await usageAPI.getDashboardApiKeysUsage(keyIds, { signal })
     if (signal.aborted) return
-    usageStats.value = usageResponse.stats
+    usageStats.value = { ...usageStats.value, ...usageResponse.stats }
   } catch (e) {
     if (!isAbortError(e)) {
       console.error('Failed to load usage stats:', e)
     }
   } finally {
     if (!signal.aborted) {
-      usageLoading.value = false
+      pendingUsageRequests.value--
     }
   }
 }
@@ -2190,19 +2215,6 @@ const openUseKeyModal = (key: ApiKey) => {
 const closeUseKeyModal = () => {
   showUseKeyModal.value = false
   selectedKey.value = null
-}
-
-const handlePageChange = (page: number) => {
-  selectedIds.value = []
-  pagination.value.page = page
-  loadApiKeys()
-}
-
-const handlePageSizeChange = (pageSize: number) => {
-  selectedIds.value = []
-  pagination.value.page_size = pageSize
-  pagination.value.page = 1
-  loadApiKeys()
 }
 
 const handleSort = (key: string, order: 'asc' | 'desc') => {
@@ -2603,6 +2615,11 @@ function formatResetTime(resetAt: string | null): string {
 }
 
 onMounted(() => {
+  if (typeof IntersectionObserver !== 'undefined') {
+    loadMoreObserver = new IntersectionObserver(entries => {
+      if (!loadMoreError.value && entries.some(entry => entry.isIntersecting)) void loadMore()
+    }, { rootMargin: '320px' })
+  }
   loadSavedColumns()
   loadApiKeys()
   loadGroups()
@@ -2615,22 +2632,54 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  abortController?.abort()
+  usageController.abort()
+  loadMoreObserver?.disconnect()
   document.removeEventListener('click', closeGroupSelector)
   if (resetTimer) clearInterval(resetTimer)
 })
 </script>
 
+<style scoped src="../../components/user/dashboard/studio/studioFilters.css"></style>
+
 <style scoped>
+
+.keys-studio{--keys-card-surface:var(--tf-console-surface)}
+.dark .keys-studio{--keys-card-surface:var(--studio-menu-surface)}
+.keys-studio :deep(.studio-navigation){flex-wrap:wrap}
+.keys-header-controls{flex:1;min-width:0;flex-wrap:wrap;justify-content:flex-end;gap:12px}
+.keys-header-search{width:190px}.keys-header-search :deep(.input){padding-left:36px}.keys-header-select{width:126px}
+.keys-header-controls :deep(.input::placeholder){color:var(--studio-muted)}
+.keys-page{display:flex;flex-direction:column;gap:24px;min-width:0}
+.keys-endpoint-row{display:flex;align-items:center;justify-content:space-between;gap:16px;min-width:0}
+.keys-endpoints :deep(.pointer-events-none){max-width:min(24rem,calc(100vw - 80px))}
+.keys-total{flex-shrink:0;font-size:12px;color:var(--studio-muted);white-space:nowrap;font-variant-numeric:tabular-nums}
+.keys-load-more{display:flex;justify-content:center;align-items:center;min-height:32px;color:var(--studio-muted);font-size:12px}.studio-retry{color:var(--tf-console-active-ink);text-decoration:underline;text-underline-offset:3px}
+@media(max-width:1400px){.keys-header-controls{flex-basis:100%}}
+@media(max-width:640px){.keys-header-controls{gap:8px;justify-content:flex-end}.keys-header-search{width:100%}.keys-header-select{flex:1;min-width:120px;width:auto}.keys-endpoint-row{align-items:flex-start;flex-wrap:wrap}.keys-total{margin-left:auto}.keys-page{gap:18px}.recommended-groups-strip{padding:18px}}
+
 .group-picker-trigger {
   @apply flex w-full cursor-pointer items-center justify-between gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-left text-sm text-gray-900 transition-all duration-200 hover:border-gray-300 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30 dark:border-dark-600 dark:bg-dark-800 dark:text-gray-100 dark:hover:border-dark-500;
 }
 
 .recommended-groups-strip {
-  @apply flex min-w-0 items-start gap-3 rounded-lg border border-primary-200/80 bg-primary-50/60 p-3 dark:border-primary-400/20 dark:bg-primary-900/20;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 18px;
+  padding: 22px;
+  border-radius: 18px;
+  background: var(--keys-card-surface);
+  box-shadow: 0 6px 28px #26385d05;
 }
 
 .recommended-groups-heading {
-  @apply flex shrink-0 flex-col items-center justify-center gap-1 self-stretch px-1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--studio-ink);
+  font-size: 15px;
+  font-weight: 600;
 }
 
 .keys-group-cap-tag {
@@ -2642,12 +2691,26 @@ onUnmounted(() => {
 }
 
 .recommended-group-mini-list {
-  @apply flex min-w-0 flex-1 gap-2 overflow-x-auto pb-1;
-  scrollbar-width: thin;
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
+  gap: 12px;
 }
 
 .recommended-group-mini-card {
-  @apply grid min-w-[168px] max-w-[220px] shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-1.5 gap-y-0.5 rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-left text-xs transition-colors hover:border-primary-400 hover:bg-primary-50/50 dark:border-dark-600 dark:bg-dark-800 dark:hover:border-primary-500 dark:hover:bg-primary-900/20;
+  @apply grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 text-left text-sm transition-colors;
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--studio-haze);
+}
+
+.recommended-group-mini-card:hover {
+  background: var(--tf-console-hover);
+}
+
+.recommended-group-mini-card:focus-visible {
+  outline: 2px solid #8297f5;
+  outline-offset: 2px;
 }
 
 .group-picker-shell {

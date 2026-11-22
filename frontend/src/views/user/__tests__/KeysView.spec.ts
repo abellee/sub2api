@@ -6,6 +6,12 @@ import type { ApiKey } from '@/types'
 import { keysAPI } from '@/api'
 import KeysView from '../KeysView.vue'
 
+let intersectionCallback: IntersectionObserverCallback
+const reachEnd = async () => {
+  intersectionCallback([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver)
+  await flushPromises()
+}
+
 const {
   listKeys,
   updateKey,
@@ -42,6 +48,7 @@ const messages: Record<string, string> = {
   'common.refresh': 'Refresh',
   'common.status': 'Status',
   'keys.apiKey': 'API Key',
+  'keys.totalKeys': '{count} keys',
   'keys.allGroups': 'All Groups',
   'keys.allStatus': 'All Status',
   'keys.columnSettings': 'Column Settings',
@@ -151,23 +158,12 @@ const createApiKey = (): ApiKey => ({
 })
 
 const StudioLayoutStub = {
-  template: '<div><slot /></div>',
+  template: '<div><header><slot name="filters" /></header><slot /></div>',
 }
 
-const TablePageLayoutStub = {
-  template: `
-    <div>
-      <slot name="filters" />
-      <slot name="actions" />
-      <slot name="table" />
-      <slot name="pagination" />
-    </div>
-  `,
-}
-
-const DataTableStub = {
-  name: 'DataTable',
-  props: { columns: Array, data: Array, selectedKeys: Array, selectable: Boolean, loading: Boolean },
+const KeyCardGridStub = {
+  name: 'KeyCardGrid',
+  props: { columns: Array, data: Array, selectedKeys: Array, loading: Boolean },
   emits: ['sort', 'update:selectedKeys'],
   template: `
     <div>
@@ -217,18 +213,6 @@ const SearchInputStub = {
   template: '<input :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
 }
 
-const PaginationStub = {
-  name: 'Pagination',
-  props: ['page', 'total', 'pageSize'],
-  emits: ['update:page', 'update:pageSize'],
-  template: `
-    <div>
-      <button data-test="page-size-50" @click="$emit('update:pageSize', 50)">50</button>
-      <button data-test="page-2" @click="$emit('update:page', 2)">Page 2</button>
-    </div>
-  `,
-}
-
 const IconStub = {
   props: ['name'],
   template: '<span data-test="icon">{{ name }}</span>',
@@ -239,9 +223,7 @@ const mountView = async () => {
     global: {
       stubs: {
         StudioLayout: StudioLayoutStub,
-        TablePageLayout: TablePageLayoutStub,
-        DataTable: DataTableStub,
-        Pagination: PaginationStub,
+        KeyCardGrid: KeyCardGridStub,
         BaseDialog: {
           props: ['show', 'title'],
           emits: ['close'],
@@ -286,6 +268,11 @@ const getButtonByText = (wrapper: VueWrapper, text: string) => {
 describe('user KeysView column settings', () => {
   beforeEach(() => {
     localStorage.clear()
+    vi.stubGlobal('IntersectionObserver', class {
+      constructor(callback: IntersectionObserverCallback) { intersectionCallback = callback }
+      observe = vi.fn()
+      disconnect = vi.fn()
+    })
 
     listKeys.mockReset()
     updateKey.mockReset()
@@ -345,7 +332,7 @@ describe('user KeysView column settings', () => {
     await flushPromises()
 
     expect(updateKey).toHaveBeenNthCalledWith(1, key.id, { reset_quota: true })
-    expect(wrapper.findComponent({ name: 'DataTable' }).props('data')[0])
+    expect(wrapper.findComponent({ name: 'KeyCardGrid' }).props('data')[0])
       .toMatchObject({ status, quota_used: 0 })
     expect(statusSelect.props('modelValue')).toBe(formStatus)
     expect((wrapper.get('[data-tour="key-form-name"]').element as HTMLInputElement).value)
@@ -379,8 +366,7 @@ describe('user KeysView column settings', () => {
 
   it('opens bulk editing with only selected visible keys', async () => {
     const wrapper = await mountView()
-    const table = wrapper.findComponent({ name: 'DataTable' })
-    expect(table.props('selectable')).toBe(true)
+    const table = wrapper.findComponent({ name: 'KeyCardGrid' })
     table.vm.$emit('update:selectedKeys', [1, 99])
     await nextTick()
     await wrapper.get('[data-test="bulk-edit-keys"]').trigger('click')
@@ -390,15 +376,14 @@ describe('user KeysView column settings', () => {
     wrapper.unmount()
   })
 
-  it.each(['filter', 'page size', 'sort'])('clears selection on %s changes', async (change) => {
+  it.each(['filter', 'sort'])('clears selection on %s changes', async (change) => {
     const wrapper = await mountView()
-    const table = wrapper.findComponent({ name: 'DataTable' })
+    const table = wrapper.findComponent({ name: 'KeyCardGrid' })
     table.vm.$emit('update:selectedKeys', [1])
     await nextTick()
     if (change === 'filter') {
       wrapper.findComponent({ name: 'SearchInput' }).vm.$emit('search')
-    } else if (change === 'page size') {
-      await wrapper.get('[data-test="page-size-50"]').trigger('click')
+
     } else {
       table.vm.$emit('sort', 'created_at', 'asc')
     }
@@ -414,7 +399,7 @@ describe('user KeysView column settings', () => {
       total: 2, pages: 1
     })
     const wrapper = await mountView()
-    const table = wrapper.findComponent({ name: 'DataTable' })
+    const table = wrapper.findComponent({ name: 'KeyCardGrid' })
     table.vm.$emit('update:selectedKeys', [1, 2])
     await nextTick()
     await wrapper.get('[data-test="bulk-edit-keys"]').trigger('click')
@@ -427,7 +412,7 @@ describe('user KeysView column settings', () => {
 
   it('drops keys that are no longer visible after a refresh', async () => {
     const wrapper = await mountView()
-    const table = wrapper.findComponent({ name: 'DataTable' })
+    const table = wrapper.findComponent({ name: 'KeyCardGrid' })
     table.vm.$emit('update:selectedKeys', [1])
     await nextTick()
     listKeys.mockResolvedValue({ items: [], total: 0, pages: 0 })
@@ -543,9 +528,6 @@ describe('user KeysView column settings', () => {
     getAvailableGroups.mockResolvedValue([{ id: 42, name: 'OpenAI' }])
     const wrapper = await mountView()
 
-    await wrapper.get('[data-test="page-size-50"]').trigger('click')
-    await flushPromises()
-
     await wrapper.findComponent({ name: 'SearchInput' }).vm.$emit('update:modelValue', 'target')
     await wrapper.findComponent({ name: 'SearchInput' }).vm.$emit('search')
     await flushPromises()
@@ -556,9 +538,11 @@ describe('user KeysView column settings', () => {
     await selects[1].vm.$emit('update:modelValue', 'active')
     await flushPromises()
 
-    await wrapper.get('[data-test="page-2"]').trigger('click')
+    listKeys.mockResolvedValueOnce({ items: [createApiKey()], total: 2, pages: 2 })
+    await wrapper.get('button[title="Refresh"]').trigger('click')
     await flushPromises()
-    const table = wrapper.findComponent({ name: 'DataTable' })
+    await reachEnd()
+    const table = wrapper.findComponent({ name: 'KeyCardGrid' })
     table.vm.$emit('update:selectedKeys', [1])
     await nextTick()
     expect(table.props('selectedKeys')).toEqual([1])
@@ -571,7 +555,7 @@ describe('user KeysView column settings', () => {
     expect(table.props('selectedKeys')).toEqual([])
     expect(listKeys).toHaveBeenLastCalledWith(
       1,
-      50,
+      20,
       {
         search: 'target',
         status: 'active',
@@ -583,7 +567,7 @@ describe('user KeysView column settings', () => {
     )
   })
 
-  it('places the API endpoint on the right of the search row', async () => {
+  it('places controls in the header and the total opposite the endpoints', async () => {
     getPublicSettings.mockResolvedValue({
       api_base_url: 'https://api.example.com/v1',
       custom_endpoints: [],
@@ -591,9 +575,89 @@ describe('user KeysView column settings', () => {
     const wrapper = await mountView()
 
     const row = wrapper.get('[data-test="keys-filter-row"]')
-    expect(row.classes()).toContain('justify-between')
-    expect(row.findComponent({ name: 'SearchInput' }).exists()).toBe(true)
+    expect(row.findComponent({ name: 'SearchInput' }).exists()).toBe(false)
     expect(row.get('[data-test="endpoint-popover"]').exists()).toBe(true)
+    expect(row.get('[data-test="keys-total"]').text()).toBe('1 keys')
+    const header = wrapper.get('header')
+    expect(header.findComponent({ name: 'SearchInput' }).exists()).toBe(true)
+    expect(header.findAllComponents({ name: 'Select' })).toHaveLength(2)
+    expect(header.get('button[title="Refresh"]').exists()).toBe(true)
+    expect(header.get('button[title="Column Settings"]').exists()).toBe(true)
+    expect(header.get('[data-tour="keys-create-btn"]').exists()).toBe(true)
+  })
+
+  describe('infinite scrolling', () => {
+    it('appends pages once, deduplicates keys and retains selected cards', async () => {
+      listKeys.mockResolvedValueOnce({ items: [createApiKey()], total: 3, pages: 2 })
+      let resolvePage!: (value: unknown) => void
+      listKeys.mockReturnValueOnce(new Promise(resolve => { resolvePage = resolve }))
+      const wrapper = await mountView()
+      const cards = wrapper.findComponent({ name: 'KeyCardGrid' })
+      cards.vm.$emit('update:selectedKeys', [1])
+      await reachEnd()
+      await reachEnd()
+      expect(listKeys).toHaveBeenCalledTimes(2)
+      expect(listKeys.mock.calls[1]?.slice(0, 2)).toEqual([2, 20])
+      resolvePage({ items: [createApiKey(), { ...createApiKey(), id: 2 }], total: 3, pages: 2 })
+      await flushPromises()
+      expect(cards.props('data').map((key: ApiKey) => key.id)).toEqual([1, 2])
+      expect(cards.props('selectedKeys')).toEqual([1])
+      await reachEnd()
+      expect(listKeys).toHaveBeenCalledTimes(2)
+      wrapper.unmount()
+    })
+
+    it('rejects a stale page after filters change and cancels it on unmount', async () => {
+      listKeys.mockResolvedValueOnce({ items: [createApiKey()], total: 2, pages: 2 })
+      const wrapper = await mountView()
+      let resolvePage!: (value: unknown) => void
+      listKeys.mockReturnValueOnce(new Promise(resolve => { resolvePage = resolve }))
+      await reachEnd()
+      const pageSignal = listKeys.mock.calls[1]?.[3].signal
+      listKeys.mockResolvedValueOnce({ items: [{ ...createApiKey(), id: 9 }], total: 1, pages: 1 })
+      wrapper.findComponent({ name: 'SearchInput' }).vm.$emit('update:modelValue', 'new')
+      wrapper.findComponent({ name: 'SearchInput' }).vm.$emit('search')
+      await flushPromises()
+      expect(pageSignal.aborted).toBe(true)
+      resolvePage({ items: [{ ...createApiKey(), id: 2 }], total: 2, pages: 2 })
+      await flushPromises()
+      expect(wrapper.findComponent({ name: 'KeyCardGrid' }).props('data').map((key: ApiKey) => key.id)).toEqual([9])
+      const latestSignal = listKeys.mock.calls[2]?.[3].signal
+      wrapper.unmount()
+      expect(latestSignal.aborted).toBe(true)
+    })
+
+    it('retains loaded cards after a page fails and retries the same page', async () => {
+      listKeys.mockResolvedValueOnce({ items: [createApiKey()], total: 2, pages: 2 })
+      const wrapper = await mountView()
+      listKeys.mockRejectedValueOnce(new Error('offline'))
+      await reachEnd()
+      expect(wrapper.findComponent({ name: 'KeyCardGrid' }).props('data')).toHaveLength(1)
+      listKeys.mockResolvedValueOnce({ items: [{ ...createApiKey(), id: 2 }], total: 2, pages: 2 })
+      await wrapper.get('[data-test="keys-retry-more"]').trigger('click')
+      await flushPromises()
+      expect(listKeys.mock.calls[2]?.[0]).toBe(2)
+      expect(wrapper.findComponent({ name: 'KeyCardGrid' }).props('data')).toHaveLength(2)
+      wrapper.unmount()
+    })
+
+    it('merges slow usage responses from multiple pages without cancelling earlier usage', async () => {
+      listKeys.mockResolvedValueOnce({ items: [createApiKey()], total: 2, pages: 2 })
+      let resolveFirst!: (value: unknown) => void
+      getDashboardApiKeysUsage.mockReturnValueOnce(new Promise(resolve => { resolveFirst = resolve }))
+      const wrapper = await mountView()
+      const usageSignal = getDashboardApiKeysUsage.mock.calls[0]?.[1].signal
+      listKeys.mockResolvedValueOnce({ items: [{ ...createApiKey(), id: 2 }], total: 2, pages: 2 })
+      getDashboardApiKeysUsage.mockResolvedValueOnce({ stats: { 2: { today_actual_cost: 2, total_actual_cost: 4 } } })
+      await reachEnd()
+      expect(usageSignal.aborted).toBe(false)
+      resolveFirst({ stats: { 1: { today_actual_cost: 1, total_actual_cost: 3 } } })
+      await flushPromises()
+      const usage = wrapper.findAll('[data-test="usage"]')
+      expect(usage[0]?.text()).toContain('$3.0000')
+      expect(usage[1]?.text()).toContain('$4.0000')
+      wrapper.unmount()
+    })
   })
 
   describe('create group selection', () => {
@@ -725,7 +789,7 @@ describe('user KeysView column settings', () => {
       getDashboardApiKeysUsage.mockReturnValue(new Promise((resolve) => { resolveUsage = resolve }))
       const wrapper = await mountView()
 
-      const table = wrapper.findComponent({ name: 'DataTable' })
+      const table = wrapper.findComponent({ name: 'KeyCardGrid' })
       expect(table.props('loading')).toBe(false)
       expect(table.props('data')).toHaveLength(1)
       expect(wrapper.find('[data-test="usage-pending"]').exists()).toBe(true)
