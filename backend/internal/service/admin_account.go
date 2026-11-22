@@ -350,6 +350,9 @@ func (s *adminServiceImpl) prepareDuplicateAccount(ctx context.Context, source *
 	if err != nil {
 		return nil, err
 	}
+	if probeEnabled {
+		duplicate.Extra[UpstreamBillingRateSyncEnabledExtraKey] = true
+	}
 	// A copied credential must be reviewed before it can share live traffic with its source.
 	duplicate.Schedulable = false
 	duplicate.AccountGroups = groups

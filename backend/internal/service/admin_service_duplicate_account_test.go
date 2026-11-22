@@ -379,7 +379,7 @@ func TestBatchDuplicateAccountsNamesProbesAndRetry(t *testing.T) {
 		require.Equal(t, fmt.Sprintf("GPT-UltraFast1-%d", i+1), copy.Name)
 		require.Equal(t, source.Credentials, copy.Credentials)
 		require.True(t, upstreamBillingProbeEnabled(copy))
-		require.NotContains(t, copy.Extra, UpstreamBillingRateSyncEnabledExtraKey)
+		require.True(t, upstreamBillingRateSyncEnabled(copy))
 		require.NotContains(t, copy.Extra, UpstreamBillingProbeExtraKey)
 		require.False(t, copy.Schedulable)
 		require.Equal(t, StatusActive, copy.Status)

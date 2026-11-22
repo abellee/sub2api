@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -16,6 +17,7 @@ import (
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/Wei-Shaw/sub2api/migrations"
 	"github.com/stretchr/testify/require"
 )
 
@@ -42,6 +44,10 @@ func TestSyncIsolationPostgresLifecycle(t *testing.T) {
 	repo := newGroupRepositoryWithSQL(client, db)
 	source := &service.Group{Name: "Isolation test", Platform: service.PlatformOpenAI, Status: service.StatusActive, SubscriptionType: service.SubscriptionTypeStandard, RateMultiplier: 0.15, SyncIsolationEnabled: true, ForceOpenAIFast: true}
 	require.NoError(t, createGroupRecord(ctx, client, source))
+	linked := &service.Group{Name: "Existing rate target", Platform: service.PlatformOpenAI, Status: service.StatusActive, SubscriptionType: service.SubscriptionTypeStandard}
+	require.NoError(t, createGroupRecord(ctx, client, linked))
+	source.RateSyncGroupIDs = []int64{linked.ID}
+	require.NoError(t, repo.Update(ctx, source))
 	_, err = db.Exec(`INSERT INTO users (id,email,password_hash) VALUES (2,'sync-isolation@test.invalid','fixture')`)
 	require.NoError(t, err)
 	user, err := client.User.Get(ctx, 2)
@@ -78,6 +84,17 @@ func TestSyncIsolationPostgresLifecycle(t *testing.T) {
 	require.False(t, child.SyncIsolationEnabled, "children cannot recursively isolate")
 	require.Equal(t, source.ID, child.SyncIsolationSourceGroupID)
 	require.Equal(t, source.RateMultiplier, child.RateMultiplier)
+	require.Equal(t, "Isolation test [同步]", child.Name)
+	require.Empty(t, child.RateSyncGroupIDs, "children must not inherit the source's outgoing rate links")
+	storedSource, err := repo.GetByIDLite(ctx, source.ID)
+	require.NoError(t, err)
+	require.Equal(t, []int64{linked.ID, childID}, storedSource.RateSyncGroupIDs)
+	var candidate string
+	require.NoError(t, db.QueryRow(`SELECT sync_isolation_group_name($1)`, source.Name).Scan(&candidate))
+	require.Equal(t, "Isolation test [同步 2]", candidate, "collisions use an ordinal, not a group ID")
+	require.NoError(t, db.QueryRow(`SELECT sync_isolation_group_name($1)`, strings.Repeat("长", 100)).Scan(&candidate))
+	require.Len(t, []rune(candidate), 100)
+	require.True(t, strings.HasSuffix(candidate, " [同步]"))
 	for _, key := range keys {
 		stored, err := keyRepo.GetByKeyForAuth(ctx, key.Key)
 		require.NoError(t, err)
@@ -97,6 +114,7 @@ func TestSyncIsolationPostgresLifecycle(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 0.18, child.RateMultiplier)
 	require.False(t, child.ForceOpenAIFast)
+	require.Empty(t, child.RateSyncGroupIDs, "source updates must not introduce child self-links")
 	_, err = db.Exec(`UPDATE user_group_rate_multipliers SET rate_multiplier=0.13 WHERE user_id=2 AND group_id=$1`, source.ID)
 	require.NoError(t, err)
 	require.NoError(t, db.QueryRow(`SELECT rate_multiplier FROM user_group_rate_multipliers WHERE user_id=2 AND group_id=$1`, childID).Scan(&rate))
@@ -216,4 +234,29 @@ func TestSyncIsolationPostgresLifecycle(t *testing.T) {
 		require.False(t, changed, "queued work must not restore revoked source access")
 		require.Equal(t, source.ID, id)
 	}
+
+	t.Run("repair existing isolation groups", func(t *testing.T) {
+		legacySource := &service.Group{Name: "Legacy source", Platform: service.PlatformOpenAI, Status: service.StatusActive, SubscriptionType: service.SubscriptionTypeStandard}
+		require.NoError(t, createGroupRecord(ctx, client, legacySource))
+		legacy := &service.Group{Name: fmt.Sprintf("Legacy source [同步-%d]", legacySource.ID), Platform: service.PlatformOpenAI, Status: service.StatusActive, SubscriptionType: service.SubscriptionTypeStandard, SyncIsolationSourceGroupID: legacySource.ID}
+		require.NoError(t, createGroupRecord(ctx, client, legacy))
+		legacy.RateSyncGroupIDs = []int64{legacy.ID, linked.ID}
+		require.NoError(t, repo.Update(ctx, legacy))
+		legacySource.RateSyncGroupIDs = []int64{linked.ID}
+		require.NoError(t, repo.Update(ctx, legacySource))
+		sql, err := migrations.FS.ReadFile("273_sync_isolation_rate_links.sql")
+		require.NoError(t, err)
+		backfill := string(sql)[strings.Index(string(sql), "DO $$"):]
+		for range 2 {
+			_, err = db.Exec(backfill)
+			require.NoError(t, err)
+		}
+		got, err := repo.GetByIDLite(ctx, legacy.ID)
+		require.NoError(t, err)
+		require.Equal(t, "Legacy source [同步]", got.Name)
+		require.Equal(t, []int64{linked.ID}, got.RateSyncGroupIDs)
+		got, err = repo.GetByIDLite(ctx, legacySource.ID)
+		require.NoError(t, err)
+		require.Equal(t, []int64{linked.ID, legacy.ID}, got.RateSyncGroupIDs)
+	})
 }

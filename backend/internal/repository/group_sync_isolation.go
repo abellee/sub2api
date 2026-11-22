@@ -3,7 +3,6 @@ package repository
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
@@ -27,7 +26,8 @@ func (r *groupRepository) ObserveSyncIsolation(ctx context.Context, keyID, userI
 	if current.SyncIsolationSourceGroupID > 0 {
 		sourceID = current.SyncIsolationSourceGroupID
 	}
-	source, err := client.Group.Query().Where(group.IDEQ(sourceID)).ForShare().Only(ctx)
+	// Creation also updates the source's rate links; take the write lock up front.
+	source, err := client.Group.Query().Where(group.IDEQ(sourceID)).ForUpdate().Only(ctx)
 	if err != nil {
 		return 0, false, err
 	}
@@ -97,13 +97,10 @@ func (r *groupRepository) ObserveSyncIsolation(ctx context.Context, keyID, userI
 			copy.SyncIsolationEnabled = false
 			copy.IsExclusive = true
 			copy.Status = service.StatusActive
-			// Include the source ID so truncated names cannot collide across sources.
-			suffix := fmt.Sprintf(" [同步-%d]", sourceID)
-			name := []rune(source.Name)
-			if len(name)+len([]rune(suffix)) > 100 {
-				name = name[:100-len([]rune(suffix))]
+			copy.RateSyncGroupIDs = nil
+			if err = scanSingleRow(ctx, client, `SELECT sync_isolation_group_name($1)`, []any{source.Name}, &copy.Name); err != nil {
+				return 0, false, err
 			}
-			copy.Name = string(name) + suffix
 			copy.I18n = make(service.GroupI18n, len(source.I18n))
 			for locale, text := range source.I18n {
 				text.Name = ""
@@ -113,6 +110,12 @@ func (r *groupRepository) ObserveSyncIsolation(ctx context.Context, keyID, userI
 				return 0, false, err
 			}
 			targetID = copy.ID
+			if _, err = client.ExecContext(ctx, `UPDATE groups SET rate_sync_group_ids=rate_sync_group_ids || jsonb_build_array($2::bigint), updated_at=NOW() WHERE id=$1`, sourceID, targetID); err != nil {
+				return 0, false, err
+			}
+			if err = enqueueSchedulerOutbox(ctx, client, service.SchedulerOutboxEventGroupChanged, nil, &sourceID, nil); err != nil {
+				return 0, false, err
+			}
 			if _, err = client.ExecContext(ctx, `SELECT sync_isolation_bindings($1,$2)`, sourceID, targetID); err != nil {
 				return 0, false, err
 			}
