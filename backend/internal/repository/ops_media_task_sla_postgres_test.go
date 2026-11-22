@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -111,6 +112,19 @@ CREATE UNIQUE INDEX daily_dim ON ops_metrics_daily(bucket_date,COALESCE(platform
 	migrate("266_ops_media_task_sla_cpu.sql", true)
 	migrate("268_ops_media_terminal_sla_index_notx.sql", false)
 	migrate("269_ops_sla_ordinary_path_fast_path.sql", true)
+	original, err := os.ReadFile(filepath.Join("..", "..", "migrations", "253_ops_media_task_sla.sql"))
+	require.NoError(t, err)
+	originalID := strings.SplitN(string(original), "$$;", 2)[0] + "$$;"
+	_, err = db.ExecContext(ctx, strings.Replace(originalID, "ops_media_task_id(", "ops_media_task_id_original(", 1))
+	require.NoError(t, err)
+	migrate("270_ops_media_task_id_fast_path.sql", true)
+	for _, path := range []any{nil, "", "/v1/chat/completions", "/media/tasks/mtask_a", "/v1/images/tasks/mtask_a?response_format=b64_json", "/v1/videos/mtask_a", "/media/tasks/mtask_", "/media/tasks/mtask_a/b", "/media/tasks/mtask_中文", "/media/tasks/mtask_" + strings.Repeat("a", 128), "/media/tasks/mtask_" + strings.Repeat("a", 129), "/v1/images/generations", "/v1/images/edits", "/v1/videos", "/v1/videos/generations"} {
+		for _, body := range []any{nil, "", `{"task_id":"mtask_valid"}`, `{"task_id":"mtask_` + strings.Repeat("a", 129) + `","next":{"task_id":"mtask_valid"}}`} {
+			var equal bool
+			require.NoError(t, db.QueryRowContext(ctx, `SELECT ops_media_task_id($1,$2) IS NOT DISTINCT FROM ops_media_task_id_original($1,$2)`, path, body).Scan(&equal))
+			require.True(t, equal, "task ID extraction differs for path %v", path)
+		}
+	}
 	var changed int
 	require.NoError(t, db.QueryRowContext(ctx, `SELECT count(*) FROM original_sla a JOIN ops_error_log_metrics b USING(id)
 WHERE a.is_sla_sample IS DISTINCT FROM b.is_sla_sample`).Scan(&changed))
