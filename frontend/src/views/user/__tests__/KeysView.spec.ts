@@ -306,7 +306,7 @@ describe('user KeysView column settings', () => {
     isCurrentStep.mockReturnValue(false)
   })
 
-  it('shows the group model icon and all tags below the group name on key cards', async () => {
+  it('shows the model icon before the card title and all tags below the group name', async () => {
     const group = {
       id: 1, name: 'OpenAI group', platform: 'openai', rate_multiplier: 0.3,
       required_protocol: 'openai', blocked_user_agents: ' Claude, , cursor, CLAUDE ',
@@ -327,10 +327,11 @@ describe('user KeysView column settings', () => {
     })
     const wrapper = await mountView()
     const cards = wrapper.findAll('[data-test="key-group"]')
-    const trigger = cards[0].get('.key-group-trigger')
-    expect(trigger.findComponent({ name: 'PlatformIcon' }).props('platform')).toBe('openai')
-    expect(trigger.element.firstElementChild?.classList.contains('key-group-icon')).toBe(true)
-    expect(trigger.findComponent({ name: 'GroupBadge' }).props('showIcon')).toBe(false)
+    const titles = wrapper.findAll('.key-card-name')
+    expect(titles[0].findComponent({ name: 'PlatformIcon' }).props('platform')).toBe('openai')
+    expect(titles[0].element.firstElementChild?.classList.contains('key-card-model-icon')).toBe(true)
+    expect(titles[0].get('span').text()).toBe('test-key')
+    expect(cards[0].findComponent({ name: 'PlatformIcon' }).exists()).toBe(false)
     const tags = cards[0].get('.key-group-tags')
     expect(tags.find('.keys-group-cap-tag').exists()).toBe(true)
     expect(tags.findAll('.key-group-custom-tag').map(tag => tag.text()))
@@ -341,7 +342,7 @@ describe('user KeysView column settings', () => {
       .toEqual(['排除客户端：claude', '排除客户端：cursor'])
     expect(cards[0].get('.key-group-trigger').element.nextElementSibling).toBe(tags.element)
     expect(cards[1].find('.key-group-tags').exists()).toBe(false)
-    expect(cards[1].find('.key-group-icon').exists()).toBe(false)
+    expect(titles[1].find('.key-card-model-icon').exists()).toBe(false)
     wrapper.unmount()
   })
 

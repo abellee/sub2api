@@ -158,7 +158,13 @@
           </template>
 
           <template #cell-name="{ row }">
-            <div class="flex items-center gap-1.5">
+            <div class="key-card-name">
+              <PlatformIcon
+                v-if="row.group"
+                :platform="row.group.platform || 'composite'"
+                size="md"
+                class="key-card-model-icon"
+              />
               <span class="font-medium text-gray-900 dark:text-white">{{ row.name }}</span>
               <Icon
                 v-if="row.ip_whitelist?.length > 0 || row.ip_blacklist?.length > 0"
@@ -177,18 +183,11 @@
                 class="key-group-trigger"
                 :title="row.group ? `${row.group.name} · ${t('keys.clickToChangeGroup')}` : t('keys.clickToChangeGroup')"
               >
-                <PlatformIcon
-                  v-if="row.group"
-                  :platform="row.group.platform || 'composite'"
-                  size="md"
-                  class="key-group-icon"
-                />
                 <GroupBadge
                   v-if="row.group"
                   class="key-group-badge"
                   :name="row.group.name"
                   :platform="row.group.platform || 'composite'"
-                  :show-icon="false"
                   :subscription-type="row.group.subscription_type"
                   :rate-multiplier="row.group.rate_multiplier"
                   :user-rate-multiplier="userGroupRates[row.group.id]"
@@ -2668,11 +2667,13 @@ onUnmounted(() => {
 .key-group-trigger{display:flex;align-items:center;gap:6px;width:100%;min-width:0;padding:0;border-radius:6px;text-align:left}
 .key-group-trigger:hover{background:var(--tf-console-hover)}
 .key-group-trigger:focus-visible{outline:2px solid var(--tf-console-active-ink);outline-offset:3px}
-.key-group-icon{align-self:flex-start;flex-shrink:0;margin-top:4px;color:var(--studio-ink)}
-.key-group-badge{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;flex:1;min-width:0;max-width:100%;gap:6px}
-.key-group-badge :deep(.group-badge-name){grid-column:1;grid-row:1;min-width:0}
-.key-group-badge :deep(.group-badge-rate){grid-column:2;grid-row:1;white-space:nowrap}
-.key-group-badge :deep(.group-badge-peak){grid-column:1 / -1;justify-self:start;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.key-card-name{display:flex;align-items:center;gap:8px;min-width:0}
+.key-card-name>span{min-width:0}
+.key-group-badge{display:grid;grid-template-columns:14px minmax(0,1fr) auto;align-items:center;flex:1;min-width:0;max-width:100%;gap:6px}
+.key-group-badge :deep(>svg){grid-column:1;grid-row:1}
+.key-group-badge :deep(.group-badge-name){grid-column:2;grid-row:1;min-width:0}
+.key-group-badge :deep(.group-badge-rate){grid-column:3;grid-row:1;white-space:nowrap}
+.key-group-badge :deep(.group-badge-peak){grid-column:2 / -1;justify-self:start;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .key-group-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
 .key-group-tags:empty{display:none}
 .key-group-tags>span{max-width:100%;white-space:normal;overflow-wrap:anywhere}
