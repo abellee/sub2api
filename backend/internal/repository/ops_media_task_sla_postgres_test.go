@@ -118,10 +118,12 @@ CREATE UNIQUE INDEX daily_dim ON ops_metrics_daily(bucket_date,COALESCE(platform
 	_, err = db.ExecContext(ctx, strings.Replace(originalID, "ops_media_task_id(", "ops_media_task_id_original(", 1))
 	require.NoError(t, err)
 	migrate("270_ops_media_task_id_fast_path.sql", true)
+	migrate("271_ops_media_terminal_fast_index_notx.sql", false)
+	migrate("272_ops_media_sla_use_fast_index.sql", true)
 	for _, path := range []any{nil, "", "/v1/chat/completions", "/media/tasks/mtask_a", "/v1/images/tasks/mtask_a?response_format=b64_json", "/v1/videos/mtask_a", "/media/tasks/mtask_", "/media/tasks/mtask_a/b", "/media/tasks/mtask_中文", "/media/tasks/mtask_" + strings.Repeat("a", 128), "/media/tasks/mtask_" + strings.Repeat("a", 129), "/v1/images/generations", "/v1/images/edits", "/v1/videos", "/v1/videos/generations"} {
 		for _, body := range []any{nil, "", `{"task_id":"mtask_valid"}`, `{"task_id":"mtask_` + strings.Repeat("a", 129) + `","next":{"task_id":"mtask_valid"}}`} {
 			var equal bool
-			require.NoError(t, db.QueryRowContext(ctx, `SELECT ops_media_task_id($1,$2) IS NOT DISTINCT FROM ops_media_task_id_original($1,$2)`, path, body).Scan(&equal))
+			require.NoError(t, db.QueryRowContext(ctx, `SELECT ops_media_task_id_fast($1,$2) IS NOT DISTINCT FROM ops_media_task_id_original($1,$2)`, path, body).Scan(&equal))
 			require.True(t, equal, "task ID extraction differs for path %v", path)
 		}
 	}
@@ -204,6 +206,26 @@ FROM generate_series(1,10000) n; ANALYZE ops_error_logs;`)
 	_, _, loadSLA, _, _, _, err := repo.queryErrorCounts(queryCtx, filter, time.Now().Add(-time.Hour), time.Now().Add(time.Hour))
 	require.NoError(t, err)
 	require.EqualValues(t, 102, loadSLA)
+	// The extractor's matching index must exist before switching live classification.
+	_, err = db.ExecContext(ctx, "SET enable_seqscan=off")
+	require.NoError(t, err)
+	planRows, err := db.QueryContext(ctx, `EXPLAIN SELECT 1 FROM ops_error_logs previous
+ WHERE ops_media_task_id_fast(previous.request_path,previous.error_body)='mtask_load_1'
+ AND previous.user_id=2 AND previous.status_code>=400 AND NOT previous.is_business_limited
+ AND NOT previous.is_count_tokens AND ops_media_task_failure(previous.status_code,previous.error_body)
+ AND (previous.created_at,previous.id)<(now(),9223372036854775807::bigint)`)
+	require.NoError(t, err)
+	var plan strings.Builder
+	for planRows.Next() {
+		var line string
+		require.NoError(t, planRows.Scan(&line))
+		plan.WriteString(line)
+	}
+	require.NoError(t, planRows.Close())
+	require.Contains(t, plan.String(), "idx_ops_media_terminal_sla_fast")
+	_, err = db.ExecContext(ctx, "SET enable_seqscan=on")
+	require.NoError(t, err)
+
 	// Fast-path guards preserve classification for ordinary, NULL and malformed paths.
 	_, err = db.ExecContext(ctx, `INSERT INTO ops_error_logs(created_at,user_id,request_path,error_body,status_code)
  VALUES(now(),2,'/v1/chat/completions','{"task_id":"mtask_load_1","status":"failed"}',502),
