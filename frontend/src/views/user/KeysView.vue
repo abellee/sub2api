@@ -2664,7 +2664,7 @@ onUnmounted(() => {
 @media(max-width:700px){.recommended-groups-heading{font-size:16px}}
 
 .key-group{min-width:0}
-.key-group-trigger{display:flex;align-items:center;gap:6px;width:100%;height:56px;min-width:0;padding:8px;border-radius:8px;background:var(--studio-haze);text-align:left}
+.key-group-trigger{display:flex;align-items:center;gap:6px;width:100%;height:44px;min-width:0;padding:2px 8px;border-radius:8px;background:var(--studio-haze);text-align:left}
 .key-group-trigger:hover{background:var(--tf-console-hover)}
 .key-group-trigger:focus-visible{outline:2px solid var(--tf-console-active-ink);outline-offset:3px}
 .key-card-name{display:flex;align-items:center;gap:8px;min-width:0}
