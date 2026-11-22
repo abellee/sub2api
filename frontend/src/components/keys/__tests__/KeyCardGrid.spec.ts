@@ -7,7 +7,7 @@ vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
 const rows = [{ id: 1, name: 'First', key: 'sk-one' }, { id: 2, name: 'Second', key: 'sk-two' }] as ApiKey[]
 const render = (selectedKeys: number[] = []) => mount(KeyCardGrid, {
   props: {
-    data: rows, loading: false, selectedKeys, sortBy: 'created_at', sortOrder: 'desc',
+    data: rows, loading: false, selectedKeys,
     columns: [{ key: 'name', label: 'Name' }, { key: 'key', label: 'Key' }, { key: 'id', label: 'ID', sortable: true }, { key: 'actions', label: 'Actions' }]
   },
   slots: { 'cell-key': '<template #default="{ value }"><code>masked {{ value.slice(-3) }}</code></template>' }
@@ -32,11 +32,11 @@ describe('KeyCardGrid', () => {
     expect(wrapper.emitted('update:selectedKeys')?.[1]).toEqual([[1, 2]])
   })
 
-  it('preserves sorting and hides fields removed by the settings', async () => {
+  it('renders plain field labels and hides fields removed by the settings', async () => {
     const wrapper = render()
-    await wrapper.get('[data-key-id="1"] button[title="ID"]').trigger('click')
-    expect(wrapper.emitted('sort')?.[0]).toEqual(['id', 'asc'])
-    await wrapper.setProps({ columns: [{ key: 'name', label: 'Name' }], sortBy: 'id', sortOrder: 'asc' })
+    expect(wrapper.get('[data-key-id="1"] [data-field="id"] dt').text()).toBe('ID')
+    expect(wrapper.find('.key-card-fields button').exists()).toBe(false)
+    await wrapper.setProps({ columns: [{ key: 'name', label: 'Name' }] })
     expect(wrapper.find('[data-field="id"]').exists()).toBe(false)
   })
 

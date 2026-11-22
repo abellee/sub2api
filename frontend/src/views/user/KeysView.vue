@@ -63,70 +63,47 @@
             </button>
           </div>
         </div>
-        <button @click="openCreateModal" class="studio-action" data-tour="keys-create-btn">
-          <Icon name="plus" size="sm" />
-          {{ t('keys.createKey') }}
-        </button>
       </div>
     </template>
     <div class="keys-page">
-      <div class="keys-recommendations">
-        <div class="flex items-center justify-between gap-3">
-          <section v-if="recommendedGroupOptions.length" class="recommended-groups-strip w-full">
-            <div class="recommended-groups-heading">
-              <Icon name="badge" size="lg" class="text-amber-500" />
-              <h2>{{ t('keys.recommendedGroups') }}</h2>
-            </div>
-            <div class="recommended-group-mini-list">
-              <button
-                v-for="option in recommendedGroupOptions"
-                :key="`filter-recommended-${option.value}`"
-                type="button"
-                class="recommended-group-mini-card"
-                :title="option.recommendationReason || option.description || option.label"
-                @click="createKeyFromRecommendation(option.value)"
-              >
-                <span class="truncate font-medium text-primary-700 dark:text-primary-300">{{ option.label }}</span>
-                <span class="shrink-0 text-xs text-gray-500 dark:text-gray-400">{{ formatGroupRate(option) }}x</span>
-                <span class="line-clamp-1 text-left text-xs text-gray-500 dark:text-gray-400">
-                  {{ option.recommendationReason || option.description || t('keys.recommendationReasonEmpty') }}
-                </span>
-                <span class="shrink-0 text-xs font-semibold text-amber-600 dark:text-amber-400">
-                  {{ formatRecommendationRating(option.recommendationRating) }}
-                </span>
-              </button>
-            </div>
-          </section>
-        </div>
-      </div>
-
-      <div class="keys-content-tools">
-        <div class="flex flex-col gap-3">
-          <div class="keys-endpoint-row" data-test="keys-filter-row">
-            <EndpointPopover
-              v-if="publicSettings?.api_base_url || (publicSettings?.custom_endpoints?.length ?? 0) > 0"
-              class="keys-endpoints min-w-0"
-              :api-base-url="publicSettings?.api_base_url || ''"
-              :custom-endpoints="publicSettings?.custom_endpoints || []"
-            />
-            <span class="keys-total" data-test="keys-total" role="status">{{ t('keys.totalKeys', { count: pagination.total }) }}</span>
-          </div>
-          <div v-if="selectedIds.length" class="flex flex-wrap items-center gap-3 text-sm">
-            <span class="text-gray-600 dark:text-gray-300">
-              {{ t('keys.bulkEdit.selectedCount', { count: selectedIds.length }) }}
-            </span>
+      <section v-if="recommendedGroupOptions.length" class="keys-recommendations">
+        <h2 class="recommended-groups-heading">{{ t('keys.recommendedGroups') }}</h2>
+        <div class="recommended-groups-strip">
+          <div class="recommended-group-mini-list">
             <button
-              class="btn btn-primary btn-sm"
-              :disabled="loading"
-              data-test="bulk-edit-keys"
-              @click="showBulkEditModal = true"
+              v-for="option in recommendedGroupOptions"
+              :key="`filter-recommended-${option.value}`"
+              type="button"
+              class="recommended-group-mini-card"
+              :title="option.recommendationReason || option.description || option.label"
+              @click="createKeyFromRecommendation(option.value)"
             >
-              {{ t('keys.bulkEdit.title') }}
-            </button>
-            <button class="btn btn-secondary btn-sm" @click="selectedIds = []">
-              {{ t('keys.bulkEdit.clearSelection') }}
+              <span class="truncate font-medium text-primary-700 dark:text-primary-300">{{ option.label }}</span>
+              <span class="shrink-0 text-xs text-gray-500 dark:text-gray-400">{{ formatGroupRate(option) }}x</span>
+              <span class="line-clamp-1 text-left text-xs text-gray-500 dark:text-gray-400">
+                {{ option.recommendationReason || option.description || t('keys.recommendationReasonEmpty') }}
+              </span>
+              <span class="shrink-0 text-xs font-semibold text-amber-600 dark:text-amber-400">
+                {{ formatRecommendationRating(option.recommendationRating) }}
+              </span>
             </button>
           </div>
+        </div>
+      </section>
+
+      <div class="keys-endpoint-row" data-test="keys-filter-row">
+        <EndpointPopover
+          v-if="publicSettings?.api_base_url || (publicSettings?.custom_endpoints?.length ?? 0) > 0"
+          class="keys-endpoints min-w-0"
+          :api-base-url="publicSettings?.api_base_url || ''"
+          :custom-endpoints="publicSettings?.custom_endpoints || []"
+        />
+        <div class="studio-filters keys-summary-actions">
+          <span class="keys-total" data-test="keys-total" role="status">{{ t('keys.totalKeys', { count: pagination.total }) }}</span>
+          <button @click="openCreateModal" class="studio-action" data-tour="keys-create-btn">
+            <Icon name="plus" size="sm" />
+            {{ t('keys.createKey') }}
+          </button>
         </div>
       </div>
 
@@ -137,10 +114,18 @@
           :loading="loading"
           :selected-keys="selectedIds"
           @update:selected-keys="handleSelectionChange"
-          :sort-by="sortState.sort_by"
-          :sort-order="sortState.sort_order"
-          @sort="handleSort"
         >
+          <template #selection-actions>
+            <div v-if="selectedIds.length" class="studio-filters keys-bulk-actions">
+              <span>{{ t('keys.bulkEdit.selectedCount', { count: selectedIds.length }) }}</span>
+              <button class="studio-action" :disabled="loading" data-test="bulk-edit-keys" @click="showBulkEditModal = true">
+                {{ t('keys.bulkEdit.title') }}
+              </button>
+              <button class="studio-action" @click="selectedIds = []">
+                {{ t('keys.bulkEdit.clearSelection') }}
+              </button>
+            </div>
+          </template>
           <template #cell-id="{ row }">
             <span class="font-mono text-xs text-gray-500 dark:text-gray-400">#{{ row.id }}</span>
           </template>
@@ -1395,19 +1380,19 @@ const onboardingStore = useOnboardingStore()
 const { copyToClipboard: clipboardCopy } = useClipboard()
 
 const allColumns = computed<Column[]>(() => [
-  { key: 'name', label: t('common.name'), sortable: true },
-  { key: 'id', label: t('keys.id'), sortable: true },
-  { key: 'key', label: t('keys.apiKey'), sortable: false },
-  { key: 'group', label: t('keys.group'), sortable: true },
-  { key: 'current_concurrency', label: t('keys.currentConcurrency'), sortable: true },
-  { key: 'usage', label: t('keys.usage'), sortable: false },
-  { key: 'rate_limit', label: t('keys.rateLimitColumn'), sortable: false },
-  { key: 'expires_at', label: t('keys.expiresAt'), sortable: true },
-  { key: 'status', label: t('common.status'), sortable: true },
-  { key: 'last_used_at', label: t('keys.lastUsedAt'), sortable: true },
-  { key: 'last_used_ip', label: t('keys.lastUsedIP'), sortable: false },
-  { key: 'created_at', label: t('keys.created'), sortable: true },
-  { key: 'actions', label: t('common.actions'), sortable: false }
+  { key: 'name', label: t('common.name') },
+  { key: 'id', label: t('keys.id') },
+  { key: 'key', label: t('keys.apiKey') },
+  { key: 'group', label: t('keys.group') },
+  { key: 'current_concurrency', label: t('keys.currentConcurrency') },
+  { key: 'usage', label: t('keys.usage') },
+  { key: 'rate_limit', label: t('keys.rateLimitColumn') },
+  { key: 'expires_at', label: t('keys.expiresAt') },
+  { key: 'status', label: t('common.status') },
+  { key: 'last_used_at', label: t('keys.lastUsedAt') },
+  { key: 'last_used_ip', label: t('keys.lastUsedIP') },
+  { key: 'created_at', label: t('keys.created') },
+  { key: 'actions', label: t('common.actions') }
 ])
 
 const ALWAYS_VISIBLE_COLUMNS = new Set(['name', 'actions'])
@@ -1555,10 +1540,6 @@ const pagination = ref({
   page_size: 20,
   total: 0,
   pages: 0
-})
-const sortState = ref({
-  sort_by: 'created_at',
-  sort_order: 'desc' as 'asc' | 'desc'
 })
 
 // Filter state
@@ -1953,8 +1934,8 @@ const loadKeyPage = async (append: boolean) => {
     if (filterSearch.value) filters.search = filterSearch.value
     if (filterStatus.value) filters.status = filterStatus.value
     if (filterGroupId.value !== '') filters.group_id = filterGroupId.value
-    filters.sort_by = sortState.value.sort_by
-    filters.sort_order = sortState.value.sort_order
+    filters.sort_by = 'created_at'
+    filters.sort_order = 'desc'
 
     const response = await keysAPI.list(page, pagination.value.page_size, filters, {
       signal
@@ -2215,14 +2196,6 @@ const openUseKeyModal = (key: ApiKey) => {
 const closeUseKeyModal = () => {
   showUseKeyModal.value = false
   selectedKey.value = null
-}
-
-const handleSort = (key: string, order: 'asc' | 'desc') => {
-  selectedIds.value = []
-  sortState.value.sort_by = key
-  sortState.value.sort_order = order
-  pagination.value.page = 1
-  loadApiKeys()
 }
 
 const editKey = (key: ApiKey) => {
@@ -2651,12 +2624,13 @@ onUnmounted(() => {
 .keys-header-search{width:190px}.keys-header-search :deep(.input){padding-left:36px}.keys-header-select{width:126px}
 .keys-header-controls :deep(.input::placeholder){color:var(--studio-muted)}
 .keys-page{display:flex;flex-direction:column;gap:24px;min-width:0}
+.keys-summary-actions{flex-shrink:0;gap:12px;margin-left:auto}.keys-bulk-actions{flex-shrink:0;gap:8px;font-size:12px}.keys-bulk-actions .studio-action:disabled{opacity:.4;cursor:default}
 .keys-endpoint-row{display:flex;align-items:center;justify-content:space-between;gap:16px;min-width:0}
 .keys-endpoints :deep(.pointer-events-none){max-width:min(24rem,calc(100vw - 80px))}
 .keys-total{flex-shrink:0;font-size:12px;color:var(--studio-muted);white-space:nowrap;font-variant-numeric:tabular-nums}
 .keys-load-more{display:flex;justify-content:center;align-items:center;min-height:32px;color:var(--studio-muted);font-size:12px}.studio-retry{color:var(--tf-console-active-ink);text-decoration:underline;text-underline-offset:3px}
 @media(max-width:1400px){.keys-header-controls{flex-basis:100%}}
-@media(max-width:640px){.keys-header-controls{gap:8px;justify-content:flex-end}.keys-header-search{width:100%}.keys-header-select{flex:1;min-width:120px;width:auto}.keys-endpoint-row{align-items:flex-start;flex-wrap:wrap}.keys-total{margin-left:auto}.keys-page{gap:18px}.recommended-groups-strip{padding:18px}}
+@media(max-width:640px){.keys-header-controls{gap:8px;justify-content:flex-end}.keys-header-search{width:100%}.keys-header-select{flex:1;min-width:120px;width:auto}.keys-endpoint-row{align-items:flex-start;flex-wrap:wrap}.keys-summary-actions{width:auto;justify-content:flex-end}.keys-bulk-actions{width:auto;justify-content:flex-start}.keys-page{gap:18px}.recommended-groups-strip{padding:18px}}
 
 .group-picker-trigger {
   @apply flex w-full cursor-pointer items-center justify-between gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-left text-sm text-gray-900 transition-all duration-200 hover:border-gray-300 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30 dark:border-dark-600 dark:bg-dark-800 dark:text-gray-100 dark:hover:border-dark-500;
@@ -2673,13 +2647,13 @@ onUnmounted(() => {
   box-shadow: 0 6px 28px #26385d05;
 }
 
+.keys-recommendations { display: flex; flex-direction: column; gap: 18px; }
+
 .recommended-groups-heading {
-  display: flex;
-  align-items: center;
-  gap: 10px;
   color: var(--studio-ink);
-  font-size: 15px;
+  font-size: 22px;
   font-weight: 600;
+  letter-spacing: -.7px;
 }
 
 .keys-group-cap-tag {

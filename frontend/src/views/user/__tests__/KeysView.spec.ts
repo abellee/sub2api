@@ -164,14 +164,12 @@ const StudioLayoutStub = {
 const KeyCardGridStub = {
   name: 'KeyCardGrid',
   props: { columns: Array, data: Array, selectedKeys: Array, loading: Boolean },
-  emits: ['sort', 'update:selectedKeys'],
+  emits: ['update:selectedKeys'],
   template: `
     <div>
       <div data-test="columns">{{ columns.map((col) => col.key).join(',') }}</div>
       <div data-test="columns-meta">{{ JSON.stringify(columns.map((col) => ({ key: col.key, sortable: !!col.sortable }))) }}</div>
-      <button data-test="sort-current-concurrency" @click="$emit('sort', 'current_concurrency', 'asc')">
-        Sort Current Concurrency
-      </button>
+      <slot name="selection-actions" />
       <div v-for="row in data" :key="row.id">
         <div
           v-if="columns.some((col) => col.key === 'id')"
@@ -376,17 +374,12 @@ describe('user KeysView column settings', () => {
     wrapper.unmount()
   })
 
-  it.each(['filter', 'sort'])('clears selection on %s changes', async (change) => {
+  it('clears selection on filter changes', async () => {
     const wrapper = await mountView()
     const table = wrapper.findComponent({ name: 'KeyCardGrid' })
     table.vm.$emit('update:selectedKeys', [1])
     await nextTick()
-    if (change === 'filter') {
-      wrapper.findComponent({ name: 'SearchInput' }).vm.$emit('search')
-
-    } else {
-      table.vm.$emit('sort', 'created_at', 'asc')
-    }
+    wrapper.findComponent({ name: 'SearchInput' }).vm.$emit('search')
     await flushPromises()
     expect(table.props('selectedKeys')).toEqual([])
     expect(wrapper.find('[data-test="bulk-edit-keys"]').exists()).toBe(false)
@@ -445,7 +438,7 @@ describe('user KeysView column settings', () => {
 
     expect(visibleColumnKeys(wrapper)).toContain('id')
     expect(wrapper.get('[data-test="key-id"]').text()).toBe('#1')
-    expect(visibleColumnMeta(wrapper).find((column) => column.key === 'id')?.sortable).toBe(true)
+    expect(visibleColumnMeta(wrapper).find((column) => column.key === 'id')?.sortable).toBe(false)
   })
 
   it('shows the last used IP column when toggled', async () => {
@@ -511,60 +504,10 @@ describe('user KeysView column settings', () => {
     expect(wrapper.get('[data-test="current-concurrency"]').text()).toBe('3')
   })
 
-  it('marks current concurrency as sortable', async () => {
+  it('uses plain card fields without sorting controls', async () => {
     const wrapper = await mountView()
-
-    const currentConcurrencyColumn = visibleColumnMeta(wrapper).find(
-      (column) => column.key === 'current_concurrency'
-    )
-    expect(currentConcurrencyColumn?.sortable).toBe(true)
-  })
-
-  it.each([
-    { key: 'current_concurrency', order: 'asc' },
-    { key: 'group', order: 'asc' },
-    { key: 'group', order: 'desc' },
-  ] as const)('keeps filters and resets pagination and selection when sorting $key $order', async ({ key, order }) => {
-    getAvailableGroups.mockResolvedValue([{ id: 42, name: 'OpenAI' }])
-    const wrapper = await mountView()
-
-    await wrapper.findComponent({ name: 'SearchInput' }).vm.$emit('update:modelValue', 'target')
-    await wrapper.findComponent({ name: 'SearchInput' }).vm.$emit('search')
-    await flushPromises()
-
-    const selects = wrapper.findAllComponents({ name: 'Select' })
-    await selects[0].vm.$emit('update:modelValue', 42)
-    await flushPromises()
-    await selects[1].vm.$emit('update:modelValue', 'active')
-    await flushPromises()
-
-    listKeys.mockResolvedValueOnce({ items: [createApiKey()], total: 2, pages: 2 })
-    await wrapper.get('button[title="Refresh"]').trigger('click')
-    await flushPromises()
-    await reachEnd()
-    const table = wrapper.findComponent({ name: 'KeyCardGrid' })
-    table.vm.$emit('update:selectedKeys', [1])
-    await nextTick()
-    expect(table.props('selectedKeys')).toEqual([1])
-    expect(visibleColumnMeta(wrapper).find((column) => column.key === key)?.sortable).toBe(true)
-    listKeys.mockClear()
-
-    table.vm.$emit('sort', key, order)
-    await flushPromises()
-
-    expect(table.props('selectedKeys')).toEqual([])
-    expect(listKeys).toHaveBeenLastCalledWith(
-      1,
-      20,
-      {
-        search: 'target',
-        status: 'active',
-        group_id: 42,
-        sort_by: key,
-        sort_order: order,
-      },
-      expect.objectContaining({ signal: expect.any(AbortSignal) })
-    )
+    expect(visibleColumnMeta(wrapper).every(column => !column.sortable)).toBe(true)
+    expect(listKeys).toHaveBeenLastCalledWith(1, 20, { sort_by: 'created_at', sort_order: 'desc' }, expect.anything())
   })
 
   it('places controls in the header and the total opposite the endpoints', async () => {
@@ -583,7 +526,10 @@ describe('user KeysView column settings', () => {
     expect(header.findAllComponents({ name: 'Select' })).toHaveLength(2)
     expect(header.get('button[title="Refresh"]').exists()).toBe(true)
     expect(header.get('button[title="Column Settings"]').exists()).toBe(true)
-    expect(header.get('[data-tour="keys-create-btn"]').exists()).toBe(true)
+    expect(header.find('[data-tour="keys-create-btn"]').exists()).toBe(false)
+    const actions = row.get('.keys-summary-actions')
+    expect(actions.element.children[0]).toBe(row.get('[data-test="keys-total"]').element)
+    expect(actions.element.children[1]).toBe(row.get('[data-tour="keys-create-btn"]').element)
   })
 
   describe('infinite scrolling', () => {
