@@ -181,16 +181,16 @@
 
       <!-- 编辑模式：状态（编辑状态专属，直接展示） -->
       <div v-if="isEdit" class="key-setting flex items-center justify-between gap-4">
-        <div>
-          <label class="input-label" for="key-status-switch">{{ t('keys.statusLabel') }}</label>
+        <label class="input-label mb-0" for="key-status-switch">{{ t('keys.statusLabel') }}</label>
+        <div class="flex shrink-0 items-center gap-3">
           <p class="input-hint">{{ t(statusEnabled ? 'common.active' : 'common.inactive') }}</p>
+          <Toggle
+            id="key-status-switch"
+            v-model="statusEnabled"
+            class="key-setting-switch"
+            :aria-label="t('keys.statusLabel')"
+          />
         </div>
-        <Toggle
-          id="key-status-switch"
-          v-model="statusEnabled"
-          class="key-setting-switch"
-          :aria-label="t('keys.statusLabel')"
-        />
       </div>
 
       <div v-if="showMore" id="key-more-settings" class="key-more-settings">
