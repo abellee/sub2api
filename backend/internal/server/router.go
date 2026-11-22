@@ -57,6 +57,7 @@ func SetupRouter(
 
 	// 应用中间件
 	r.Use(middleware2.RequestLogger())
+	r.Use(middleware2.LatencyCollection(opsService.LatencyCollector()))
 	// 将客户端 IP + UA 注入 request context，供 token 签发/会话绑定/审计日志统一读取。
 	// 解析模式按请求快照：兼容开关开启时信任原始转发头，关闭时使用 server.trusted_proxies。
 	r.Use(middleware2.SessionBindingContext(cfg))
@@ -69,6 +70,12 @@ func SetupRouter(
 		return nil
 	}))
 	r.Use(middleware2.ServerTiming(cfg.Server.EnableServerTiming))
+	r.Use(handler.ModelSessionCaptureCompletion())
+	// Video playback and download use the rewritten CDN path directly, with no API key.
+	// Recorded video paths and legacy relay /m/{id} links are proxied.
+	if handlers != nil && handlers.OpenAIGateway != nil {
+		r.Use(handlers.OpenAIGateway.ProxyStoredGrokVideo())
+	}
 
 	// Serve embedded frontend with settings injection if available
 	if web.HasEmbeddedFrontend() {
@@ -113,8 +120,12 @@ func registerRoutes(
 	cfg *config.Config,
 	redisClient *redis.Client,
 ) {
+	if err := handler.InitMediaHub(h); err != nil {
+		log.Printf("[mediahub] configuration unavailable: %v", err)
+	}
 	// 通用路由（健康检查、状态等）
 	routes.RegisterCommonRoutes(r)
+	routes.RegisterFrontendRoutes(r, settingService)
 
 	// API v1
 	v1 := r.Group("/api/v1")
@@ -124,12 +135,18 @@ func registerRoutes(
 	panelRateLimiter := middleware2.NewPanelRateLimiter(redisClient, settingService)
 
 	// 注册各模块路由
-	routes.RegisterAuthRoutes(v1, h, jwtAuth, auditLog, redisClient, settingService, panelRateLimiter)
+	routes.RegisterAuthRoutes(v1, h, jwtAuth, auditLog, redisClient, settingService, panelRateLimiter, optionalJWTAuth)
 	routes.RegisterUserRoutes(v1, h, jwtAuth, auditLog, settingService, panelRateLimiter)
 	routes.RegisterModelPlazaRoutes(v1, h, optionalJWTAuth, settingService, panelRateLimiter)
+	routes.RegisterIQDetectPublicRoutes(v1, h, panelRateLimiter)
+	routes.RegisterPublicTransitRoutes(r, v1, h)
 	routes.RegisterAdminRoutes(v1, h, adminAuth, auditLog, stepUpAuth, settingService, panelRateLimiter)
+	routes.RegisterMCPRoutes(v1, h, auditLog, stepUpAuth, settingService, panelRateLimiter, cfg.CORS.AllowedOrigins, redisClient)
+	routes.RegisterMCPOAuthRoutes(r, v1, h, redisClient)
 	routes.RegisterGatewayRoutes(r, h, apiKeyAuth, apiKeyService, subscriptionService, opsService, settingService, compositeResolver, cfg)
-	routes.RegisterPaymentRoutes(v1, h.Payment, h.PaymentWebhook, h.Admin.Payment, jwtAuth, adminAuth, auditLog, settingService, panelRateLimiter)
+	// mediahub:媒体生图中转(mediad);未配置时内部自动跳过。
+	routes.RegisterMediaHubRoutes(r, h, apiKeyAuth)
+	routes.RegisterPaymentRoutes(v1, h.Payment, h.PaymentWebhook, h.Admin.Payment, jwtAuth, adminAuth, auditLog, settingService, panelRateLimiter, redisClient)
 
 	handler.RegisterPageRoutes(v1, cfg.Pricing.DataDir, gin.HandlerFunc(jwtAuth), gin.HandlerFunc(adminAuth), settingService)
 }

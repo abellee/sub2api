@@ -637,7 +637,7 @@ func (s *BatchImagePublicService) ListModels(ctx context.Context, owner BatchIma
 		}
 		for i := range accounts {
 			account := accounts[i]
-			if !account.IsSchedulable() || !provider.SupportsAccount(&account) {
+			if !AccountMatchingAllows(ctx, account.ID) || !account.IsSchedulable() || !provider.SupportsAccount(&account) {
 				continue
 			}
 			for _, model := range batchImageModelsFromAccountMapping(&account) {
@@ -944,15 +944,16 @@ func (s *BatchImagePublicService) selectProviderAndAccount(ctx context.Context, 
 		if err != nil {
 			return nil, nil, err
 		}
+		// 与普通账号调度一致：priority 数值越小越优先，同优先级按 ID 排序。
 		sort.SliceStable(accounts, func(i, j int) bool {
 			if accounts[i].Priority != accounts[j].Priority {
-				return accounts[i].Priority > accounts[j].Priority
+				return accounts[i].Priority < accounts[j].Priority
 			}
 			return accounts[i].ID < accounts[j].ID
 		})
 		for i := range accounts {
 			account := accounts[i]
-			if !account.IsSchedulable() || !account.IsModelSupported(model) {
+			if !AccountMatchingAllows(ctx, account.ID) || !account.IsSchedulable() || !account.IsModelSupported(model) {
 				continue
 			}
 			if provider.SupportsAccount(&account) {
@@ -967,8 +968,16 @@ func (s *BatchImagePublicService) selectProviderAndAccount(ctx context.Context, 
 }
 
 func (s *BatchImagePublicService) listCandidateAccounts(ctx context.Context, groupID *int64, platform string) ([]Account, error) {
+
 	if s.AccountRepo == nil {
 		return nil, ErrBatchImageNoAccountAvailable
+	}
+	if _, matched := ctx.Value(accountMatchingContextKey{}).(map[int64]struct{}); matched {
+		accounts, err := s.AccountRepo.ListSchedulableByPlatform(ctx, platform)
+		if err != nil {
+			return nil, err
+		}
+		return filterAccountMatching(ctx, accounts), nil
 	}
 	if groupID != nil && *groupID > 0 {
 		return s.AccountRepo.ListSchedulableByGroupIDAndPlatform(ctx, *groupID, platform)

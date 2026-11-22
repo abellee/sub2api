@@ -9,7 +9,7 @@ interface AdminAuthMockEnvironment {
 }
 
 export function shouldEnableAdminAuthMock(environment: AdminAuthMockEnvironment): boolean {
-  const isDevelopmentLikeMode = environment.mode === 'development' || environment.mode === 'test'
+  const isDevelopmentLikeMode = environment.mode === 'development' || environment.mode === 'test' || environment.mode === 'media-preview'
   return environment.dev &&
     isDevelopmentLikeMode &&
     environment.enabled === 'true'

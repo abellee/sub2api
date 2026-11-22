@@ -197,6 +197,12 @@ func (_c *UsageLogCreate) SetNillableSubscriptionID(v *int64) *UsageLogCreate {
 	return _c
 }
 
+// SetInputTokenEstimate sets the "input_token_estimate" field.
+func (_c *UsageLogCreate) SetInputTokenEstimate(v map[string]interface{}) *UsageLogCreate {
+	_c.mutation.SetInputTokenEstimate(v)
+	return _c
+}
+
 // SetInputTokens sets the "input_tokens" field.
 func (_c *UsageLogCreate) SetInputTokens(v int) *UsageLogCreate {
 	_c.mutation.SetInputTokens(v)
@@ -277,6 +283,34 @@ func (_c *UsageLogCreate) SetCacheCreation1hTokens(v int) *UsageLogCreate {
 func (_c *UsageLogCreate) SetNillableCacheCreation1hTokens(v *int) *UsageLogCreate {
 	if v != nil {
 		_c.SetCacheCreation1hTokens(*v)
+	}
+	return _c
+}
+
+// SetCacheCreation30mTokens sets the "cache_creation_30m_tokens" field.
+func (_c *UsageLogCreate) SetCacheCreation30mTokens(v int) *UsageLogCreate {
+	_c.mutation.SetCacheCreation30mTokens(v)
+	return _c
+}
+
+// SetNillableCacheCreation30mTokens sets the "cache_creation_30m_tokens" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableCacheCreation30mTokens(v *int) *UsageLogCreate {
+	if v != nil {
+		_c.SetCacheCreation30mTokens(*v)
+	}
+	return _c
+}
+
+// SetCacheCreation12hTokens sets the "cache_creation_12h_tokens" field.
+func (_c *UsageLogCreate) SetCacheCreation12hTokens(v int) *UsageLogCreate {
+	_c.mutation.SetCacheCreation12hTokens(v)
+	return _c
+}
+
+// SetNillableCacheCreation12hTokens sets the "cache_creation_12h_tokens" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableCacheCreation12hTokens(v *int) *UsageLogCreate {
+	if v != nil {
+		_c.SetCacheCreation12hTokens(*v)
 	}
 	return _c
 }
@@ -403,6 +437,34 @@ func (_c *UsageLogCreate) SetAccountRateMultiplier(v float64) *UsageLogCreate {
 func (_c *UsageLogCreate) SetNillableAccountRateMultiplier(v *float64) *UsageLogCreate {
 	if v != nil {
 		_c.SetAccountRateMultiplier(*v)
+	}
+	return _c
+}
+
+// SetSearchCount sets the "search_count" field.
+func (_c *UsageLogCreate) SetSearchCount(v int) *UsageLogCreate {
+	_c.mutation.SetSearchCount(v)
+	return _c
+}
+
+// SetNillableSearchCount sets the "search_count" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableSearchCount(v *int) *UsageLogCreate {
+	if v != nil {
+		_c.SetSearchCount(*v)
+	}
+	return _c
+}
+
+// SetSearchCost sets the "search_cost" field.
+func (_c *UsageLogCreate) SetSearchCost(v float64) *UsageLogCreate {
+	_c.mutation.SetSearchCost(v)
+	return _c
+}
+
+// SetNillableSearchCost sets the "search_cost" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableSearchCost(v *float64) *UsageLogCreate {
+	if v != nil {
+		_c.SetSearchCost(*v)
 	}
 	return _c
 }
@@ -721,6 +783,14 @@ func (_c *UsageLogCreate) defaults() {
 		v := usagelog.DefaultCacheCreation1hTokens
 		_c.mutation.SetCacheCreation1hTokens(v)
 	}
+	if _, ok := _c.mutation.CacheCreation30mTokens(); !ok {
+		v := usagelog.DefaultCacheCreation30mTokens
+		_c.mutation.SetCacheCreation30mTokens(v)
+	}
+	if _, ok := _c.mutation.CacheCreation12hTokens(); !ok {
+		v := usagelog.DefaultCacheCreation12hTokens
+		_c.mutation.SetCacheCreation12hTokens(v)
+	}
 	if _, ok := _c.mutation.InputCost(); !ok {
 		v := usagelog.DefaultInputCost
 		_c.mutation.SetInputCost(v)
@@ -752,6 +822,14 @@ func (_c *UsageLogCreate) defaults() {
 	if _, ok := _c.mutation.LongContextBillingApplied(); !ok {
 		v := usagelog.DefaultLongContextBillingApplied
 		_c.mutation.SetLongContextBillingApplied(v)
+	}
+	if _, ok := _c.mutation.SearchCount(); !ok {
+		v := usagelog.DefaultSearchCount
+		_c.mutation.SetSearchCount(v)
+	}
+	if _, ok := _c.mutation.SearchCost(); !ok {
+		v := usagelog.DefaultSearchCost
+		_c.mutation.SetSearchCost(v)
 	}
 	if _, ok := _c.mutation.BillingType(); !ok {
 		v := usagelog.DefaultBillingType
@@ -854,6 +932,12 @@ func (_c *UsageLogCreate) check() error {
 	if _, ok := _c.mutation.CacheCreation1hTokens(); !ok {
 		return &ValidationError{Name: "cache_creation_1h_tokens", err: errors.New(`ent: missing required field "UsageLog.cache_creation_1h_tokens"`)}
 	}
+	if _, ok := _c.mutation.CacheCreation30mTokens(); !ok {
+		return &ValidationError{Name: "cache_creation_30m_tokens", err: errors.New(`ent: missing required field "UsageLog.cache_creation_30m_tokens"`)}
+	}
+	if _, ok := _c.mutation.CacheCreation12hTokens(); !ok {
+		return &ValidationError{Name: "cache_creation_12h_tokens", err: errors.New(`ent: missing required field "UsageLog.cache_creation_12h_tokens"`)}
+	}
 	if _, ok := _c.mutation.InputCost(); !ok {
 		return &ValidationError{Name: "input_cost", err: errors.New(`ent: missing required field "UsageLog.input_cost"`)}
 	}
@@ -877,6 +961,12 @@ func (_c *UsageLogCreate) check() error {
 	}
 	if _, ok := _c.mutation.LongContextBillingApplied(); !ok {
 		return &ValidationError{Name: "long_context_billing_applied", err: errors.New(`ent: missing required field "UsageLog.long_context_billing_applied"`)}
+	}
+	if _, ok := _c.mutation.SearchCount(); !ok {
+		return &ValidationError{Name: "search_count", err: errors.New(`ent: missing required field "UsageLog.search_count"`)}
+	}
+	if _, ok := _c.mutation.SearchCost(); !ok {
+		return &ValidationError{Name: "search_cost", err: errors.New(`ent: missing required field "UsageLog.search_cost"`)}
 	}
 	if _, ok := _c.mutation.BillingType(); !ok {
 		return &ValidationError{Name: "billing_type", err: errors.New(`ent: missing required field "UsageLog.billing_type"`)}
@@ -1007,6 +1097,10 @@ func (_c *UsageLogCreate) createSpec() (*UsageLog, *sqlgraph.CreateSpec) {
 		_spec.SetField(usagelog.FieldBillingMode, field.TypeString, value)
 		_node.BillingMode = &value
 	}
+	if value, ok := _c.mutation.InputTokenEstimate(); ok {
+		_spec.SetField(usagelog.FieldInputTokenEstimate, field.TypeJSON, value)
+		_node.InputTokenEstimate = value
+	}
 	if value, ok := _c.mutation.InputTokens(); ok {
 		_spec.SetField(usagelog.FieldInputTokens, field.TypeInt, value)
 		_node.InputTokens = value
@@ -1030,6 +1124,14 @@ func (_c *UsageLogCreate) createSpec() (*UsageLog, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.CacheCreation1hTokens(); ok {
 		_spec.SetField(usagelog.FieldCacheCreation1hTokens, field.TypeInt, value)
 		_node.CacheCreation1hTokens = value
+	}
+	if value, ok := _c.mutation.CacheCreation30mTokens(); ok {
+		_spec.SetField(usagelog.FieldCacheCreation30mTokens, field.TypeInt, value)
+		_node.CacheCreation30mTokens = value
+	}
+	if value, ok := _c.mutation.CacheCreation12hTokens(); ok {
+		_spec.SetField(usagelog.FieldCacheCreation12hTokens, field.TypeInt, value)
+		_node.CacheCreation12hTokens = value
 	}
 	if value, ok := _c.mutation.InputCost(); ok {
 		_spec.SetField(usagelog.FieldInputCost, field.TypeFloat64, value)
@@ -1066,6 +1168,14 @@ func (_c *UsageLogCreate) createSpec() (*UsageLog, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.AccountRateMultiplier(); ok {
 		_spec.SetField(usagelog.FieldAccountRateMultiplier, field.TypeFloat64, value)
 		_node.AccountRateMultiplier = &value
+	}
+	if value, ok := _c.mutation.SearchCount(); ok {
+		_spec.SetField(usagelog.FieldSearchCount, field.TypeInt, value)
+		_node.SearchCount = value
+	}
+	if value, ok := _c.mutation.SearchCost(); ok {
+		_spec.SetField(usagelog.FieldSearchCost, field.TypeFloat64, value)
+		_node.SearchCost = value
 	}
 	if value, ok := _c.mutation.BillingType(); ok {
 		_spec.SetField(usagelog.FieldBillingType, field.TypeInt8, value)
@@ -1518,6 +1628,24 @@ func (u *UsageLogUpsert) ClearSubscriptionID() *UsageLogUpsert {
 	return u
 }
 
+// SetInputTokenEstimate sets the "input_token_estimate" field.
+func (u *UsageLogUpsert) SetInputTokenEstimate(v map[string]interface{}) *UsageLogUpsert {
+	u.Set(usagelog.FieldInputTokenEstimate, v)
+	return u
+}
+
+// UpdateInputTokenEstimate sets the "input_token_estimate" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateInputTokenEstimate() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldInputTokenEstimate)
+	return u
+}
+
+// ClearInputTokenEstimate clears the value of the "input_token_estimate" field.
+func (u *UsageLogUpsert) ClearInputTokenEstimate() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldInputTokenEstimate)
+	return u
+}
+
 // SetInputTokens sets the "input_tokens" field.
 func (u *UsageLogUpsert) SetInputTokens(v int) *UsageLogUpsert {
 	u.Set(usagelog.FieldInputTokens, v)
@@ -1623,6 +1751,42 @@ func (u *UsageLogUpsert) UpdateCacheCreation1hTokens() *UsageLogUpsert {
 // AddCacheCreation1hTokens adds v to the "cache_creation_1h_tokens" field.
 func (u *UsageLogUpsert) AddCacheCreation1hTokens(v int) *UsageLogUpsert {
 	u.Add(usagelog.FieldCacheCreation1hTokens, v)
+	return u
+}
+
+// SetCacheCreation30mTokens sets the "cache_creation_30m_tokens" field.
+func (u *UsageLogUpsert) SetCacheCreation30mTokens(v int) *UsageLogUpsert {
+	u.Set(usagelog.FieldCacheCreation30mTokens, v)
+	return u
+}
+
+// UpdateCacheCreation30mTokens sets the "cache_creation_30m_tokens" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateCacheCreation30mTokens() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldCacheCreation30mTokens)
+	return u
+}
+
+// AddCacheCreation30mTokens adds v to the "cache_creation_30m_tokens" field.
+func (u *UsageLogUpsert) AddCacheCreation30mTokens(v int) *UsageLogUpsert {
+	u.Add(usagelog.FieldCacheCreation30mTokens, v)
+	return u
+}
+
+// SetCacheCreation12hTokens sets the "cache_creation_12h_tokens" field.
+func (u *UsageLogUpsert) SetCacheCreation12hTokens(v int) *UsageLogUpsert {
+	u.Set(usagelog.FieldCacheCreation12hTokens, v)
+	return u
+}
+
+// UpdateCacheCreation12hTokens sets the "cache_creation_12h_tokens" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateCacheCreation12hTokens() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldCacheCreation12hTokens)
+	return u
+}
+
+// AddCacheCreation12hTokens adds v to the "cache_creation_12h_tokens" field.
+func (u *UsageLogUpsert) AddCacheCreation12hTokens(v int) *UsageLogUpsert {
+	u.Add(usagelog.FieldCacheCreation12hTokens, v)
 	return u
 }
 
@@ -1785,6 +1949,42 @@ func (u *UsageLogUpsert) AddAccountRateMultiplier(v float64) *UsageLogUpsert {
 // ClearAccountRateMultiplier clears the value of the "account_rate_multiplier" field.
 func (u *UsageLogUpsert) ClearAccountRateMultiplier() *UsageLogUpsert {
 	u.SetNull(usagelog.FieldAccountRateMultiplier)
+	return u
+}
+
+// SetSearchCount sets the "search_count" field.
+func (u *UsageLogUpsert) SetSearchCount(v int) *UsageLogUpsert {
+	u.Set(usagelog.FieldSearchCount, v)
+	return u
+}
+
+// UpdateSearchCount sets the "search_count" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateSearchCount() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldSearchCount)
+	return u
+}
+
+// AddSearchCount adds v to the "search_count" field.
+func (u *UsageLogUpsert) AddSearchCount(v int) *UsageLogUpsert {
+	u.Add(usagelog.FieldSearchCount, v)
+	return u
+}
+
+// SetSearchCost sets the "search_cost" field.
+func (u *UsageLogUpsert) SetSearchCost(v float64) *UsageLogUpsert {
+	u.Set(usagelog.FieldSearchCost, v)
+	return u
+}
+
+// UpdateSearchCost sets the "search_cost" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateSearchCost() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldSearchCost)
+	return u
+}
+
+// AddSearchCost adds v to the "search_cost" field.
+func (u *UsageLogUpsert) AddSearchCost(v float64) *UsageLogUpsert {
+	u.Add(usagelog.FieldSearchCost, v)
 	return u
 }
 
@@ -2414,6 +2614,27 @@ func (u *UsageLogUpsertOne) ClearSubscriptionID() *UsageLogUpsertOne {
 	})
 }
 
+// SetInputTokenEstimate sets the "input_token_estimate" field.
+func (u *UsageLogUpsertOne) SetInputTokenEstimate(v map[string]interface{}) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetInputTokenEstimate(v)
+	})
+}
+
+// UpdateInputTokenEstimate sets the "input_token_estimate" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateInputTokenEstimate() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateInputTokenEstimate()
+	})
+}
+
+// ClearInputTokenEstimate clears the value of the "input_token_estimate" field.
+func (u *UsageLogUpsertOne) ClearInputTokenEstimate() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearInputTokenEstimate()
+	})
+}
+
 // SetInputTokens sets the "input_tokens" field.
 func (u *UsageLogUpsertOne) SetInputTokens(v int) *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
@@ -2537,6 +2758,48 @@ func (u *UsageLogUpsertOne) AddCacheCreation1hTokens(v int) *UsageLogUpsertOne {
 func (u *UsageLogUpsertOne) UpdateCacheCreation1hTokens() *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.UpdateCacheCreation1hTokens()
+	})
+}
+
+// SetCacheCreation30mTokens sets the "cache_creation_30m_tokens" field.
+func (u *UsageLogUpsertOne) SetCacheCreation30mTokens(v int) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetCacheCreation30mTokens(v)
+	})
+}
+
+// AddCacheCreation30mTokens adds v to the "cache_creation_30m_tokens" field.
+func (u *UsageLogUpsertOne) AddCacheCreation30mTokens(v int) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddCacheCreation30mTokens(v)
+	})
+}
+
+// UpdateCacheCreation30mTokens sets the "cache_creation_30m_tokens" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateCacheCreation30mTokens() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateCacheCreation30mTokens()
+	})
+}
+
+// SetCacheCreation12hTokens sets the "cache_creation_12h_tokens" field.
+func (u *UsageLogUpsertOne) SetCacheCreation12hTokens(v int) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetCacheCreation12hTokens(v)
+	})
+}
+
+// AddCacheCreation12hTokens adds v to the "cache_creation_12h_tokens" field.
+func (u *UsageLogUpsertOne) AddCacheCreation12hTokens(v int) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddCacheCreation12hTokens(v)
+	})
+}
+
+// UpdateCacheCreation12hTokens sets the "cache_creation_12h_tokens" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateCacheCreation12hTokens() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateCacheCreation12hTokens()
 	})
 }
 
@@ -2726,6 +2989,48 @@ func (u *UsageLogUpsertOne) UpdateAccountRateMultiplier() *UsageLogUpsertOne {
 func (u *UsageLogUpsertOne) ClearAccountRateMultiplier() *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.ClearAccountRateMultiplier()
+	})
+}
+
+// SetSearchCount sets the "search_count" field.
+func (u *UsageLogUpsertOne) SetSearchCount(v int) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetSearchCount(v)
+	})
+}
+
+// AddSearchCount adds v to the "search_count" field.
+func (u *UsageLogUpsertOne) AddSearchCount(v int) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddSearchCount(v)
+	})
+}
+
+// UpdateSearchCount sets the "search_count" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateSearchCount() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateSearchCount()
+	})
+}
+
+// SetSearchCost sets the "search_cost" field.
+func (u *UsageLogUpsertOne) SetSearchCost(v float64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetSearchCost(v)
+	})
+}
+
+// AddSearchCost adds v to the "search_cost" field.
+func (u *UsageLogUpsertOne) AddSearchCost(v float64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddSearchCost(v)
+	})
+}
+
+// UpdateSearchCost sets the "search_cost" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateSearchCost() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateSearchCost()
 	})
 }
 
@@ -3570,6 +3875,27 @@ func (u *UsageLogUpsertBulk) ClearSubscriptionID() *UsageLogUpsertBulk {
 	})
 }
 
+// SetInputTokenEstimate sets the "input_token_estimate" field.
+func (u *UsageLogUpsertBulk) SetInputTokenEstimate(v map[string]interface{}) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetInputTokenEstimate(v)
+	})
+}
+
+// UpdateInputTokenEstimate sets the "input_token_estimate" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateInputTokenEstimate() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateInputTokenEstimate()
+	})
+}
+
+// ClearInputTokenEstimate clears the value of the "input_token_estimate" field.
+func (u *UsageLogUpsertBulk) ClearInputTokenEstimate() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearInputTokenEstimate()
+	})
+}
+
 // SetInputTokens sets the "input_tokens" field.
 func (u *UsageLogUpsertBulk) SetInputTokens(v int) *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
@@ -3693,6 +4019,48 @@ func (u *UsageLogUpsertBulk) AddCacheCreation1hTokens(v int) *UsageLogUpsertBulk
 func (u *UsageLogUpsertBulk) UpdateCacheCreation1hTokens() *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.UpdateCacheCreation1hTokens()
+	})
+}
+
+// SetCacheCreation30mTokens sets the "cache_creation_30m_tokens" field.
+func (u *UsageLogUpsertBulk) SetCacheCreation30mTokens(v int) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetCacheCreation30mTokens(v)
+	})
+}
+
+// AddCacheCreation30mTokens adds v to the "cache_creation_30m_tokens" field.
+func (u *UsageLogUpsertBulk) AddCacheCreation30mTokens(v int) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddCacheCreation30mTokens(v)
+	})
+}
+
+// UpdateCacheCreation30mTokens sets the "cache_creation_30m_tokens" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateCacheCreation30mTokens() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateCacheCreation30mTokens()
+	})
+}
+
+// SetCacheCreation12hTokens sets the "cache_creation_12h_tokens" field.
+func (u *UsageLogUpsertBulk) SetCacheCreation12hTokens(v int) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetCacheCreation12hTokens(v)
+	})
+}
+
+// AddCacheCreation12hTokens adds v to the "cache_creation_12h_tokens" field.
+func (u *UsageLogUpsertBulk) AddCacheCreation12hTokens(v int) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddCacheCreation12hTokens(v)
+	})
+}
+
+// UpdateCacheCreation12hTokens sets the "cache_creation_12h_tokens" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateCacheCreation12hTokens() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateCacheCreation12hTokens()
 	})
 }
 
@@ -3882,6 +4250,48 @@ func (u *UsageLogUpsertBulk) UpdateAccountRateMultiplier() *UsageLogUpsertBulk {
 func (u *UsageLogUpsertBulk) ClearAccountRateMultiplier() *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.ClearAccountRateMultiplier()
+	})
+}
+
+// SetSearchCount sets the "search_count" field.
+func (u *UsageLogUpsertBulk) SetSearchCount(v int) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetSearchCount(v)
+	})
+}
+
+// AddSearchCount adds v to the "search_count" field.
+func (u *UsageLogUpsertBulk) AddSearchCount(v int) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddSearchCount(v)
+	})
+}
+
+// UpdateSearchCount sets the "search_count" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateSearchCount() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateSearchCount()
+	})
+}
+
+// SetSearchCost sets the "search_cost" field.
+func (u *UsageLogUpsertBulk) SetSearchCost(v float64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetSearchCost(v)
+	})
+}
+
+// AddSearchCost adds v to the "search_cost" field.
+func (u *UsageLogUpsertBulk) AddSearchCost(v float64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddSearchCost(v)
+	})
+}
+
+// UpdateSearchCost sets the "search_cost" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateSearchCost() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateSearchCost()
 	})
 }
 

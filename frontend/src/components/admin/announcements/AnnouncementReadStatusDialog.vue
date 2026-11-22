@@ -16,6 +16,13 @@
             @input="handleSearch"
           />
         </div>
+        <Select
+          v-model="readStatus"
+          :options="readStatusOptions"
+          :aria-label="t('admin.announcements.readStatus')"
+          class="w-full sm:w-36"
+          @change="handleReadStatusChange"
+        />
         <button @click="load" :disabled="loading" class="btn btn-secondary" :title="t('common.refresh')">
           <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
         </button>
@@ -51,14 +58,20 @@
         </template>
       </DataTable>
 
-      <Pagination
-        v-if="pagination.total > 0"
-        :page="pagination.page"
-        :total="pagination.total"
-        :page-size="pagination.page_size"
-        @update:page="handlePageChange"
-        @update:pageSize="handlePageSizeChange"
-      />
+      <div class="flex flex-col gap-2 border-t border-gray-200 pt-3 dark:border-dark-700 lg:flex-row lg:items-center lg:gap-4">
+        <p class="shrink-0 text-sm text-gray-700 dark:text-gray-300" aria-live="polite">
+          {{ t('admin.announcements.readCount', { count: readCount }) }}
+        </p>
+        <Pagination
+          v-if="pagination.total > 0"
+          class="flex-1 border-t-0 px-0 py-0 sm:px-0"
+          :page="pagination.page"
+          :total="pagination.total"
+          :page-size="pagination.page_size"
+          @update:page="handlePageChange"
+          @update:pageSize="handlePageSizeChange"
+        />
+      </div>
     </div>
 
     <template #footer>
@@ -83,6 +96,7 @@ import BaseDialog from '@/components/common/BaseDialog.vue'
 import DataTable from '@/components/common/DataTable.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import Icon from '@/components/icons/Icon.vue'
+import Select from '@/components/common/Select.vue'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -98,6 +112,12 @@ const emit = defineEmits<{
 
 const loading = ref(false)
 const search = ref('')
+const readStatus = ref<'all' | 'read'>('all')
+const readCount = ref(0)
+const readStatusOptions = computed(() => [
+  { value: 'all', label: t('common.all') },
+  { value: 'read', label: t('admin.announcements.read') }
+])
 
 const pagination = reactive({
   page: 1,
@@ -127,6 +147,8 @@ let searchDebounceTimer: number | null = null
 function resetDialogState() {
   loading.value = false
   search.value = ''
+  readStatus.value = 'all'
+  readCount.value = 0
   items.value = []
   pagination.page = 1
   pagination.total = 0
@@ -163,6 +185,7 @@ async function load() {
       pagination.page_size,
       {
         search: search.value,
+        read_status: readStatus.value,
         sort_by: sortState.sort_by,
         sort_order: sortState.sort_order
       },
@@ -172,6 +195,7 @@ async function load() {
     if (signal.aborted || currentController !== requestController) return
 
     items.value = res.items
+    readCount.value = res.read_count
     pagination.total = res.total
     pagination.pages = res.pages
     pagination.page = res.page
@@ -197,6 +221,12 @@ async function load() {
 
 function handlePageChange(page: number) {
   pagination.page = page
+  load()
+}
+
+function handleReadStatusChange() {
+  cancelPendingLoad()
+  pagination.page = 1
   load()
 }
 

@@ -3,12 +3,75 @@ package handler
 import (
 	"context"
 	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+type grokVideoPlaybackUpstream struct{}
+
+func (*grokVideoPlaybackUpstream) Do(req *http.Request, _ string, _ int64, _ int) (*http.Response, error) {
+	return &http.Response{
+		StatusCode: http.StatusPartialContent,
+		Header: http.Header{
+			"Content-Type":  []string{"video/mp4"},
+			"Content-Range": []string{"bytes 0-4/9"},
+		},
+		ContentLength: 5,
+		Body:          io.NopCloser(strings.NewReader("video")),
+	}, nil
+}
+
+func (u *grokVideoPlaybackUpstream) DoWithTLS(req *http.Request, proxy string, account int64, concurrency int, _ *tlsfingerprint.Profile) (*http.Response, error) {
+	return u.Do(req, proxy, account, concurrency)
+}
+
+func TestProxyStoredGrokVideoStopsFrontendAfterStreaming(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	gateway := service.NewOpenAIGatewayService(
+		nil, nil, nil, nil, nil, nil, nil, &config.Config{}, nil, nil, nil,
+		nil, nil, &grokVideoPlaybackUpstream{}, nil, nil, nil, nil, nil, nil, nil, nil,
+	)
+	h := &OpenAIGatewayHandler{gatewayService: gateway}
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		t.Run(method, func(t *testing.T) {
+			router := gin.New()
+			router.Use(h.ProxyStoredGrokVideo())
+			frontendCalled := false
+			router.Use(func(c *gin.Context) {
+				frontendCalled = true
+				c.String(http.StatusOK, "frontend HTML")
+			})
+			recorder := httptest.NewRecorder()
+			router.ServeHTTP(recorder, httptest.NewRequest(method, "/m/fcbef1fbe6801fe067a80a51", nil))
+			require.False(t, frontendCalled)
+			require.Equal(t, http.StatusPartialContent, recorder.Code)
+			require.Equal(t, "video/mp4", recorder.Header().Get("Content-Type"))
+			require.Equal(t, "bytes 0-4/9", recorder.Header().Get("Content-Range"))
+			if method == http.MethodGet {
+				require.Equal(t, "video", recorder.Body.String())
+			} else {
+				require.Empty(t, recorder.Body.String())
+			}
+		})
+	}
+
+	router := gin.New()
+	router.Use(h.ProxyStoredGrokVideo())
+	router.GET("/health", func(c *gin.Context) { c.String(http.StatusOK, "ok") })
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/health", nil))
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.Equal(t, "ok", recorder.Body.String())
+}
 
 type grokMediaEligibilityProberStub struct {
 	eligible bool

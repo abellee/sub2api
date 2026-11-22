@@ -21,6 +21,7 @@
         :columns="columns"
         :data="data"
         :loading="loading"
+        :skeleton-rows="skeletonRows"
         :server-side-sort="serverSideSort"
         :default-sort-key="defaultSortKey"
         :default-sort-order="defaultSortOrder"
@@ -29,12 +30,13 @@
         <template #cell-user="{ row }">
           <div class="text-sm">
             <button
-              v-if="row.user?.email"
+              v-if="row.user?.email || userLabel(row) !== '-'"
               class="font-medium text-primary-600 underline decoration-dashed underline-offset-2 transition-colors hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
               @click="$emit('userClick', row.user_id, row.user?.email)"
-              :title="t('admin.usage.clickToViewBalance')"
+              @contextmenu.prevent="openUserContextMenu($event, row.user_id, row.user?.email || '')"
+              :title="userLabelTitle(row)"
             >
-              {{ row.user.email }}
+              {{ userLabel(row) }}
             </button>
             <span v-else class="font-medium text-gray-900 dark:text-white">-</span>
             <span v-if="row.user?.deleted_at" class="ml-1 inline-flex items-center rounded px-1 py-px text-[10px] font-medium leading-tight bg-rose-100 text-rose-600 ring-1 ring-inset ring-rose-200 dark:bg-rose-500/20 dark:text-rose-400 dark:ring-rose-500/30">
@@ -49,11 +51,27 @@
         </template>
 
         <template #cell-account="{ row }">
-          <span class="text-sm text-gray-900 dark:text-white">{{ row.account?.name || '-' }}</span>
+          <button
+            v-if="row.account?.name && row.account?.id"
+            type="button"
+            class="text-left text-sm text-white underline decoration-dotted underline-offset-2 hover:text-white dark:text-white dark:hover:text-white"
+            @click.stop="emit('accountClick', row.account.id, row.account.name)"
+            @mouseenter="showAccountTooltip($event, row)"
+            @mouseleave="hideAccountTooltip"
+          >
+            {{ row.account.name }}
+          </button>
+          <span
+            v-else-if="row.account?.name"
+            class="text-sm text-white"
+            @mouseenter="showAccountTooltip($event, row)"
+            @mouseleave="hideAccountTooltip"
+          >{{ row.account.name }}</span>
+          <span v-else class="text-sm text-white">-</span>
         </template>
 
         <template #cell-model="{ row }">
-          <div class="space-y-0.5 text-xs">
+          <div class="space-y-0.5 text-xs cursor-pointer" @click.stop="emit('modelClick', row.model)">
             <div v-if="row.model_mapping_chain && row.model_mapping_chain.includes('→')" class="space-y-0.5">
               <div v-for="(step, i) in row.model_mapping_chain.split('→')" :key="i"
                    class="break-all"
@@ -64,13 +82,13 @@
             </div>
             <div v-else-if="row.upstream_model && row.upstream_model !== row.model" class="space-y-0.5">
               <div class="break-all font-medium text-gray-900 dark:text-white">
-                {{ row.model }}
+                {{ usageModelLabel(row.model, t) }}
               </div>
               <div class="break-all text-gray-500 dark:text-gray-400">
                 <span class="mr-0.5">↳</span>{{ row.upstream_model }}
               </div>
             </div>
-            <span v-else class="font-medium text-gray-900 dark:text-white">{{ row.model }}</span>
+            <span v-else class="font-medium text-gray-900 dark:text-white">{{ usageModelLabel(row.model, t) }}</span>
             <div
               v-if="row.upstream_model_mismatch === true && row.upstream_response_model"
               class="break-all pl-3 text-[11px]"
@@ -91,7 +109,15 @@
         </template>
 
         <template #cell-reasoning_effort="{ row }">
-          <span class="text-sm text-gray-900 dark:text-white">
+          <div v-if="hasReasoningEffortMapping(row)" data-testid="reasoning-effort-cell" class="space-y-0.5 text-xs">
+            <div class="font-medium text-gray-900 dark:text-white">
+              {{ formatReasoningEffort(row.reasoning_effort) }}
+            </div>
+            <div class="text-gray-500 dark:text-gray-400">
+              <span class="mr-0.5">↳</span>{{ formatReasoningEffort(row.upstream_reasoning_effort) }}
+            </div>
+          </div>
+          <span v-else data-testid="reasoning-effort-cell" class="text-sm text-gray-900 dark:text-white">
             {{ formatReasoningEffort(row.reasoning_effort) }}
           </span>
         </template>
@@ -110,16 +136,30 @@
         </template>
 
         <template #cell-group="{ row }">
-          <span v-if="row.group" class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200">
+          <button
+            v-if="row.group"
+            type="button"
+            class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200"
+            @click.stop="emit('groupClick', row.group.id)"
+          >
             {{ row.group.name }}
-          </span>
+          </button>
           <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
         </template>
 
         <template #cell-stream="{ row }">
-          <span class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium" :class="getRequestTypeBadgeClass(row)">
-            {{ getRequestTypeLabel(row) }}
-          </span>
+          <div class="flex flex-wrap items-center gap-1">
+            <span data-testid="request-type-badge" class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium" :class="getRequestTypeBadgeClass(row)">
+              {{ getRequestTypeLabel(row) }}
+            </span>
+            <span
+              v-if="row.native_compaction_v2"
+              data-testid="native-compaction-badge"
+              class="inline-flex items-center rounded bg-teal-100 px-2 py-0.5 text-xs font-medium text-teal-800 dark:bg-teal-900 dark:text-teal-200"
+            >
+              {{ t('usage.nativeCompactionV2') }}
+            </span>
+          </div>
         </template>
 
         <template #cell-billing_mode="{ row }">
@@ -153,12 +193,13 @@
               <div v-if="row.cache_read_tokens > 0 || row.cache_creation_tokens > 0" class="flex items-center gap-2">
                 <div v-if="row.cache_read_tokens > 0" class="inline-flex items-center gap-1">
                   <svg class="h-3.5 w-3.5 text-sky-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>
-                  <span class="font-medium text-sky-600 dark:text-sky-400">{{ formatCacheTokens(row.cache_read_tokens) }}</span>
+                  <span class="whitespace-nowrap font-medium text-sky-600 dark:text-sky-400">{{ formatCacheTokens(row.cache_read_tokens) }} <span class="text-emerald-600 dark:text-emerald-400">({{ cacheHitRate(row) }}%)</span></span>
                 </div>
                 <div v-if="row.cache_creation_tokens > 0" class="inline-flex items-center gap-1">
                   <svg class="h-3.5 w-3.5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                   <span class="font-medium text-amber-600 dark:text-amber-400">{{ formatCacheTokens(row.cache_creation_tokens) }}</span>
                   <span v-if="row.cache_creation_1h_tokens > 0" class="inline-flex items-center rounded px-1 py-px text-[10px] font-medium leading-tight bg-orange-100 text-orange-600 ring-1 ring-inset ring-orange-200 dark:bg-orange-500/20 dark:text-orange-400 dark:ring-orange-500/30">1h</span>
+                  <span v-if="(row.cache_creation_12h_tokens ?? 0) > 0" class="inline-flex items-center rounded px-1 py-px text-[10px] font-medium leading-tight bg-orange-100 text-orange-600 ring-1 ring-inset ring-orange-200 dark:bg-orange-500/20 dark:text-orange-400 dark:ring-orange-500/30">12h</span>
                   <span v-if="row.cache_ttl_overridden" :title="t('usage.cacheTtlOverriddenHint')" class="inline-flex items-center rounded px-1 py-px text-[10px] font-medium leading-tight bg-rose-100 text-rose-600 ring-1 ring-inset ring-rose-200 dark:bg-rose-500/20 dark:text-rose-400 dark:ring-rose-500/30 cursor-help">R</span>
                 </div>
               </div>
@@ -195,8 +236,9 @@
               <span
                 v-if="row.long_context_billing_applied"
                 data-testid="long-context-billing-marker"
+                :title="t('admin.usage.longContextPricingTooltip')"
                 class="inline-flex items-center rounded px-1 py-px text-[10px] font-semibold leading-tight bg-amber-100 text-amber-700 ring-1 ring-inset ring-amber-200 dark:bg-amber-500/20 dark:text-amber-300 dark:ring-amber-500/30"
-              >x2</span>
+              >{{ t('admin.usage.longContext') }}</span>
               <!-- Cost Detail Tooltip -->
               <div
                 class="group relative"
@@ -230,6 +272,8 @@
               <span v-else class="text-gray-400 dark:text-gray-500">-</span>
               <span class="text-gray-400 dark:text-gray-500">{{ t('usage.latencyDuration') }}</span>
               <span class="font-medium tabular-nums" :class="LATENCY_TEXT_CLASSES[durationSeverity(row.duration_ms ?? 0)]">{{ formatDuration(row.duration_ms) }}</span>
+              <span class="text-gray-400 dark:text-gray-500" :title="t('usage.outputTpsHint')">{{ t('usage.outputTps') }}</span>
+              <span data-testid="output-tps" class="font-medium tabular-nums text-gray-700 dark:text-gray-300">{{ formatUsageOutputRate(row) }}</span>
             </div>
           </div>
         </template>
@@ -256,14 +300,32 @@
           <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
         </template>
 
+        <template #cell-upstream_request_id="{ row }">
+          <div v-if="row.upstream_request_id" class="flex max-w-[160px] items-center gap-1.5">
+            <span class="truncate font-mono text-xs text-gray-500 dark:text-gray-400" :title="row.upstream_request_id">
+              {{ row.upstream_request_id }}
+            </span>
+            <button
+              type="button"
+              class="shrink-0 rounded p-0.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-dark-700 dark:hover:text-gray-300"
+              :class="copiedRequestId === row.upstream_request_id ? 'text-green-500 hover:text-green-500' : ''"
+              :title="copiedRequestId === row.upstream_request_id ? t('keys.copied') : t('keys.copyToClipboard')"
+              @click="copyUpstreamRequestId(row.upstream_request_id)"
+            >
+              <Icon :name="copiedRequestId === row.upstream_request_id ? 'check' : 'copy'" size="sm" class="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
+        </template>
+
         <template #cell-user_agent="{ row }">
           <span v-if="row.user_agent" class="text-sm text-gray-600 dark:text-gray-400 block max-w-[320px] truncate" :title="row.user_agent">{{ formatUserAgent(row.user_agent) }}</span>
           <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
         </template>
 
         <template #cell-ip_address="{ row }">
-          <div v-if="row.ip_address">
-            <span class="text-sm font-mono text-gray-600 dark:text-gray-400">{{ row.ip_address }}</span>
+          <div v-if="row.ip_address" class="min-w-0 max-w-[10rem]">
+            <span class="block max-w-[10rem] truncate text-sm font-mono text-gray-600 dark:text-gray-400" :title="row.ip_address">{{ row.ip_address }}</span>
             <IpGeoCell :ip="row.ip_address" />
           </div>
           <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
@@ -313,8 +375,8 @@
               <span class="font-medium text-pink-300">{{ tokenTooltipData.image_output_tokens.toLocaleString() }}</span>
             </div>
             <div v-if="tokenTooltipData && tokenTooltipData.cache_creation_tokens > 0">
-              <!-- 有 5m/1h 明细时，展开显示 -->
-              <template v-if="tokenTooltipData.cache_creation_5m_tokens > 0 || tokenTooltipData.cache_creation_1h_tokens > 0">
+              <!-- Expand only the lifetimes reported by the upstream. -->
+              <template v-if="tokenTooltipData.cache_creation_5m_tokens > 0 || tokenTooltipData.cache_creation_1h_tokens > 0 || (tokenTooltipData.cache_creation_30m_tokens ?? 0) > 0 || (tokenTooltipData.cache_creation_12h_tokens ?? 0) > 0">
                 <div v-if="tokenTooltipData.cache_creation_5m_tokens > 0" class="flex items-center justify-between gap-4">
                   <span class="text-gray-400 flex items-center gap-1.5">
                     {{ t('admin.usage.cacheCreation5mTokens') }}
@@ -329,6 +391,15 @@
                   </span>
                   <span class="font-medium text-white">{{ tokenTooltipData.cache_creation_1h_tokens.toLocaleString() }}</span>
                 </div>
+                <template v-for="bucket in [{ ttl: '30m', tokens: tokenTooltipData.cache_creation_30m_tokens ?? 0 }, { ttl: '12h', tokens: tokenTooltipData.cache_creation_12h_tokens ?? 0 }]" :key="bucket.ttl">
+                  <div v-if="bucket.tokens > 0" class="flex items-center justify-between gap-4">
+                    <span class="text-gray-400 flex items-center gap-1.5">
+                      {{ t('admin.usage.cacheCreationTokens') }}
+                      <span class="inline-flex items-center rounded px-1 py-px text-[10px] font-medium leading-tight bg-amber-500/20 text-amber-400 ring-1 ring-inset ring-amber-500/30">{{ bucket.ttl }}</span>
+                    </span>
+                    <span class="font-medium text-white">{{ bucket.tokens.toLocaleString() }}</span>
+                  </div>
+                </template>
               </template>
               <!-- 无明细时，只显示聚合值 -->
               <div v-else class="flex items-center justify-between gap-4">
@@ -375,19 +446,19 @@
             <div class="text-xs font-semibold text-gray-300 mb-1">{{ t('usage.costDetails') }}</div>
             <div v-if="tooltipData && tooltipData.input_cost > 0" class="flex items-center justify-between gap-4">
               <span class="text-gray-400">{{ t('admin.usage.inputCost') }}</span>
-              <span class="font-medium text-white">${{ tooltipData.input_cost.toFixed(6) }}</span>
+              <span class="font-medium text-white">${{ tooltipData.input_cost.toFixed(8) }}</span>
             </div>
             <div v-if="tooltipData && hasImageInputCost(tooltipData)" class="flex items-center justify-between gap-4">
               <span class="text-gray-400">{{ t('usage.imageInputCost') }}</span>
-              <span class="font-medium text-fuchsia-300">${{ tooltipData.image_input_cost.toFixed(6) }}</span>
+              <span class="font-medium text-fuchsia-300">${{ tooltipData.image_input_cost.toFixed(8) }}</span>
             </div>
             <div v-if="tooltipData && tooltipData.output_cost > 0" class="flex items-center justify-between gap-4">
               <span class="text-gray-400">{{ t('admin.usage.outputCost') }}</span>
-              <span class="font-medium text-white">${{ tooltipData.output_cost.toFixed(6) }}</span>
+              <span class="font-medium text-white">${{ tooltipData.output_cost.toFixed(8) }}</span>
             </div>
             <div v-if="tooltipData && hasImageOutputCost(tooltipData)" class="flex items-center justify-between gap-4">
               <span class="text-gray-400">{{ t('usage.imageOutputCost') }}</span>
-              <span class="font-medium text-pink-300">${{ tooltipData.image_output_cost.toFixed(6) }}</span>
+              <span class="font-medium text-pink-300">${{ tooltipData.image_output_cost.toFixed(8) }}</span>
             </div>
             <!-- Token billing: show unit prices per 1M tokens -->
             <template v-if="tooltipData && !isImageUsage(tooltipData) && (!tooltipData.billing_mode || tooltipData.billing_mode === BILLING_MODE_TOKEN)">
@@ -435,25 +506,29 @@
               </div>
               <div class="flex items-center justify-between gap-4">
                 <span class="text-gray-400">{{ t('usage.imageUnitPrice') }}</span>
-                <span class="font-medium text-sky-300">${{ imageUnitPrice(tooltipData).toFixed(6) }}</span>
+                <span class="font-medium text-sky-300">${{ imageUnitPrice(tooltipData).toFixed(8) }}</span>
               </div>
               <div class="flex items-center justify-between gap-4">
                 <span class="text-gray-400">{{ t('usage.imageTotalPrice') }}</span>
-                <span class="font-medium text-white">${{ tooltipData.total_cost?.toFixed(6) || '0.000000' }}</span>
+                <span class="font-medium text-white">${{ tooltipData.total_cost?.toFixed(8) || '0.00000000' }}</span>
               </div>
             </template>
             <div v-else class="flex items-center justify-between gap-4">
               <span class="text-gray-400">{{ t('usage.unitPrice') }}</span>
-              <span class="font-medium text-sky-300">${{ tooltipData?.total_cost?.toFixed(6) || '0.000000' }}</span>
+              <span class="font-medium text-sky-300">${{ tooltipData?.total_cost?.toFixed(8) || '0.00000000' }}</span>
             </div>
             <div v-if="tooltipData && tooltipData.cache_creation_cost > 0" class="flex items-center justify-between gap-4">
               <span class="text-gray-400">{{ t('admin.usage.cacheCreationCost') }}</span>
-              <span class="font-medium text-white">${{ tooltipData.cache_creation_cost.toFixed(6) }}</span>
+              <span class="font-medium text-white">${{ tooltipData.cache_creation_cost.toFixed(8) }}</span>
             </div>
             <div v-if="tooltipData && tooltipData.cache_read_cost > 0" class="flex items-center justify-between gap-4">
               <span class="text-gray-400">{{ t('admin.usage.cacheReadCost') }}</span>
-              <span class="font-medium text-white">${{ tooltipData.cache_read_cost.toFixed(6) }}</span>
+              <span class="font-medium text-white">${{ tooltipData.cache_read_cost.toFixed(8) }}</span>
             </div>
+          </div>
+          <div v-if="tooltipData && (tooltipData.search_count ?? 0) > 0" class="flex items-center justify-between gap-4">
+            <span class="text-gray-400">{{ t('usage.searchCost') }} ({{ tooltipData.search_count }})</span>
+            <span class="font-medium text-white">${{ (tooltipData.search_cost ?? 0).toFixed(8) }}</span>
           </div>
           <!-- Rate and Summary -->
           <div class="flex items-center justify-between gap-6">
@@ -462,15 +537,15 @@
           </div>
           <div class="flex items-center justify-between gap-6">
             <span class="text-gray-400">{{ t('usage.rate') }}</span>
-            <span class="font-semibold text-blue-400">{{ formatMultiplier(tooltipData?.rate_multiplier || 1) }}x</span>
+            <span class="font-semibold text-blue-400">{{ formatMultiplier(tooltipData?.rate_multiplier ?? 1) }}x</span>
           </div>
           <div class="flex items-center justify-between gap-6">
             <span class="text-gray-400">{{ t('usage.original') }}</span>
-            <span class="font-medium text-white">${{ tooltipData?.total_cost?.toFixed(6) || '0.000000' }}</span>
+            <span class="font-medium text-white">${{ tooltipData?.total_cost?.toFixed(8) || '0.00000000' }}</span>
           </div>
           <div class="flex items-center justify-between gap-6">
             <span class="text-gray-400">{{ t('usage.userBilled') }}</span>
-            <span class="font-semibold text-green-400">${{ tooltipData?.actual_cost?.toFixed(6) || '0.000000' }}</span>
+            <span class="font-semibold text-green-400">${{ tooltipData?.actual_cost?.toFixed(8) || '0.00000000' }}</span>
           </div>
           <!-- Account billing (separated from user billing) -->
           <template v-if="showAccountBilling">
@@ -485,7 +560,7 @@
                   total_cost: tooltipData?.total_cost,
                   account_stats_cost: tooltipData?.account_stats_cost,
                   account_rate_multiplier: tooltipData?.account_rate_multiplier,
-                }).toFixed(6) }}
+                }).toFixed(8) }}
               </span>
             </div>
           </template>
@@ -494,13 +569,56 @@
       </div>
     </div>
   </Teleport>
+
+  <Teleport to="body">
+    <div
+      v-if="accountTooltipVisible"
+      data-testid="usage-account-tooltip"
+      class="fixed z-[9999] pointer-events-none -translate-y-1/2"
+      :style="{
+        left: accountTooltipPosition.x + 'px',
+        top: accountTooltipPosition.y + 'px'
+      }"
+    >
+      <div class="max-w-xs rounded-lg border border-gray-700 bg-gray-900 px-3 py-2.5 text-xs text-white shadow-xl dark:border-gray-600 dark:bg-gray-800">
+        <div class="space-y-1.5">
+          <div class="flex items-start justify-between gap-4">
+            <span class="shrink-0 text-gray-400">{{ t('admin.usage.upstreamMultiplier') }}</span>
+            <span class="font-semibold text-blue-400">{{ formatAccountHoverRate(accountTooltipInfo.rate) }}</span>
+          </div>
+          <div class="flex items-start justify-between gap-4">
+            <span class="shrink-0 text-gray-400">{{ t('admin.usage.apiAddress') }}</span>
+            <span class="break-all text-right font-medium text-white">{{ accountTooltipInfo.baseUrl }}</span>
+          </div>
+        </div>
+      </div>
+      <div class="absolute right-full top-1/2 h-0 w-0 -translate-y-1/2 border-b-[6px] border-r-[6px] border-t-[6px] border-b-transparent border-r-gray-900 border-t-transparent dark:border-r-gray-800"></div>
+    </div>
+  </Teleport>
+
+  <Teleport to="body">
+    <div
+      v-if="userContextMenu.visible"
+      class="fixed z-[10000] min-w-20 rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-dark-600 dark:bg-dark-800"
+      :style="{ left: `${userContextMenu.x}px`, top: `${userContextMenu.y}px` }"
+      @click.stop
+    >
+      <button
+        type="button"
+        class="block w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-dark-700"
+        @click="applyUserContextMenu"
+      >
+        {{ t('common.view') }}
+      </button>
+    </div>
+  </Teleport>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
-import { formatDateTime, formatReasoningEffort } from '@/utils/format'
+import { formatDateTime, formatReasoningEffort, reasoningEffortValuesEqual } from '@/utils/format'
 import { formatCacheTokens, formatMultiplier } from '@/utils/formatters'
 import { formatTokenPricePerMillion } from '@/utils/usagePricing'
 import { getUsageServiceTierLabel } from '@/utils/usageServiceTier'
@@ -512,14 +630,17 @@ import {
   LATENCY_TEXT_CLASSES,
   durationSeverity,
   firstTokenSeverity,
+  formatUsageOutputRate,
 } from '@/utils/latencyHealth'
 import {
   BILLING_MODE_TOKEN,
   getBillingModeLabel,
   getBillingModeBadgeClass,
+  isContentSafetyUsage,
   isImageUsage,
   getDisplayBillingMode,
   imageUnitPrice,
+  usageModelLabel,
 } from '@/utils/billingMode'
 import {
   formatImageBillingSize,
@@ -547,9 +668,54 @@ import DataTable from '@/components/common/DataTable.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import IpGeoCell from '@/components/common/IpGeoCell.vue'
 import Icon from '@/components/icons/Icon.vue'
+import { getById as getAccountById } from '@/api/admin/accounts'
+import { getById as getUserById } from '@/api/admin/users'
 import { fetchBatch, getEntry } from '@/utils/ipGeoLookup'
-import type { AdminUsageLog } from '@/types'
+import { upstreamDeclaredRateFromExtra } from '@/utils/upstreamDeclaredRate'
+import type { AdminUsageLog, UsageLogAccountSummary } from '@/types'
 import type { Column } from '@/components/common/types'
+
+function cacheHitRate(row: Pick<AdminUsageLog, 'input_tokens' | 'cache_creation_tokens' | 'cache_read_tokens'>): string {
+  const cached = row.cache_read_tokens || 0
+  const total = (row.input_tokens || 0) + (row.cache_creation_tokens || 0) + cached
+  return (total > 0 ? cached / total * 100 : 0).toFixed(2)
+}
+
+interface AccountHoverCacheEntry {
+  rate: number | null
+  base_url: string
+}
+
+function credentialBaseUrl(credentials?: Record<string, unknown> | null): string {
+  const raw = credentials?.base_url
+  return typeof raw === 'string' ? raw.trim() : ''
+}
+
+function hasUpstreamRateField(account?: UsageLogAccountSummary | null): boolean {
+  return !!account && Object.prototype.hasOwnProperty.call(account, 'upstream_rate_multiplier')
+}
+
+function resolveAccountHover(
+  row: AdminUsageLog | null,
+  cache: Record<number, AccountHoverCacheEntry>
+): { rate: number | null; baseUrl: string } {
+  if (!row?.account) return { rate: null, baseUrl: '-' }
+  const cached = cache[row.account.id]
+  const rate = hasUpstreamRateField(row.account)
+    ? (row.account.upstream_rate_multiplier ?? null)
+    : (cached?.rate ?? null)
+  const raw = (row.account.base_url ?? cached?.base_url ?? '').trim()
+  return { rate, baseUrl: raw || '-' }
+}
+
+function formatAccountHoverRate(rate: number | null): string {
+  return rate == null ? '-' : `${formatMultiplier(rate)}x`
+}
+
+function needsAccountHoverLookup(account?: UsageLogAccountSummary | null): boolean {
+  if (!account?.id) return false
+  return !hasUpstreamRateField(account)
+}
 
 interface Props {
   data: AdminUsageLog[]
@@ -560,6 +726,7 @@ interface Props {
   defaultSortOrder?: 'asc' | 'desc'
   showAccountBilling?: boolean
   showUpstreamEndpoint?: boolean
+  skeletonRows?: number
   /** 嵌入统一卡片内使用：去掉自身卡片外观 */
   flat?: boolean
 }
@@ -571,10 +738,15 @@ const props = withDefaults(defineProps<Props>(), {
   defaultSortOrder: 'asc',
   showAccountBilling: true,
   showUpstreamEndpoint: true,
+  skeletonRows: 5,
   flat: false
 })
 const emit = defineEmits<{
   userClick: [userID: number, email?: string]
+  userFilterClick: [userID: number, email: string]
+  accountClick: [accountID: number, accountName: string]
+  groupClick: [groupID: number]
+  modelClick: [model: string]
   sort: [key: string, order: 'asc' | 'desc']
   ipGeoBatchFailed: []
 }>()
@@ -584,8 +756,54 @@ const copiedRequestId = ref<string | null>(null)
 const showAccountBilling = props.showAccountBilling
 const showUpstreamEndpoint = props.showUpstreamEndpoint
 const ipGeoBatchLoading = ref(false)
+const userContextMenu = ref({ visible: false, x: 0, y: 0, userId: 0, email: '' })
+const userNotesCache = ref<Record<number, string>>({})
+const showUserColumn = computed(() => props.columns.some((col) => col.key === 'user'))
+
+function resolvedUserNotes(row: AdminUsageLog): string {
+  const fromRow = row.user?.notes
+  if (typeof fromRow === 'string') return fromRow.trim()
+  const cached = userNotesCache.value[row.user?.id ?? row.user_id]
+  return typeof cached === 'string' ? cached.trim() : ''
+}
+
+function userLabel(row: AdminUsageLog): string {
+  return resolvedUserNotes(row) || row.user?.email || '-'
+}
+
+function userLabelTitle(row: AdminUsageLog): string {
+  const notes = resolvedUserNotes(row)
+  if (notes && row.user?.email) return row.user.email
+  return t('admin.usage.clickToViewBalance')
+}
+
+const openUserContextMenu = (event: MouseEvent, userId: number, email: string) => {
+  userContextMenu.value = {
+    visible: true,
+    x: Math.min(event.clientX, Math.max(0, window.innerWidth - 100)),
+    y: Math.min(event.clientY, Math.max(0, window.innerHeight - 48)),
+    userId,
+    email
+  }
+}
+
+const closeUserContextMenu = () => {
+  userContextMenu.value.visible = false
+}
+
+const applyUserContextMenu = () => {
+  const { userId, email } = userContextMenu.value
+  closeUserContextMenu()
+  emit('userFilterClick', userId, email)
+}
 
 const showIpGeoToolbar = computed(() => props.columns.some((col) => col.key === 'ip_address'))
+
+const hasReasoningEffortMapping = (row: AdminUsageLog): boolean => {
+  const requested = row.reasoning_effort?.trim() || ''
+  const forwarded = row.upstream_reasoning_effort?.trim() || ''
+  return requested !== '' && forwarded !== '' && !reasoningEffortValuesEqual(requested, forwarded)
+}
 
 const sentUpstreamModel = (row: AdminUsageLog): string => row.upstream_model?.trim() || row.model?.trim() || ''
 
@@ -630,18 +848,22 @@ const handleBatchFetchIpGeo = async () => {
   }
 }
 
-const copyRequestId = async (requestId: string) => {
+const copyIdentifier = async (value: string, copiedMessage: string) => {
   try {
-    await navigator.clipboard.writeText(requestId)
-    copiedRequestId.value = requestId
-    appStore.showSuccess(t('admin.usage.requestIdCopied'))
+    await navigator.clipboard.writeText(value)
+    copiedRequestId.value = value
+    appStore.showSuccess(copiedMessage)
     window.setTimeout(() => {
-      if (copiedRequestId.value === requestId) copiedRequestId.value = null
+      if (copiedRequestId.value === value) copiedRequestId.value = null
     }, 2000)
   } catch {
     appStore.showError(t('common.copyFailed'))
   }
 }
+
+const copyRequestId = (requestId: string) => copyIdentifier(requestId, t('admin.usage.requestIdCopied'))
+const copyUpstreamRequestId = (upstreamRequestId: string) =>
+  copyIdentifier(upstreamRequestId, t('admin.usage.upstreamRequestIdCopied'))
 
 // Tooltip state - cost
 const tooltipVisible = ref(false)
@@ -653,7 +875,15 @@ const tokenTooltipVisible = ref(false)
 const tokenTooltipPosition = ref({ x: 0, y: 0 })
 const tokenTooltipData = ref<AdminUsageLog | null>(null)
 
+// Tooltip state - account hover (上游倍率 + API地址)
+const accountTooltipVisible = ref(false)
+const accountTooltipPosition = ref({ x: 0, y: 0 })
+const accountTooltipRow = ref<AdminUsageLog | null>(null)
+const accountHoverCache = ref<Record<number, AccountHoverCacheEntry>>({})
+const accountTooltipInfo = computed(() => resolveAccountHover(accountTooltipRow.value, accountHoverCache.value))
+
 const getRequestTypeLabel = (row: AdminUsageLog): string => {
+  if (isContentSafetyUsage(row)) return t('usage.cyber')
   const requestType = resolveUsageRequestType(row)
   if (requestType === 'cyber') return t('usage.cyber')
   if (requestType === 'live') return t('usage.live')
@@ -664,6 +894,7 @@ const getRequestTypeLabel = (row: AdminUsageLog): string => {
 }
 
 const getRequestTypeBadgeClass = (row: AdminUsageLog): string => {
+  if (isContentSafetyUsage(row)) return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
   const requestType = resolveUsageRequestType(row)
   if (requestType === 'cyber') return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
   if (requestType === 'live') return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200'
@@ -718,4 +949,76 @@ const hideTokenTooltip = () => {
   tokenTooltipVisible.value = false
   tokenTooltipData.value = null
 }
+
+const showAccountTooltip = (event: MouseEvent, row: AdminUsageLog) => {
+  const target = event.currentTarget as HTMLElement
+  const rect = target.getBoundingClientRect()
+  accountTooltipRow.value = row
+  accountTooltipPosition.value = { x: rect.right + 8, y: rect.top + rect.height / 2 }
+  accountTooltipVisible.value = true
+  void hydrateAccountHover(row)
+}
+
+const hideAccountTooltip = () => {
+  accountTooltipVisible.value = false
+  accountTooltipRow.value = null
+}
+
+const hydrateAccountHover = async (row: AdminUsageLog) => {
+  const account = row.account
+  if (!account?.id || !needsAccountHoverLookup(account)) return
+  if (Object.prototype.hasOwnProperty.call(accountHoverCache.value, account.id)) return
+  try {
+    const detail = await getAccountById(account.id)
+    accountHoverCache.value = {
+      ...accountHoverCache.value,
+      [account.id]: {
+        rate: upstreamDeclaredRateFromExtra(detail.extra),
+        base_url: credentialBaseUrl(detail.credentials),
+      },
+    }
+  } catch {
+    accountHoverCache.value = {
+      ...accountHoverCache.value,
+      [account.id]: { rate: null, base_url: '' },
+    }
+  }
+}
+
+const hydrateUserNotes = async (rows: AdminUsageLog[]) => {
+  if (!showUserColumn.value) return
+  const pending = new Set<number>()
+  for (const row of rows) {
+    const id = row.user?.id ?? row.user_id
+    if (!id) continue
+    if (typeof row.user?.notes === 'string') continue
+    if (Object.prototype.hasOwnProperty.call(userNotesCache.value, id)) continue
+    pending.add(id)
+  }
+  if (pending.size === 0) return
+  await Promise.all([...pending].map(async (id) => {
+    try {
+      const user = await getUserById(id, true)
+      userNotesCache.value = { ...userNotesCache.value, [id]: user.notes ?? '' }
+    } catch {
+      userNotesCache.value = { ...userNotesCache.value, [id]: '' }
+    }
+  }))
+}
+
+watch(
+  () => [props.data, showUserColumn.value] as const,
+  ([rows]) => { void hydrateUserNotes(rows) },
+  { immediate: true }
+)
+
+onMounted(() => {
+  document.addEventListener('click', closeUserContextMenu)
+  window.addEventListener('scroll', closeUserContextMenu, true)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', closeUserContextMenu)
+  window.removeEventListener('scroll', closeUserContextMenu, true)
+})
 </script>

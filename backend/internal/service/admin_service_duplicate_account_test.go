@@ -5,12 +5,14 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
 	"time"
 	"unicode/utf8"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/stretchr/testify/require"
 )
@@ -53,6 +55,18 @@ func (s *duplicateAccountRepoStub) CreateWithAccountGroups(ctx context.Context, 
 	stored := *account
 	s.accounts[account.ID] = &stored
 	s.mockAccountRepoForGemini.accountsByID[account.ID] = &stored
+	return nil
+}
+
+func (s *duplicateAccountRepoStub) CreateManyWithAccountGroups(ctx context.Context, accounts []*Account) error {
+	if s.atomicCreateErr != nil {
+		return s.atomicCreateErr
+	}
+	for _, account := range accounts {
+		if err := s.CreateWithAccountGroups(ctx, account, account.AccountGroups); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -266,6 +280,28 @@ func TestDuplicateAccountPreservesUngroupedState(t *testing.T) {
 	require.NotContains(t, repo.groupsOf, duplicate.ID)
 }
 
+func TestDuplicateAccountSimpleModeRejectsCompositeGroupBinding(t *testing.T) {
+	ctx := context.Background()
+	repo := newDuplicateAccountRepoStub()
+	groupRepo := &groupRepoStubForAdmin{getByIDByID: map[int64]*Group{
+		9: {ID: 9, Platform: PlatformComposite},
+	}}
+	svc := &adminServiceImpl{
+		cfg: &config.Config{RunMode: config.RunModeSimple}, groupRepo: groupRepo,
+		accountRepo: repo, accountDuplicateRepo: repo,
+	}
+	source := &Account{
+		Name: "composite-bound", Platform: PlatformAnthropic, Type: AccountTypeAPIKey,
+		Credentials: map[string]any{"api_key": "secret"}, GroupIDs: []int64{9},
+	}
+	require.NoError(t, repo.Create(ctx, source))
+
+	_, err := svc.DuplicateAccount(ctx, source.ID, "admin:1", "")
+
+	require.Equal(t, "SIMPLE_MODE_GROUP_NOT_BINDABLE", infraerrors.Reason(err))
+	require.Len(t, repo.accounts, 1)
+}
+
 func TestDuplicateAccountAtomicCreateFailureLeavesNoOrphan(t *testing.T) {
 	ctx := context.Background()
 	repo := newDuplicateAccountRepoStub()
@@ -323,4 +359,94 @@ func TestDuplicateAccountReturnsExistingCopyForSameOperationKey(t *testing.T) {
 	require.NotEqual(t, first.ID, otherAdminCopy.ID)
 	require.Len(t, repo.accounts, 3)
 	require.NotEmpty(t, first.Extra[duplicateAccountOperationIDExtraKey])
+}
+
+func TestBatchDuplicateAccountsNamesProbesAndRetry(t *testing.T) {
+	ctx := context.Background()
+	repo := newDuplicateAccountRepoStub()
+	svc := &adminServiceImpl{accountRepo: repo, accountDuplicateRepo: repo}
+	source := &Account{Name: "GPT-UltraFast1", Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+		Credentials: map[string]any{"api_key": "secret", "base_url": "https://example.com"},
+		Extra:       map[string]any{UpstreamBillingProbeEnabledExtraKey: false, UpstreamBillingRateSyncEnabledExtraKey: true, UpstreamBillingProbeExtraKey: map[string]any{"status": "ok"}},
+		GroupIDs:    []int64{7}, AccountGroups: []AccountGroup{{GroupID: 7, Priority: 25}},
+		Status: StatusError, ErrorMessage: "failed", Schedulable: true,
+	}
+	require.NoError(t, repo.Create(ctx, source))
+	copies, err := svc.BatchDuplicateAccounts(ctx, source.ID, 10, "admin:7", "batch-key")
+	require.NoError(t, err)
+	require.Len(t, copies, 10)
+	for i, copy := range copies {
+		require.Equal(t, fmt.Sprintf("GPT-UltraFast1-%d", i+1), copy.Name)
+		require.Equal(t, source.Credentials, copy.Credentials)
+		require.True(t, upstreamBillingProbeEnabled(copy))
+		require.True(t, upstreamBillingRateSyncEnabled(copy))
+		require.NotContains(t, copy.Extra, UpstreamBillingProbeExtraKey)
+		require.False(t, copy.Schedulable)
+		require.Equal(t, StatusActive, copy.Status)
+		require.Empty(t, copy.ErrorMessage)
+		require.Equal(t, []AccountGroup{{AccountID: copy.ID, GroupID: 7, Priority: 25}}, copy.AccountGroups)
+	}
+	copies[0].Credentials["api_key"] = "changed"
+	require.Equal(t, "secret", source.Credentials["api_key"])
+	require.Equal(t, "secret", copies[1].Credentials["api_key"])
+	require.Equal(t, false, source.Extra[UpstreamBillingProbeEnabledExtraKey])
+	replayed, err := svc.BatchDuplicateAccounts(ctx, source.ID, 10, "admin:7", "batch-key")
+	require.NoError(t, err)
+	require.Len(t, replayed, 10)
+	for i := range copies {
+		require.Equal(t, copies[i].ID, replayed[i].ID)
+	}
+	require.Len(t, repo.accounts, 11)
+	otherActor, err := svc.RecoverBatchDuplicateAccounts(ctx, source.ID, 10, "admin:8", "batch-key")
+	require.NoError(t, err)
+	require.Empty(t, otherActor)
+	delete(repo.accounts, copies[0].ID)
+	_, err = svc.BatchDuplicateAccounts(ctx, source.ID, 10, "admin:7", "batch-key")
+	require.Equal(t, "ACCOUNT_DUPLICATE_BATCH_CHANGED", infraerrors.Reason(err))
+	require.Len(t, repo.accounts, 10)
+}
+
+func TestBatchDuplicateAccountsValidatesBeforeCreating(t *testing.T) {
+	for _, state := range []string{"zero", "negative", "too many", "name too long", "oauth", "shadow", "write failed"} {
+		t.Run(state, func(t *testing.T) {
+			repo := newDuplicateAccountRepoStub()
+			svc := &adminServiceImpl{accountRepo: repo, accountDuplicateRepo: repo}
+			source := &Account{Name: "source", Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "secret"}}
+			count := 10
+			switch state {
+			case "zero":
+				count = 0
+			case "negative":
+				count = -1
+			case "too many":
+				count = 101
+			case "name too long":
+				source.Name = strings.Repeat("x", 100)
+			case "oauth":
+				source.Type = AccountTypeOAuth
+			case "shadow":
+				parent := int64(99)
+				source.ParentAccountID = &parent
+			case "write failed":
+				repo.atomicCreateErr = errors.New("batch failed")
+			}
+			require.NoError(t, repo.Create(context.Background(), source))
+			_, err := svc.BatchDuplicateAccounts(context.Background(), source.ID, count, "admin:7", "key")
+			require.Error(t, err)
+			require.Len(t, repo.accounts, 1)
+		})
+	}
+}
+
+func TestBatchDuplicateAccountsAcceptsCountBoundaries(t *testing.T) {
+	for _, count := range []int{1, MaxBatchDuplicateAccounts} {
+		repo := newDuplicateAccountRepoStub()
+		svc := &adminServiceImpl{accountRepo: repo, accountDuplicateRepo: repo}
+		source := &Account{Name: "source", Platform: PlatformAnthropic, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "secret"}}
+		require.NoError(t, repo.Create(context.Background(), source))
+		copies, err := svc.BatchDuplicateAccounts(context.Background(), source.ID, count, "admin:7", "key")
+		require.NoError(t, err)
+		require.Len(t, copies, count)
+		require.Equal(t, fmt.Sprintf("source-%d", count), copies[count-1].Name)
+	}
 }

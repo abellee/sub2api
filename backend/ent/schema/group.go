@@ -44,9 +44,17 @@ func (Group) Fields() []ent.Field {
 			Optional().
 			Nillable().
 			SchemaType(map[string]string{dialect.Postgres: "text"}),
+		// 名称与描述的界面语言译文 (added by migration 242)
+		field.JSON("i18n", domain.GroupI18n{}).
+			Default(domain.GroupI18n{}).
+			SchemaType(map[string]string{dialect.Postgres: "jsonb"}).
+			Comment("名称与描述的界面语言译文：语言代码 -> {name, description}；缺失的语言沿用 name/description"),
 		field.Float("rate_multiplier").
 			SchemaType(map[string]string{dialect.Postgres: "decimal(10,4)"}).
 			Default(1.0),
+		field.JSON("rate_sync_group_ids", []int64{}).
+			Default([]int64{}).
+			Comment("修改基础倍率时单向同步的目标分组 ID"),
 		// 高峰时段倍率（added by migration 158）
 		field.Bool("peak_rate_enabled").
 			Default(false).
@@ -63,6 +71,8 @@ func (Group) Fields() []ent.Field {
 			SchemaType(map[string]string{dialect.Postgres: "decimal(10,4)"}).
 			Default(1.0).
 			Comment("高峰时段叠加倍率，仅在 peak_rate_enabled 且处于 [peak_start, peak_end) 时乘入文本倍率"),
+		field.Bool("sync_isolation_enabled").Default(false),
+		field.Int64("sync_isolation_source_group_id").Default(0),
 		field.Bool("is_exclusive").
 			Default(false),
 		field.String("status").
@@ -79,6 +89,14 @@ func (Group) Fields() []ent.Field {
 		field.String("platform").
 			MaxLen(50).
 			Default(domain.PlatformAnthropic),
+		field.String("blocked_user_agents").
+			Default("").
+			SchemaType(map[string]string{dialect.Postgres: "text"}).
+			Comment("拒绝的客户端 UA 关键词，英文逗号分隔，不区分大小写"),
+		field.String("required_protocol").
+			MaxLen(20).
+			Default("").
+			Comment("强制客户端协议；空值表示不限制"),
 		field.String("subscription_type").
 			MaxLen(20).
 			Default(domain.SubscriptionTypeStandard),
@@ -98,12 +116,21 @@ func (Group) Fields() []ent.Field {
 			Default(30),
 
 		// 图片生成计费配置（antigravity 和 gemini 平台使用）
+		field.Bool("account_error_failover_enabled").
+			Default(false).
+			Comment("系统与分组开关同时开启时，报错重试两次后换号"),
 		field.Bool("allow_image_generation").
 			Default(false).
 			Comment("是否允许该分组使用图片生成能力"),
 		field.Bool("allow_batch_image_generation").
 			Default(false).
 			Comment("是否允许该分组使用批量图片生成能力"),
+		field.Bool("image_auto_size_from_reference").
+			Default(false).
+			Comment("size=auto 且仅有一张参考图时使用该图尺寸，读取失败则保持原样"),
+		field.Bool("image_count_billing").
+			Default(false).
+			Comment("图片生成是否按实际出图张数计费"),
 		field.Bool("image_rate_independent").
 			Default(false).
 			Comment("图片生成是否使用独立倍率；false 表示共享分组有效倍率"),
@@ -242,6 +269,15 @@ func (Group) Fields() []ent.Field {
 		field.Bool("allow_live").
 			Default(false).
 			Comment("是否允许此 OpenAI 分组访问 Live 接口"),
+		field.Bool("force_openai_fast").
+			Default(false).
+			Comment("是否强制此 OpenAI/Composite 分组请求使用 service_tier=priority"),
+		field.Bool("force_openai_ultrafast").
+			Default(false).
+			Comment("是否对支持 Ultrafast 的模型强制使用 service_tier=ultrafast（优先于 force_openai_fast）"),
+		field.Bool("free_openai_fast").
+			Default(false).
+			Comment("是否让此 OpenAI/Composite 分组的 Fast 请求按 Standard 价格计费"),
 		field.Bool("require_oauth_only").
 			Default(false).
 			Comment("仅允许非 apikey 类型账号关联到此分组"),
@@ -256,10 +292,17 @@ func (Group) Fields() []ent.Field {
 			Default(domain.OpenAIMessagesDispatchModelConfig{}).
 			SchemaType(map[string]string{dialect.Postgres: "jsonb"}).
 			Comment("OpenAI Messages 调度模型配置：按 Claude 系列/精确模型映射到目标 GPT 模型"),
-		field.JSON("models_list_config", domain.GroupModelsListConfig{}).
-			Default(domain.GroupModelsListConfig{}).
+		field.JSON("model_allowlist", domain.GroupModelAllowlist{}).
+			Default(domain.GroupModelAllowlist{}).
 			SchemaType(map[string]string{dialect.Postgres: "jsonb"}).
-			Comment("自定义 /v1/models 展示列表配置；仅影响模型列表响应，不影响调度"),
+			Comment("分组模型白名单：同时约束模型列表接口与请求准入"),
+		field.JSON("anthropic_thinking_compat", domain.GroupAnthropicThinkingCompat{}).
+			Default(domain.GroupAnthropicThinkingCompat{}).
+			SchemaType(map[string]string{dialect.Postgres: "jsonb"}),
+		field.JSON("codex_models_manifest_config", domain.GroupCodexModelsManifestConfig{}).
+			Default(domain.GroupCodexModelsManifestConfig{}).
+			SchemaType(map[string]string{dialect.Postgres: "jsonb"}).
+			Comment("固定账号获取 Codex Model Manifest 配置；开启后 /models 请求只用选定账号拉取（仅 openai 平台）"),
 
 		// 分组级每分钟请求数上限（0 = 不限制）。设置后优先于用户级兜底生效。
 		field.Int("rpm_limit").
@@ -271,10 +314,14 @@ func (Group) Fields() []ent.Field {
 			MaxLen(20).
 			Default("").
 			Comment("OpenAI reasoning effort 上限；可选 minimal/low/medium/high/xhigh/max"),
+		field.String("max_reasoning_effort_over_limit").
+			MaxLen(20).
+			Default("downgrade").
+			Comment("超过推理强度上限时的访问控制：downgrade 自动降档，deny 拒绝访问"),
 		field.JSON("reasoning_effort_mappings", []domain.ReasoningEffortMapping{}).
 			Default([]domain.ReasoningEffortMapping{}).
 			SchemaType(map[string]string{dialect.Postgres: "jsonb"}).
-			Comment("OpenAI reasoning effort 自定义精确映射；先映射再应用上限"),
+			Comment("OpenAI reasoning effort 自定义映射；可按模型精确名、前缀或后缀限定，先映射再应用上限"),
 
 		// 分组利润控制（migration 192/193）：openai/anthropic/gemini/grok/antigravity
 		// 的 token 分组可启用，composite 分组不能直接启用。

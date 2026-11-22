@@ -60,11 +60,16 @@ func (s *GatewayService) handleBedrockStreamingResponse(
 	}
 	events := make(chan decodeEvent, 16)
 	done := make(chan struct{})
+	queueBudget := newSSEQueueBudget(s.cfg)
 	sendEvent := func(ev decodeEvent) bool {
+		if !queueBudget.acquire(len(ev.payload), done) {
+			return false
+		}
 		select {
 		case events <- ev:
 			return true
 		case <-done:
+			queueBudget.release(len(ev.payload))
 			return false
 		}
 	}
@@ -104,10 +109,17 @@ func (s *GatewayService) handleBedrockStreamingResponse(
 		intervalCh = intervalTicker.C
 	}
 
+	sawTerminal := false
 	for {
 		select {
 		case ev, ok := <-events:
+			if ok {
+				queueBudget.release(len(ev.payload))
+			}
 			if !ok {
+				if RequestAccountFailoverEnabled(ctx) && !sawTerminal && !clientDisconnected {
+					return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, errUpstreamStreamMissingTerminal
+				}
 				if !clientDisconnected {
 					flusher.Flush()
 				}
@@ -120,7 +132,7 @@ func (s *GatewayService) handleBedrockStreamingResponse(
 				if errors.Is(ev.err, context.Canceled) || errors.Is(ev.err, context.DeadlineExceeded) {
 					return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: true}, nil
 				}
-				return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, fmt.Errorf("bedrock stream read error: %w", ev.err)
+				return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, upstreamStreamReadError(ev.err)
 			}
 
 			// payload 是 JSON，提取 chunk.bytes（base64 编码的 Claude SSE 事件数据）
@@ -139,10 +151,13 @@ func (s *GatewayService) handleBedrockStreamingResponse(
 			sseData = transformBedrockInvocationMetrics(sseData)
 
 			// 解析 SSE 事件数据提取 usage
-			s.parseSSEUsagePassthrough(string(sseData), usage)
+			parseSSEUsagePassthrough(string(sseData), usage)
 
 			// 确定 SSE event type
 			eventType := gjson.GetBytes(sseData, "type").String()
+			if anthropicStreamEventIsTerminal(eventType, string(sseData)) {
+				sawTerminal = true
+			}
 
 			// 写入标准 SSE 格式
 			if !clientDisconnected {
@@ -180,7 +195,8 @@ func (s *GatewayService) handleBedrockStreamingResponse(
 // extractBedrockChunkData 从 Bedrock EventStream payload 中提取 Claude SSE 事件数据
 // Bedrock payload 格式：{"bytes":"<base64-encoded-json>"}
 func extractBedrockChunkData(payload []byte) []byte {
-	b64 := gjson.GetBytes(payload, "bytes").String()
+	// 零拷贝读取：b64 只在本函数内解码，解码结果写入新 buffer。
+	b64 := parseRawJSONView(payload).Get("bytes").String()
 	if b64 == "" {
 		return nil
 	}
@@ -241,6 +257,13 @@ type bedrockEventStreamDecoder struct {
 	reader *bufio.Reader
 }
 
+// AWS EventStream 协议上限（与 AWS SDK 的 eventstream 解码器一致）。帧长度来自
+// 上游，必须在分配前校验，否则单个伪造的 prelude 即可申请约 4 GiB。
+const (
+	bedrockEventStreamMaxHeadersLength = 128 << 10
+	bedrockEventStreamMaxPayloadLength = 16 << 20
+)
+
 func newBedrockEventStreamDecoder(r io.Reader) *bedrockEventStreamDecoder {
 	return &bedrockEventStreamDecoder{
 		reader: bufio.NewReaderSize(r, 64*1024),
@@ -267,6 +290,12 @@ func (d *bedrockEventStreamDecoder) Decode() ([]byte, error) {
 
 		if totalLength < 16 { // minimum: 12 prelude + 4 message_crc
 			return nil, fmt.Errorf("invalid eventstream frame: total_length=%d", totalLength)
+		}
+		if headersLength > bedrockEventStreamMaxHeadersLength || headersLength > totalLength-16 {
+			return nil, fmt.Errorf("invalid eventstream frame: headers_length=%d total_length=%d", headersLength, totalLength)
+		}
+		if totalLength-16-headersLength > bedrockEventStreamMaxPayloadLength {
+			return nil, fmt.Errorf("invalid eventstream frame: payload too large, total_length=%d", totalLength)
 		}
 
 		// 读取 headers + payload + message_crc

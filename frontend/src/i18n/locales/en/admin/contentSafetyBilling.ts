@@ -1,0 +1,22 @@
+export default {
+  contentSafetyBilling: {
+    title: 'Content Safety Billing',
+    description: 'Debit the configured amount when a Grok upstream matches the built-in safety rules, and return the standard error message.',
+    enabled: 'Enable content safety billing',
+    amount: 'Debit per request (USD)',
+    amountHint: 'A fixed balance debit without group multipliers. Subscription users are also charged from their balance.',
+    match: 'Safety detection rules',
+    matchHint: '2xx: refusal wording followed by that, this, you, your, the request, the prompt or it. 400: generated image or video rejected by content moderation. 403: safety, moderation or policy markers, or the same refusal wording. Matching ignores case and normalizes curly quotes; suffixes need no word boundary. All Grok accounts use these rules. Debit notes record the match.',
+    clientMessage: 'Standard error message',
+    clientMessageHint: 'Return HTTP 403 with this standard message and stop account failover. Streams that have already started receive an error event.',
+    records: 'Debit records',
+    recordsHint: 'Pending records retry automatically using the same debit ID to prevent duplicate charges.',
+    refresh: 'Refresh records', retry: 'Retry',
+    time: 'Time / Debit ID', identity: 'User / API Key / Upstream account', debit: 'Amount (USD)',
+    note: 'Debit note', status: 'Status', charged: 'Charged', pending: 'Pending', empty: 'No debit records',
+    pagination: 'Page {page} · {total} records', previous: 'Previous', next: 'Next',
+    loadError: 'Unable to load configuration. Please retry.',
+    saveError: 'Unable to confirm the save. Check the amount and text, then retry.',
+    recordsError: 'Unable to load debit records. Please refresh.',
+  },
+}

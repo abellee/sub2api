@@ -105,6 +105,16 @@ func PeakRateMultiplier(v float64) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldPeakRateMultiplier, v))
 }
 
+// SyncIsolationEnabled applies equality check predicate on the "sync_isolation_enabled" field. It's identical to SyncIsolationEnabledEQ.
+func SyncIsolationEnabled(v bool) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldSyncIsolationEnabled, v))
+}
+
+// SyncIsolationSourceGroupID applies equality check predicate on the "sync_isolation_source_group_id" field. It's identical to SyncIsolationSourceGroupIDEQ.
+func SyncIsolationSourceGroupID(v int64) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldSyncIsolationSourceGroupID, v))
+}
+
 // IsExclusive applies equality check predicate on the "is_exclusive" field. It's identical to IsExclusiveEQ.
 func IsExclusive(v bool) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldIsExclusive, v))
@@ -123,6 +133,16 @@ func DuplicateOperationID(v string) predicate.Group {
 // Platform applies equality check predicate on the "platform" field. It's identical to PlatformEQ.
 func Platform(v string) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldPlatform, v))
+}
+
+// BlockedUserAgents applies equality check predicate on the "blocked_user_agents" field. It's identical to BlockedUserAgentsEQ.
+func BlockedUserAgents(v string) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldBlockedUserAgents, v))
+}
+
+// RequiredProtocol applies equality check predicate on the "required_protocol" field. It's identical to RequiredProtocolEQ.
+func RequiredProtocol(v string) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldRequiredProtocol, v))
 }
 
 // SubscriptionType applies equality check predicate on the "subscription_type" field. It's identical to SubscriptionTypeEQ.
@@ -150,6 +170,11 @@ func DefaultValidityDays(v int) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldDefaultValidityDays, v))
 }
 
+// AccountErrorFailoverEnabled applies equality check predicate on the "account_error_failover_enabled" field. It's identical to AccountErrorFailoverEnabledEQ.
+func AccountErrorFailoverEnabled(v bool) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldAccountErrorFailoverEnabled, v))
+}
+
 // AllowImageGeneration applies equality check predicate on the "allow_image_generation" field. It's identical to AllowImageGenerationEQ.
 func AllowImageGeneration(v bool) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldAllowImageGeneration, v))
@@ -158,6 +183,16 @@ func AllowImageGeneration(v bool) predicate.Group {
 // AllowBatchImageGeneration applies equality check predicate on the "allow_batch_image_generation" field. It's identical to AllowBatchImageGenerationEQ.
 func AllowBatchImageGeneration(v bool) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldAllowBatchImageGeneration, v))
+}
+
+// ImageAutoSizeFromReference applies equality check predicate on the "image_auto_size_from_reference" field. It's identical to ImageAutoSizeFromReferenceEQ.
+func ImageAutoSizeFromReference(v bool) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldImageAutoSizeFromReference, v))
+}
+
+// ImageCountBilling applies equality check predicate on the "image_count_billing" field. It's identical to ImageCountBillingEQ.
+func ImageCountBilling(v bool) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldImageCountBilling, v))
 }
 
 // ImageRateIndependent applies equality check predicate on the "image_rate_independent" field. It's identical to ImageRateIndependentEQ.
@@ -290,6 +325,21 @@ func AllowLive(v bool) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldAllowLive, v))
 }
 
+// ForceOpenaiFast applies equality check predicate on the "force_openai_fast" field. It's identical to ForceOpenaiFastEQ.
+func ForceOpenaiFast(v bool) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldForceOpenaiFast, v))
+}
+
+// ForceOpenaiUltrafast applies equality check predicate on the "force_openai_ultrafast" field. It's identical to ForceOpenaiUltrafastEQ.
+func ForceOpenaiUltrafast(v bool) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldForceOpenaiUltrafast, v))
+}
+
+// FreeOpenaiFast applies equality check predicate on the "free_openai_fast" field. It's identical to FreeOpenaiFastEQ.
+func FreeOpenaiFast(v bool) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldFreeOpenaiFast, v))
+}
+
 // RequireOauthOnly applies equality check predicate on the "require_oauth_only" field. It's identical to RequireOauthOnlyEQ.
 func RequireOauthOnly(v bool) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldRequireOauthOnly, v))
@@ -313,6 +363,11 @@ func RpmLimit(v int) predicate.Group {
 // MaxReasoningEffort applies equality check predicate on the "max_reasoning_effort" field. It's identical to MaxReasoningEffortEQ.
 func MaxReasoningEffort(v string) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldMaxReasoningEffort, v))
+}
+
+// MaxReasoningEffortOverLimit applies equality check predicate on the "max_reasoning_effort_over_limit" field. It's identical to MaxReasoningEffortOverLimitEQ.
+func MaxReasoningEffortOverLimit(v string) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldMaxReasoningEffortOverLimit, v))
 }
 
 // ProfitControlEnabled applies equality check predicate on the "profit_control_enabled" field. It's identical to ProfitControlEnabledEQ.
@@ -820,6 +875,56 @@ func PeakRateMultiplierLTE(v float64) predicate.Group {
 	return predicate.Group(sql.FieldLTE(FieldPeakRateMultiplier, v))
 }
 
+// SyncIsolationEnabledEQ applies the EQ predicate on the "sync_isolation_enabled" field.
+func SyncIsolationEnabledEQ(v bool) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldSyncIsolationEnabled, v))
+}
+
+// SyncIsolationEnabledNEQ applies the NEQ predicate on the "sync_isolation_enabled" field.
+func SyncIsolationEnabledNEQ(v bool) predicate.Group {
+	return predicate.Group(sql.FieldNEQ(FieldSyncIsolationEnabled, v))
+}
+
+// SyncIsolationSourceGroupIDEQ applies the EQ predicate on the "sync_isolation_source_group_id" field.
+func SyncIsolationSourceGroupIDEQ(v int64) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldSyncIsolationSourceGroupID, v))
+}
+
+// SyncIsolationSourceGroupIDNEQ applies the NEQ predicate on the "sync_isolation_source_group_id" field.
+func SyncIsolationSourceGroupIDNEQ(v int64) predicate.Group {
+	return predicate.Group(sql.FieldNEQ(FieldSyncIsolationSourceGroupID, v))
+}
+
+// SyncIsolationSourceGroupIDIn applies the In predicate on the "sync_isolation_source_group_id" field.
+func SyncIsolationSourceGroupIDIn(vs ...int64) predicate.Group {
+	return predicate.Group(sql.FieldIn(FieldSyncIsolationSourceGroupID, vs...))
+}
+
+// SyncIsolationSourceGroupIDNotIn applies the NotIn predicate on the "sync_isolation_source_group_id" field.
+func SyncIsolationSourceGroupIDNotIn(vs ...int64) predicate.Group {
+	return predicate.Group(sql.FieldNotIn(FieldSyncIsolationSourceGroupID, vs...))
+}
+
+// SyncIsolationSourceGroupIDGT applies the GT predicate on the "sync_isolation_source_group_id" field.
+func SyncIsolationSourceGroupIDGT(v int64) predicate.Group {
+	return predicate.Group(sql.FieldGT(FieldSyncIsolationSourceGroupID, v))
+}
+
+// SyncIsolationSourceGroupIDGTE applies the GTE predicate on the "sync_isolation_source_group_id" field.
+func SyncIsolationSourceGroupIDGTE(v int64) predicate.Group {
+	return predicate.Group(sql.FieldGTE(FieldSyncIsolationSourceGroupID, v))
+}
+
+// SyncIsolationSourceGroupIDLT applies the LT predicate on the "sync_isolation_source_group_id" field.
+func SyncIsolationSourceGroupIDLT(v int64) predicate.Group {
+	return predicate.Group(sql.FieldLT(FieldSyncIsolationSourceGroupID, v))
+}
+
+// SyncIsolationSourceGroupIDLTE applies the LTE predicate on the "sync_isolation_source_group_id" field.
+func SyncIsolationSourceGroupIDLTE(v int64) predicate.Group {
+	return predicate.Group(sql.FieldLTE(FieldSyncIsolationSourceGroupID, v))
+}
+
 // IsExclusiveEQ applies the EQ predicate on the "is_exclusive" field.
 func IsExclusiveEQ(v bool) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldIsExclusive, v))
@@ -1033,6 +1138,136 @@ func PlatformEqualFold(v string) predicate.Group {
 // PlatformContainsFold applies the ContainsFold predicate on the "platform" field.
 func PlatformContainsFold(v string) predicate.Group {
 	return predicate.Group(sql.FieldContainsFold(FieldPlatform, v))
+}
+
+// BlockedUserAgentsEQ applies the EQ predicate on the "blocked_user_agents" field.
+func BlockedUserAgentsEQ(v string) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldBlockedUserAgents, v))
+}
+
+// BlockedUserAgentsNEQ applies the NEQ predicate on the "blocked_user_agents" field.
+func BlockedUserAgentsNEQ(v string) predicate.Group {
+	return predicate.Group(sql.FieldNEQ(FieldBlockedUserAgents, v))
+}
+
+// BlockedUserAgentsIn applies the In predicate on the "blocked_user_agents" field.
+func BlockedUserAgentsIn(vs ...string) predicate.Group {
+	return predicate.Group(sql.FieldIn(FieldBlockedUserAgents, vs...))
+}
+
+// BlockedUserAgentsNotIn applies the NotIn predicate on the "blocked_user_agents" field.
+func BlockedUserAgentsNotIn(vs ...string) predicate.Group {
+	return predicate.Group(sql.FieldNotIn(FieldBlockedUserAgents, vs...))
+}
+
+// BlockedUserAgentsGT applies the GT predicate on the "blocked_user_agents" field.
+func BlockedUserAgentsGT(v string) predicate.Group {
+	return predicate.Group(sql.FieldGT(FieldBlockedUserAgents, v))
+}
+
+// BlockedUserAgentsGTE applies the GTE predicate on the "blocked_user_agents" field.
+func BlockedUserAgentsGTE(v string) predicate.Group {
+	return predicate.Group(sql.FieldGTE(FieldBlockedUserAgents, v))
+}
+
+// BlockedUserAgentsLT applies the LT predicate on the "blocked_user_agents" field.
+func BlockedUserAgentsLT(v string) predicate.Group {
+	return predicate.Group(sql.FieldLT(FieldBlockedUserAgents, v))
+}
+
+// BlockedUserAgentsLTE applies the LTE predicate on the "blocked_user_agents" field.
+func BlockedUserAgentsLTE(v string) predicate.Group {
+	return predicate.Group(sql.FieldLTE(FieldBlockedUserAgents, v))
+}
+
+// BlockedUserAgentsContains applies the Contains predicate on the "blocked_user_agents" field.
+func BlockedUserAgentsContains(v string) predicate.Group {
+	return predicate.Group(sql.FieldContains(FieldBlockedUserAgents, v))
+}
+
+// BlockedUserAgentsHasPrefix applies the HasPrefix predicate on the "blocked_user_agents" field.
+func BlockedUserAgentsHasPrefix(v string) predicate.Group {
+	return predicate.Group(sql.FieldHasPrefix(FieldBlockedUserAgents, v))
+}
+
+// BlockedUserAgentsHasSuffix applies the HasSuffix predicate on the "blocked_user_agents" field.
+func BlockedUserAgentsHasSuffix(v string) predicate.Group {
+	return predicate.Group(sql.FieldHasSuffix(FieldBlockedUserAgents, v))
+}
+
+// BlockedUserAgentsEqualFold applies the EqualFold predicate on the "blocked_user_agents" field.
+func BlockedUserAgentsEqualFold(v string) predicate.Group {
+	return predicate.Group(sql.FieldEqualFold(FieldBlockedUserAgents, v))
+}
+
+// BlockedUserAgentsContainsFold applies the ContainsFold predicate on the "blocked_user_agents" field.
+func BlockedUserAgentsContainsFold(v string) predicate.Group {
+	return predicate.Group(sql.FieldContainsFold(FieldBlockedUserAgents, v))
+}
+
+// RequiredProtocolEQ applies the EQ predicate on the "required_protocol" field.
+func RequiredProtocolEQ(v string) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldRequiredProtocol, v))
+}
+
+// RequiredProtocolNEQ applies the NEQ predicate on the "required_protocol" field.
+func RequiredProtocolNEQ(v string) predicate.Group {
+	return predicate.Group(sql.FieldNEQ(FieldRequiredProtocol, v))
+}
+
+// RequiredProtocolIn applies the In predicate on the "required_protocol" field.
+func RequiredProtocolIn(vs ...string) predicate.Group {
+	return predicate.Group(sql.FieldIn(FieldRequiredProtocol, vs...))
+}
+
+// RequiredProtocolNotIn applies the NotIn predicate on the "required_protocol" field.
+func RequiredProtocolNotIn(vs ...string) predicate.Group {
+	return predicate.Group(sql.FieldNotIn(FieldRequiredProtocol, vs...))
+}
+
+// RequiredProtocolGT applies the GT predicate on the "required_protocol" field.
+func RequiredProtocolGT(v string) predicate.Group {
+	return predicate.Group(sql.FieldGT(FieldRequiredProtocol, v))
+}
+
+// RequiredProtocolGTE applies the GTE predicate on the "required_protocol" field.
+func RequiredProtocolGTE(v string) predicate.Group {
+	return predicate.Group(sql.FieldGTE(FieldRequiredProtocol, v))
+}
+
+// RequiredProtocolLT applies the LT predicate on the "required_protocol" field.
+func RequiredProtocolLT(v string) predicate.Group {
+	return predicate.Group(sql.FieldLT(FieldRequiredProtocol, v))
+}
+
+// RequiredProtocolLTE applies the LTE predicate on the "required_protocol" field.
+func RequiredProtocolLTE(v string) predicate.Group {
+	return predicate.Group(sql.FieldLTE(FieldRequiredProtocol, v))
+}
+
+// RequiredProtocolContains applies the Contains predicate on the "required_protocol" field.
+func RequiredProtocolContains(v string) predicate.Group {
+	return predicate.Group(sql.FieldContains(FieldRequiredProtocol, v))
+}
+
+// RequiredProtocolHasPrefix applies the HasPrefix predicate on the "required_protocol" field.
+func RequiredProtocolHasPrefix(v string) predicate.Group {
+	return predicate.Group(sql.FieldHasPrefix(FieldRequiredProtocol, v))
+}
+
+// RequiredProtocolHasSuffix applies the HasSuffix predicate on the "required_protocol" field.
+func RequiredProtocolHasSuffix(v string) predicate.Group {
+	return predicate.Group(sql.FieldHasSuffix(FieldRequiredProtocol, v))
+}
+
+// RequiredProtocolEqualFold applies the EqualFold predicate on the "required_protocol" field.
+func RequiredProtocolEqualFold(v string) predicate.Group {
+	return predicate.Group(sql.FieldEqualFold(FieldRequiredProtocol, v))
+}
+
+// RequiredProtocolContainsFold applies the ContainsFold predicate on the "required_protocol" field.
+func RequiredProtocolContainsFold(v string) predicate.Group {
+	return predicate.Group(sql.FieldContainsFold(FieldRequiredProtocol, v))
 }
 
 // SubscriptionTypeEQ applies the EQ predicate on the "subscription_type" field.
@@ -1290,6 +1525,16 @@ func DefaultValidityDaysLTE(v int) predicate.Group {
 	return predicate.Group(sql.FieldLTE(FieldDefaultValidityDays, v))
 }
 
+// AccountErrorFailoverEnabledEQ applies the EQ predicate on the "account_error_failover_enabled" field.
+func AccountErrorFailoverEnabledEQ(v bool) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldAccountErrorFailoverEnabled, v))
+}
+
+// AccountErrorFailoverEnabledNEQ applies the NEQ predicate on the "account_error_failover_enabled" field.
+func AccountErrorFailoverEnabledNEQ(v bool) predicate.Group {
+	return predicate.Group(sql.FieldNEQ(FieldAccountErrorFailoverEnabled, v))
+}
+
 // AllowImageGenerationEQ applies the EQ predicate on the "allow_image_generation" field.
 func AllowImageGenerationEQ(v bool) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldAllowImageGeneration, v))
@@ -1308,6 +1553,26 @@ func AllowBatchImageGenerationEQ(v bool) predicate.Group {
 // AllowBatchImageGenerationNEQ applies the NEQ predicate on the "allow_batch_image_generation" field.
 func AllowBatchImageGenerationNEQ(v bool) predicate.Group {
 	return predicate.Group(sql.FieldNEQ(FieldAllowBatchImageGeneration, v))
+}
+
+// ImageAutoSizeFromReferenceEQ applies the EQ predicate on the "image_auto_size_from_reference" field.
+func ImageAutoSizeFromReferenceEQ(v bool) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldImageAutoSizeFromReference, v))
+}
+
+// ImageAutoSizeFromReferenceNEQ applies the NEQ predicate on the "image_auto_size_from_reference" field.
+func ImageAutoSizeFromReferenceNEQ(v bool) predicate.Group {
+	return predicate.Group(sql.FieldNEQ(FieldImageAutoSizeFromReference, v))
+}
+
+// ImageCountBillingEQ applies the EQ predicate on the "image_count_billing" field.
+func ImageCountBillingEQ(v bool) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldImageCountBilling, v))
+}
+
+// ImageCountBillingNEQ applies the NEQ predicate on the "image_count_billing" field.
+func ImageCountBillingNEQ(v bool) predicate.Group {
+	return predicate.Group(sql.FieldNEQ(FieldImageCountBilling, v))
 }
 
 // ImageRateIndependentEQ applies the EQ predicate on the "image_rate_independent" field.
@@ -2270,6 +2535,36 @@ func AllowLiveNEQ(v bool) predicate.Group {
 	return predicate.Group(sql.FieldNEQ(FieldAllowLive, v))
 }
 
+// ForceOpenaiFastEQ applies the EQ predicate on the "force_openai_fast" field.
+func ForceOpenaiFastEQ(v bool) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldForceOpenaiFast, v))
+}
+
+// ForceOpenaiFastNEQ applies the NEQ predicate on the "force_openai_fast" field.
+func ForceOpenaiFastNEQ(v bool) predicate.Group {
+	return predicate.Group(sql.FieldNEQ(FieldForceOpenaiFast, v))
+}
+
+// ForceOpenaiUltrafastEQ applies the EQ predicate on the "force_openai_ultrafast" field.
+func ForceOpenaiUltrafastEQ(v bool) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldForceOpenaiUltrafast, v))
+}
+
+// ForceOpenaiUltrafastNEQ applies the NEQ predicate on the "force_openai_ultrafast" field.
+func ForceOpenaiUltrafastNEQ(v bool) predicate.Group {
+	return predicate.Group(sql.FieldNEQ(FieldForceOpenaiUltrafast, v))
+}
+
+// FreeOpenaiFastEQ applies the EQ predicate on the "free_openai_fast" field.
+func FreeOpenaiFastEQ(v bool) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldFreeOpenaiFast, v))
+}
+
+// FreeOpenaiFastNEQ applies the NEQ predicate on the "free_openai_fast" field.
+func FreeOpenaiFastNEQ(v bool) predicate.Group {
+	return predicate.Group(sql.FieldNEQ(FieldFreeOpenaiFast, v))
+}
+
 // RequireOauthOnlyEQ applies the EQ predicate on the "require_oauth_only" field.
 func RequireOauthOnlyEQ(v bool) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldRequireOauthOnly, v))
@@ -2458,6 +2753,71 @@ func MaxReasoningEffortEqualFold(v string) predicate.Group {
 // MaxReasoningEffortContainsFold applies the ContainsFold predicate on the "max_reasoning_effort" field.
 func MaxReasoningEffortContainsFold(v string) predicate.Group {
 	return predicate.Group(sql.FieldContainsFold(FieldMaxReasoningEffort, v))
+}
+
+// MaxReasoningEffortOverLimitEQ applies the EQ predicate on the "max_reasoning_effort_over_limit" field.
+func MaxReasoningEffortOverLimitEQ(v string) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldMaxReasoningEffortOverLimit, v))
+}
+
+// MaxReasoningEffortOverLimitNEQ applies the NEQ predicate on the "max_reasoning_effort_over_limit" field.
+func MaxReasoningEffortOverLimitNEQ(v string) predicate.Group {
+	return predicate.Group(sql.FieldNEQ(FieldMaxReasoningEffortOverLimit, v))
+}
+
+// MaxReasoningEffortOverLimitIn applies the In predicate on the "max_reasoning_effort_over_limit" field.
+func MaxReasoningEffortOverLimitIn(vs ...string) predicate.Group {
+	return predicate.Group(sql.FieldIn(FieldMaxReasoningEffortOverLimit, vs...))
+}
+
+// MaxReasoningEffortOverLimitNotIn applies the NotIn predicate on the "max_reasoning_effort_over_limit" field.
+func MaxReasoningEffortOverLimitNotIn(vs ...string) predicate.Group {
+	return predicate.Group(sql.FieldNotIn(FieldMaxReasoningEffortOverLimit, vs...))
+}
+
+// MaxReasoningEffortOverLimitGT applies the GT predicate on the "max_reasoning_effort_over_limit" field.
+func MaxReasoningEffortOverLimitGT(v string) predicate.Group {
+	return predicate.Group(sql.FieldGT(FieldMaxReasoningEffortOverLimit, v))
+}
+
+// MaxReasoningEffortOverLimitGTE applies the GTE predicate on the "max_reasoning_effort_over_limit" field.
+func MaxReasoningEffortOverLimitGTE(v string) predicate.Group {
+	return predicate.Group(sql.FieldGTE(FieldMaxReasoningEffortOverLimit, v))
+}
+
+// MaxReasoningEffortOverLimitLT applies the LT predicate on the "max_reasoning_effort_over_limit" field.
+func MaxReasoningEffortOverLimitLT(v string) predicate.Group {
+	return predicate.Group(sql.FieldLT(FieldMaxReasoningEffortOverLimit, v))
+}
+
+// MaxReasoningEffortOverLimitLTE applies the LTE predicate on the "max_reasoning_effort_over_limit" field.
+func MaxReasoningEffortOverLimitLTE(v string) predicate.Group {
+	return predicate.Group(sql.FieldLTE(FieldMaxReasoningEffortOverLimit, v))
+}
+
+// MaxReasoningEffortOverLimitContains applies the Contains predicate on the "max_reasoning_effort_over_limit" field.
+func MaxReasoningEffortOverLimitContains(v string) predicate.Group {
+	return predicate.Group(sql.FieldContains(FieldMaxReasoningEffortOverLimit, v))
+}
+
+// MaxReasoningEffortOverLimitHasPrefix applies the HasPrefix predicate on the "max_reasoning_effort_over_limit" field.
+func MaxReasoningEffortOverLimitHasPrefix(v string) predicate.Group {
+	return predicate.Group(sql.FieldHasPrefix(FieldMaxReasoningEffortOverLimit, v))
+}
+
+// MaxReasoningEffortOverLimitHasSuffix applies the HasSuffix predicate on the "max_reasoning_effort_over_limit" field.
+func MaxReasoningEffortOverLimitHasSuffix(v string) predicate.Group {
+	return predicate.Group(sql.FieldHasSuffix(FieldMaxReasoningEffortOverLimit, v))
+}
+
+// MaxReasoningEffortOverLimitEqualFold applies the EqualFold predicate on the "max_reasoning_effort_over_limit" field.
+func MaxReasoningEffortOverLimitEqualFold(v string) predicate.Group {
+	return predicate.Group(sql.FieldEqualFold(FieldMaxReasoningEffortOverLimit, v))
+}
+
+// MaxReasoningEffortOverLimitContainsFold applies the ContainsFold predicate on the "max_reasoning_effort_over_limit" field.
+func MaxReasoningEffortOverLimitContainsFold(v string) predicate.Group {
+	return predicate.Group(sql.FieldContainsFold(FieldMaxReasoningEffortOverLimit, v))
 }
 
 // ProfitControlEnabledEQ applies the EQ predicate on the "profit_control_enabled" field.

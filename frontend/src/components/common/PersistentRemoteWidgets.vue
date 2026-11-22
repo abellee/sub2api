@@ -15,7 +15,7 @@
 
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
-import { useRemoteWidgetsStore, type HeaderWidgetStatus } from '@/stores'
+import { useRemoteWidgetsStore } from '@/stores'
 import FloatingIframeWidget from './FloatingIframeWidget.vue'
 import PersistentSideIframeWidget from './PersistentSideIframeWidget.vue'
 
@@ -23,7 +23,6 @@ const HEADER_WIDGET_URL = `https://widget.llmfree.work/header.html?t=${Date.now(
 const HEADER_WIDGET_ORIGIN = new URL(HEADER_WIDGET_URL).origin
 const remoteWidgetsStore = useRemoteWidgetsStore()
 const headerFrame = ref<HTMLIFrameElement | null>(null)
-let countdownTimer: number | undefined
 
 function requestHeaderData(): void {
   headerFrame.value?.contentWindow?.postMessage({ type: 'header-data-request' }, HEADER_WIDGET_ORIGIN)
@@ -55,29 +54,15 @@ function handleHeaderMessage(event: MessageEvent): void {
     !Number.isFinite(refreshInterval)
   ) return
 
-  const statuses = Array.isArray(event.data.statuses)
-    ? event.data.statuses.filter((status: unknown): status is HeaderWidgetStatus => {
-        if (!status || typeof status !== 'object') return false
-        const value = status as Record<string, unknown>
-        return typeof value.id === 'string' &&
-          typeof value.name === 'string' &&
-          typeof value.indicator === 'string' &&
-          typeof value.description === 'string' &&
-          typeof value.checkedAt === 'string'
-      })
-    : []
-
-  remoteWidgetsStore.setHeaderData({ qq, telegram, refreshInterval }, statuses)
+  remoteWidgetsStore.setHeaderData({ qq, telegram, refreshInterval })
 }
 
 onMounted(() => {
   window.addEventListener('message', handleHeaderMessage)
-  countdownTimer = window.setInterval(remoteWidgetsStore.tickHeaderCountdown, 1000)
   window.setTimeout(requestHeaderData, 100)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('message', handleHeaderMessage)
-  if (countdownTimer !== undefined) window.clearInterval(countdownTimer)
 })
 </script>

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -51,7 +52,6 @@ func (r *tokenRefreshCandidateRepo) ListOAuthRefreshCandidatePage(_ context.Cont
 			}
 		}
 		if options.ActiveOnly && account.Status != StatusActive ||
-			!account.Schedulable ||
 			account.Type != AccountTypeOAuth ||
 			!platformAllowed ||
 			options.RequireRefreshToken && strings.TrimSpace(refreshToken) == "" ||
@@ -70,11 +70,48 @@ func (r *tokenRefreshCandidateRepo) ListOAuthRefreshCandidatePage(_ context.Cont
 	return page, nil
 }
 
+func (r *tokenRefreshCandidateRepo) GetByID(_ context.Context, id int64) (*Account, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for i := range r.accounts {
+		if r.accounts[i].ID == id {
+			return snapshotOAuthRefreshAccount(&r.accounts[i]), nil
+		}
+	}
+	return nil, errors.New("account not found")
+}
+
 func (r *tokenRefreshCandidateRepo) UpdateCredentials(_ context.Context, id int64, _ map[string]any) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.updatedCredentialIDs = append(r.updatedCredentialIDs, id)
 	return nil
+}
+
+func (r *tokenRefreshCandidateRepo) UpdateOpenAIOAuthCredentialsIfUnchanged(
+	_ context.Context,
+	id int64,
+	expectedCredentials map[string]any,
+	expectedProxyID *int64,
+	credentials map[string]any,
+) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for i := range r.accounts {
+		account := &r.accounts[i]
+		if account.ID != id {
+			continue
+		}
+		if account.Platform != PlatformOpenAI || account.Type != AccountTypeOAuth ||
+			account.IsCredentialShadow() || !reflect.DeepEqual(account.Credentials, expectedCredentials) ||
+			!reflect.DeepEqual(account.ProxyID, expectedProxyID) {
+			return false, nil
+		}
+		account.Credentials = shallowCopyMap(credentials)
+		r.updatedCredentialIDs = append(r.updatedCredentialIDs, id)
+		return true, nil
+	}
+	return false, nil
 }
 
 func (r *tokenRefreshCandidateRepo) SetError(context.Context, int64, string) error {
@@ -176,7 +213,7 @@ func TestTokenRefreshService_ProcessRefreshUsesOAuthRefreshCandidates(t *testing
 				Type:        AccountTypeOAuth,
 				Status:      StatusActive,
 				Schedulable: false,
-				Credentials: map[string]any{"refresh_token": "permanently-rejected-token"},
+				Credentials: map[string]any{"refresh_token": "paused-account-token"},
 			},
 		},
 	}
@@ -195,7 +232,9 @@ func TestTokenRefreshService_ProcessRefreshUsesOAuthRefreshCandidates(t *testing
 	svc.processRefresh()
 
 	require.Zero(t, repo.listActiveCalls, "TokenRefreshService should not use the broad active-account query")
-	require.ElementsMatch(t, []int64{1, 6}, repo.updatedCredentialIDs)
+	// Account 7 is paused (schedulable=false) but active: it must still be
+	// refreshed so its stored access_token does not silently expire.
+	require.ElementsMatch(t, []int64{1, 6, 7}, repo.updatedCredentialIDs)
 	require.Equal(t, 1, repo.clearTempCalls, "successful refresh should clear the OAuth 401 temp-unschedulable state")
 }
 

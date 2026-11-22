@@ -33,6 +33,7 @@ const messages: Record<string, string> = {
   'admin.dashboard.hour': 'Hour',
   'admin.usage.failedToLoadUser': 'Failed to load user',
 	'admin.usage.requestId': 'Request ID',
+	'admin.usage.upstreamRequestId': 'Upstream ID',
 	'usage.requestedModel': 'Requested model',
 	'usage.sentUpstreamModel': 'Sent upstream model',
 	'usage.upstreamResponseModel': 'Upstream response model',
@@ -70,7 +71,7 @@ vi.mock('@/api/admin/usage', () => ({
   },
 }))
 
-vi.mock('file-saver', () => ({ saveAs }))
+vi.mock('file-saver', () => ({ default: saveAs }))
 
 vi.mock('xlsx', () => ({
 	utils: {
@@ -117,6 +118,7 @@ vi.mock('vue-router', () => ({
 
 const AppLayoutStub = { template: '<div><slot /></div>' }
 const UsageFiltersStub = defineComponent({
+  props: ['autoRefresh', 'autoRefreshCountdown', 'autoRefreshPending'],
   setup(_, { expose }) {
     const userKeyword = ref('')
     let userSearchRevision = 0
@@ -131,10 +133,10 @@ const UsageFiltersStub = defineComponent({
     })
     return { userKeyword }
   },
-  template: '<div><span data-test="user-filter-label">{{ userKeyword }}</span><slot name="after-reset" /></div>',
+  template: '<div><span data-test="user-filter-label">{{ userKeyword }}</span><button data-test="auto-refresh" @click="$emit(\'update:autoRefresh\', true)">auto</button><span data-test="auto-refresh-countdown">{{ autoRefreshCountdown }}</span><span data-test="auto-refresh-pending">{{ autoRefreshPending }}</span><slot name="after-reset" /></div>',
 })
 const UsageTableStub = {
-  props: ['columns'],
+  props: ['columns', 'skeletonRows'],
   emits: ['userClick'],
   template: '<div data-test="usage-table"><button class="user-click" @click="$emit(\'userClick\', 2)">user</button></div>',
 }
@@ -166,7 +168,7 @@ const GroupDistributionChartStub = {
 const mountRouteFilteredUsageView = () => mount(UsageView, {
   global: { stubs: {
     AppLayout: AppLayoutStub, UsageStatsCards: true, UsageFilters: UsageFiltersStub,
-    UsageTable: true, UsageExportProgress: true, UsageCleanupDialog: true,
+    UsageTable: UsageTableStub, UsageExportProgress: true, UsageCleanupDialog: true,
     UserBalanceHistoryModal: true, Pagination: true, Select: true,
     DateRangePicker: true, Icon: true, TokenUsageTrend: true,
     ModelDistributionChart: true, GroupDistributionChart: true,
@@ -209,6 +211,53 @@ describe('admin UsageView route filters', () => {
     expect(getById).toHaveBeenCalledWith(42, true)
     expect(list).toHaveBeenCalledWith(expect.objectContaining({ user_id: 42 }), expect.anything())
     expect(wrapper.find('[data-test="user-filter-label"]').text()).toBe('route-user@test.com')
+  })
+
+  it('refreshes the usage list every five seconds while auto refresh is enabled', async () => {
+    const wrapper = mountRouteFilteredUsageView()
+    await flushPromises()
+    const initialCalls = list.mock.calls.length
+    await wrapper.get('[data-test="auto-refresh"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test="auto-refresh-countdown"]').text()).toBe('5')
+
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(wrapper.get('[data-test="auto-refresh-countdown"]').text()).toBe('4')
+
+    let resolveRefresh!: (value: { items: never[]; total: number; pages: number }) => void
+    list.mockImplementationOnce(() => new Promise((resolve) => { resolveRefresh = resolve }))
+    await vi.advanceTimersByTimeAsync(4000)
+    expect(list).toHaveBeenCalledTimes(initialCalls + 1)
+    expect(wrapper.get('[data-test="auto-refresh-pending"]').text()).toBe('true')
+    expect(wrapper.get('[data-test="auto-refresh-countdown"]').text()).toBe('0')
+
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(list).toHaveBeenCalledTimes(initialCalls + 1)
+    expect(wrapper.get('[data-test="auto-refresh-countdown"]').text()).toBe('0')
+
+    resolveRefresh({ items: [], total: 0, pages: 0 })
+    await flushPromises()
+    expect(wrapper.get('[data-test="auto-refresh-pending"]').text()).toBe('false')
+    expect(wrapper.get('[data-test="auto-refresh-countdown"]').text()).toBe('5')
+  })
+
+  it('retries five seconds after an automatic refresh request fails', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const wrapper = mountRouteFilteredUsageView()
+    await flushPromises()
+    const initialCalls = list.mock.calls.length
+    list.mockRejectedValueOnce(new Error('temporary failure'))
+
+    await wrapper.get('[data-test="auto-refresh"]').trigger('click')
+    await vi.advanceTimersByTimeAsync(5000)
+    await flushPromises()
+    expect(list).toHaveBeenCalledTimes(initialCalls + 1)
+    expect(wrapper.get('[data-test="auto-refresh-countdown"]').text()).toBe('5')
+
+    await vi.advanceTimersByTimeAsync(5000)
+    await flushPromises()
+    expect(list).toHaveBeenCalledTimes(initialCalls + 2)
+    consoleError.mockRestore()
   })
 
   it('does not apply a stale routed user label after user_id changes', async () => {
@@ -268,6 +317,71 @@ describe('admin UsageView route filters', () => {
 
     expect(list).toHaveBeenCalledWith(expect.objectContaining({ user_id: 42 }), expect.anything())
     expect(wrapper.find('[data-test="user-filter-label"]').text()).toBe('42')
+  })
+})
+
+describe('admin UsageView native compaction filter', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    list.mockReset().mockResolvedValue({ items: [], total: 0, pages: 0 })
+    getStats.mockReset().mockResolvedValue({
+      total_requests: 0,
+      total_input_tokens: 0,
+      total_output_tokens: 0,
+      total_cache_tokens: 0,
+      total_tokens: 0,
+      total_cost: 0,
+      total_actual_cost: 0,
+      average_duration_ms: 0,
+    })
+    getSnapshotV2.mockReset().mockResolvedValue({ trend: [], models: [], groups: [] })
+    getModelStats.mockReset().mockResolvedValue({ models: [] })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('propagates the filter to list/stats/model/snapshot requests and clears it on reset', async () => {
+    const wrapper = mountRouteFilteredUsageView()
+    vi.advanceTimersByTime(120)
+    await flushPromises()
+
+    list.mockClear()
+    getStats.mockClear()
+    getModelStats.mockClear()
+    getSnapshotV2.mockClear()
+
+    ;(wrapper.vm as any).filters.native_compaction_v2 = true
+    ;(wrapper.vm as any).applyFilters()
+    await flushPromises()
+
+    expect((wrapper.vm as any).breakdownFilters.native_compaction_v2).toBe(true)
+    expect(list).toHaveBeenCalledWith(
+      expect.objectContaining({ native_compaction_v2: true }),
+      expect.anything()
+    )
+    expect(getStats).toHaveBeenCalledWith(expect.objectContaining({ native_compaction_v2: true }))
+    expect(getModelStats).toHaveBeenCalledWith(expect.objectContaining({ native_compaction_v2: true }))
+    expect(getSnapshotV2).toHaveBeenCalledWith(expect.objectContaining({ native_compaction_v2: true }))
+
+    list.mockClear()
+    getStats.mockClear()
+    getModelStats.mockClear()
+    getSnapshotV2.mockClear()
+
+    ;(wrapper.vm as any).resetFilters()
+    await flushPromises()
+
+    expect((wrapper.vm as any).filters.native_compaction_v2).toBeNull()
+    expect((wrapper.vm as any).breakdownFilters).not.toHaveProperty('native_compaction_v2')
+    expect(list).toHaveBeenCalledWith(
+      expect.objectContaining({ native_compaction_v2: null }),
+      expect.anything()
+    )
+    expect(getStats).toHaveBeenCalledWith(expect.objectContaining({ native_compaction_v2: null }))
+    expect(getModelStats).toHaveBeenCalledWith(expect.objectContaining({ native_compaction_v2: null }))
+    expect(getSnapshotV2).toHaveBeenCalledWith(expect.objectContaining({ native_compaction_v2: null }))
   })
 })
 
@@ -365,11 +479,10 @@ describe('admin UsageView distribution metric toggles', () => {
     await flushPromises()
 
     expect(getSnapshotV2).toHaveBeenCalledTimes(1)
-    const now = new Date()
-    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000)
+    const today = formatLocalDate(new Date())
     expect(getSnapshotV2).toHaveBeenCalledWith(expect.objectContaining({
-      start_date: formatLocalDate(yesterday),
-      end_date: formatLocalDate(now),
+      start_date: today,
+      end_date: today,
       granularity: 'hour'
     }))
 
@@ -413,7 +526,7 @@ describe('admin UsageView request ID column visibility', () => {
     vi.useRealTimers()
   })
 
-  it('keeps request ID hidden by default and allows enabling it from column settings', async () => {
+  it('shows all columns by default and allows hiding request ID from column settings', async () => {
     const wrapper = mount(UsageView, {
       global: {
         stubs: {
@@ -440,21 +553,75 @@ describe('admin UsageView request ID column visibility', () => {
     await wrapper.vm.$nextTick()
 
     const usageTable = wrapper.findComponent(UsageTableStub)
-    expect(usageTable.props('columns')).not.toEqual(
-      expect.arrayContaining([expect.objectContaining({ key: 'request_id' })]),
-    )
+    expect(usageTable.props('columns').map((column: { key: string }) => column.key)).toEqual([
+      'user',
+      'model',
+      'reasoning_effort',
+      'account',
+      'group',
+      'ip_address',
+      'tokens',
+      'latency',
+      'cost',
+      'created_at',
+      'endpoint',
+      'stream',
+      'user_agent',
+      'api_key',
+      'billing_mode',
+      'request_id',
+      'upstream_request_id',
+    ])
 
     await wrapper.get('button[title="admin.users.columnSettings"]').trigger('click')
     const requestIdToggle = wrapper.findAll('button').find((button) => button.text() === 'Request ID')
     expect(requestIdToggle).toBeDefined()
     await requestIdToggle!.trigger('click')
 
-    expect(usageTable.props('columns')).toEqual(
-      expect.arrayContaining([expect.objectContaining({ key: 'request_id', label: 'Request ID' })]),
-    )
+    expect(usageTable.props('columns')).not.toEqual(expect.arrayContaining([expect.objectContaining({ key: 'request_id' })]))
     expect(localStorage.setItem).toHaveBeenCalledWith(
       'usage-hidden-columns-version',
-      'request-id-hidden-by-default',
+      'usage-columns-v2',
+    )
+  })
+
+  it('shows upstream ID by default and allows hiding it from column settings', async () => {
+    const wrapper = mount(UsageView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          UsageStatsCards: true,
+          UsageFilters: UsageFiltersStub,
+          UsageTable: UsageTableStub,
+          UsageExportProgress: true,
+          UsageCleanupDialog: true,
+          UserBalanceHistoryModal: true,
+          AuditLogModal: true,
+          Pagination: true,
+          Select: true,
+          DateRangePicker: true,
+          Icon: true,
+          TokenUsageTrend: true,
+          ModelDistributionChart: true,
+          GroupDistributionChart: true,
+          EndpointDistributionChart: true,
+          UserTokenRanking: true,
+        },
+      },
+    })
+    await wrapper.vm.$nextTick()
+
+    const usageTable = wrapper.findComponent(UsageTableStub)
+    expect(usageTable.props('columns')).toEqual(
+      expect.arrayContaining([expect.objectContaining({ key: 'upstream_request_id' })]),
+    )
+
+    await wrapper.get('button[title="admin.users.columnSettings"]').trigger('click')
+    const upstreamToggle = wrapper.findAll('button').find((button) => button.text() === 'Upstream ID')
+    expect(upstreamToggle).toBeDefined()
+    await upstreamToggle!.trigger('click')
+    expect(usageTable.props('columns')).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ key: 'upstream_request_id', label: 'Upstream ID' })]),
     )
   })
 })
@@ -671,9 +838,15 @@ describe('admin UsageView model audit export', () => {
 		const wrapper = mountRouteFilteredUsageView()
 		vi.advanceTimersByTime(120)
 		await flushPromises()
+		;(wrapper.vm as any).filters.native_compaction_v2 = true
 
 		await (wrapper.vm as any).exportToExcel()
 		await flushPromises()
+
+		expect(exportList).toHaveBeenCalledWith(
+			expect.objectContaining({ native_compaction_v2: true }),
+			expect.anything()
+		)
 
 		const headers = aoaToSheet.mock.calls[0][0][0]
 		expect(headers.slice(4, 8)).toEqual([

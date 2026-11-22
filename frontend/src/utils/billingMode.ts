@@ -2,12 +2,24 @@ export const BILLING_MODE_TOKEN = 'token'
 export const BILLING_MODE_PER_REQUEST = 'per_request'
 export const BILLING_MODE_IMAGE = 'image'
 export const BILLING_MODE_VIDEO = 'video'
+export const BILLING_MODE_CONTENT_SAFETY = 'content_safety'
+export const CONTENT_SAFETY_USAGE_MODEL = 'content-safety'
+
+export function isContentSafetyUsage(row: { model?: string | null; billing_mode?: string | null } | null | undefined): boolean {
+  return row?.billing_mode === BILLING_MODE_CONTENT_SAFETY || row?.model === CONTENT_SAFETY_USAGE_MODEL
+}
+
+export function usageModelLabel(model: string | null | undefined, t: (key: string) => string): string {
+  if (model === CONTENT_SAFETY_USAGE_MODEL) return t('usage.contentSafety')
+  return model || ''
+}
 
 export function getBillingModeLabel(mode: string | null | undefined, t: (key: string) => string): string {
   switch (mode) {
     case BILLING_MODE_PER_REQUEST: return t('admin.usage.billingModePerRequest')
     case BILLING_MODE_IMAGE: return t('admin.usage.billingModeImage')
     case BILLING_MODE_VIDEO: return t('admin.usage.billingModeVideo')
+    case BILLING_MODE_CONTENT_SAFETY: return t('admin.usage.billingModeContentSafety')
     default: return t('admin.usage.billingModeToken')
   }
 }
@@ -17,6 +29,7 @@ export function getBillingModeBadgeClass(mode: string | null | undefined): strin
     case BILLING_MODE_PER_REQUEST: return 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300'
     case BILLING_MODE_IMAGE: return 'bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-300'
     case BILLING_MODE_VIDEO: return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+    case BILLING_MODE_CONTENT_SAFETY: return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
     default: return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
   }
 }

@@ -36,6 +36,11 @@ export default {
       maxResultsTooltipBody: '系统只会保留最近的测试结果；当保存数量超过这个值时，更早的历史记录会自动清理，避免列表过长和存储持续增长。',
       maxResultsTooltipExample: '例如填写 100，表示最多保存最近 100 次测试结果；第 101 次结果写入后，最早的一条会被清理。',
       maxResultsTooltipRange: '推荐填写范围：一般可填 20 到 200。只关注近期可用性时可填 20-50；需要回看较长时间的波动趋势时可填 100-200。',
+      recoveryProbeInterval: '确认拨测间隔（秒）',
+      recoveryProbeIntervalHelp: '首次成功后，每隔此时间再拨测一次，共确认 3 次。可填 1～3600 秒，默认 3 秒。',
+      recoveryProbeIntervalError: '请输入 1～3600 之间的整数',
+      recoverScheduling: '恢复后自动打开调度',
+      recoverSchedulingHelp: '同一上游地址、同一个 Key 只需配置一个账号拨测。首次成功后再连续测试 3 次，全部成功后一起打开同 Key 账号的调度；已打开、已暂停或已过期的账号跳过。拨测会产生上游请求，可能收费。',
       autoRecover: '自动恢复',
       autoRecoverHelp: '测试成功后自动恢复异常状态的账号'
     },
@@ -320,6 +325,8 @@ export default {
       customExpiry: '自定义',
       customExpiryDays: '自定义天数',
       expiryDaysRequired: '请输入有效的过期天数',
+      expiryDateRequired: '请输入有效的过期日期和时间',
+      localTimeZoneHint: '自定义时间按浏览器本地时区（{timezone}）解释。',
       groupRequired: '请选择订阅分组',
       days: '天',
       status: {
@@ -372,7 +379,13 @@ export default {
     announcements: {
       title: '公告管理',
       description: '创建公告并按条件投放',
+      createFirstAnnouncement: '还没有公告，创建您的第一条公告。',
       createAnnouncement: '创建公告',
+      groupNotify: '群通知',
+      groupNotifyHint: '仅“展示中”可选。保存后立即按机器人人设发送到已配置的全部群；未到生效时间时作为预告，草稿和归档不发送。',
+      groupNotifyPending: '公告已创建，群通知尚未完成。可重试发送，不会重复创建公告；结果不确定时请先核对群消息。',
+      groupNotifyRetry: '重试群通知',
+      groupNotifyFailed: '公告已创建，群通知未完成：{error}',
       editAnnouncement: '编辑公告',
       deleteAnnouncement: '删除公告',
       searchAnnouncements: '搜索公告...',
@@ -430,6 +443,8 @@ export default {
       timeImmediate: '立即',
       timeNever: '永久',
       readStatus: '已读情况',
+      read: '已读',
+      readCount: '已读 {count} 人',
       preview: '预览',
       eligible: '符合条件',
       readAt: '已读时间',
@@ -502,6 +517,19 @@ export default {
       failedToLoadUsages: '加载使用记录失败'
     },
 
+    ranking: {
+      title: '排行榜',
+      description: '查看所选时间范围内所有有消耗记录用户的排行',
+      metricLabel: '排行指标',
+      metrics: {
+        tokens: 'Token 消耗',
+        cost: '金额消耗'
+      },
+      tokenSubtitle: '按当前筛选与时间范围统计每个用户的 Token 用量',
+      costSubtitle: '按当前筛选与时间范围统计每个用户的金额消耗',
+      rangeHint: '点击用户可查看对应的用量明细'
+    },
+
     // Usage Records
     usage: {
       title: '使用记录',
@@ -515,13 +543,17 @@ export default {
       account: '账户',
       group: '分组',
       requestId: '请求ID',
+      upstreamRequestId: '上游ID',
       requestIdCopied: '请求ID已复制',
+      upstreamRequestIdCopied: '上游ID已复制',
       allModels: '全部模型',
       allAccounts: '全部账户',
       allGroups: '全部分组',
       allTypes: '全部类型',
       inputCost: '输入费用',
       outputCost: '输出费用',
+      longContext: '长上下文',
+      longContextPricingTooltip: '已应用长上下文计费。输入和输出费率取决于定价档位，并非统一倍率。',
       cacheCreationCost: '缓存创建费用',
       cacheReadCost: '缓存读取费用',
       inputTokens: '输入 Token',
@@ -540,12 +572,15 @@ export default {
       billingModePerRequest: '按次',
       billingModeImage: '按次(图片)',
       billingModeVideo: '按次(视频)',
+      billingModeContentSafety: '内容安全',
       allBillingModes: '全部计费模式',
 	  upstreamModelAudit: '上游模型审计',
 	  allUpstreamModelAudit: '全部响应模型状态',
 	  upstreamModelMismatchOnly: '仅不一致',
 	  upstreamModelMatchedOnly: '仅一致',
       ipAddress: 'IP',
+      upstreamMultiplier: '上游倍率',
+      apiAddress: 'API地址',
       clickToViewBalance: '点击查看充值记录',
       failedToLoadUser: '加载用户信息失败',
       userDeletedBadge: '已删除',
@@ -553,6 +588,8 @@ export default {
         subtitle: '按当前筛选与时间范围统计每个用户的 Token 用量',
         rowHint: '点击查看该用户的用量明细',
         userCount: '共 {count} 位用户',
+        totalTokens: '总 Token: {value}',
+        totalCost: '总金额消耗: {value}',
         columns: {
           user: '用户',
           requests: '请求数',

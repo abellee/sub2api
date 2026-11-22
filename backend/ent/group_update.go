@@ -4,7 +4,7 @@ package ent
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"time"
@@ -97,6 +97,12 @@ func (_u *GroupUpdate) ClearDescription() *GroupUpdate {
 	return _u
 }
 
+// SetI18n sets the "i18n" field.
+func (_u *GroupUpdate) SetI18n(v domain.GroupI18n) *GroupUpdate {
+	_u.mutation.SetI18n(v)
+	return _u
+}
+
 // SetRateMultiplier sets the "rate_multiplier" field.
 func (_u *GroupUpdate) SetRateMultiplier(v float64) *GroupUpdate {
 	_u.mutation.ResetRateMultiplier()
@@ -115,6 +121,18 @@ func (_u *GroupUpdate) SetNillableRateMultiplier(v *float64) *GroupUpdate {
 // AddRateMultiplier adds value to the "rate_multiplier" field.
 func (_u *GroupUpdate) AddRateMultiplier(v float64) *GroupUpdate {
 	_u.mutation.AddRateMultiplier(v)
+	return _u
+}
+
+// SetRateSyncGroupIds sets the "rate_sync_group_ids" field.
+func (_u *GroupUpdate) SetRateSyncGroupIds(v []int64) *GroupUpdate {
+	_u.mutation.SetRateSyncGroupIds(v)
+	return _u
+}
+
+// AppendRateSyncGroupIds appends value to the "rate_sync_group_ids" field.
+func (_u *GroupUpdate) AppendRateSyncGroupIds(v []int64) *GroupUpdate {
+	_u.mutation.AppendRateSyncGroupIds(v)
 	return _u
 }
 
@@ -181,6 +199,41 @@ func (_u *GroupUpdate) AddPeakRateMultiplier(v float64) *GroupUpdate {
 	return _u
 }
 
+// SetSyncIsolationEnabled sets the "sync_isolation_enabled" field.
+func (_u *GroupUpdate) SetSyncIsolationEnabled(v bool) *GroupUpdate {
+	_u.mutation.SetSyncIsolationEnabled(v)
+	return _u
+}
+
+// SetNillableSyncIsolationEnabled sets the "sync_isolation_enabled" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillableSyncIsolationEnabled(v *bool) *GroupUpdate {
+	if v != nil {
+		_u.SetSyncIsolationEnabled(*v)
+	}
+	return _u
+}
+
+// SetSyncIsolationSourceGroupID sets the "sync_isolation_source_group_id" field.
+func (_u *GroupUpdate) SetSyncIsolationSourceGroupID(v int64) *GroupUpdate {
+	_u.mutation.ResetSyncIsolationSourceGroupID()
+	_u.mutation.SetSyncIsolationSourceGroupID(v)
+	return _u
+}
+
+// SetNillableSyncIsolationSourceGroupID sets the "sync_isolation_source_group_id" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillableSyncIsolationSourceGroupID(v *int64) *GroupUpdate {
+	if v != nil {
+		_u.SetSyncIsolationSourceGroupID(*v)
+	}
+	return _u
+}
+
+// AddSyncIsolationSourceGroupID adds value to the "sync_isolation_source_group_id" field.
+func (_u *GroupUpdate) AddSyncIsolationSourceGroupID(v int64) *GroupUpdate {
+	_u.mutation.AddSyncIsolationSourceGroupID(v)
+	return _u
+}
+
 // SetIsExclusive sets the "is_exclusive" field.
 func (_u *GroupUpdate) SetIsExclusive(v bool) *GroupUpdate {
 	_u.mutation.SetIsExclusive(v)
@@ -219,6 +272,34 @@ func (_u *GroupUpdate) SetPlatform(v string) *GroupUpdate {
 func (_u *GroupUpdate) SetNillablePlatform(v *string) *GroupUpdate {
 	if v != nil {
 		_u.SetPlatform(*v)
+	}
+	return _u
+}
+
+// SetBlockedUserAgents sets the "blocked_user_agents" field.
+func (_u *GroupUpdate) SetBlockedUserAgents(v string) *GroupUpdate {
+	_u.mutation.SetBlockedUserAgents(v)
+	return _u
+}
+
+// SetNillableBlockedUserAgents sets the "blocked_user_agents" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillableBlockedUserAgents(v *string) *GroupUpdate {
+	if v != nil {
+		_u.SetBlockedUserAgents(*v)
+	}
+	return _u
+}
+
+// SetRequiredProtocol sets the "required_protocol" field.
+func (_u *GroupUpdate) SetRequiredProtocol(v string) *GroupUpdate {
+	_u.mutation.SetRequiredProtocol(v)
+	return _u
+}
+
+// SetNillableRequiredProtocol sets the "required_protocol" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillableRequiredProtocol(v *string) *GroupUpdate {
+	if v != nil {
+		_u.SetRequiredProtocol(*v)
 	}
 	return _u
 }
@@ -339,6 +420,20 @@ func (_u *GroupUpdate) AddDefaultValidityDays(v int) *GroupUpdate {
 	return _u
 }
 
+// SetAccountErrorFailoverEnabled sets the "account_error_failover_enabled" field.
+func (_u *GroupUpdate) SetAccountErrorFailoverEnabled(v bool) *GroupUpdate {
+	_u.mutation.SetAccountErrorFailoverEnabled(v)
+	return _u
+}
+
+// SetNillableAccountErrorFailoverEnabled sets the "account_error_failover_enabled" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillableAccountErrorFailoverEnabled(v *bool) *GroupUpdate {
+	if v != nil {
+		_u.SetAccountErrorFailoverEnabled(*v)
+	}
+	return _u
+}
+
 // SetAllowImageGeneration sets the "allow_image_generation" field.
 func (_u *GroupUpdate) SetAllowImageGeneration(v bool) *GroupUpdate {
 	_u.mutation.SetAllowImageGeneration(v)
@@ -363,6 +458,34 @@ func (_u *GroupUpdate) SetAllowBatchImageGeneration(v bool) *GroupUpdate {
 func (_u *GroupUpdate) SetNillableAllowBatchImageGeneration(v *bool) *GroupUpdate {
 	if v != nil {
 		_u.SetAllowBatchImageGeneration(*v)
+	}
+	return _u
+}
+
+// SetImageAutoSizeFromReference sets the "image_auto_size_from_reference" field.
+func (_u *GroupUpdate) SetImageAutoSizeFromReference(v bool) *GroupUpdate {
+	_u.mutation.SetImageAutoSizeFromReference(v)
+	return _u
+}
+
+// SetNillableImageAutoSizeFromReference sets the "image_auto_size_from_reference" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillableImageAutoSizeFromReference(v *bool) *GroupUpdate {
+	if v != nil {
+		_u.SetImageAutoSizeFromReference(*v)
+	}
+	return _u
+}
+
+// SetImageCountBilling sets the "image_count_billing" field.
+func (_u *GroupUpdate) SetImageCountBilling(v bool) *GroupUpdate {
+	_u.mutation.SetImageCountBilling(v)
+	return _u
+}
+
+// SetNillableImageCountBilling sets the "image_count_billing" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillableImageCountBilling(v *bool) *GroupUpdate {
+	if v != nil {
+		_u.SetImageCountBilling(*v)
 	}
 	return _u
 }
@@ -803,13 +926,13 @@ func (_u *GroupUpdate) SetNillableLongContextPricingEnabled(v *bool) *GroupUpdat
 }
 
 // SetModelPricing sets the "model_pricing" field.
-func (_u *GroupUpdate) SetModelPricing(v json.RawMessage) *GroupUpdate {
+func (_u *GroupUpdate) SetModelPricing(v jsontext.Value) *GroupUpdate {
 	_u.mutation.SetModelPricing(v)
 	return _u
 }
 
 // AppendModelPricing appends value to the "model_pricing" field.
-func (_u *GroupUpdate) AppendModelPricing(v json.RawMessage) *GroupUpdate {
+func (_u *GroupUpdate) AppendModelPricing(v jsontext.Value) *GroupUpdate {
 	_u.mutation.AppendModelPricing(v)
 	return _u
 }
@@ -989,6 +1112,48 @@ func (_u *GroupUpdate) SetNillableAllowLive(v *bool) *GroupUpdate {
 	return _u
 }
 
+// SetForceOpenaiFast sets the "force_openai_fast" field.
+func (_u *GroupUpdate) SetForceOpenaiFast(v bool) *GroupUpdate {
+	_u.mutation.SetForceOpenaiFast(v)
+	return _u
+}
+
+// SetNillableForceOpenaiFast sets the "force_openai_fast" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillableForceOpenaiFast(v *bool) *GroupUpdate {
+	if v != nil {
+		_u.SetForceOpenaiFast(*v)
+	}
+	return _u
+}
+
+// SetForceOpenaiUltrafast sets the "force_openai_ultrafast" field.
+func (_u *GroupUpdate) SetForceOpenaiUltrafast(v bool) *GroupUpdate {
+	_u.mutation.SetForceOpenaiUltrafast(v)
+	return _u
+}
+
+// SetNillableForceOpenaiUltrafast sets the "force_openai_ultrafast" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillableForceOpenaiUltrafast(v *bool) *GroupUpdate {
+	if v != nil {
+		_u.SetForceOpenaiUltrafast(*v)
+	}
+	return _u
+}
+
+// SetFreeOpenaiFast sets the "free_openai_fast" field.
+func (_u *GroupUpdate) SetFreeOpenaiFast(v bool) *GroupUpdate {
+	_u.mutation.SetFreeOpenaiFast(v)
+	return _u
+}
+
+// SetNillableFreeOpenaiFast sets the "free_openai_fast" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillableFreeOpenaiFast(v *bool) *GroupUpdate {
+	if v != nil {
+		_u.SetFreeOpenaiFast(*v)
+	}
+	return _u
+}
+
 // SetRequireOauthOnly sets the "require_oauth_only" field.
 func (_u *GroupUpdate) SetRequireOauthOnly(v bool) *GroupUpdate {
 	_u.mutation.SetRequireOauthOnly(v)
@@ -1045,16 +1210,44 @@ func (_u *GroupUpdate) SetNillableMessagesDispatchModelConfig(v *domain.OpenAIMe
 	return _u
 }
 
-// SetModelsListConfig sets the "models_list_config" field.
-func (_u *GroupUpdate) SetModelsListConfig(v domain.GroupModelsListConfig) *GroupUpdate {
-	_u.mutation.SetModelsListConfig(v)
+// SetModelAllowlist sets the "model_allowlist" field.
+func (_u *GroupUpdate) SetModelAllowlist(v domain.GroupModelAllowlist) *GroupUpdate {
+	_u.mutation.SetModelAllowlist(v)
 	return _u
 }
 
-// SetNillableModelsListConfig sets the "models_list_config" field if the given value is not nil.
-func (_u *GroupUpdate) SetNillableModelsListConfig(v *domain.GroupModelsListConfig) *GroupUpdate {
+// SetNillableModelAllowlist sets the "model_allowlist" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillableModelAllowlist(v *domain.GroupModelAllowlist) *GroupUpdate {
 	if v != nil {
-		_u.SetModelsListConfig(*v)
+		_u.SetModelAllowlist(*v)
+	}
+	return _u
+}
+
+// SetAnthropicThinkingCompat sets the "anthropic_thinking_compat" field.
+func (_u *GroupUpdate) SetAnthropicThinkingCompat(v domain.GroupAnthropicThinkingCompat) *GroupUpdate {
+	_u.mutation.SetAnthropicThinkingCompat(v)
+	return _u
+}
+
+// SetNillableAnthropicThinkingCompat sets the "anthropic_thinking_compat" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillableAnthropicThinkingCompat(v *domain.GroupAnthropicThinkingCompat) *GroupUpdate {
+	if v != nil {
+		_u.SetAnthropicThinkingCompat(*v)
+	}
+	return _u
+}
+
+// SetCodexModelsManifestConfig sets the "codex_models_manifest_config" field.
+func (_u *GroupUpdate) SetCodexModelsManifestConfig(v domain.GroupCodexModelsManifestConfig) *GroupUpdate {
+	_u.mutation.SetCodexModelsManifestConfig(v)
+	return _u
+}
+
+// SetNillableCodexModelsManifestConfig sets the "codex_models_manifest_config" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillableCodexModelsManifestConfig(v *domain.GroupCodexModelsManifestConfig) *GroupUpdate {
+	if v != nil {
+		_u.SetCodexModelsManifestConfig(*v)
 	}
 	return _u
 }
@@ -1090,6 +1283,20 @@ func (_u *GroupUpdate) SetMaxReasoningEffort(v string) *GroupUpdate {
 func (_u *GroupUpdate) SetNillableMaxReasoningEffort(v *string) *GroupUpdate {
 	if v != nil {
 		_u.SetMaxReasoningEffort(*v)
+	}
+	return _u
+}
+
+// SetMaxReasoningEffortOverLimit sets the "max_reasoning_effort_over_limit" field.
+func (_u *GroupUpdate) SetMaxReasoningEffortOverLimit(v string) *GroupUpdate {
+	_u.mutation.SetMaxReasoningEffortOverLimit(v)
+	return _u
+}
+
+// SetNillableMaxReasoningEffortOverLimit sets the "max_reasoning_effort_over_limit" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillableMaxReasoningEffortOverLimit(v *string) *GroupUpdate {
+	if v != nil {
+		_u.SetMaxReasoningEffortOverLimit(*v)
 	}
 	return _u
 }
@@ -1452,6 +1659,11 @@ func (_u *GroupUpdate) check() error {
 			return &ValidationError{Name: "platform", err: fmt.Errorf(`ent: validator failed for field "Group.platform": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.RequiredProtocol(); ok {
+		if err := group.RequiredProtocolValidator(v); err != nil {
+			return &ValidationError{Name: "required_protocol", err: fmt.Errorf(`ent: validator failed for field "Group.required_protocol": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.SubscriptionType(); ok {
 		if err := group.SubscriptionTypeValidator(v); err != nil {
 			return &ValidationError{Name: "subscription_type", err: fmt.Errorf(`ent: validator failed for field "Group.subscription_type": %w`, err)}
@@ -1487,6 +1699,11 @@ func (_u *GroupUpdate) check() error {
 			return &ValidationError{Name: "max_reasoning_effort", err: fmt.Errorf(`ent: validator failed for field "Group.max_reasoning_effort": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.MaxReasoningEffortOverLimit(); ok {
+		if err := group.MaxReasoningEffortOverLimitValidator(v); err != nil {
+			return &ValidationError{Name: "max_reasoning_effort_over_limit", err: fmt.Errorf(`ent: validator failed for field "Group.max_reasoning_effort_over_limit": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -1520,11 +1737,22 @@ func (_u *GroupUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if _u.mutation.DescriptionCleared() {
 		_spec.ClearField(group.FieldDescription, field.TypeString)
 	}
+	if value, ok := _u.mutation.I18n(); ok {
+		_spec.SetField(group.FieldI18n, field.TypeJSON, value)
+	}
 	if value, ok := _u.mutation.RateMultiplier(); ok {
 		_spec.SetField(group.FieldRateMultiplier, field.TypeFloat64, value)
 	}
 	if value, ok := _u.mutation.AddedRateMultiplier(); ok {
 		_spec.AddField(group.FieldRateMultiplier, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.RateSyncGroupIds(); ok {
+		_spec.SetField(group.FieldRateSyncGroupIds, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedRateSyncGroupIds(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, group.FieldRateSyncGroupIds, value)
+		})
 	}
 	if value, ok := _u.mutation.PeakRateEnabled(); ok {
 		_spec.SetField(group.FieldPeakRateEnabled, field.TypeBool, value)
@@ -1541,6 +1769,15 @@ func (_u *GroupUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.AddedPeakRateMultiplier(); ok {
 		_spec.AddField(group.FieldPeakRateMultiplier, field.TypeFloat64, value)
 	}
+	if value, ok := _u.mutation.SyncIsolationEnabled(); ok {
+		_spec.SetField(group.FieldSyncIsolationEnabled, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.SyncIsolationSourceGroupID(); ok {
+		_spec.SetField(group.FieldSyncIsolationSourceGroupID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedSyncIsolationSourceGroupID(); ok {
+		_spec.AddField(group.FieldSyncIsolationSourceGroupID, field.TypeInt64, value)
+	}
 	if value, ok := _u.mutation.IsExclusive(); ok {
 		_spec.SetField(group.FieldIsExclusive, field.TypeBool, value)
 	}
@@ -1552,6 +1789,12 @@ func (_u *GroupUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.Platform(); ok {
 		_spec.SetField(group.FieldPlatform, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.BlockedUserAgents(); ok {
+		_spec.SetField(group.FieldBlockedUserAgents, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.RequiredProtocol(); ok {
+		_spec.SetField(group.FieldRequiredProtocol, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.SubscriptionType(); ok {
 		_spec.SetField(group.FieldSubscriptionType, field.TypeString, value)
@@ -1589,11 +1832,20 @@ func (_u *GroupUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.AddedDefaultValidityDays(); ok {
 		_spec.AddField(group.FieldDefaultValidityDays, field.TypeInt, value)
 	}
+	if value, ok := _u.mutation.AccountErrorFailoverEnabled(); ok {
+		_spec.SetField(group.FieldAccountErrorFailoverEnabled, field.TypeBool, value)
+	}
 	if value, ok := _u.mutation.AllowImageGeneration(); ok {
 		_spec.SetField(group.FieldAllowImageGeneration, field.TypeBool, value)
 	}
 	if value, ok := _u.mutation.AllowBatchImageGeneration(); ok {
 		_spec.SetField(group.FieldAllowBatchImageGeneration, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.ImageAutoSizeFromReference(); ok {
+		_spec.SetField(group.FieldImageAutoSizeFromReference, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.ImageCountBilling(); ok {
+		_spec.SetField(group.FieldImageCountBilling, field.TypeBool, value)
 	}
 	if value, ok := _u.mutation.ImageRateIndependent(); ok {
 		_spec.SetField(group.FieldImageRateIndependent, field.TypeBool, value)
@@ -1797,6 +2049,15 @@ func (_u *GroupUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.AllowLive(); ok {
 		_spec.SetField(group.FieldAllowLive, field.TypeBool, value)
 	}
+	if value, ok := _u.mutation.ForceOpenaiFast(); ok {
+		_spec.SetField(group.FieldForceOpenaiFast, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.ForceOpenaiUltrafast(); ok {
+		_spec.SetField(group.FieldForceOpenaiUltrafast, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.FreeOpenaiFast(); ok {
+		_spec.SetField(group.FieldFreeOpenaiFast, field.TypeBool, value)
+	}
 	if value, ok := _u.mutation.RequireOauthOnly(); ok {
 		_spec.SetField(group.FieldRequireOauthOnly, field.TypeBool, value)
 	}
@@ -1809,8 +2070,14 @@ func (_u *GroupUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.MessagesDispatchModelConfig(); ok {
 		_spec.SetField(group.FieldMessagesDispatchModelConfig, field.TypeJSON, value)
 	}
-	if value, ok := _u.mutation.ModelsListConfig(); ok {
-		_spec.SetField(group.FieldModelsListConfig, field.TypeJSON, value)
+	if value, ok := _u.mutation.ModelAllowlist(); ok {
+		_spec.SetField(group.FieldModelAllowlist, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AnthropicThinkingCompat(); ok {
+		_spec.SetField(group.FieldAnthropicThinkingCompat, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.CodexModelsManifestConfig(); ok {
+		_spec.SetField(group.FieldCodexModelsManifestConfig, field.TypeJSON, value)
 	}
 	if value, ok := _u.mutation.RpmLimit(); ok {
 		_spec.SetField(group.FieldRpmLimit, field.TypeInt, value)
@@ -1820,6 +2087,9 @@ func (_u *GroupUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.MaxReasoningEffort(); ok {
 		_spec.SetField(group.FieldMaxReasoningEffort, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.MaxReasoningEffortOverLimit(); ok {
+		_spec.SetField(group.FieldMaxReasoningEffortOverLimit, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.ReasoningEffortMappings(); ok {
 		_spec.SetField(group.FieldReasoningEffortMappings, field.TypeJSON, value)
@@ -2218,6 +2488,12 @@ func (_u *GroupUpdateOne) ClearDescription() *GroupUpdateOne {
 	return _u
 }
 
+// SetI18n sets the "i18n" field.
+func (_u *GroupUpdateOne) SetI18n(v domain.GroupI18n) *GroupUpdateOne {
+	_u.mutation.SetI18n(v)
+	return _u
+}
+
 // SetRateMultiplier sets the "rate_multiplier" field.
 func (_u *GroupUpdateOne) SetRateMultiplier(v float64) *GroupUpdateOne {
 	_u.mutation.ResetRateMultiplier()
@@ -2236,6 +2512,18 @@ func (_u *GroupUpdateOne) SetNillableRateMultiplier(v *float64) *GroupUpdateOne 
 // AddRateMultiplier adds value to the "rate_multiplier" field.
 func (_u *GroupUpdateOne) AddRateMultiplier(v float64) *GroupUpdateOne {
 	_u.mutation.AddRateMultiplier(v)
+	return _u
+}
+
+// SetRateSyncGroupIds sets the "rate_sync_group_ids" field.
+func (_u *GroupUpdateOne) SetRateSyncGroupIds(v []int64) *GroupUpdateOne {
+	_u.mutation.SetRateSyncGroupIds(v)
+	return _u
+}
+
+// AppendRateSyncGroupIds appends value to the "rate_sync_group_ids" field.
+func (_u *GroupUpdateOne) AppendRateSyncGroupIds(v []int64) *GroupUpdateOne {
+	_u.mutation.AppendRateSyncGroupIds(v)
 	return _u
 }
 
@@ -2302,6 +2590,41 @@ func (_u *GroupUpdateOne) AddPeakRateMultiplier(v float64) *GroupUpdateOne {
 	return _u
 }
 
+// SetSyncIsolationEnabled sets the "sync_isolation_enabled" field.
+func (_u *GroupUpdateOne) SetSyncIsolationEnabled(v bool) *GroupUpdateOne {
+	_u.mutation.SetSyncIsolationEnabled(v)
+	return _u
+}
+
+// SetNillableSyncIsolationEnabled sets the "sync_isolation_enabled" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillableSyncIsolationEnabled(v *bool) *GroupUpdateOne {
+	if v != nil {
+		_u.SetSyncIsolationEnabled(*v)
+	}
+	return _u
+}
+
+// SetSyncIsolationSourceGroupID sets the "sync_isolation_source_group_id" field.
+func (_u *GroupUpdateOne) SetSyncIsolationSourceGroupID(v int64) *GroupUpdateOne {
+	_u.mutation.ResetSyncIsolationSourceGroupID()
+	_u.mutation.SetSyncIsolationSourceGroupID(v)
+	return _u
+}
+
+// SetNillableSyncIsolationSourceGroupID sets the "sync_isolation_source_group_id" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillableSyncIsolationSourceGroupID(v *int64) *GroupUpdateOne {
+	if v != nil {
+		_u.SetSyncIsolationSourceGroupID(*v)
+	}
+	return _u
+}
+
+// AddSyncIsolationSourceGroupID adds value to the "sync_isolation_source_group_id" field.
+func (_u *GroupUpdateOne) AddSyncIsolationSourceGroupID(v int64) *GroupUpdateOne {
+	_u.mutation.AddSyncIsolationSourceGroupID(v)
+	return _u
+}
+
 // SetIsExclusive sets the "is_exclusive" field.
 func (_u *GroupUpdateOne) SetIsExclusive(v bool) *GroupUpdateOne {
 	_u.mutation.SetIsExclusive(v)
@@ -2340,6 +2663,34 @@ func (_u *GroupUpdateOne) SetPlatform(v string) *GroupUpdateOne {
 func (_u *GroupUpdateOne) SetNillablePlatform(v *string) *GroupUpdateOne {
 	if v != nil {
 		_u.SetPlatform(*v)
+	}
+	return _u
+}
+
+// SetBlockedUserAgents sets the "blocked_user_agents" field.
+func (_u *GroupUpdateOne) SetBlockedUserAgents(v string) *GroupUpdateOne {
+	_u.mutation.SetBlockedUserAgents(v)
+	return _u
+}
+
+// SetNillableBlockedUserAgents sets the "blocked_user_agents" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillableBlockedUserAgents(v *string) *GroupUpdateOne {
+	if v != nil {
+		_u.SetBlockedUserAgents(*v)
+	}
+	return _u
+}
+
+// SetRequiredProtocol sets the "required_protocol" field.
+func (_u *GroupUpdateOne) SetRequiredProtocol(v string) *GroupUpdateOne {
+	_u.mutation.SetRequiredProtocol(v)
+	return _u
+}
+
+// SetNillableRequiredProtocol sets the "required_protocol" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillableRequiredProtocol(v *string) *GroupUpdateOne {
+	if v != nil {
+		_u.SetRequiredProtocol(*v)
 	}
 	return _u
 }
@@ -2460,6 +2811,20 @@ func (_u *GroupUpdateOne) AddDefaultValidityDays(v int) *GroupUpdateOne {
 	return _u
 }
 
+// SetAccountErrorFailoverEnabled sets the "account_error_failover_enabled" field.
+func (_u *GroupUpdateOne) SetAccountErrorFailoverEnabled(v bool) *GroupUpdateOne {
+	_u.mutation.SetAccountErrorFailoverEnabled(v)
+	return _u
+}
+
+// SetNillableAccountErrorFailoverEnabled sets the "account_error_failover_enabled" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillableAccountErrorFailoverEnabled(v *bool) *GroupUpdateOne {
+	if v != nil {
+		_u.SetAccountErrorFailoverEnabled(*v)
+	}
+	return _u
+}
+
 // SetAllowImageGeneration sets the "allow_image_generation" field.
 func (_u *GroupUpdateOne) SetAllowImageGeneration(v bool) *GroupUpdateOne {
 	_u.mutation.SetAllowImageGeneration(v)
@@ -2484,6 +2849,34 @@ func (_u *GroupUpdateOne) SetAllowBatchImageGeneration(v bool) *GroupUpdateOne {
 func (_u *GroupUpdateOne) SetNillableAllowBatchImageGeneration(v *bool) *GroupUpdateOne {
 	if v != nil {
 		_u.SetAllowBatchImageGeneration(*v)
+	}
+	return _u
+}
+
+// SetImageAutoSizeFromReference sets the "image_auto_size_from_reference" field.
+func (_u *GroupUpdateOne) SetImageAutoSizeFromReference(v bool) *GroupUpdateOne {
+	_u.mutation.SetImageAutoSizeFromReference(v)
+	return _u
+}
+
+// SetNillableImageAutoSizeFromReference sets the "image_auto_size_from_reference" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillableImageAutoSizeFromReference(v *bool) *GroupUpdateOne {
+	if v != nil {
+		_u.SetImageAutoSizeFromReference(*v)
+	}
+	return _u
+}
+
+// SetImageCountBilling sets the "image_count_billing" field.
+func (_u *GroupUpdateOne) SetImageCountBilling(v bool) *GroupUpdateOne {
+	_u.mutation.SetImageCountBilling(v)
+	return _u
+}
+
+// SetNillableImageCountBilling sets the "image_count_billing" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillableImageCountBilling(v *bool) *GroupUpdateOne {
+	if v != nil {
+		_u.SetImageCountBilling(*v)
 	}
 	return _u
 }
@@ -2924,13 +3317,13 @@ func (_u *GroupUpdateOne) SetNillableLongContextPricingEnabled(v *bool) *GroupUp
 }
 
 // SetModelPricing sets the "model_pricing" field.
-func (_u *GroupUpdateOne) SetModelPricing(v json.RawMessage) *GroupUpdateOne {
+func (_u *GroupUpdateOne) SetModelPricing(v jsontext.Value) *GroupUpdateOne {
 	_u.mutation.SetModelPricing(v)
 	return _u
 }
 
 // AppendModelPricing appends value to the "model_pricing" field.
-func (_u *GroupUpdateOne) AppendModelPricing(v json.RawMessage) *GroupUpdateOne {
+func (_u *GroupUpdateOne) AppendModelPricing(v jsontext.Value) *GroupUpdateOne {
 	_u.mutation.AppendModelPricing(v)
 	return _u
 }
@@ -3110,6 +3503,48 @@ func (_u *GroupUpdateOne) SetNillableAllowLive(v *bool) *GroupUpdateOne {
 	return _u
 }
 
+// SetForceOpenaiFast sets the "force_openai_fast" field.
+func (_u *GroupUpdateOne) SetForceOpenaiFast(v bool) *GroupUpdateOne {
+	_u.mutation.SetForceOpenaiFast(v)
+	return _u
+}
+
+// SetNillableForceOpenaiFast sets the "force_openai_fast" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillableForceOpenaiFast(v *bool) *GroupUpdateOne {
+	if v != nil {
+		_u.SetForceOpenaiFast(*v)
+	}
+	return _u
+}
+
+// SetForceOpenaiUltrafast sets the "force_openai_ultrafast" field.
+func (_u *GroupUpdateOne) SetForceOpenaiUltrafast(v bool) *GroupUpdateOne {
+	_u.mutation.SetForceOpenaiUltrafast(v)
+	return _u
+}
+
+// SetNillableForceOpenaiUltrafast sets the "force_openai_ultrafast" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillableForceOpenaiUltrafast(v *bool) *GroupUpdateOne {
+	if v != nil {
+		_u.SetForceOpenaiUltrafast(*v)
+	}
+	return _u
+}
+
+// SetFreeOpenaiFast sets the "free_openai_fast" field.
+func (_u *GroupUpdateOne) SetFreeOpenaiFast(v bool) *GroupUpdateOne {
+	_u.mutation.SetFreeOpenaiFast(v)
+	return _u
+}
+
+// SetNillableFreeOpenaiFast sets the "free_openai_fast" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillableFreeOpenaiFast(v *bool) *GroupUpdateOne {
+	if v != nil {
+		_u.SetFreeOpenaiFast(*v)
+	}
+	return _u
+}
+
 // SetRequireOauthOnly sets the "require_oauth_only" field.
 func (_u *GroupUpdateOne) SetRequireOauthOnly(v bool) *GroupUpdateOne {
 	_u.mutation.SetRequireOauthOnly(v)
@@ -3166,16 +3601,44 @@ func (_u *GroupUpdateOne) SetNillableMessagesDispatchModelConfig(v *domain.OpenA
 	return _u
 }
 
-// SetModelsListConfig sets the "models_list_config" field.
-func (_u *GroupUpdateOne) SetModelsListConfig(v domain.GroupModelsListConfig) *GroupUpdateOne {
-	_u.mutation.SetModelsListConfig(v)
+// SetModelAllowlist sets the "model_allowlist" field.
+func (_u *GroupUpdateOne) SetModelAllowlist(v domain.GroupModelAllowlist) *GroupUpdateOne {
+	_u.mutation.SetModelAllowlist(v)
 	return _u
 }
 
-// SetNillableModelsListConfig sets the "models_list_config" field if the given value is not nil.
-func (_u *GroupUpdateOne) SetNillableModelsListConfig(v *domain.GroupModelsListConfig) *GroupUpdateOne {
+// SetNillableModelAllowlist sets the "model_allowlist" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillableModelAllowlist(v *domain.GroupModelAllowlist) *GroupUpdateOne {
 	if v != nil {
-		_u.SetModelsListConfig(*v)
+		_u.SetModelAllowlist(*v)
+	}
+	return _u
+}
+
+// SetAnthropicThinkingCompat sets the "anthropic_thinking_compat" field.
+func (_u *GroupUpdateOne) SetAnthropicThinkingCompat(v domain.GroupAnthropicThinkingCompat) *GroupUpdateOne {
+	_u.mutation.SetAnthropicThinkingCompat(v)
+	return _u
+}
+
+// SetNillableAnthropicThinkingCompat sets the "anthropic_thinking_compat" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillableAnthropicThinkingCompat(v *domain.GroupAnthropicThinkingCompat) *GroupUpdateOne {
+	if v != nil {
+		_u.SetAnthropicThinkingCompat(*v)
+	}
+	return _u
+}
+
+// SetCodexModelsManifestConfig sets the "codex_models_manifest_config" field.
+func (_u *GroupUpdateOne) SetCodexModelsManifestConfig(v domain.GroupCodexModelsManifestConfig) *GroupUpdateOne {
+	_u.mutation.SetCodexModelsManifestConfig(v)
+	return _u
+}
+
+// SetNillableCodexModelsManifestConfig sets the "codex_models_manifest_config" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillableCodexModelsManifestConfig(v *domain.GroupCodexModelsManifestConfig) *GroupUpdateOne {
+	if v != nil {
+		_u.SetCodexModelsManifestConfig(*v)
 	}
 	return _u
 }
@@ -3211,6 +3674,20 @@ func (_u *GroupUpdateOne) SetMaxReasoningEffort(v string) *GroupUpdateOne {
 func (_u *GroupUpdateOne) SetNillableMaxReasoningEffort(v *string) *GroupUpdateOne {
 	if v != nil {
 		_u.SetMaxReasoningEffort(*v)
+	}
+	return _u
+}
+
+// SetMaxReasoningEffortOverLimit sets the "max_reasoning_effort_over_limit" field.
+func (_u *GroupUpdateOne) SetMaxReasoningEffortOverLimit(v string) *GroupUpdateOne {
+	_u.mutation.SetMaxReasoningEffortOverLimit(v)
+	return _u
+}
+
+// SetNillableMaxReasoningEffortOverLimit sets the "max_reasoning_effort_over_limit" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillableMaxReasoningEffortOverLimit(v *string) *GroupUpdateOne {
+	if v != nil {
+		_u.SetMaxReasoningEffortOverLimit(*v)
 	}
 	return _u
 }
@@ -3586,6 +4063,11 @@ func (_u *GroupUpdateOne) check() error {
 			return &ValidationError{Name: "platform", err: fmt.Errorf(`ent: validator failed for field "Group.platform": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.RequiredProtocol(); ok {
+		if err := group.RequiredProtocolValidator(v); err != nil {
+			return &ValidationError{Name: "required_protocol", err: fmt.Errorf(`ent: validator failed for field "Group.required_protocol": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.SubscriptionType(); ok {
 		if err := group.SubscriptionTypeValidator(v); err != nil {
 			return &ValidationError{Name: "subscription_type", err: fmt.Errorf(`ent: validator failed for field "Group.subscription_type": %w`, err)}
@@ -3619,6 +4101,11 @@ func (_u *GroupUpdateOne) check() error {
 	if v, ok := _u.mutation.MaxReasoningEffort(); ok {
 		if err := group.MaxReasoningEffortValidator(v); err != nil {
 			return &ValidationError{Name: "max_reasoning_effort", err: fmt.Errorf(`ent: validator failed for field "Group.max_reasoning_effort": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.MaxReasoningEffortOverLimit(); ok {
+		if err := group.MaxReasoningEffortOverLimitValidator(v); err != nil {
+			return &ValidationError{Name: "max_reasoning_effort_over_limit", err: fmt.Errorf(`ent: validator failed for field "Group.max_reasoning_effort_over_limit": %w`, err)}
 		}
 	}
 	return nil
@@ -3671,11 +4158,22 @@ func (_u *GroupUpdateOne) sqlSave(ctx context.Context) (_node *Group, err error)
 	if _u.mutation.DescriptionCleared() {
 		_spec.ClearField(group.FieldDescription, field.TypeString)
 	}
+	if value, ok := _u.mutation.I18n(); ok {
+		_spec.SetField(group.FieldI18n, field.TypeJSON, value)
+	}
 	if value, ok := _u.mutation.RateMultiplier(); ok {
 		_spec.SetField(group.FieldRateMultiplier, field.TypeFloat64, value)
 	}
 	if value, ok := _u.mutation.AddedRateMultiplier(); ok {
 		_spec.AddField(group.FieldRateMultiplier, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.RateSyncGroupIds(); ok {
+		_spec.SetField(group.FieldRateSyncGroupIds, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedRateSyncGroupIds(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, group.FieldRateSyncGroupIds, value)
+		})
 	}
 	if value, ok := _u.mutation.PeakRateEnabled(); ok {
 		_spec.SetField(group.FieldPeakRateEnabled, field.TypeBool, value)
@@ -3692,6 +4190,15 @@ func (_u *GroupUpdateOne) sqlSave(ctx context.Context) (_node *Group, err error)
 	if value, ok := _u.mutation.AddedPeakRateMultiplier(); ok {
 		_spec.AddField(group.FieldPeakRateMultiplier, field.TypeFloat64, value)
 	}
+	if value, ok := _u.mutation.SyncIsolationEnabled(); ok {
+		_spec.SetField(group.FieldSyncIsolationEnabled, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.SyncIsolationSourceGroupID(); ok {
+		_spec.SetField(group.FieldSyncIsolationSourceGroupID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedSyncIsolationSourceGroupID(); ok {
+		_spec.AddField(group.FieldSyncIsolationSourceGroupID, field.TypeInt64, value)
+	}
 	if value, ok := _u.mutation.IsExclusive(); ok {
 		_spec.SetField(group.FieldIsExclusive, field.TypeBool, value)
 	}
@@ -3703,6 +4210,12 @@ func (_u *GroupUpdateOne) sqlSave(ctx context.Context) (_node *Group, err error)
 	}
 	if value, ok := _u.mutation.Platform(); ok {
 		_spec.SetField(group.FieldPlatform, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.BlockedUserAgents(); ok {
+		_spec.SetField(group.FieldBlockedUserAgents, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.RequiredProtocol(); ok {
+		_spec.SetField(group.FieldRequiredProtocol, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.SubscriptionType(); ok {
 		_spec.SetField(group.FieldSubscriptionType, field.TypeString, value)
@@ -3740,11 +4253,20 @@ func (_u *GroupUpdateOne) sqlSave(ctx context.Context) (_node *Group, err error)
 	if value, ok := _u.mutation.AddedDefaultValidityDays(); ok {
 		_spec.AddField(group.FieldDefaultValidityDays, field.TypeInt, value)
 	}
+	if value, ok := _u.mutation.AccountErrorFailoverEnabled(); ok {
+		_spec.SetField(group.FieldAccountErrorFailoverEnabled, field.TypeBool, value)
+	}
 	if value, ok := _u.mutation.AllowImageGeneration(); ok {
 		_spec.SetField(group.FieldAllowImageGeneration, field.TypeBool, value)
 	}
 	if value, ok := _u.mutation.AllowBatchImageGeneration(); ok {
 		_spec.SetField(group.FieldAllowBatchImageGeneration, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.ImageAutoSizeFromReference(); ok {
+		_spec.SetField(group.FieldImageAutoSizeFromReference, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.ImageCountBilling(); ok {
+		_spec.SetField(group.FieldImageCountBilling, field.TypeBool, value)
 	}
 	if value, ok := _u.mutation.ImageRateIndependent(); ok {
 		_spec.SetField(group.FieldImageRateIndependent, field.TypeBool, value)
@@ -3948,6 +4470,15 @@ func (_u *GroupUpdateOne) sqlSave(ctx context.Context) (_node *Group, err error)
 	if value, ok := _u.mutation.AllowLive(); ok {
 		_spec.SetField(group.FieldAllowLive, field.TypeBool, value)
 	}
+	if value, ok := _u.mutation.ForceOpenaiFast(); ok {
+		_spec.SetField(group.FieldForceOpenaiFast, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.ForceOpenaiUltrafast(); ok {
+		_spec.SetField(group.FieldForceOpenaiUltrafast, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.FreeOpenaiFast(); ok {
+		_spec.SetField(group.FieldFreeOpenaiFast, field.TypeBool, value)
+	}
 	if value, ok := _u.mutation.RequireOauthOnly(); ok {
 		_spec.SetField(group.FieldRequireOauthOnly, field.TypeBool, value)
 	}
@@ -3960,8 +4491,14 @@ func (_u *GroupUpdateOne) sqlSave(ctx context.Context) (_node *Group, err error)
 	if value, ok := _u.mutation.MessagesDispatchModelConfig(); ok {
 		_spec.SetField(group.FieldMessagesDispatchModelConfig, field.TypeJSON, value)
 	}
-	if value, ok := _u.mutation.ModelsListConfig(); ok {
-		_spec.SetField(group.FieldModelsListConfig, field.TypeJSON, value)
+	if value, ok := _u.mutation.ModelAllowlist(); ok {
+		_spec.SetField(group.FieldModelAllowlist, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AnthropicThinkingCompat(); ok {
+		_spec.SetField(group.FieldAnthropicThinkingCompat, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.CodexModelsManifestConfig(); ok {
+		_spec.SetField(group.FieldCodexModelsManifestConfig, field.TypeJSON, value)
 	}
 	if value, ok := _u.mutation.RpmLimit(); ok {
 		_spec.SetField(group.FieldRpmLimit, field.TypeInt, value)
@@ -3971,6 +4508,9 @@ func (_u *GroupUpdateOne) sqlSave(ctx context.Context) (_node *Group, err error)
 	}
 	if value, ok := _u.mutation.MaxReasoningEffort(); ok {
 		_spec.SetField(group.FieldMaxReasoningEffort, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.MaxReasoningEffortOverLimit(); ok {
+		_spec.SetField(group.FieldMaxReasoningEffortOverLimit, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.ReasoningEffortMappings(); ok {
 		_spec.SetField(group.FieldReasoningEffortMappings, field.TypeJSON, value)

@@ -27,6 +27,7 @@
           <button
             v-for="preset in presets"
             :key="preset.value"
+            type="button"
             @click="selectPreset(preset)"
             :class="['date-picker-preset', isPresetActive(preset) && 'date-picker-preset-active']"
           >
@@ -43,7 +44,7 @@
             <input
               type="date"
               v-model="localStartDate"
-              :max="localEndDate || tomorrow"
+              :max="localEndDate || tomorrow()"
               class="date-picker-input"
               @change="onDateChange"
             />
@@ -57,7 +58,7 @@
               type="date"
               v-model="localEndDate"
               :min="localStartDate"
-              :max="tomorrow"
+              :max="tomorrow()"
               class="date-picker-input"
               @change="onDateChange"
             />
@@ -66,7 +67,7 @@
 
         <!-- Apply button -->
         <div class="date-picker-actions">
-          <button @click="apply" class="date-picker-apply">
+          <button type="button" @click="apply" class="date-picker-apply">
             {{ t('dates.apply') }}
           </button>
         </div>
@@ -94,6 +95,7 @@ interface Props {
 interface Emits {
   (e: 'update:startDate', value: string): void
   (e: 'update:endDate', value: string): void
+  (e: 'preset-change', range: { startDate: string; endDate: string; preset: string }): void
   (e: 'change', range: { startDate: string; endDate: string; preset: string | null }): void
 }
 
@@ -106,24 +108,17 @@ const isOpen = ref(false)
 const containerRef = ref<HTMLElement | null>(null)
 const localStartDate = ref(props.startDate)
 const localEndDate = ref(props.endDate)
-const activePreset = ref<string | null>('last24Hours')
+const activePreset = ref<string | null>(null)
 
-const today = computed(() => {
-  // Use local timezone to avoid UTC timezone issues
-  const now = new Date()
-  const year = now.getFullYear()
-  const month = String(now.getMonth() + 1).padStart(2, '0')
-  const day = String(now.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-})
+const today = () => formatDateToString(new Date())
 
 // Tomorrow's date - used for max date to handle timezone differences
 // When user is in a timezone behind the server, "today" on server might be "tomorrow" locally
-const tomorrow = computed(() => {
+const tomorrow = () => {
   const d = new Date()
   d.setDate(d.getDate() + 1)
   return formatDateToString(d)
-})
+}
 
 // Helper function to format date to YYYY-MM-DD using local timezone
 const formatDateToString = (date: Date): string => {
@@ -138,7 +133,7 @@ const presets: DatePreset[] = [
     labelKey: 'dates.today',
     value: 'today',
     getRange: () => {
-      const t = today.value
+      const t = today()
       return { start: t, end: t }
     }
   },
@@ -168,7 +163,7 @@ const presets: DatePreset[] = [
     labelKey: 'dates.last7Days',
     value: '7days',
     getRange: () => {
-      const end = today.value
+      const end = today()
       const d = new Date()
       d.setDate(d.getDate() - 6)
       const start = formatDateToString(d)
@@ -179,7 +174,7 @@ const presets: DatePreset[] = [
     labelKey: 'dates.last14Days',
     value: '14days',
     getRange: () => {
-      const end = today.value
+      const end = today()
       const d = new Date()
       d.setDate(d.getDate() - 13)
       const start = formatDateToString(d)
@@ -190,7 +185,7 @@ const presets: DatePreset[] = [
     labelKey: 'dates.last30Days',
     value: '30days',
     getRange: () => {
-      const end = today.value
+      const end = today()
       const d = new Date()
       d.setDate(d.getDate() - 29)
       const start = formatDateToString(d)
@@ -203,7 +198,7 @@ const presets: DatePreset[] = [
     getRange: () => {
       const now = new Date()
       const start = formatDateToString(new Date(now.getFullYear(), now.getMonth(), 1))
-      return { start, end: today.value }
+      return { start, end: today() }
     }
   },
   {
@@ -217,6 +212,15 @@ const presets: DatePreset[] = [
     }
   }
 ]
+
+const matchPreset = (start: string, end: string): string | null => {
+  for (const preset of presets) {
+    const range = preset.getRange()
+    if (range.start === start && range.end === end) return preset.value
+  }
+  return null
+}
+activePreset.value = matchPreset(localStartDate.value, localEndDate.value)
 
 const displayValue = computed(() => {
   if (activePreset.value) {
@@ -249,18 +253,15 @@ const selectPreset = (preset: DatePreset) => {
   localStartDate.value = range.start
   localEndDate.value = range.end
   activePreset.value = preset.value
+  emit('preset-change', {
+    startDate: range.start,
+    endDate: range.end,
+    preset: preset.value,
+  })
 }
 
 const onDateChange = () => {
-  // Check if current dates match any preset
-  activePreset.value = null
-  for (const preset of presets) {
-    const range = preset.getRange()
-    if (range.start === localStartDate.value && range.end === localEndDate.value) {
-      activePreset.value = preset.value
-      break
-    }
-  }
+  activePreset.value = matchPreset(localStartDate.value, localEndDate.value)
 }
 
 const toggle = () => {
@@ -289,6 +290,14 @@ const handleEscape = (event: KeyboardEvent) => {
     isOpen.value = false
   }
 }
+
+// Restore the applied range after dismissal, including parent updates from Apply.
+watch(isOpen, (open) => {
+  if (open) return
+  localStartDate.value = props.startDate
+  localEndDate.value = props.endDate
+  onDateChange()
+}, { flush: 'post' })
 
 // Sync local state with props
 watch(
@@ -350,13 +359,14 @@ onUnmounted(() => {
 }
 
 .date-picker-dropdown {
-  @apply absolute left-0 z-[100] mt-2;
+  @apply absolute right-0 z-[100] mt-2;
   @apply bg-white dark:bg-dark-800;
   @apply rounded-xl;
   @apply border border-gray-200 dark:border-dark-700;
   @apply shadow-lg shadow-black/10 dark:shadow-black/30;
   @apply overflow-hidden;
-  @apply min-w-[320px];
+  width: min(320px, calc(100vw - 1rem));
+  max-width: calc(100vw - 1rem);
 }
 
 .date-picker-presets {
@@ -405,7 +415,7 @@ onUnmounted(() => {
 }
 
 .dark .date-picker-input::-webkit-calendar-picker-indicator {
-  filter: invert(0.7);
+  filter: none;
 }
 
 .date-picker-separator {

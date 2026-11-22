@@ -56,6 +56,18 @@ declare module 'vue-router' {
     requiresRiskControl?: boolean
 
     /**
+     * 是否要求订阅功能开关（subscription_enabled，opt-out）未被显式关闭
+     * @default false
+     */
+    requiresSubscription?: boolean
+
+    /**
+     * 是否要求当前调用方可见用户侧渠道状态（channel_monitor_visible）
+     * @default false
+     */
+    requiresChannelMonitor?: boolean
+
+    /**
      * i18n key for the page title
      */
     titleKey?: string

@@ -20,20 +20,24 @@ func NewScheduledTestHandler(scheduledTestSvc *service.ScheduledTestService) *Sc
 }
 
 type createScheduledTestPlanRequest struct {
-	AccountID      int64  `json:"account_id" binding:"required"`
-	ModelID        string `json:"model_id"`
-	CronExpression string `json:"cron_expression" binding:"required"`
-	Enabled        *bool  `json:"enabled"`
-	MaxResults     int    `json:"max_results"`
-	AutoRecover    *bool  `json:"auto_recover"`
+	AccountID                    int64  `json:"account_id" binding:"required"`
+	ModelID                      string `json:"model_id"`
+	CronExpression               string `json:"cron_expression" binding:"required"`
+	Enabled                      *bool  `json:"enabled"`
+	MaxResults                   int    `json:"max_results"`
+	AutoRecover                  *bool  `json:"auto_recover"`
+	RecoveryProbeIntervalSeconds *int   `json:"recovery_probe_interval_seconds" binding:"omitempty,min=1,max=3600"`
+	RecoverScheduling            *bool  `json:"recover_scheduling"`
 }
 
 type updateScheduledTestPlanRequest struct {
-	ModelID        string `json:"model_id"`
-	CronExpression string `json:"cron_expression"`
-	Enabled        *bool  `json:"enabled"`
-	MaxResults     int    `json:"max_results"`
-	AutoRecover    *bool  `json:"auto_recover"`
+	ModelID                      string `json:"model_id"`
+	CronExpression               string `json:"cron_expression"`
+	Enabled                      *bool  `json:"enabled"`
+	MaxResults                   int    `json:"max_results"`
+	AutoRecover                  *bool  `json:"auto_recover"`
+	RecoveryProbeIntervalSeconds *int   `json:"recovery_probe_interval_seconds" binding:"omitempty,min=1,max=3600"`
+	RecoverScheduling            *bool  `json:"recover_scheduling"`
 }
 
 // ListByAccount GET /admin/accounts/:id/scheduled-test-plans
@@ -72,6 +76,12 @@ func (h *ScheduledTestHandler) Create(c *gin.Context) {
 	}
 	if req.AutoRecover != nil {
 		plan.AutoRecover = *req.AutoRecover
+	}
+	if req.RecoveryProbeIntervalSeconds != nil {
+		plan.RecoveryProbeIntervalSeconds = *req.RecoveryProbeIntervalSeconds
+	}
+	if req.RecoverScheduling != nil {
+		plan.RecoverScheduling = *req.RecoverScheduling
 	}
 
 	created, err := h.scheduledTestSvc.CreatePlan(c.Request.Context(), plan)
@@ -116,6 +126,12 @@ func (h *ScheduledTestHandler) Update(c *gin.Context) {
 	}
 	if req.AutoRecover != nil {
 		existing.AutoRecover = *req.AutoRecover
+	}
+	if req.RecoveryProbeIntervalSeconds != nil {
+		existing.RecoveryProbeIntervalSeconds = *req.RecoveryProbeIntervalSeconds
+	}
+	if req.RecoverScheduling != nil {
+		existing.RecoverScheduling = *req.RecoverScheduling
 	}
 
 	updated, err := h.scheduledTestSvc.UpdatePlan(c.Request.Context(), existing)

@@ -44,6 +44,8 @@ const (
 	FieldGroupID = "group_id"
 	// FieldSubscriptionID holds the string denoting the subscription_id field in the database.
 	FieldSubscriptionID = "subscription_id"
+	// FieldInputTokenEstimate holds the string denoting the input_token_estimate field in the database.
+	FieldInputTokenEstimate = "input_token_estimate"
 	// FieldInputTokens holds the string denoting the input_tokens field in the database.
 	FieldInputTokens = "input_tokens"
 	// FieldOutputTokens holds the string denoting the output_tokens field in the database.
@@ -56,6 +58,10 @@ const (
 	FieldCacheCreation5mTokens = "cache_creation_5m_tokens"
 	// FieldCacheCreation1hTokens holds the string denoting the cache_creation_1h_tokens field in the database.
 	FieldCacheCreation1hTokens = "cache_creation_1h_tokens"
+	// FieldCacheCreation30mTokens holds the string denoting the cache_creation_30m_tokens field in the database.
+	FieldCacheCreation30mTokens = "cache_creation_30m_tokens"
+	// FieldCacheCreation12hTokens holds the string denoting the cache_creation_12h_tokens field in the database.
+	FieldCacheCreation12hTokens = "cache_creation_12h_tokens"
 	// FieldInputCost holds the string denoting the input_cost field in the database.
 	FieldInputCost = "input_cost"
 	// FieldOutputCost holds the string denoting the output_cost field in the database.
@@ -74,6 +80,10 @@ const (
 	FieldLongContextBillingApplied = "long_context_billing_applied"
 	// FieldAccountRateMultiplier holds the string denoting the account_rate_multiplier field in the database.
 	FieldAccountRateMultiplier = "account_rate_multiplier"
+	// FieldSearchCount holds the string denoting the search_count field in the database.
+	FieldSearchCount = "search_count"
+	// FieldSearchCost holds the string denoting the search_cost field in the database.
+	FieldSearchCost = "search_cost"
 	// FieldBillingType holds the string denoting the billing_type field in the database.
 	FieldBillingType = "billing_type"
 	// FieldStream holds the string denoting the stream field in the database.
@@ -175,12 +185,15 @@ var Columns = []string{
 	FieldBillingMode,
 	FieldGroupID,
 	FieldSubscriptionID,
+	FieldInputTokenEstimate,
 	FieldInputTokens,
 	FieldOutputTokens,
 	FieldCacheCreationTokens,
 	FieldCacheReadTokens,
 	FieldCacheCreation5mTokens,
 	FieldCacheCreation1hTokens,
+	FieldCacheCreation30mTokens,
+	FieldCacheCreation12hTokens,
 	FieldInputCost,
 	FieldOutputCost,
 	FieldCacheCreationCost,
@@ -190,6 +203,8 @@ var Columns = []string{
 	FieldRateMultiplier,
 	FieldLongContextBillingApplied,
 	FieldAccountRateMultiplier,
+	FieldSearchCount,
+	FieldSearchCost,
 	FieldBillingType,
 	FieldStream,
 	FieldDurationMs,
@@ -248,6 +263,10 @@ var (
 	DefaultCacheCreation5mTokens int
 	// DefaultCacheCreation1hTokens holds the default value on creation for the "cache_creation_1h_tokens" field.
 	DefaultCacheCreation1hTokens int
+	// DefaultCacheCreation30mTokens holds the default value on creation for the "cache_creation_30m_tokens" field.
+	DefaultCacheCreation30mTokens int
+	// DefaultCacheCreation12hTokens holds the default value on creation for the "cache_creation_12h_tokens" field.
+	DefaultCacheCreation12hTokens int
 	// DefaultInputCost holds the default value on creation for the "input_cost" field.
 	DefaultInputCost float64
 	// DefaultOutputCost holds the default value on creation for the "output_cost" field.
@@ -264,6 +283,10 @@ var (
 	DefaultRateMultiplier float64
 	// DefaultLongContextBillingApplied holds the default value on creation for the "long_context_billing_applied" field.
 	DefaultLongContextBillingApplied bool
+	// DefaultSearchCount holds the default value on creation for the "search_count" field.
+	DefaultSearchCount int
+	// DefaultSearchCost holds the default value on creation for the "search_cost" field.
+	DefaultSearchCost float64
 	// DefaultBillingType holds the default value on creation for the "billing_type" field.
 	DefaultBillingType int8
 	// DefaultStream holds the default value on creation for the "stream" field.
@@ -405,6 +428,16 @@ func ByCacheCreation1hTokens(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldCacheCreation1hTokens, opts...).ToFunc()
 }
 
+// ByCacheCreation30mTokens orders the results by the cache_creation_30m_tokens field.
+func ByCacheCreation30mTokens(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCacheCreation30mTokens, opts...).ToFunc()
+}
+
+// ByCacheCreation12hTokens orders the results by the cache_creation_12h_tokens field.
+func ByCacheCreation12hTokens(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCacheCreation12hTokens, opts...).ToFunc()
+}
+
 // ByInputCost orders the results by the input_cost field.
 func ByInputCost(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldInputCost, opts...).ToFunc()
@@ -448,6 +481,16 @@ func ByLongContextBillingApplied(opts ...sql.OrderTermOption) OrderOption {
 // ByAccountRateMultiplier orders the results by the account_rate_multiplier field.
 func ByAccountRateMultiplier(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldAccountRateMultiplier, opts...).ToFunc()
+}
+
+// BySearchCount orders the results by the search_count field.
+func BySearchCount(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSearchCount, opts...).ToFunc()
+}
+
+// BySearchCost orders the results by the search_cost field.
+func BySearchCost(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSearchCost, opts...).ToFunc()
 }
 
 // ByBillingType orders the results by the billing_type field.

@@ -1,106 +1,143 @@
 <template>
-  <AppLayout>
-    <TablePageLayout>
-      <template #filters>
-        <div class="flex flex-col gap-3">
-          <div class="flex flex-wrap items-center gap-3">
-            <SearchInput
-              v-model="filterSearch"
-              :placeholder="t('keys.searchPlaceholder')"
-              class="w-full sm:w-64"
-              @search="onFilterChange"
-            />
-            <Select
-              :model-value="filterGroupId"
-              class="w-40"
-              :options="groupFilterOptions"
-              @update:model-value="onGroupFilterChange"
-            />
-            <Select
-              :model-value="filterStatus"
-              class="w-40"
-              :options="statusFilterOptions"
-              @update:model-value="onStatusFilterChange"
-            />
-          </div>
-          <EndpointPopover
-            v-if="publicSettings?.api_base_url || (publicSettings?.custom_endpoints?.length ?? 0) > 0"
-            :api-base-url="publicSettings?.api_base_url || ''"
-            :custom-endpoints="publicSettings?.custom_endpoints || []"
-          />
-        </div>
-      </template>
-
-      <template #actions>
-        <div class="flex justify-end gap-3">
+  <StudioLayout class="keys-studio">
+    <template #filters>
+      <div class="studio-filters keys-header-controls" data-test="keys-header-controls">
+        <SearchInput
+          v-model="filterSearch"
+          :placeholder="t('keys.searchPlaceholder')"
+          :aria-label="t('keys.searchPlaceholder')"
+          class="keys-header-search"
+          @search="onFilterChange"
+        />
+        <Select
+          :model-value="filterGroupId"
+          class="keys-header-select"
+          :options="groupFilterOptions"
+          :aria-label="t('keys.allGroups')"
+          @update:model-value="onGroupFilterChange"
+        ><template #option="{ option, selected }"><span class="studio-granularity-option">{{ option.label }}</span><Icon v-if="selected" name="check" size="sm" /></template></Select>
+        <Select
+          :model-value="filterStatus"
+          class="keys-header-select"
+          :options="statusFilterOptions"
+          :aria-label="t('keys.allStatus')"
+          @update:model-value="onStatusFilterChange"
+        ><template #option="{ option, selected }"><span class="studio-granularity-option">{{ option.label }}</span><Icon v-if="selected" name="check" size="sm" /></template></Select>
+        <button
+          @click="loadApiKeys"
+          :disabled="loading"
+          class="refresh-button"
+          :title="t('common.refresh')"
+        >
+          <Icon name="refresh" size="sm" :class="loading ? 'animate-spin' : ''" />
+        </button>
+        <div class="relative" ref="columnDropdownRef">
           <button
-            @click="loadApiKeys"
-            :disabled="loading"
-            class="btn btn-secondary"
-            :title="t('common.refresh')"
+            @click="showColumnDropdown = !showColumnDropdown"
+            class="studio-action"
+            :title="t('keys.columnSettings')"
           >
-            <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
+            <svg class="h-4 w-4 md:mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9 4.5v15m6-15v15m-10.875 0h15.75c.621 0 1.125-.504 1.125-1.125V5.625c0-.621-.504-1.125-1.125-1.125H4.125C3.504 4.5 3 5.004 3 5.625v12.75c0 .621.504 1.125 1.125 1.125z" />
+            </svg>
+            <span class="hidden md:inline">{{ t('keys.columnSettings') }}</span>
           </button>
-          <div class="relative" ref="columnDropdownRef">
+          <div
+            v-if="showColumnDropdown"
+            class="studio-column-menu absolute right-0 top-full z-50 mt-2 max-h-80 w-48 overflow-y-auto"
+          >
             <button
-              @click="showColumnDropdown = !showColumnDropdown"
-              class="btn btn-secondary px-2 md:px-3"
-              :title="t('keys.columnSettings')"
+              v-for="col in toggleableColumns"
+              :key="col.key"
+              @click="toggleColumn(col.key)"
+              class="studio-column-option"
             >
-              <svg class="h-4 w-4 md:mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M9 4.5v15m6-15v15m-10.875 0h15.75c.621 0 1.125-.504 1.125-1.125V5.625c0-.621-.504-1.125-1.125-1.125H4.125C3.504 4.5 3 5.004 3 5.625v12.75c0 .621.504 1.125 1.125 1.125z" />
-              </svg>
-              <span class="hidden md:inline">{{ t('keys.columnSettings') }}</span>
+              <span>{{ col.label }}</span>
+              <Icon
+                v-if="isColumnVisible(col.key)"
+                name="check"
+                size="sm"
+                class="text-primary-500"
+                :stroke-width="2"
+              />
             </button>
-            <div
-              v-if="showColumnDropdown"
-              class="absolute right-0 top-full z-50 mt-1 max-h-80 w-48 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-dark-600 dark:bg-dark-800"
-            >
-              <button
-                v-for="col in toggleableColumns"
-                :key="col.key"
-                @click="toggleColumn(col.key)"
-                class="flex w-full items-center justify-between px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-dark-700"
-              >
-                <span>{{ col.label }}</span>
-                <Icon
-                  v-if="isColumnVisible(col.key)"
-                  name="check"
-                  size="sm"
-                  class="text-primary-500"
-                  :stroke-width="2"
-                />
-              </button>
-            </div>
           </div>
-          <button @click="showCreateModal = true" class="btn btn-primary" data-tour="keys-create-btn">
-            <Icon name="plus" size="md" class="mr-2" />
+        </div>
+      </div>
+    </template>
+    <div class="keys-page">
+      <section v-if="recommendedGroupOptions.length" class="keys-recommendations">
+        <h2 class="recommended-groups-heading">{{ t('keys.recommendedGroups') }}</h2>
+        <div class="recommended-group-mini-list">
+          <button
+            v-for="option in recommendedGroupOptions"
+            :key="`filter-recommended-${option.value}`"
+            type="button"
+            class="recommended-group-mini-card"
+            :title="option.recommendationReason || option.description || option.label"
+            @click="createKeyFromRecommendation(option.value)"
+          >
+            <span class="recommended-group-name font-medium text-primary-700 dark:text-primary-300" :title="option.label">
+              <PlatformIcon :platform="option.platform" size="sm" />
+              <span class="truncate">{{ option.label }}</span>
+            </span>
+            <span class="shrink-0 whitespace-nowrap text-xs text-gray-500 dark:text-gray-400">{{ formatGroupRate(option) }}x</span>
+            <span class="line-clamp-1 text-left text-xs text-gray-500 dark:text-gray-400">
+              {{ option.recommendationReason || option.description || t('keys.recommendationReasonEmpty') }}
+            </span>
+            <span class="shrink-0 text-xs font-semibold text-amber-600 dark:text-amber-400">
+              {{ formatRecommendationRating(option.recommendationRating) }}
+            </span>
+          </button>
+        </div>
+      </section>
+
+      <div class="keys-endpoint-row" data-test="keys-filter-row">
+        <EndpointPopover
+          v-if="publicSettings?.api_base_url || (publicSettings?.custom_endpoints?.length ?? 0) > 0"
+          class="keys-endpoints min-w-0"
+          :api-base-url="publicSettings?.api_base_url || ''"
+          :custom-endpoints="publicSettings?.custom_endpoints || []"
+        />
+        <div class="keys-summary-actions">
+          <span class="keys-total" data-test="keys-total" role="status">{{ t('keys.totalKeys', { count: pagination.total }) }}</span>
+          <button @click="openCreateModal" class="btn btn-primary btn-sm whitespace-nowrap" data-tour="keys-create-btn">
+            <Icon name="plus" size="sm" />
             {{ t('keys.createKey') }}
           </button>
         </div>
-      </template>
+      </div>
 
-      <template #table>
-        <DataTable
+      <div class="keys-list">
+        <KeyCardGrid
           :columns="columns"
           :data="apiKeys"
           :loading="loading"
-          :server-side-sort="true"
-          default-sort-key="created_at"
-          default-sort-order="desc"
-          @sort="handleSort"
+          :selected-keys="selectedIds"
+          @update:selected-keys="handleSelectionChange"
         >
-          <template #cell-id="{ value }">
-            <span class="font-mono text-xs text-gray-500 dark:text-gray-400">#{{ value }}</span>
+          <template #selection-actions>
+            <div v-if="selectedIds.length" class="studio-filters keys-bulk-actions">
+              <span>{{ t('keys.bulkEdit.selectedCount', { count: selectedIds.length }) }}</span>
+              <button class="studio-action" :disabled="loading" data-test="bulk-edit-keys" @click="showBulkEditModal = true">
+                {{ t('keys.bulkEdit.title') }}
+              </button>
+              <button class="studio-action" @click="selectedIds = []">
+                {{ t('keys.bulkEdit.clearSelection') }}
+              </button>
+            </div>
+          </template>
+          <template #cell-id="{ row }">
+            <span class="font-mono text-xs text-gray-500 dark:text-gray-400">#{{ row.id }}</span>
           </template>
 
-          <template #cell-key="{ value, row }">
+          <template #cell-key="{ row }">
             <div class="flex items-center gap-2">
               <code class="code text-xs">
-                {{ maskApiKey(value) }}
+                {{ maskApiKey(row.key) }}
               </code>
               <button
-                @click="copyToClipboard(value, row.id)"
+                @click="copyToClipboard(row.key, row.id)"
                 class="rounded-lg p-1 transition-colors hover:bg-gray-100 dark:hover:bg-dark-700"
                 :class="
                   copiedKeyId === row.id
@@ -120,9 +157,15 @@
             </div>
           </template>
 
-          <template #cell-name="{ value, row }">
-            <div class="flex items-center gap-1.5">
-              <span class="font-medium text-gray-900 dark:text-white">{{ value }}</span>
+          <template #cell-name="{ row }">
+            <div class="key-card-name">
+              <PlatformIcon
+                v-if="row.group"
+                :platform="row.group.platform || 'composite'"
+                size="md"
+                class="key-card-model-icon"
+              />
+              <span class="font-medium text-gray-900 dark:text-white">{{ row.name }}</span>
               <Icon
                 v-if="row.ip_whitelist?.length > 0 || row.ip_blacklist?.length > 0"
                 name="shield"
@@ -133,18 +176,47 @@
             </div>
           </template>
 
+          <template #card-tags="{ row }">
+            <div v-if="row.group" class="key-group-tags">
+              <span
+                v-if="capFor(row.group.id) != null"
+                class="keys-group-cap-tag"
+                :title="t('keys.capRateHint')"
+              >
+                {{ t('keys.capRateTag', { rate: formatCapRate(capFor(row.group.id)!) }) }}
+              </span>
+              <span
+                v-for="(tag, index) in groupTags[String(row.group.id)] ?? []"
+                :key="index"
+                class="key-group-custom-tag"
+                :title="tag.description || undefined"
+              >{{ tag.name }}</span>
+              <span
+                v-if="row.group.required_protocol"
+                class="key-group-protocol-tag"
+                :title="t('keys.requiredProtocolTagHint', { protocol: protocolNames[row.group.required_protocol] })"
+              >{{ t('keys.requiredProtocolTag', { protocol: protocolNames[row.group.required_protocol] }) }}</span>
+              <span
+                v-for="client in blockedClientsFor(row.group)"
+                :key="client"
+                class="key-group-client-tag"
+                :title="t('keys.blockedClientTagHint', { client })"
+              >{{ t('keys.blockedClientTag', { client }) }}</span>
+            </div>
+          </template>
+
           <template #cell-group="{ row }">
-            <div class="group/dropdown relative">
+            <div class="key-group">
               <button
-                :ref="(el) => setGroupButtonRef(row.id, el)"
                 @click="openGroupSelector(row)"
-                class="-mx-2 -my-1 flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1 transition-all duration-200 hover:bg-gray-100 dark:hover:bg-dark-700"
-                :title="t('keys.clickToChangeGroup')"
+                class="key-group-trigger"
+                :title="row.group ? `${row.group.name} · ${t('keys.clickToChangeGroup')}` : t('keys.clickToChangeGroup')"
               >
                 <GroupBadge
                   v-if="row.group"
+                  class="key-group-badge"
                   :name="row.group.name"
-                  :platform="row.group.platform"
+                  :platform="row.group.platform || 'composite'"
                   :subscription-type="row.group.subscription_type"
                   :rate-multiplier="row.group.rate_multiplier"
                   :user-rate-multiplier="userGroupRates[row.group.id]"
@@ -153,56 +225,50 @@
                   :peak-end="row.group.peak_end"
                   :peak-rate-multiplier="row.group.peak_rate_multiplier"
                 />
-                <span v-else class="text-sm text-gray-400 dark:text-dark-500">{{
-                  t('keys.noGroup')
-                }}</span>
-                <span class="text-xs text-gray-500 dark:text-gray-400">{{ t('keys.selectGroup') }}</span>
-                <svg
-                  class="h-3.5 w-3.5 text-gray-400 opacity-60 transition-opacity group-hover/dropdown:opacity-100"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  stroke-width="2"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M8.25 15L12 18.75 15.75 15m-7.5-6L12 5.25 15.75 9"
-                  />
-                </svg>
+                <span v-else class="key-group-empty">{{ t('keys.noGroup') }}</span>
+                <Icon name="chevronDown" size="xs" class="shrink-0 text-gray-400" />
               </button>
             </div>
           </template>
 
-          <template #cell-current_concurrency="{ value }">
+          <template #cell-current_concurrency="{ row }">
             <span
               :class="[
                 'inline-flex min-w-8 items-center justify-center rounded px-2 py-1 text-sm font-semibold tabular-nums',
-                (value ?? 0) > 0
+                (row.current_concurrency ?? 0) > 0
                   ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 dark:bg-emerald-900/25 dark:text-emerald-300 dark:ring-emerald-800'
                   : 'bg-gray-100 text-gray-500 dark:bg-dark-700 dark:text-dark-400'
               ]"
             >
-              {{ value ?? 0 }}
+              {{ row.current_concurrency ?? 0 }}
             </span>
           </template>
 
           <template #cell-usage="{ row }">
-            <div class="text-sm">
-              <div class="flex items-center gap-1.5">
+            <div class="flex flex-wrap gap-x-4 gap-y-0.5 text-sm">
+              <div class="flex items-center gap-1.5 whitespace-nowrap">
                 <span class="text-gray-500 dark:text-gray-400">{{ t('keys.today') }}:</span>
-                <span class="font-medium text-gray-900 dark:text-white">
+                <span
+                  v-if="usageLoading && !usageStats[row.id]"
+                  data-test="usage-pending"
+                  class="inline-block h-3 w-14 animate-pulse rounded bg-gray-200 dark:bg-dark-600"
+                />
+                <span v-else class="font-medium text-gray-900 dark:text-white">
                   ${{ (usageStats[row.id]?.today_actual_cost ?? 0).toFixed(4) }}
                 </span>
               </div>
-              <div class="mt-0.5 flex items-center gap-1.5">
+              <div class="flex items-center gap-1.5 whitespace-nowrap">
                 <span class="text-gray-500 dark:text-gray-400">{{ t('keys.total') }}:</span>
-                <span class="font-medium text-gray-900 dark:text-white">
+                <span
+                  v-if="usageLoading && !usageStats[row.id]"
+                  class="inline-block h-3 w-14 animate-pulse rounded bg-gray-200 dark:bg-dark-600"
+                />
+                <span v-else class="font-medium text-gray-900 dark:text-white">
                   ${{ (usageStats[row.id]?.total_actual_cost ?? 0).toFixed(4) }}
                 </span>
               </div>
               <!-- Quota progress (if quota is set) -->
-              <div v-if="row.quota > 0" class="mt-1.5">
+              <div v-if="row.quota > 0" class="mt-1.5 basis-full">
                 <div class="flex items-center gap-1.5">
                   <span class="text-gray-500 dark:text-gray-400">{{ t('keys.quota') }}:</span>
                   <span :class="[
@@ -329,44 +395,44 @@
             <span v-else class="text-sm text-gray-400 dark:text-dark-500">-</span>
           </template>
 
-          <template #cell-expires_at="{ value }">
-            <span v-if="value" :class="[
+          <template #cell-expires_at="{ row }">
+            <span v-if="row.expires_at" :class="[
               'text-sm',
-              new Date(value) < new Date() ? 'text-red-500 dark:text-red-400' : 'text-gray-500 dark:text-dark-400'
+              new Date(row.expires_at) < new Date() ? 'text-red-500 dark:text-red-400' : 'text-gray-500 dark:text-dark-400'
             ]">
-              {{ formatDateTime(value) }}
+              {{ formatDateTime(row.expires_at) }}
             </span>
             <span v-else class="text-sm text-gray-400 dark:text-dark-500">{{ t('keys.noExpiration') }}</span>
           </template>
 
-          <template #cell-status="{ value }">
+          <template #cell-status="{ row }">
             <span :class="[
               'badge',
-              value === 'active' ? 'badge-success' :
-              value === 'quota_exhausted' ? 'badge-warning' :
-              value === 'expired' ? 'badge-danger' :
+              row.status === 'active' ? 'badge-success' :
+              row.status === 'quota_exhausted' ? 'badge-warning' :
+              row.status === 'expired' ? 'badge-danger' :
               'badge-gray'
             ]">
-              {{ t('keys.status.' + value) }}
+              {{ t('keys.status.' + row.status) }}
             </span>
           </template>
 
-          <template #cell-last_used_at="{ value }">
-            <span v-if="value" class="text-sm text-gray-500 dark:text-dark-400">
-              {{ formatDateTime(value) }}
-            </span>
-            <span v-else class="text-sm text-gray-400 dark:text-dark-500">-</span>
-          </template>
-
-          <template #cell-last_used_ip="{ value }">
-            <span v-if="value" class="text-sm text-gray-500 dark:text-dark-400">
-              {{ value }}
+          <template #cell-last_used_at="{ row }">
+            <span v-if="row.last_used_at" class="text-sm text-gray-500 dark:text-dark-400">
+              {{ formatDateTime(row.last_used_at) }}
             </span>
             <span v-else class="text-sm text-gray-400 dark:text-dark-500">-</span>
           </template>
 
-          <template #cell-created_at="{ value }">
-            <span class="text-sm text-gray-500 dark:text-dark-400">{{ formatDateTime(value) }}</span>
+          <template #cell-last_used_ip="{ row }">
+            <span v-if="row.last_used_ip" class="text-sm text-gray-500 dark:text-dark-400">
+              {{ row.last_used_ip }}
+            </span>
+            <span v-else class="text-sm text-gray-400 dark:text-dark-500">-</span>
+          </template>
+
+          <template #cell-created_at="{ row }">
+            <span class="text-sm text-gray-500 dark:text-dark-400">{{ formatDateTime(row.created_at) }}</span>
           </template>
 
           <template #cell-actions="{ row }">
@@ -426,27 +492,42 @@
               :title="t('keys.noKeysYet')"
               :description="t('keys.createFirstKey')"
               :action-text="t('keys.createKey')"
-              @action="showCreateModal = true"
+              @action="openCreateModal"
             />
           </template>
-        </DataTable>
-      </template>
+        </KeyCardGrid>
+      </div>
 
-      <template #pagination>
-        <Pagination
-          v-if="pagination.total > 0"
-          :page="pagination.page"
-          :total="pagination.total"
-          :page-size="pagination.page_size"
-          @update:page="handlePageChange"
-          @update:pageSize="handlePageSizeChange"
-        />
-      </template>
-    </TablePageLayout>
+      <div ref="loadMoreSentinel" class="keys-load-more" data-test="keys-load-more" role="status">
+        <span v-if="loadingMore">{{ t('common.loading') }}</span>
+        <button v-else-if="loadMoreError" type="button" class="studio-retry" data-test="keys-retry-more" @click="loadMore">{{ t('common.tryAgain') }}</button>
+        <span v-else-if="apiKeys.length && !hasMore">{{ t('keys.allLoaded') }}</span>
+      </div>
+    </div>
 
-    <!-- Create/Edit Modal -->
-    <BaseDialog
+    <!-- Create/Edit Modal（新版，见 components/keys/KeyFormModal.vue） -->
+    <KeyFormModal
       :show="showCreateModal || showEditModal"
+      :is-edit="showEditModal"
+      :title="showEditModal ? t('keys.editKey') : t('keys.createKey')"
+      v-model:form-data="formData"
+      :selected-key="selectedKey"
+      :group-options="formGroupOptions"
+      :group-categories="groupCategories"
+      :group-category-assignments="groupCategoryAssignments"
+      :group-recommendations="groupRecommendations"
+      :group-caps="effectiveGroupCaps"
+      :group-tags="groupTags"
+      :submitting="submitting"
+      @close="closeModals"
+      @submit="handleSubmit"
+      @reset-quota="confirmResetQuota"
+      @reset-rate-limit="confirmResetRateLimit"
+    />
+
+    <!-- 旧版创建/编辑密钥弹窗：保留备查，已由 KeyFormModal 替代（show 恒为 false） -->
+    <BaseDialog
+      :show="false"
       :title="showEditModal ? t('keys.editKey') : t('keys.createKey')"
       width="normal"
       @close="closeModals"
@@ -465,11 +546,48 @@
         </div>
 
         <div>
-          <label class="input-label">{{ t('keys.groupLabel') }}</label>
+          <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+            <label class="input-label mb-0">{{ t('keys.groupLabel') }}</label>
+            <button
+              v-if="!showEditModal && groupPickerMode === 'native'"
+              type="button"
+              class="mb-1.5 text-xs font-medium text-primary-600 underline decoration-primary-300 underline-offset-4 transition-colors hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
+              @click="useCardGroupSelect"
+            >
+              {{ t('keys.useCardGroupSelect') }}
+            </button>
+          </div>
+          <button
+            v-if="!showEditModal && groupPickerMode === 'cards'"
+            type="button"
+            class="group-picker-trigger mt-1.5"
+            data-tour="key-form-group"
+            @click="openGroupPicker"
+          >
+            <GroupBadge
+              v-if="selectedGroupOption"
+              :name="selectedGroupOption.label"
+              :platform="selectedGroupOption.platform"
+              :subscription-type="selectedGroupOption.subscriptionType"
+              :rate-multiplier="selectedGroupOption.rate"
+              :user-rate-multiplier="selectedGroupOption.userRate"
+              :peak-rate-enabled="selectedGroupOption.peakRateEnabled"
+              :peak-start="selectedGroupOption.peakStart"
+              :peak-end="selectedGroupOption.peakEnd"
+              :peak-rate-multiplier="selectedGroupOption.peakRateMultiplier"
+            />
+            <span v-else class="text-gray-400">{{ t('keys.selectGroup') }}</span>
+            <Icon name="chevronDown" size="md" class="shrink-0 text-gray-400" />
+          </button>
           <Select
+            v-else
+            id="key-form-group"
+            :aria-label="t('keys.groupLabel')"
             v-model="formData.group_id"
-            :options="groupOptions"
+            class="mt-1.5"
+            :options="formGroupOptions"
             :placeholder="t('keys.selectGroup')"
+            :empty-text="t('common.noGroupsAvailable')"
             :searchable="true"
             :search-placeholder="t('keys.searchGroup')"
             data-tour="key-form-group"
@@ -505,6 +623,22 @@
               />
             </template>
           </Select>
+          <div v-if="!showEditModal && recommendedFormGroupOptions.length" class="mt-2.5 space-y-1.5">
+            <div class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('keys.recommendedGroups') }}</div>
+            <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+              <button
+                v-for="option in recommendedFormGroupOptions"
+                :key="`quick-${option.value}`"
+                type="button"
+                class="inline-flex max-w-full items-center gap-1 text-left text-sm text-primary-600 underline decoration-primary-300 underline-offset-4 transition-colors hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
+                :title="option.recommendationReason || option.description || option.label"
+                @click="selectRecommendedGroup(option.value)"
+              >
+                <span class="truncate">{{ option.label }}</span>
+                <span class="shrink-0 text-xs no-underline">{{ formatRecommendationRating(option.recommendationRating) }}</span>
+              </button>
+            </div>
+          </div>
         </div>
 
         <!-- Custom Key Section (only for create) -->
@@ -952,8 +1086,154 @@
       </template>
     </BaseDialog>
 
+    <!-- Card-based group picker for new API keys -->
+    <BaseDialog
+      :show="showGroupPickerModal"
+      :title="t('keys.selectGroup')"
+      width="wide"
+      @close="closeGroupPicker"
+    >
+      <div class="group-picker-shell">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div class="relative min-w-0 flex-1">
+            <Icon name="search" size="sm" class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              v-model="groupCardSearch"
+              type="search"
+              class="input pl-9"
+              :placeholder="t('keys.searchGroup')"
+              :aria-label="t('keys.searchGroup')"
+            />
+          </div>
+          <button
+            type="button"
+            class="self-end text-sm font-medium text-primary-600 underline decoration-primary-300 underline-offset-4 transition-colors hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 sm:self-auto"
+            @click="useNativeGroupSelect"
+          >
+            {{ t('keys.useNativeGroupSelect') }}
+          </button>
+        </div>
+
+        <nav
+          v-if="groupCategoryTabs.length"
+          class="group-picker-tabs"
+          role="tablist"
+          :aria-label="t('keys.selectGroup')"
+        >
+          <button
+            v-for="tab in groupCategoryTabs"
+            :key="tab.id"
+            type="button"
+            role="tab"
+            class="group-picker-tab"
+            :class="{
+              'group-picker-tab-active': activeCategoryTab === tab.id,
+              'group-picker-tab-recommended': tab.recommended
+            }"
+            :aria-selected="activeCategoryTab === tab.id"
+            :title="tab.description || tab.name"
+            @click="activeCategoryTab = tab.id"
+          >
+            <Icon
+              v-if="tab.recommended"
+              name="trophy"
+              size="sm"
+              class="text-amber-500"
+            />
+            <span class="truncate">{{ tab.name }}</span>
+            <span class="text-[11px] font-normal text-gray-400 dark:text-gray-500">{{ tab.options.length }}</span>
+          </button>
+        </nav>
+
+        <div ref="groupPickerContentRef" class="group-picker-scroll">
+          <div v-if="activeCategoryBrandSections.length" class="space-y-5">
+            <section
+              v-for="section in activeCategoryBrandSections"
+              :key="section.platform"
+              class="space-y-2.5"
+            >
+              <div class="flex items-center gap-2 border-b border-gray-200 pb-2 dark:border-dark-700">
+                <PlatformIcon :platform="section.platform" size="sm" class="text-gray-500 dark:text-gray-300" />
+                <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-100">{{ section.label }}</h4>
+                <span class="text-xs text-gray-400 dark:text-gray-500">{{ section.options.length }}</span>
+              </div>
+              <div class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                <button
+                  v-for="option in section.options"
+                  :key="option.value"
+                  type="button"
+                  class="group-card"
+                  :data-group-id="option.value"
+                  :class="formData.group_id === option.value ? 'group-card-selected' : ''"
+                  @click="selectGroupFromCard(option.value)"
+                >
+                  <div class="flex min-w-0 w-full flex-col">
+                    <GroupOptionItem
+                      :name="option.label"
+                      :platform="option.platform"
+                      :subscription-type="option.subscriptionType"
+                      :rate-multiplier="option.rate"
+                      :user-rate-multiplier="option.userRate"
+                      :peak-rate-enabled="option.peakRateEnabled"
+                      :peak-start="option.peakStart"
+                      :peak-end="option.peakEnd"
+                      :peak-rate-multiplier="option.peakRateMultiplier"
+                      :description="option.description"
+                      :selected="formData.group_id === option.value"
+                      :show-rate-label="false"
+                      :reserve-description="true"
+                    />
+                    <div
+                      v-if="option.recommendationReason || option.recommendationRating != null"
+                      class="recommendation-note"
+                    >
+                      <div class="flex w-full items-center justify-between gap-3">
+                        <span class="recommendation-note-label">
+                          {{ t('keys.recommendationReason') }}
+                        </span>
+                        <span
+                          v-if="option.recommendationRating != null"
+                          class="recommendation-note-stars"
+                          :aria-label="t('keys.recommendationReason')"
+                        >
+                          <span
+                            v-for="index in 5"
+                            :key="index"
+                            class="recommendation-note-star"
+                          >{{ recommendationStarEmoji(option.recommendationRating, index) }}</span>
+                        </span>
+                      </div>
+                      <p
+                        v-if="option.recommendationReason"
+                        class="recommendation-note-text"
+                        :title="option.recommendationReason"
+                      >
+                        {{ option.recommendationReason }}
+                      </p>
+                    </div>
+                  </div>
+                </button>
+              </div>
+            </section>
+          </div>
+          <div v-else class="rounded-xl border border-dashed border-gray-300 px-4 py-8 text-center text-sm text-gray-500 dark:border-dark-600 dark:text-gray-400">
+            {{ t('keys.noGroupFound') }}
+          </div>
+        </div>
+      </div>
+    </BaseDialog>
+
+    <BulkEditKeysModal
+      :show="showBulkEditModal"
+      :selected-keys="selectedApiKeys"
+      :groups="groups"
+      @close="showBulkEditModal = false"
+      @updated="handleBulkUpdated"
+    />
+
     <!-- Delete Confirmation Dialog -->
     <ConfirmDialog
+      studio
       :show="showDeleteDialog"
       :title="t('keys.deleteKey')"
       :message="t('keys.deleteConfirmMessage', { name: selectedKey?.name })"
@@ -966,6 +1246,7 @@
 
     <!-- Reset Quota Confirmation Dialog -->
     <ConfirmDialog
+      studio
       :show="showResetQuotaDialog"
       :title="t('keys.resetQuotaTitle')"
       :message="t('keys.resetQuotaConfirmMessage', { name: selectedKey?.name, used: selectedKey?.quota_used?.toFixed(4) })"
@@ -978,6 +1259,7 @@
 
     <!-- Reset Rate Limit Confirmation Dialog -->
     <ConfirmDialog
+      studio
       :show="showResetRateLimitDialog"
       :title="t('keys.resetRateLimitTitle')"
       :message="t('keys.resetRateLimitConfirmMessage', { name: selectedKey?.name })"
@@ -994,6 +1276,7 @@
       :api-key="selectedKey?.key || ''"
       :base-url="publicSettings?.api_base_url || ''"
       :platform="selectedKey?.group?.platform || null"
+      :claude-code-only="selectedKey?.group?.claude_code_only || false"
       :allow-messages-dispatch="selectedKey?.group?.allow_messages_dispatch || false"
       @close="closeUseKeyModal"
     />
@@ -1045,91 +1328,22 @@
       </template>
     </BaseDialog>
 
-    <!-- Group Selector Dropdown (Teleported to body to avoid overflow clipping) -->
-    <Teleport to="body">
-      <div
-        v-if="groupSelectorKeyId !== null && dropdownPosition"
-        ref="dropdownRef"
-        class="animate-in fade-in slide-in-from-top-2 fixed z-[100000020] w-max max-w-[calc(100vw-16px)] overflow-hidden rounded-xl bg-white shadow-lg ring-1 ring-black/5 duration-200 sm:min-w-[380px] dark:bg-dark-800 dark:ring-white/10"
-        style="pointer-events: auto !important;"
-        :style="{
-          top: dropdownPosition.top !== undefined ? dropdownPosition.top + 'px' : undefined,
-          bottom: dropdownPosition.bottom !== undefined ? dropdownPosition.bottom + 'px' : undefined,
-          left: dropdownPosition.left + 'px'
-        }"
-      >
-        <!-- Search box -->
-        <div class="border-b border-gray-100 p-2 dark:border-dark-700">
-          <div class="relative">
-            <svg class="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-            <input
-              v-model="groupSearchQuery"
-              type="text"
-              class="w-full rounded-lg border border-gray-200 bg-gray-50 py-1.5 pl-8 pr-3 text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-primary-300 focus:ring-1 focus:ring-primary-300 dark:border-dark-600 dark:bg-dark-700 dark:text-white dark:placeholder-gray-500 dark:focus:border-primary-600 dark:focus:ring-primary-600"
-              :placeholder="t('keys.searchGroup')"
-              @click.stop
-            />
-          </div>
-        </div>
-        <!-- Group list -->
-        <div class="max-h-80 overflow-y-auto p-1.5">
-          <button
-            v-for="option in filteredGroupOptions"
-            :key="option.value ?? 'null'"
-            @click="changeGroup(selectedKeyForGroup!, option.value)"
-            :class="[
-              'flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm transition-colors',
-              'border-b border-gray-100 last:border-0 dark:border-dark-700',
-              selectedKeyForGroup?.group_id === option.value ||
-              (!selectedKeyForGroup?.group_id && option.value === null)
-                ? 'bg-primary-50 dark:bg-primary-900/20'
-                : 'hover:bg-gray-100 dark:hover:bg-dark-700'
-            ]"
-            :title="option.description || undefined"
-          >
-            <GroupOptionItem
-              :name="option.label"
-              :platform="option.platform"
-              :subscription-type="option.subscriptionType"
-              :rate-multiplier="option.rate"
-              :user-rate-multiplier="option.userRate"
-              :peak-rate-enabled="option.peakRateEnabled"
-              :peak-start="option.peakStart"
-              :peak-end="option.peakEnd"
-              :peak-rate-multiplier="option.peakRateMultiplier"
-              :description="option.description"
-              :selected="
-                selectedKeyForGroup?.group_id === option.value ||
-                (!selectedKeyForGroup?.group_id && option.value === null)
-              "
-            />
-          </button>
-          <!-- Empty state when search has no results -->
-          <div v-if="filteredGroupOptions.length === 0" class="py-4 text-center text-sm text-gray-400 dark:text-gray-500">
-            {{ t('keys.noGroupFound') }}
-          </div>
-        </div>
-      </div>
-    </Teleport>
-  </AppLayout>
+  </StudioLayout>
 </template>
 
 <script setup lang="ts">
-	import { ref, reactive, computed, onMounted, onUnmounted, type ComponentPublicInstance } from 'vue'
+	import { ref, reactive, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 	import { useI18n } from 'vue-i18n'
 	import { useAppStore } from '@/stores/app'
 	import { useOnboardingStore } from '@/stores/onboarding'
 	import { useClipboard } from '@/composables/useClipboard'
-import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 
 const { t } = useI18n()
 import { keysAPI, authAPI, usageAPI, userGroupsAPI } from '@/api'
-import AppLayout from '@/components/layout/AppLayout.vue'
-import TablePageLayout from '@/components/layout/TablePageLayout.vue'
-	import DataTable from '@/components/common/DataTable.vue'
-	import Pagination from '@/components/common/Pagination.vue'
+import type { GroupCategory, GroupRecommendation, GroupTag } from '@/api/groups'
+import StudioLayout from '@/components/user/dashboard/studio/DashboardStudioLayout.vue'
+import BulkEditKeysModal from '@/components/keys/BulkEditKeysModal.vue'
+import KeyCardGrid from '@/components/keys/KeyCardGrid.vue'
 	import BaseDialog from '@/components/common/BaseDialog.vue'
 	import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 	import EmptyState from '@/components/common/EmptyState.vue'
@@ -1137,15 +1351,19 @@ import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 	import SearchInput from '@/components/common/SearchInput.vue'
 	import Icon from '@/components/icons/Icon.vue'
 	import UseKeyModal from '@/components/keys/UseKeyModal.vue'
+	import KeyFormModal from '@/components/keys/KeyFormModal.vue'
 	import EndpointPopover from '@/components/keys/EndpointPopover.vue'
 	import GroupBadge from '@/components/common/GroupBadge.vue'
 	import GroupOptionItem from '@/components/common/GroupOptionItem.vue'
 	import type { ApiKey, Group, PublicSettings, SubscriptionType, GroupPlatform, UpdateApiKeyRequest } from '@/types'
+import { GROUP_PLATFORM_OPTIONS } from '@/constants/platforms'
 import type { Column } from '@/components/common/types'
 import type { BatchApiKeyUsageStats } from '@/api/usage'
 import { formatDateTime } from '@/utils/format'
 import { maskApiKey } from '@/utils/maskApiKey'
+import PlatformIcon from '@/components/common/PlatformIcon.vue'
 import {
+  CC_SWITCH_USAGE_SCRIPT,
   buildCcSwitchImportDeeplink,
   type CcSwitchClientType
 } from '@/utils/ccswitchImport'
@@ -1169,6 +1387,10 @@ interface GroupOption {
   peakRateMultiplier: number
   subscriptionType: SubscriptionType
   platform: GroupPlatform
+  requiredProtocol?: string
+  blockedClients?: string[]
+  recommendationReason?: string
+  recommendationRating?: number
 }
 
 const appStore = useAppStore()
@@ -1176,19 +1398,19 @@ const onboardingStore = useOnboardingStore()
 const { copyToClipboard: clipboardCopy } = useClipboard()
 
 const allColumns = computed<Column[]>(() => [
-  { key: 'name', label: t('common.name'), sortable: true },
-  { key: 'id', label: t('keys.id'), sortable: true },
-  { key: 'key', label: t('keys.apiKey'), sortable: false },
-  { key: 'group', label: t('keys.group'), sortable: false },
-  { key: 'current_concurrency', label: t('keys.currentConcurrency'), sortable: true },
-  { key: 'usage', label: t('keys.usage'), sortable: false },
-  { key: 'rate_limit', label: t('keys.rateLimitColumn'), sortable: false },
-  { key: 'expires_at', label: t('keys.expiresAt'), sortable: true },
-  { key: 'status', label: t('common.status'), sortable: true },
-  { key: 'last_used_at', label: t('keys.lastUsedAt'), sortable: true },
-  { key: 'last_used_ip', label: t('keys.lastUsedIP'), sortable: false },
-  { key: 'created_at', label: t('keys.created'), sortable: true },
-  { key: 'actions', label: t('common.actions'), sortable: false }
+  { key: 'name', label: t('common.name') },
+  { key: 'id', label: t('keys.id') },
+  { key: 'key', label: t('keys.apiKey') },
+  { key: 'group', label: t('keys.group') },
+  { key: 'current_concurrency', label: t('keys.currentConcurrency') },
+  { key: 'usage', label: t('keys.usage') },
+  { key: 'rate_limit', label: t('keys.rateLimitColumn') },
+  { key: 'expires_at', label: t('keys.expiresAt') },
+  { key: 'status', label: t('common.status') },
+  { key: 'last_used_at', label: t('keys.lastUsedAt') },
+  { key: 'last_used_ip', label: t('keys.lastUsedIP') },
+  { key: 'created_at', label: t('keys.created') },
+  { key: 'actions', label: t('common.actions') }
 ])
 
 const ALWAYS_VISIBLE_COLUMNS = new Set(['name', 'actions'])
@@ -1196,6 +1418,7 @@ const DEFAULT_HIDDEN_COLUMNS = ['id', 'rate_limit', 'last_used_at', 'last_used_i
 const HIDDEN_COLUMNS_KEY = 'api-key-hidden-columns'
 const COLUMN_SETTINGS_VERSION_KEY = 'api-key-column-settings-version'
 const COLUMN_SETTINGS_VERSION = 3
+const GROUP_PICKER_MODE_KEY = 'api-key-group-picker-mode'
 const VERSION_NEW_HIDDEN_COLUMNS: Record<number, string[]> = {
   2: ['last_used_ip'],
   3: ['id']
@@ -1206,6 +1429,17 @@ const toggleableColumns = computed(() =>
 )
 
 const hiddenColumns = reactive<Set<string>>(new Set())
+
+const getInitialGroupPickerMode = (): 'cards' | 'native' => {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage.getItem(GROUP_PICKER_MODE_KEY) === 'native') {
+      return 'native'
+    }
+  } catch (error) {
+    console.warn('Failed to load API key group picker preference:', error)
+  }
+  return 'cards'
+}
 
 const saveColumnsToStorage = () => {
   try {
@@ -1270,23 +1504,60 @@ const columns = computed<Column[]>(() =>
 )
 
 const apiKeys = ref<ApiKey[]>([])
+const selectedIds = ref<number[]>([])
+const showBulkEditModal = ref(false)
+const selectedApiKeys = computed(() => apiKeys.value.filter((key) => selectedIds.value.includes(key.id)))
+
+const handleSelectionChange = (ids: Array<string | number>) => {
+  const visibleIds = new Set(apiKeys.value.map((key) => key.id))
+  selectedIds.value = [...new Set(ids.map(Number))].filter((id) => visibleIds.has(id))
+}
+
+const handleBulkUpdated = (succeededIds: number[]) => {
+  const succeeded = new Set(succeededIds)
+  selectedIds.value = selectedIds.value.filter((id) => !succeeded.has(id))
+  loadApiKeys()
+}
+
 const groups = ref<Group[]>([])
 const loading = ref(false)
+const loadingMore = ref(false)
+const loadMoreError = ref(false)
+const loadMoreSentinel = ref<HTMLElement | null>(null)
+const hasMore = computed(() => pagination.value.page < pagination.value.pages)
+let loadMoreObserver: IntersectionObserver | null = null
+let usageController = new AbortController()
 const submitting = ref(false)
 const now = ref(new Date())
 let resetTimer: ReturnType<typeof setInterval> | null = null
 const usageStats = ref<Record<string, BatchApiKeyUsageStats>>({})
+const pendingUsageRequests = ref(0)
+const usageLoading = computed(() => pendingUsageRequests.value > 0)
 const userGroupRates = ref<Record<number, number>>({})
+const groupRecommendations = ref<GroupRecommendation[]>([])
+const groupCategories = ref<GroupCategory[]>([])
+const groupCategoryAssignments = ref<Record<string, string>>({})
+const groupCaps = ref<Record<string, number>>({})
+const groupTags = ref<Record<string, GroupTag[]>>({})
+// 展示用的上限倍率：真实数据优先；开发模式下无真实数据时给第一个分组挂 0.8x 测试数据
+const effectiveGroupCaps = computed<Record<string, number>>(() => {
+  if (Object.keys(groupCaps.value).length > 0) return groupCaps.value
+  if (import.meta.env.DEV) {
+    const first = groups.value[0]
+    if (first) return { [String(first.id)]: 0.8 }
+  }
+  return {}
+})
+const activeCategoryTab = ref('')
+const UNCATEGORIZED_TAB = '__uncategorized__'
+const RECOMMENDED_TAB = '__recommended__'
+const pendingScrollToSelected = ref(false)
 
 const pagination = ref({
   page: 1,
-  page_size: getPersistedPageSize(),
+  page_size: 20,
   total: 0,
   pages: 0
-})
-const sortState = ref({
-  sort_by: 'created_at',
-  sort_order: 'desc' as 'asc' | 'desc'
 })
 
 // Filter state
@@ -1302,30 +1573,28 @@ const showResetRateLimitDialog = ref(false)
 const showUseKeyModal = ref(false)
 const showCcsClientSelect = ref(false)
 const showColumnDropdown = ref(false)
+const showGroupPickerModal = ref(false)
+const groupPickerMode = ref<'cards' | 'native'>(getInitialGroupPickerMode())
+const groupCardSearch = ref('')
+const groupPickerContentRef = ref<HTMLElement | null>(null)
+const capFor = (groupId: number): number | null => {
+  const cap = groupCaps.value[String(groupId)]
+  if (typeof cap === 'number' && Number.isFinite(cap)) return cap
+  // 测试数据（仅开发模式）：无真实上限倍率时，给第一个分组临时显示 0.8x
+  if (import.meta.env.DEV) {
+    const firstId = groups.value[0]?.id
+    if (firstId != null && groupId === firstId) return 0.8
+  }
+  return null
+}
+
+const formatCapRate = (value: number): string => String(Math.round(value * 1000) / 1000)
 const pendingCcsRow = ref<ApiKey | null>(null)
 const selectedKey = ref<ApiKey | null>(null)
 const copiedKeyId = ref<number | null>(null)
-const groupSelectorKeyId = ref<number | null>(null)
 const publicSettings = ref<PublicSettings | null>(null)
-const dropdownRef = ref<HTMLElement | null>(null)
 const columnDropdownRef = ref<HTMLElement | null>(null)
-const dropdownPosition = ref<{ top?: number; bottom?: number; left: number } | null>(null)
-const groupButtonRefs = ref<Map<number, HTMLElement>>(new Map())
 let abortController: AbortController | null = null
-
-// Get the currently selected key for group change
-const selectedKeyForGroup = computed(() => {
-  if (groupSelectorKeyId.value === null) return null
-  return apiKeys.value.find((k) => k.id === groupSelectorKeyId.value) || null
-})
-
-const setGroupButtonRef = (keyId: number, el: Element | ComponentPublicInstance | null) => {
-  if (el instanceof HTMLElement) {
-    groupButtonRefs.value.set(keyId, el)
-  } else {
-    groupButtonRefs.value.delete(keyId)
-  }
-}
 
 const formData = ref({
   name: '',
@@ -1393,6 +1662,7 @@ const statusFilterOptions = computed(() => [
 ])
 
 const onFilterChange = () => {
+  selectedIds.value = []
   pagination.value.page = 1
   loadApiKeys()
 }
@@ -1408,6 +1678,10 @@ const onStatusFilterChange = (value: string | number | boolean | null) => {
 }
 
 // Convert groups to Select options format with rate multiplier and subscription type
+const protocolNames: Record<string, string> = { anthropic: 'Anthropic', openai: 'OpenAI', google: 'Google' }
+const blockedClientsFor = (group: Group): string[] =>
+  [...new Set((group.blocked_user_agents ?? '').split(',').map((client) => client.trim().toLowerCase()).filter(Boolean))]
+
 const groupOptions = computed(() =>
   groups.value.map((group) => ({
     value: group.id,
@@ -1420,21 +1694,219 @@ const groupOptions = computed(() =>
     peakEnd: group.peak_end,
     peakRateMultiplier: group.peak_rate_multiplier,
     subscriptionType: group.subscription_type,
-    platform: group.platform
+    platform: group.platform,
+    requiredProtocol: group.required_protocol,
+    blockedClients: blockedClientsFor(group)
   }))
 )
 
-// Group dropdown search
-const groupSearchQuery = ref('')
-const filteredGroupOptions = computed(() => {
-  const query = groupSearchQuery.value.trim().toLowerCase()
-  if (!query) return groupOptions.value
-  return groupOptions.value.filter((opt) => {
-    return opt.label.toLowerCase().includes(query) ||
-      (opt.description && opt.description.toLowerCase().includes(query))
-  })
+const formGroupOptions = groupOptions
+
+const recommendedGroupOptions = computed<GroupOption[]>(() => {
+  const optionsByID = new Map(groupOptions.value.map((option) => [option.value, option]))
+  const options: GroupOption[] = []
+  for (const recommendation of groupRecommendations.value) {
+    const option = optionsByID.get(recommendation.group_id)
+    if (option) {
+      options.push({
+        ...option,
+        recommendationReason: recommendation.reason,
+        recommendationRating: recommendation.rating
+      })
+    }
+  }
+  return options
 })
 
+const recommendedFormGroupOptions = computed(() => {
+  const allowedIDs = new Set(formGroupOptions.value.map((option) => option.value))
+  return recommendedGroupOptions.value.filter((option) => allowedIDs.has(option.value))
+})
+
+const formatGroupRate = (option: GroupOption) => option.userRate ?? option.rate
+
+const formatRecommendationRating = (rating?: number) => {
+  if (rating === undefined || rating === null || Number.isNaN(Number(rating))) return ''
+  const value = Number(rating)
+  return `${Number.isInteger(value) ? value : value.toFixed(1)}⭐`
+}
+
+const recommendationStarEmoji = (rating: number | undefined, index: number) => {
+  const value = Number(rating)
+  if (Number.isNaN(value) || value < index - 0.5) return '☆'
+  return '⭐'
+}
+
+const selectedGroupOption = computed(() =>
+  groupOptions.value.find((option) => option.value === formData.value.group_id) ?? null
+)
+
+const sortGroupOptions = (options: GroupOption[]) =>
+  [...options].sort((a, b) => {
+    const rateA = a.userRate ?? a.rate
+    const rateB = b.userRate ?? b.rate
+    return rateA - rateB || a.label.localeCompare(b.label)
+  })
+
+const groupCategoryTabs = computed(() => {
+  const query = groupCardSearch.value.trim().toLowerCase()
+  const filtered = formGroupOptions.value.filter((option) => {
+    if (!query) return true
+    return option.label.toLowerCase().includes(query) ||
+      Boolean(option.description && option.description.toLowerCase().includes(query))
+  })
+
+  const categoryById = new Map(groupCategories.value.map((category) => [category.id, category]))
+  const groupsByCategory = new Map<string, GroupOption[]>()
+  const uncategorized: GroupOption[] = []
+
+  for (const option of filtered) {
+    const categoryId = groupCategoryAssignments.value[String(option.value)]
+    if (categoryId && categoryById.has(categoryId)) {
+      const list = groupsByCategory.get(categoryId) ?? []
+      list.push(option)
+      groupsByCategory.set(categoryId, list)
+    } else {
+      uncategorized.push(option)
+    }
+  }
+
+  const toTab = (category: GroupCategory) => ({
+    id: category.id,
+    name: category.name,
+    description: category.description || '',
+    recommended: false,
+    options: sortGroupOptions(groupsByCategory.get(category.id) ?? [])
+  })
+
+  const tabs: Array<{
+    id: string
+    name: string
+    description: string
+    recommended: boolean
+    options: GroupOption[]
+  }> = []
+
+  if (recommendedFormGroupOptions.value.length) {
+    tabs.push({
+      id: RECOMMENDED_TAB,
+      name: t('keys.recommendedGroups'),
+      description: '',
+      recommended: true,
+      options: sortGroupOptions(recommendedFormGroupOptions.value.filter((option) => {
+        if (!query) return true
+        return option.label.toLowerCase().includes(query) ||
+          Boolean(option.description && option.description.toLowerCase().includes(query)) ||
+          Boolean(option.recommendationReason && option.recommendationReason.toLowerCase().includes(query))
+      }))
+    })
+  }
+
+  if (!groupCategories.value.length && !tabs.length) {
+    return [{
+      id: 'all',
+      name: t('keys.allGroups'),
+      description: '',
+      recommended: false,
+      options: sortGroupOptions(filtered)
+    }]
+  }
+
+  tabs.push(
+    ...[...groupCategories.value]
+      .sort((a, b) => (b.sort_order ?? 0) - (a.sort_order ?? 0))
+      .map(toTab)
+  )
+
+  if (uncategorized.length) {
+    tabs.push({
+      id: UNCATEGORIZED_TAB,
+      name: t('keys.uncategorizedGroups'),
+      description: '',
+      recommended: false,
+      options: sortGroupOptions(uncategorized)
+    })
+  }
+
+  return tabs
+})
+
+const defaultCategoryTabId = computed(() => {
+  const groupId = formData.value.group_id
+  if (groupId != null) {
+    const categoryId = groupCategoryAssignments.value[String(groupId)]
+    if (categoryId && groupCategoryTabs.value.some((tab) => tab.id === categoryId)) {
+      return categoryId
+    }
+    const otherTab = groupCategoryTabs.value.find((tab) => tab.id === UNCATEGORIZED_TAB)
+    if (otherTab?.options.some((option) => option.value === groupId)) {
+      return UNCATEGORIZED_TAB
+    }
+    const recommendedTab = groupCategoryTabs.value.find((tab) => tab.recommended)
+    if (recommendedTab?.options.some((option) => option.value === groupId)) {
+      return recommendedTab.id
+    }
+  }
+  const recommended = groupCategoryTabs.value.find((tab) => tab.recommended)
+  return recommended?.id || groupCategoryTabs.value[0]?.id || ''
+})
+
+const activeCategoryGroups = computed(() => {
+  const current = groupCategoryTabs.value.find((tab) => tab.id === activeCategoryTab.value)
+  return current?.options ?? []
+})
+
+const activeCategoryBrandSections = computed(() => {
+  const groupsByPlatform = new Map<GroupPlatform, GroupOption[]>()
+  for (const option of activeCategoryGroups.value) {
+    const list = groupsByPlatform.get(option.platform) ?? []
+    list.push(option)
+    groupsByPlatform.set(option.platform, list)
+  }
+  return GROUP_PLATFORM_OPTIONS
+    .filter((platform) => groupsByPlatform.has(platform.value))
+    .map((platform) => ({
+      platform: platform.value,
+      label: platform.label,
+      options: sortGroupOptions(groupsByPlatform.get(platform.value) ?? [])
+    }))
+})
+
+watch(
+  [groupCategoryTabs, () => showGroupPickerModal.value],
+  () => {
+    if (!showGroupPickerModal.value) return
+    if (!groupCategoryTabs.value.some((tab) => tab.id === activeCategoryTab.value)) {
+      activeCategoryTab.value = defaultCategoryTabId.value
+    }
+  }
+)
+
+const scrollSelectedGroupIntoView = () => {
+  const groupId = formData.value.group_id
+  const container = groupPickerContentRef.value
+  if (groupId == null || !container) return false
+  const el = container.querySelector<HTMLElement>(`[data-group-id="${groupId}"]`)
+  if (!el) return false
+  const containerRect = container.getBoundingClientRect()
+  const elRect = el.getBoundingClientRect()
+  const nextTop = container.scrollTop + (elRect.top - containerRect.top) - (container.clientHeight - elRect.height) / 2
+  container.scrollTo({ top: Math.max(0, nextTop), behavior: 'smooth' })
+  return true
+}
+
+watch(
+  [() => showGroupPickerModal.value, activeCategoryBrandSections],
+  async ([show]) => {
+    if (!show || !pendingScrollToSelected.value) return
+    await nextTick()
+    requestAnimationFrame(() => {
+      if (scrollSelectedGroupIntoView()) {
+        pendingScrollToSelected.value = false
+      }
+    })
+  }
+)
 const copyToClipboard = async (text: string, keyId: number) => {
   const success = await clipboardCopy(text, t('keys.copied'))
   if (success) {
@@ -1451,12 +1923,27 @@ const isAbortError = (error: unknown) => {
   return name === 'AbortError' || code === 'ERR_CANCELED'
 }
 
-const loadApiKeys = async () => {
+const loadApiKeys = () => loadKeyPage(false)
+const loadMore = () => {
+  if (loading.value || loadingMore.value || !hasMore.value) return
+  return loadKeyPage(true)
+}
+
+const loadKeyPage = async (append: boolean) => {
   abortController?.abort()
   const controller = new AbortController()
   abortController = controller
   const { signal } = controller
-  loading.value = true
+  loadMoreError.value = false
+  const page = append ? pagination.value.page + 1 : 1
+  loading.value = !append
+  loadingMore.value = append
+  if (!append) {
+    usageController.abort()
+    usageController = new AbortController()
+    usageStats.value = {}
+    pendingUsageRequests.value = 0
+  }
   try {
     // Build filters
     const filters: {
@@ -1469,38 +1956,195 @@ const loadApiKeys = async () => {
     if (filterSearch.value) filters.search = filterSearch.value
     if (filterStatus.value) filters.status = filterStatus.value
     if (filterGroupId.value !== '') filters.group_id = filterGroupId.value
-    filters.sort_by = sortState.value.sort_by
-    filters.sort_order = sortState.value.sort_order
+    filters.sort_by = 'created_at'
+    filters.sort_order = 'desc'
 
-    const response = await keysAPI.list(pagination.value.page, pagination.value.page_size, filters, {
+    const response = await keysAPI.list(page, pagination.value.page_size, filters, {
       signal
     })
     if (signal.aborted) return
-    apiKeys.value = response.items
+    apiKeys.value = append
+      ? [...new Map([...apiKeys.value, ...response.items].map(key => [key.id, key])).values()]
+      : response.items
+    pagination.value.page = page
+    handleSelectionChange(selectedIds.value)
     pagination.value.total = response.total
-    pagination.value.pages = response.pages
+    pagination.value.pages = response.items.length ? response.pages : page
 
-    // Load usage stats for all API keys in the list
+    // 用量统计要聚合 30 天的 usage_logs，可能比列表慢很多：不阻塞表格渲染，单独加载
     if (response.items.length > 0) {
-      const keyIds = response.items.map((k) => k.id)
-      try {
-        const usageResponse = await usageAPI.getDashboardApiKeysUsage(keyIds, { signal })
-        if (signal.aborted) return
-        usageStats.value = usageResponse.stats
-      } catch (e) {
-        if (!isAbortError(e)) {
-          console.error('Failed to load usage stats:', e)
-        }
-      }
+      void loadUsageStats(response.items.map((k) => k.id), usageController.signal)
     }
   } catch (error) {
     if (isAbortError(error)) {
       return
     }
+    loadMoreError.value = append
     appStore.showError(t('keys.failedToLoad'))
   } finally {
     if (abortController === controller) {
       loading.value = false
+      loadingMore.value = false
+    }
+  }
+}
+
+watch([loadMoreSentinel, loading, loadingMore, hasMore, loadMoreError], () => {
+  loadMoreObserver?.disconnect()
+  if (loadMoreSentinel.value && !loading.value && !loadingMore.value && hasMore.value && !loadMoreError.value) {
+    loadMoreObserver?.observe(loadMoreSentinel.value)
+  }
+}, { flush: 'post' })
+
+// Development-only fixtures keep the card layout inspectable when the local API is unavailable.
+const devGroupFixtures = [
+  {
+    id: 901,
+    name: 'GPT 标准池',
+    description: 'OpenAI 通用模型，适合日常对话与代码任务',
+    platform: 'openai',
+    rate_multiplier: 0.06,
+    subscription_type: 'standard',
+    peak_rate_enabled: false,
+    peak_start: '',
+    peak_end: '',
+    peak_rate_multiplier: 0.06
+  },
+  {
+    id: 902,
+    name: 'GPT 高速池',
+    description: 'OpenAI 高速线路，优先保障响应速度',
+    platform: 'openai',
+    rate_multiplier: 0.08,
+    subscription_type: 'standard',
+    peak_rate_enabled: true,
+    peak_start: '18:00',
+    peak_end: '23:00',
+    peak_rate_multiplier: 0.1
+  },
+  {
+    id: 903,
+    name: 'GPT 专属池',
+    description: '面向长任务的稳定线路',
+    platform: 'openai',
+    rate_multiplier: 0.16,
+    subscription_type: 'subscription',
+    peak_rate_enabled: false,
+    peak_start: '',
+    peak_end: '',
+    peak_rate_multiplier: 0.16
+  },
+  {
+    id: 904,
+    name: 'Claude 轻量池',
+    description: 'Anthropic 轻量模型线路',
+    platform: 'anthropic',
+    rate_multiplier: 0.12,
+    subscription_type: 'standard',
+    peak_rate_enabled: false,
+    peak_start: '',
+    peak_end: '',
+    peak_rate_multiplier: 0.12
+  },
+  {
+    id: 905,
+    name: 'Claude 深度池',
+    description: '适合复杂分析和长文本处理',
+    platform: 'anthropic',
+    rate_multiplier: 0.35,
+    subscription_type: 'subscription',
+    peak_rate_enabled: false,
+    peak_start: '',
+    peak_end: '',
+    peak_rate_multiplier: 0.35
+  },
+  {
+    id: 906,
+    name: 'Gemini 多模态池',
+    description: '支持文本、图片等多模态请求',
+    platform: 'gemini',
+    rate_multiplier: 0.08,
+    subscription_type: 'standard',
+    peak_rate_enabled: false,
+    peak_start: '',
+    peak_end: '',
+    peak_rate_multiplier: 0.08
+  },
+  {
+    id: 907,
+    name: 'DeepSeek 低价池',
+    description: 'DeepSeek 高性价比线路',
+    platform: 'deepseek',
+    rate_multiplier: 0.03,
+    subscription_type: 'standard',
+    peak_rate_enabled: false,
+    peak_start: '',
+    peak_end: '',
+    peak_rate_multiplier: 0.03
+  },
+  {
+    id: 908,
+    name: 'Grok 实时池',
+    description: '适合需要实时信息的请求',
+    platform: 'grok',
+    rate_multiplier: 0.11,
+    subscription_type: 'standard',
+    peak_rate_enabled: false,
+    peak_start: '',
+    peak_end: '',
+    peak_rate_multiplier: 0.11
+  },
+  {
+    id: 909,
+    name: 'Kimi 长文本池',
+    description: '长上下文任务专用线路',
+    platform: 'kimi',
+    rate_multiplier: 0.09,
+    subscription_type: 'subscription',
+    peak_rate_enabled: false,
+    peak_start: '',
+    peak_end: '',
+    peak_rate_multiplier: 0.09
+  }
+] as unknown as Group[]
+
+const devGroupRecommendationFixtures: GroupRecommendation[] = [
+  {
+    group_id: 901,
+    name: 'GPT 标准池',
+    rate_multiplier: 0.06,
+    reason: '日常使用稳定，适合大多数请求',
+    rating: 4.5
+  },
+  {
+    group_id: 904,
+    name: 'Claude 轻量池',
+    rate_multiplier: 0.12,
+    reason: '响应速度快，适合日常对话',
+    rating: 4
+  },
+  {
+    group_id: 907,
+    name: 'DeepSeek 低价池',
+    rate_multiplier: 0.03,
+    reason: '代码任务性价比高',
+    rating: 4.5
+  }
+]
+
+const loadUsageStats = async (keyIds: number[], signal: AbortSignal) => {
+  pendingUsageRequests.value++
+  try {
+    const usageResponse = await usageAPI.getDashboardApiKeysUsage(keyIds, { signal })
+    if (signal.aborted) return
+    usageStats.value = { ...usageStats.value, ...usageResponse.stats }
+  } catch (e) {
+    if (!isAbortError(e)) {
+      console.error('Failed to load usage stats:', e)
+    }
+  } finally {
+    if (!signal.aborted) {
+      pendingUsageRequests.value--
     }
   }
 }
@@ -1510,6 +2154,43 @@ const loadGroups = async () => {
     groups.value = await userGroupsAPI.getAvailable()
   } catch (error) {
     console.error('Failed to load groups:', error)
+    if (import.meta.env.DEV && import.meta.env.VITE_ENABLE_ADMIN_MOCK === 'true') {
+      groups.value = devGroupFixtures
+    }
+  }
+}
+
+const loadGroupCategories = async () => {
+  try {
+    const snap = await userGroupsAPI.getCategories()
+    groupCategories.value = snap.categories
+    groupCategoryAssignments.value = snap.assignments
+    groupCaps.value = snap.group_caps ?? {}
+    groupTags.value = snap.group_tags ?? {}
+  } catch (error) {
+    console.error('Failed to load group categories:', error)
+    groupCategories.value = []
+    groupCategoryAssignments.value = {}
+    groupCaps.value = {}
+    groupTags.value = {}
+  }
+}
+
+const loadGroupRecommendations = async () => {
+  try {
+    const recommendations = await userGroupsAPI.getRecommendations()
+    if (recommendations.length > 0) {
+      groupRecommendations.value = recommendations
+    } else if (import.meta.env.DEV && import.meta.env.VITE_ENABLE_ADMIN_MOCK === 'true') {
+      groupRecommendations.value = devGroupRecommendationFixtures
+    } else {
+      groupRecommendations.value = []
+    }
+  } catch (error) {
+    console.error('Failed to load group recommendations:', error)
+    groupRecommendations.value = import.meta.env.DEV && import.meta.env.VITE_ENABLE_ADMIN_MOCK === 'true'
+      ? devGroupRecommendationFixtures
+      : []
   }
 }
 
@@ -1539,24 +2220,6 @@ const closeUseKeyModal = () => {
   selectedKey.value = null
 }
 
-const handlePageChange = (page: number) => {
-  pagination.value.page = page
-  loadApiKeys()
-}
-
-const handlePageSizeChange = (pageSize: number) => {
-  pagination.value.page_size = pageSize
-  pagination.value.page = 1
-  loadApiKeys()
-}
-
-const handleSort = (key: string, order: 'asc' | 'desc') => {
-  sortState.value.sort_by = key
-  sortState.value.sort_order = order
-  pagination.value.page = 1
-  loadApiKeys()
-}
-
 const editKey = (key: ApiKey) => {
   selectedKey.value = key
   const hasIPRestriction = (key.ip_whitelist?.length > 0) || (key.ip_blacklist?.length > 0)
@@ -1583,6 +2246,57 @@ const editKey = (key: ApiKey) => {
   showEditModal.value = true
 }
 
+const openCreateModal = () => {
+  groupCardSearch.value = ''
+  showCreateModal.value = true
+}
+
+const openGroupPicker = () => {
+  groupCardSearch.value = ''
+  activeCategoryTab.value = defaultCategoryTabId.value
+  pendingScrollToSelected.value = formData.value.group_id != null
+  showGroupPickerModal.value = true
+}
+
+const closeGroupPicker = () => {
+  showGroupPickerModal.value = false
+  groupCardSearch.value = ''
+  pendingScrollToSelected.value = false
+}
+
+const useNativeGroupSelect = () => {
+  groupPickerMode.value = 'native'
+  try {
+    window.localStorage.setItem(GROUP_PICKER_MODE_KEY, 'native')
+  } catch (error) {
+    console.warn('Failed to save API key group picker preference:', error)
+  }
+  closeGroupPicker()
+}
+
+const useCardGroupSelect = () => {
+  groupPickerMode.value = 'cards'
+  try {
+    window.localStorage.setItem(GROUP_PICKER_MODE_KEY, 'cards')
+  } catch (error) {
+    console.warn('Failed to save API key group picker preference:', error)
+  }
+}
+
+const selectGroupFromCard = (groupId: number) => {
+  formData.value.group_id = groupId
+  closeGroupPicker()
+}
+
+const selectRecommendedGroup = (groupId: number) => {
+  formData.value.group_id = groupId
+}
+
+const createKeyFromRecommendation = (groupId: number) => {
+  formData.value.group_id = groupId
+  openCreateModal()
+}
+
 const toggleKeyStatus = async (key: ApiKey) => {
   const newStatus = key.status === 'active' ? 'inactive' : 'active'
   try {
@@ -1597,60 +2311,12 @@ const toggleKeyStatus = async (key: ApiKey) => {
 }
 
 const openGroupSelector = (key: ApiKey) => {
-  if (groupSelectorKeyId.value === key.id) {
-    groupSelectorKeyId.value = null
-    dropdownPosition.value = null
-  } else {
-    const buttonEl = groupButtonRefs.value.get(key.id)
-    if (buttonEl) {
-      const rect = buttonEl.getBoundingClientRect()
-      const dropdownEstHeight = 400 // estimated max dropdown height
-      const dropdownEstWidth = Math.min(380, window.innerWidth - 16)
-      const spaceBelow = window.innerHeight - rect.bottom
-      const spaceAbove = rect.top
-      // 夹取 left，避免窄屏下浮层超出视口右缘
-      const left = Math.max(8, Math.min(rect.left, window.innerWidth - dropdownEstWidth - 8))
-
-      if (spaceBelow < dropdownEstHeight && spaceAbove > spaceBelow) {
-        // Not enough space below, pop upward
-        dropdownPosition.value = {
-          bottom: window.innerHeight - rect.top + 4,
-          left
-        }
-      } else {
-        // Default: pop downward
-        dropdownPosition.value = {
-          top: rect.bottom + 4,
-          left
-        }
-      }
-    }
-    groupSelectorKeyId.value = key.id
-    groupSearchQuery.value = ''
-  }
-}
-
-const changeGroup = async (key: ApiKey, newGroupId: number | null) => {
-  groupSelectorKeyId.value = null
-  dropdownPosition.value = null
-  if (key.group_id === newGroupId) return
-
-  try {
-    await keysAPI.update(key.id, { group_id: newGroupId })
-    appStore.showSuccess(t('keys.groupChangedSuccess'))
-    loadApiKeys()
-  } catch (error) {
-    appStore.showError(t('keys.failedToChangeGroup'))
-  }
+  // 与点击编辑一致：打开该密钥的编辑界面（分组已选中，保存即更新分组）
+  editKey(key)
 }
 
 const closeGroupSelector = (event: MouseEvent) => {
   const target = event.target as HTMLElement
-  // Check if click is inside the dropdown or the trigger button
-  if (!target.closest('.group\\/dropdown') && !dropdownRef.value?.contains(target)) {
-    groupSelectorKeyId.value = null
-    dropdownPosition.value = null
-  }
   if (columnDropdownRef.value && !columnDropdownRef.value.contains(target)) {
     showColumnDropdown.value = false
   }
@@ -1786,6 +2452,7 @@ const handleDelete = async () => {
 const closeModals = () => {
   showCreateModal.value = false
   showEditModal.value = false
+  closeGroupPicker()
   selectedKey.value = null
   formData.value = {
     name: '',
@@ -1823,14 +2490,18 @@ const setExpirationDays = (days: number) => {
 
 // Reset quota used for an API key
 const resetQuotaUsed = async () => {
-  if (!selectedKey.value) return
+  const key = selectedKey.value
+  if (!key) return
   showResetQuotaDialog.value = false
   try {
-    await keysAPI.update(selectedKey.value.id, { reset_quota: true })
+    const updatedKey = await keysAPI.update(key.id, { reset_quota: true })
     appStore.showSuccess(t('keys.quotaResetSuccess'))
-    // Update local state
-    if (selectedKey.value) {
-      selectedKey.value.quota_used = 0
+    key.quota_used = updatedKey.quota_used
+    if (key.status !== updatedKey.status) {
+      key.status = updatedKey.status
+      if (selectedKey.value?.id === key.id) {
+        formData.value.status = updatedKey.status === 'active' ? 'active' : 'inactive'
+      }
     }
   } catch (error: any) {
     const errorMsg = error.response?.data?.detail || t('keys.failedToResetQuota')
@@ -1887,22 +2558,7 @@ const executeCcsImport = (row: ApiKey, clientType: CcSwitchClientType) => {
   const baseUrl = publicSettings.value?.api_base_url || window.location.origin
   const platform = row.group?.platform || 'anthropic'
 
-  const usageScript = `({
-    request: {
-      url: "{{baseUrl}}/v1/usage",
-      method: "GET",
-      headers: { "Authorization": "Bearer {{apiKey}}" }
-    },
-    extractor: function(response) {
-      const remaining = response?.remaining ?? response?.quota?.remaining ?? response?.balance;
-      const unit = response?.unit ?? response?.quota?.unit ?? "USD";
-      return {
-        isValid: response?.is_active ?? response?.isValid ?? true,
-        remaining,
-        unit
-      };
-    }
-  })`
+  const usageScript = CC_SWITCH_USAGE_SCRIPT
   const providerName = (publicSettings.value?.site_name || 'sub2api').trim() || 'sub2api'
   const deeplink = buildCcSwitchImportDeeplink({
     baseUrl,
@@ -1954,9 +2610,16 @@ function formatResetTime(resetAt: string | null): string {
 }
 
 onMounted(() => {
+  if (typeof IntersectionObserver !== 'undefined') {
+    loadMoreObserver = new IntersectionObserver(entries => {
+      if (!loadMoreError.value && entries.some(entry => entry.isIntersecting)) void loadMore()
+    }, { rootMargin: '320px' })
+  }
   loadSavedColumns()
   loadApiKeys()
   loadGroups()
+  loadGroupRecommendations()
+  loadGroupCategories()
   loadUserGroupRates()
   loadPublicSettings()
   document.addEventListener('click', closeGroupSelector)
@@ -1964,7 +2627,176 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  abortController?.abort()
+  usageController.abort()
+  loadMoreObserver?.disconnect()
   document.removeEventListener('click', closeGroupSelector)
   if (resetTimer) clearInterval(resetTimer)
 })
 </script>
+
+<style scoped src="../../components/user/dashboard/studio/studioFilters.css"></style>
+
+<style scoped>
+
+.keys-studio{--keys-card-surface:var(--tf-console-surface)}
+.dark .keys-studio{--keys-card-surface:var(--studio-menu-surface)}
+.keys-studio :deep(.studio-navigation){flex-wrap:wrap}
+.keys-header-controls{flex:1;min-width:0;flex-wrap:wrap;justify-content:flex-end;gap:12px}
+.keys-header-search{width:190px}.keys-header-search :deep(.input){padding-left:36px}.keys-header-select{width:126px}
+.keys-header-controls :deep(.input::placeholder){color:var(--studio-muted)}
+.keys-page{display:flex;flex-direction:column;gap:24px;min-width:0}
+.keys-summary-actions{display:flex;align-items:center;flex-shrink:0;gap:12px;margin-left:auto}.keys-bulk-actions{flex-shrink:0;gap:8px;font-size:12px}.keys-bulk-actions .studio-action:disabled{opacity:.4;cursor:default}
+.keys-endpoint-row{display:flex;align-items:center;justify-content:space-between;gap:16px;min-width:0}
+.keys-endpoints :deep(.pointer-events-none){max-width:min(24rem,calc(100vw - 80px))}
+.keys-total{flex-shrink:0;font-size:12px;color:var(--studio-muted);white-space:nowrap;font-variant-numeric:tabular-nums}
+.keys-load-more{display:flex;justify-content:center;align-items:center;min-height:32px;color:var(--studio-muted);font-size:12px}.studio-retry{color:var(--tf-console-active-ink);text-decoration:underline;text-underline-offset:3px}
+@media(max-width:1400px){.keys-header-controls{flex-basis:100%}}
+@media(max-width:640px){.keys-header-controls{gap:8px;justify-content:flex-end}.keys-header-search{width:100%}.keys-header-select{flex:1;min-width:120px;width:auto}.keys-endpoint-row{align-items:flex-start;flex-wrap:wrap}.keys-summary-actions{width:auto;justify-content:flex-end}.keys-bulk-actions{width:auto;justify-content:flex-start}.keys-page{gap:18px}}
+
+.group-picker-trigger {
+  @apply flex w-full cursor-pointer items-center justify-between gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-left text-sm text-gray-900 transition-all duration-200 hover:border-gray-300 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30 dark:border-dark-600 dark:bg-dark-800 dark:text-gray-100 dark:hover:border-dark-500;
+}
+
+.keys-recommendations { display: flex; flex-direction: column; gap: 18px; }
+
+.recommended-groups-heading {
+  color: var(--studio-ink);
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -.3px;
+}
+
+@media(max-width:700px){.recommended-groups-heading{font-size:16px}}
+
+.key-group{min-width:0}
+.key-group-trigger{display:flex;align-items:center;gap:6px;width:100%;height:44px;min-width:0;padding:2px 8px;border-radius:8px;background:var(--studio-haze);text-align:left}
+.key-group-trigger:hover{background:var(--tf-console-hover)}
+.key-group-trigger:focus-visible{outline:2px solid var(--tf-console-active-ink);outline-offset:3px}
+.key-card-name{display:flex;align-items:center;gap:8px;min-width:0}
+.key-card-name>span{min-width:0}
+.key-group-badge{display:grid;grid-template-columns:14px minmax(0,1fr) auto;align-items:center;flex:1;min-width:0;max-width:100%;column-gap:6px;row-gap:2px;padding:0;background:transparent}
+.key-group-badge :deep(>svg){grid-column:1;grid-row:1}
+.key-group-badge :deep(.group-badge-name){grid-column:2;grid-row:1;min-width:0}
+.key-group-badge :deep(.group-badge-rate){grid-column:3;grid-row:1;white-space:nowrap}
+.key-group-badge :deep(.group-badge-peak){grid-column:2 / -1;justify-self:start;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.key-group-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px}
+.key-group-tags:empty{display:none}
+.key-group-tags>span{max-width:100%;white-space:normal;overflow-wrap:anywhere}
+.key-group-custom-tag,.key-group-protocol-tag,.key-group-client-tag{display:inline-flex;align-items:center;padding:2px 7px;border-radius:6px;font-size:10px;font-weight:500;cursor:help}
+.key-group-custom-tag{background:var(--studio-haze);color:var(--studio-muted)}
+.key-group-protocol-tag{@apply bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300}
+.key-group-client-tag{@apply bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300}
+.key-group-empty{flex:1;min-width:0;color:var(--studio-muted);font-size:12px}
+.recommended-group-name{display:flex;align-items:center;gap:6px;min-width:0}
+
+.keys-group-cap-tag {
+  @apply inline-flex flex-none items-center whitespace-nowrap rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-300;
+}
+
+.keys-pricing-link {
+  @apply inline-flex flex-none items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-gray-400 transition-colors hover:text-primary-600 dark:text-dark-400 dark:hover:text-primary-400;
+}
+
+.recommended-group-mini-list {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
+  gap: 12px;
+}
+
+.recommended-group-mini-card {
+  @apply grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 text-left text-sm transition-colors;
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--studio-haze);
+}
+
+.recommended-group-mini-card:hover {
+  background: var(--tf-console-hover);
+}
+
+.recommended-group-mini-card:focus-visible {
+  outline: 2px solid #8297f5;
+  outline-offset: 2px;
+}
+
+.group-picker-shell {
+  display: flex;
+  height: min(76vh, 720px, calc(90vh - 7rem));
+  min-height: min(400px, calc(90vh - 7rem));
+  min-width: 0;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.group-picker-tabs {
+  display: flex;
+  min-width: 0;
+  flex-shrink: 0;
+  gap: 0.25rem;
+  overflow-x: auto;
+  border-bottom: 1px solid rgb(229 231 235);
+  scrollbar-width: thin;
+}
+
+.dark .group-picker-tabs {
+  border-bottom-color: rgb(55 65 81);
+}
+
+.group-picker-tab {
+  @apply inline-flex shrink-0 items-center gap-1.5 border-b-2 border-transparent bg-transparent px-3 py-2 text-sm font-medium text-gray-500 shadow-none transition-colors hover:bg-transparent hover:text-gray-800 dark:bg-transparent dark:text-gray-400 dark:hover:bg-transparent dark:hover:text-gray-200;
+}
+
+.group-picker-tab-active {
+  @apply border-primary-500 text-primary-700 dark:border-primary-400 dark:text-primary-300;
+}
+
+.group-picker-tab-recommended {
+  @apply text-amber-700 dark:text-amber-300;
+}
+
+.group-picker-tab-recommended.group-picker-tab-active {
+  @apply border-amber-500 dark:border-amber-400;
+}
+
+.group-picker-scroll {
+  min-height: 0;
+  flex: 1 1 0%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-top: 0.5rem;
+  padding-right: 0.85rem;
+  padding-bottom: 0.5rem;
+  scrollbar-gutter: stable;
+  scroll-behavior: smooth;
+}
+
+.group-card {
+  @apply relative z-0 flex min-h-[92px] w-full items-start rounded-xl border border-gray-200 bg-white p-3 text-left transition-all hover:z-10 hover:-translate-y-0.5 hover:border-primary-400 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 dark:border-dark-600 dark:bg-dark-800 dark:hover:border-primary-500;
+}
+
+.recommendation-note {
+  @apply mt-2.5 w-full rounded-lg bg-primary-50/80 px-2.5 py-2 text-left dark:bg-primary-900/20;
+}
+
+.recommendation-note-label {
+  @apply text-[11px] font-semibold tracking-wide text-amber-800 dark:text-amber-200;
+}
+
+.recommendation-note-stars {
+  @apply flex shrink-0 items-center gap-px;
+}
+
+.recommendation-note-star {
+  @apply text-[13px] leading-none;
+}
+
+.recommendation-note-text {
+  @apply mt-1.5 w-full overflow-hidden text-left text-xs leading-relaxed text-amber-900/80 dark:text-amber-100/80 line-clamp-1;
+}
+
+.group-card-selected {
+  @apply border-primary-500 bg-primary-50/70 ring-2 ring-primary-500/20 dark:border-primary-400 dark:bg-primary-900/20;
+}
+</style>

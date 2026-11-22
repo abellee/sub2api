@@ -16,11 +16,11 @@ func TestListPublicModelPlazaGroupsFiltersAndSanitizes(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	adminSvc := newStubAdminService()
 	adminSvc.groups = []service.Group{
-		{ID: 1, Name: "Public", Platform: service.PlatformOpenAI, RateMultiplier: 0.2, Status: service.StatusActive, ModelsListConfig: service.GroupModelsListConfig{Enabled: true, Models: []string{"gpt-5"}}},
-		{ID: 2, Name: "Exclusive", Platform: service.PlatformOpenAI, IsExclusive: true, Status: service.StatusActive, ModelsListConfig: service.GroupModelsListConfig{Enabled: true, Models: []string{"gpt-5"}}},
-		{ID: 3, Name: "Disabled", Platform: service.PlatformAnthropic, Status: service.StatusDisabled, ModelsListConfig: service.GroupModelsListConfig{Enabled: true, Models: []string{"claude-sonnet-4-6"}}},
+		{ID: 1, Name: "Public", Platform: service.PlatformOpenAI, RateMultiplier: 0.2, Status: service.StatusActive, ModelAllowlist: service.GroupModelAllowlist{Enabled: true, Models: []string{"gpt-5"}}},
+		{ID: 2, Name: "Exclusive", Platform: service.PlatformOpenAI, IsExclusive: true, Status: service.StatusActive, ModelAllowlist: service.GroupModelAllowlist{Enabled: true, Models: []string{"gpt-5"}}},
+		{ID: 3, Name: "Disabled", Platform: service.PlatformAnthropic, Status: service.StatusDisabled, ModelAllowlist: service.GroupModelAllowlist{Enabled: true, Models: []string{"claude-sonnet-4-6"}}},
 		{ID: 4, Name: "No list", Platform: service.PlatformAnthropic, Status: service.StatusActive},
-		{ID: 5, Name: "Configured list", Platform: service.PlatformOpenAI, RateMultiplier: 0.3, Status: service.StatusActive, ModelsListConfig: service.GroupModelsListConfig{Models: []string{"gpt-5.2"}}},
+		{ID: 5, Name: "Configured list", Platform: service.PlatformOpenAI, RateMultiplier: 0.3, Status: service.StatusActive, ModelAllowlist: service.GroupModelAllowlist{Models: []string{"gpt-5.2"}}},
 	}
 
 	router := gin.New()

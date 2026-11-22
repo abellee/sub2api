@@ -4,7 +4,7 @@ package ent
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"time"
@@ -92,6 +92,12 @@ func (_c *GroupCreate) SetNillableDescription(v *string) *GroupCreate {
 	return _c
 }
 
+// SetI18n sets the "i18n" field.
+func (_c *GroupCreate) SetI18n(v domain.GroupI18n) *GroupCreate {
+	_c.mutation.SetI18n(v)
+	return _c
+}
+
 // SetRateMultiplier sets the "rate_multiplier" field.
 func (_c *GroupCreate) SetRateMultiplier(v float64) *GroupCreate {
 	_c.mutation.SetRateMultiplier(v)
@@ -103,6 +109,12 @@ func (_c *GroupCreate) SetNillableRateMultiplier(v *float64) *GroupCreate {
 	if v != nil {
 		_c.SetRateMultiplier(*v)
 	}
+	return _c
+}
+
+// SetRateSyncGroupIds sets the "rate_sync_group_ids" field.
+func (_c *GroupCreate) SetRateSyncGroupIds(v []int64) *GroupCreate {
+	_c.mutation.SetRateSyncGroupIds(v)
 	return _c
 }
 
@@ -162,6 +174,34 @@ func (_c *GroupCreate) SetNillablePeakRateMultiplier(v *float64) *GroupCreate {
 	return _c
 }
 
+// SetSyncIsolationEnabled sets the "sync_isolation_enabled" field.
+func (_c *GroupCreate) SetSyncIsolationEnabled(v bool) *GroupCreate {
+	_c.mutation.SetSyncIsolationEnabled(v)
+	return _c
+}
+
+// SetNillableSyncIsolationEnabled sets the "sync_isolation_enabled" field if the given value is not nil.
+func (_c *GroupCreate) SetNillableSyncIsolationEnabled(v *bool) *GroupCreate {
+	if v != nil {
+		_c.SetSyncIsolationEnabled(*v)
+	}
+	return _c
+}
+
+// SetSyncIsolationSourceGroupID sets the "sync_isolation_source_group_id" field.
+func (_c *GroupCreate) SetSyncIsolationSourceGroupID(v int64) *GroupCreate {
+	_c.mutation.SetSyncIsolationSourceGroupID(v)
+	return _c
+}
+
+// SetNillableSyncIsolationSourceGroupID sets the "sync_isolation_source_group_id" field if the given value is not nil.
+func (_c *GroupCreate) SetNillableSyncIsolationSourceGroupID(v *int64) *GroupCreate {
+	if v != nil {
+		_c.SetSyncIsolationSourceGroupID(*v)
+	}
+	return _c
+}
+
 // SetIsExclusive sets the "is_exclusive" field.
 func (_c *GroupCreate) SetIsExclusive(v bool) *GroupCreate {
 	_c.mutation.SetIsExclusive(v)
@@ -214,6 +254,34 @@ func (_c *GroupCreate) SetPlatform(v string) *GroupCreate {
 func (_c *GroupCreate) SetNillablePlatform(v *string) *GroupCreate {
 	if v != nil {
 		_c.SetPlatform(*v)
+	}
+	return _c
+}
+
+// SetBlockedUserAgents sets the "blocked_user_agents" field.
+func (_c *GroupCreate) SetBlockedUserAgents(v string) *GroupCreate {
+	_c.mutation.SetBlockedUserAgents(v)
+	return _c
+}
+
+// SetNillableBlockedUserAgents sets the "blocked_user_agents" field if the given value is not nil.
+func (_c *GroupCreate) SetNillableBlockedUserAgents(v *string) *GroupCreate {
+	if v != nil {
+		_c.SetBlockedUserAgents(*v)
+	}
+	return _c
+}
+
+// SetRequiredProtocol sets the "required_protocol" field.
+func (_c *GroupCreate) SetRequiredProtocol(v string) *GroupCreate {
+	_c.mutation.SetRequiredProtocol(v)
+	return _c
+}
+
+// SetNillableRequiredProtocol sets the "required_protocol" field if the given value is not nil.
+func (_c *GroupCreate) SetNillableRequiredProtocol(v *string) *GroupCreate {
+	if v != nil {
+		_c.SetRequiredProtocol(*v)
 	}
 	return _c
 }
@@ -288,6 +356,20 @@ func (_c *GroupCreate) SetNillableDefaultValidityDays(v *int) *GroupCreate {
 	return _c
 }
 
+// SetAccountErrorFailoverEnabled sets the "account_error_failover_enabled" field.
+func (_c *GroupCreate) SetAccountErrorFailoverEnabled(v bool) *GroupCreate {
+	_c.mutation.SetAccountErrorFailoverEnabled(v)
+	return _c
+}
+
+// SetNillableAccountErrorFailoverEnabled sets the "account_error_failover_enabled" field if the given value is not nil.
+func (_c *GroupCreate) SetNillableAccountErrorFailoverEnabled(v *bool) *GroupCreate {
+	if v != nil {
+		_c.SetAccountErrorFailoverEnabled(*v)
+	}
+	return _c
+}
+
 // SetAllowImageGeneration sets the "allow_image_generation" field.
 func (_c *GroupCreate) SetAllowImageGeneration(v bool) *GroupCreate {
 	_c.mutation.SetAllowImageGeneration(v)
@@ -312,6 +394,34 @@ func (_c *GroupCreate) SetAllowBatchImageGeneration(v bool) *GroupCreate {
 func (_c *GroupCreate) SetNillableAllowBatchImageGeneration(v *bool) *GroupCreate {
 	if v != nil {
 		_c.SetAllowBatchImageGeneration(*v)
+	}
+	return _c
+}
+
+// SetImageAutoSizeFromReference sets the "image_auto_size_from_reference" field.
+func (_c *GroupCreate) SetImageAutoSizeFromReference(v bool) *GroupCreate {
+	_c.mutation.SetImageAutoSizeFromReference(v)
+	return _c
+}
+
+// SetNillableImageAutoSizeFromReference sets the "image_auto_size_from_reference" field if the given value is not nil.
+func (_c *GroupCreate) SetNillableImageAutoSizeFromReference(v *bool) *GroupCreate {
+	if v != nil {
+		_c.SetImageAutoSizeFromReference(*v)
+	}
+	return _c
+}
+
+// SetImageCountBilling sets the "image_count_billing" field.
+func (_c *GroupCreate) SetImageCountBilling(v bool) *GroupCreate {
+	_c.mutation.SetImageCountBilling(v)
+	return _c
+}
+
+// SetNillableImageCountBilling sets the "image_count_billing" field if the given value is not nil.
+func (_c *GroupCreate) SetNillableImageCountBilling(v *bool) *GroupCreate {
+	if v != nil {
+		_c.SetImageCountBilling(*v)
 	}
 	return _c
 }
@@ -575,7 +685,7 @@ func (_c *GroupCreate) SetNillableLongContextPricingEnabled(v *bool) *GroupCreat
 }
 
 // SetModelPricing sets the "model_pricing" field.
-func (_c *GroupCreate) SetModelPricing(v json.RawMessage) *GroupCreate {
+func (_c *GroupCreate) SetModelPricing(v jsontext.Value) *GroupCreate {
 	_c.mutation.SetModelPricing(v)
 	return _c
 }
@@ -704,6 +814,48 @@ func (_c *GroupCreate) SetNillableAllowLive(v *bool) *GroupCreate {
 	return _c
 }
 
+// SetForceOpenaiFast sets the "force_openai_fast" field.
+func (_c *GroupCreate) SetForceOpenaiFast(v bool) *GroupCreate {
+	_c.mutation.SetForceOpenaiFast(v)
+	return _c
+}
+
+// SetNillableForceOpenaiFast sets the "force_openai_fast" field if the given value is not nil.
+func (_c *GroupCreate) SetNillableForceOpenaiFast(v *bool) *GroupCreate {
+	if v != nil {
+		_c.SetForceOpenaiFast(*v)
+	}
+	return _c
+}
+
+// SetForceOpenaiUltrafast sets the "force_openai_ultrafast" field.
+func (_c *GroupCreate) SetForceOpenaiUltrafast(v bool) *GroupCreate {
+	_c.mutation.SetForceOpenaiUltrafast(v)
+	return _c
+}
+
+// SetNillableForceOpenaiUltrafast sets the "force_openai_ultrafast" field if the given value is not nil.
+func (_c *GroupCreate) SetNillableForceOpenaiUltrafast(v *bool) *GroupCreate {
+	if v != nil {
+		_c.SetForceOpenaiUltrafast(*v)
+	}
+	return _c
+}
+
+// SetFreeOpenaiFast sets the "free_openai_fast" field.
+func (_c *GroupCreate) SetFreeOpenaiFast(v bool) *GroupCreate {
+	_c.mutation.SetFreeOpenaiFast(v)
+	return _c
+}
+
+// SetNillableFreeOpenaiFast sets the "free_openai_fast" field if the given value is not nil.
+func (_c *GroupCreate) SetNillableFreeOpenaiFast(v *bool) *GroupCreate {
+	if v != nil {
+		_c.SetFreeOpenaiFast(*v)
+	}
+	return _c
+}
+
 // SetRequireOauthOnly sets the "require_oauth_only" field.
 func (_c *GroupCreate) SetRequireOauthOnly(v bool) *GroupCreate {
 	_c.mutation.SetRequireOauthOnly(v)
@@ -760,16 +912,44 @@ func (_c *GroupCreate) SetNillableMessagesDispatchModelConfig(v *domain.OpenAIMe
 	return _c
 }
 
-// SetModelsListConfig sets the "models_list_config" field.
-func (_c *GroupCreate) SetModelsListConfig(v domain.GroupModelsListConfig) *GroupCreate {
-	_c.mutation.SetModelsListConfig(v)
+// SetModelAllowlist sets the "model_allowlist" field.
+func (_c *GroupCreate) SetModelAllowlist(v domain.GroupModelAllowlist) *GroupCreate {
+	_c.mutation.SetModelAllowlist(v)
 	return _c
 }
 
-// SetNillableModelsListConfig sets the "models_list_config" field if the given value is not nil.
-func (_c *GroupCreate) SetNillableModelsListConfig(v *domain.GroupModelsListConfig) *GroupCreate {
+// SetNillableModelAllowlist sets the "model_allowlist" field if the given value is not nil.
+func (_c *GroupCreate) SetNillableModelAllowlist(v *domain.GroupModelAllowlist) *GroupCreate {
 	if v != nil {
-		_c.SetModelsListConfig(*v)
+		_c.SetModelAllowlist(*v)
+	}
+	return _c
+}
+
+// SetAnthropicThinkingCompat sets the "anthropic_thinking_compat" field.
+func (_c *GroupCreate) SetAnthropicThinkingCompat(v domain.GroupAnthropicThinkingCompat) *GroupCreate {
+	_c.mutation.SetAnthropicThinkingCompat(v)
+	return _c
+}
+
+// SetNillableAnthropicThinkingCompat sets the "anthropic_thinking_compat" field if the given value is not nil.
+func (_c *GroupCreate) SetNillableAnthropicThinkingCompat(v *domain.GroupAnthropicThinkingCompat) *GroupCreate {
+	if v != nil {
+		_c.SetAnthropicThinkingCompat(*v)
+	}
+	return _c
+}
+
+// SetCodexModelsManifestConfig sets the "codex_models_manifest_config" field.
+func (_c *GroupCreate) SetCodexModelsManifestConfig(v domain.GroupCodexModelsManifestConfig) *GroupCreate {
+	_c.mutation.SetCodexModelsManifestConfig(v)
+	return _c
+}
+
+// SetNillableCodexModelsManifestConfig sets the "codex_models_manifest_config" field if the given value is not nil.
+func (_c *GroupCreate) SetNillableCodexModelsManifestConfig(v *domain.GroupCodexModelsManifestConfig) *GroupCreate {
+	if v != nil {
+		_c.SetCodexModelsManifestConfig(*v)
 	}
 	return _c
 }
@@ -798,6 +978,20 @@ func (_c *GroupCreate) SetMaxReasoningEffort(v string) *GroupCreate {
 func (_c *GroupCreate) SetNillableMaxReasoningEffort(v *string) *GroupCreate {
 	if v != nil {
 		_c.SetMaxReasoningEffort(*v)
+	}
+	return _c
+}
+
+// SetMaxReasoningEffortOverLimit sets the "max_reasoning_effort_over_limit" field.
+func (_c *GroupCreate) SetMaxReasoningEffortOverLimit(v string) *GroupCreate {
+	_c.mutation.SetMaxReasoningEffortOverLimit(v)
+	return _c
+}
+
+// SetNillableMaxReasoningEffortOverLimit sets the "max_reasoning_effort_over_limit" field if the given value is not nil.
+func (_c *GroupCreate) SetNillableMaxReasoningEffortOverLimit(v *string) *GroupCreate {
+	if v != nil {
+		_c.SetMaxReasoningEffortOverLimit(*v)
 	}
 	return _c
 }
@@ -991,9 +1185,17 @@ func (_c *GroupCreate) defaults() error {
 		v := group.DefaultUpdatedAt()
 		_c.mutation.SetUpdatedAt(v)
 	}
+	if _, ok := _c.mutation.I18n(); !ok {
+		v := group.DefaultI18n
+		_c.mutation.SetI18n(v)
+	}
 	if _, ok := _c.mutation.RateMultiplier(); !ok {
 		v := group.DefaultRateMultiplier
 		_c.mutation.SetRateMultiplier(v)
+	}
+	if _, ok := _c.mutation.RateSyncGroupIds(); !ok {
+		v := group.DefaultRateSyncGroupIds
+		_c.mutation.SetRateSyncGroupIds(v)
 	}
 	if _, ok := _c.mutation.PeakRateEnabled(); !ok {
 		v := group.DefaultPeakRateEnabled
@@ -1011,6 +1213,14 @@ func (_c *GroupCreate) defaults() error {
 		v := group.DefaultPeakRateMultiplier
 		_c.mutation.SetPeakRateMultiplier(v)
 	}
+	if _, ok := _c.mutation.SyncIsolationEnabled(); !ok {
+		v := group.DefaultSyncIsolationEnabled
+		_c.mutation.SetSyncIsolationEnabled(v)
+	}
+	if _, ok := _c.mutation.SyncIsolationSourceGroupID(); !ok {
+		v := group.DefaultSyncIsolationSourceGroupID
+		_c.mutation.SetSyncIsolationSourceGroupID(v)
+	}
 	if _, ok := _c.mutation.IsExclusive(); !ok {
 		v := group.DefaultIsExclusive
 		_c.mutation.SetIsExclusive(v)
@@ -1023,6 +1233,14 @@ func (_c *GroupCreate) defaults() error {
 		v := group.DefaultPlatform
 		_c.mutation.SetPlatform(v)
 	}
+	if _, ok := _c.mutation.BlockedUserAgents(); !ok {
+		v := group.DefaultBlockedUserAgents
+		_c.mutation.SetBlockedUserAgents(v)
+	}
+	if _, ok := _c.mutation.RequiredProtocol(); !ok {
+		v := group.DefaultRequiredProtocol
+		_c.mutation.SetRequiredProtocol(v)
+	}
 	if _, ok := _c.mutation.SubscriptionType(); !ok {
 		v := group.DefaultSubscriptionType
 		_c.mutation.SetSubscriptionType(v)
@@ -1031,6 +1249,10 @@ func (_c *GroupCreate) defaults() error {
 		v := group.DefaultDefaultValidityDays
 		_c.mutation.SetDefaultValidityDays(v)
 	}
+	if _, ok := _c.mutation.AccountErrorFailoverEnabled(); !ok {
+		v := group.DefaultAccountErrorFailoverEnabled
+		_c.mutation.SetAccountErrorFailoverEnabled(v)
+	}
 	if _, ok := _c.mutation.AllowImageGeneration(); !ok {
 		v := group.DefaultAllowImageGeneration
 		_c.mutation.SetAllowImageGeneration(v)
@@ -1038,6 +1260,14 @@ func (_c *GroupCreate) defaults() error {
 	if _, ok := _c.mutation.AllowBatchImageGeneration(); !ok {
 		v := group.DefaultAllowBatchImageGeneration
 		_c.mutation.SetAllowBatchImageGeneration(v)
+	}
+	if _, ok := _c.mutation.ImageAutoSizeFromReference(); !ok {
+		v := group.DefaultImageAutoSizeFromReference
+		_c.mutation.SetImageAutoSizeFromReference(v)
+	}
+	if _, ok := _c.mutation.ImageCountBilling(); !ok {
+		v := group.DefaultImageCountBilling
+		_c.mutation.SetImageCountBilling(v)
 	}
 	if _, ok := _c.mutation.ImageRateIndependent(); !ok {
 		v := group.DefaultImageRateIndependent
@@ -1095,6 +1325,18 @@ func (_c *GroupCreate) defaults() error {
 		v := group.DefaultAllowLive
 		_c.mutation.SetAllowLive(v)
 	}
+	if _, ok := _c.mutation.ForceOpenaiFast(); !ok {
+		v := group.DefaultForceOpenaiFast
+		_c.mutation.SetForceOpenaiFast(v)
+	}
+	if _, ok := _c.mutation.ForceOpenaiUltrafast(); !ok {
+		v := group.DefaultForceOpenaiUltrafast
+		_c.mutation.SetForceOpenaiUltrafast(v)
+	}
+	if _, ok := _c.mutation.FreeOpenaiFast(); !ok {
+		v := group.DefaultFreeOpenaiFast
+		_c.mutation.SetFreeOpenaiFast(v)
+	}
 	if _, ok := _c.mutation.RequireOauthOnly(); !ok {
 		v := group.DefaultRequireOauthOnly
 		_c.mutation.SetRequireOauthOnly(v)
@@ -1111,9 +1353,17 @@ func (_c *GroupCreate) defaults() error {
 		v := group.DefaultMessagesDispatchModelConfig
 		_c.mutation.SetMessagesDispatchModelConfig(v)
 	}
-	if _, ok := _c.mutation.ModelsListConfig(); !ok {
-		v := group.DefaultModelsListConfig
-		_c.mutation.SetModelsListConfig(v)
+	if _, ok := _c.mutation.ModelAllowlist(); !ok {
+		v := group.DefaultModelAllowlist
+		_c.mutation.SetModelAllowlist(v)
+	}
+	if _, ok := _c.mutation.AnthropicThinkingCompat(); !ok {
+		v := group.DefaultAnthropicThinkingCompat
+		_c.mutation.SetAnthropicThinkingCompat(v)
+	}
+	if _, ok := _c.mutation.CodexModelsManifestConfig(); !ok {
+		v := group.DefaultCodexModelsManifestConfig
+		_c.mutation.SetCodexModelsManifestConfig(v)
 	}
 	if _, ok := _c.mutation.RpmLimit(); !ok {
 		v := group.DefaultRpmLimit
@@ -1122,6 +1372,10 @@ func (_c *GroupCreate) defaults() error {
 	if _, ok := _c.mutation.MaxReasoningEffort(); !ok {
 		v := group.DefaultMaxReasoningEffort
 		_c.mutation.SetMaxReasoningEffort(v)
+	}
+	if _, ok := _c.mutation.MaxReasoningEffortOverLimit(); !ok {
+		v := group.DefaultMaxReasoningEffortOverLimit
+		_c.mutation.SetMaxReasoningEffortOverLimit(v)
 	}
 	if _, ok := _c.mutation.ReasoningEffortMappings(); !ok {
 		v := group.DefaultReasoningEffortMappings
@@ -1158,8 +1412,14 @@ func (_c *GroupCreate) check() error {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "Group.name": %w`, err)}
 		}
 	}
+	if _, ok := _c.mutation.I18n(); !ok {
+		return &ValidationError{Name: "i18n", err: errors.New(`ent: missing required field "Group.i18n"`)}
+	}
 	if _, ok := _c.mutation.RateMultiplier(); !ok {
 		return &ValidationError{Name: "rate_multiplier", err: errors.New(`ent: missing required field "Group.rate_multiplier"`)}
+	}
+	if _, ok := _c.mutation.RateSyncGroupIds(); !ok {
+		return &ValidationError{Name: "rate_sync_group_ids", err: errors.New(`ent: missing required field "Group.rate_sync_group_ids"`)}
 	}
 	if _, ok := _c.mutation.PeakRateEnabled(); !ok {
 		return &ValidationError{Name: "peak_rate_enabled", err: errors.New(`ent: missing required field "Group.peak_rate_enabled"`)}
@@ -1182,6 +1442,12 @@ func (_c *GroupCreate) check() error {
 	}
 	if _, ok := _c.mutation.PeakRateMultiplier(); !ok {
 		return &ValidationError{Name: "peak_rate_multiplier", err: errors.New(`ent: missing required field "Group.peak_rate_multiplier"`)}
+	}
+	if _, ok := _c.mutation.SyncIsolationEnabled(); !ok {
+		return &ValidationError{Name: "sync_isolation_enabled", err: errors.New(`ent: missing required field "Group.sync_isolation_enabled"`)}
+	}
+	if _, ok := _c.mutation.SyncIsolationSourceGroupID(); !ok {
+		return &ValidationError{Name: "sync_isolation_source_group_id", err: errors.New(`ent: missing required field "Group.sync_isolation_source_group_id"`)}
 	}
 	if _, ok := _c.mutation.IsExclusive(); !ok {
 		return &ValidationError{Name: "is_exclusive", err: errors.New(`ent: missing required field "Group.is_exclusive"`)}
@@ -1207,6 +1473,17 @@ func (_c *GroupCreate) check() error {
 			return &ValidationError{Name: "platform", err: fmt.Errorf(`ent: validator failed for field "Group.platform": %w`, err)}
 		}
 	}
+	if _, ok := _c.mutation.BlockedUserAgents(); !ok {
+		return &ValidationError{Name: "blocked_user_agents", err: errors.New(`ent: missing required field "Group.blocked_user_agents"`)}
+	}
+	if _, ok := _c.mutation.RequiredProtocol(); !ok {
+		return &ValidationError{Name: "required_protocol", err: errors.New(`ent: missing required field "Group.required_protocol"`)}
+	}
+	if v, ok := _c.mutation.RequiredProtocol(); ok {
+		if err := group.RequiredProtocolValidator(v); err != nil {
+			return &ValidationError{Name: "required_protocol", err: fmt.Errorf(`ent: validator failed for field "Group.required_protocol": %w`, err)}
+		}
+	}
 	if _, ok := _c.mutation.SubscriptionType(); !ok {
 		return &ValidationError{Name: "subscription_type", err: errors.New(`ent: missing required field "Group.subscription_type"`)}
 	}
@@ -1218,11 +1495,20 @@ func (_c *GroupCreate) check() error {
 	if _, ok := _c.mutation.DefaultValidityDays(); !ok {
 		return &ValidationError{Name: "default_validity_days", err: errors.New(`ent: missing required field "Group.default_validity_days"`)}
 	}
+	if _, ok := _c.mutation.AccountErrorFailoverEnabled(); !ok {
+		return &ValidationError{Name: "account_error_failover_enabled", err: errors.New(`ent: missing required field "Group.account_error_failover_enabled"`)}
+	}
 	if _, ok := _c.mutation.AllowImageGeneration(); !ok {
 		return &ValidationError{Name: "allow_image_generation", err: errors.New(`ent: missing required field "Group.allow_image_generation"`)}
 	}
 	if _, ok := _c.mutation.AllowBatchImageGeneration(); !ok {
 		return &ValidationError{Name: "allow_batch_image_generation", err: errors.New(`ent: missing required field "Group.allow_batch_image_generation"`)}
+	}
+	if _, ok := _c.mutation.ImageAutoSizeFromReference(); !ok {
+		return &ValidationError{Name: "image_auto_size_from_reference", err: errors.New(`ent: missing required field "Group.image_auto_size_from_reference"`)}
+	}
+	if _, ok := _c.mutation.ImageCountBilling(); !ok {
+		return &ValidationError{Name: "image_count_billing", err: errors.New(`ent: missing required field "Group.image_count_billing"`)}
 	}
 	if _, ok := _c.mutation.ImageRateIndependent(); !ok {
 		return &ValidationError{Name: "image_rate_independent", err: errors.New(`ent: missing required field "Group.image_rate_independent"`)}
@@ -1286,6 +1572,15 @@ func (_c *GroupCreate) check() error {
 	if _, ok := _c.mutation.AllowLive(); !ok {
 		return &ValidationError{Name: "allow_live", err: errors.New(`ent: missing required field "Group.allow_live"`)}
 	}
+	if _, ok := _c.mutation.ForceOpenaiFast(); !ok {
+		return &ValidationError{Name: "force_openai_fast", err: errors.New(`ent: missing required field "Group.force_openai_fast"`)}
+	}
+	if _, ok := _c.mutation.ForceOpenaiUltrafast(); !ok {
+		return &ValidationError{Name: "force_openai_ultrafast", err: errors.New(`ent: missing required field "Group.force_openai_ultrafast"`)}
+	}
+	if _, ok := _c.mutation.FreeOpenaiFast(); !ok {
+		return &ValidationError{Name: "free_openai_fast", err: errors.New(`ent: missing required field "Group.free_openai_fast"`)}
+	}
 	if _, ok := _c.mutation.RequireOauthOnly(); !ok {
 		return &ValidationError{Name: "require_oauth_only", err: errors.New(`ent: missing required field "Group.require_oauth_only"`)}
 	}
@@ -1303,8 +1598,14 @@ func (_c *GroupCreate) check() error {
 	if _, ok := _c.mutation.MessagesDispatchModelConfig(); !ok {
 		return &ValidationError{Name: "messages_dispatch_model_config", err: errors.New(`ent: missing required field "Group.messages_dispatch_model_config"`)}
 	}
-	if _, ok := _c.mutation.ModelsListConfig(); !ok {
-		return &ValidationError{Name: "models_list_config", err: errors.New(`ent: missing required field "Group.models_list_config"`)}
+	if _, ok := _c.mutation.ModelAllowlist(); !ok {
+		return &ValidationError{Name: "model_allowlist", err: errors.New(`ent: missing required field "Group.model_allowlist"`)}
+	}
+	if _, ok := _c.mutation.AnthropicThinkingCompat(); !ok {
+		return &ValidationError{Name: "anthropic_thinking_compat", err: errors.New(`ent: missing required field "Group.anthropic_thinking_compat"`)}
+	}
+	if _, ok := _c.mutation.CodexModelsManifestConfig(); !ok {
+		return &ValidationError{Name: "codex_models_manifest_config", err: errors.New(`ent: missing required field "Group.codex_models_manifest_config"`)}
 	}
 	if _, ok := _c.mutation.RpmLimit(); !ok {
 		return &ValidationError{Name: "rpm_limit", err: errors.New(`ent: missing required field "Group.rpm_limit"`)}
@@ -1315,6 +1616,14 @@ func (_c *GroupCreate) check() error {
 	if v, ok := _c.mutation.MaxReasoningEffort(); ok {
 		if err := group.MaxReasoningEffortValidator(v); err != nil {
 			return &ValidationError{Name: "max_reasoning_effort", err: fmt.Errorf(`ent: validator failed for field "Group.max_reasoning_effort": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.MaxReasoningEffortOverLimit(); !ok {
+		return &ValidationError{Name: "max_reasoning_effort_over_limit", err: errors.New(`ent: missing required field "Group.max_reasoning_effort_over_limit"`)}
+	}
+	if v, ok := _c.mutation.MaxReasoningEffortOverLimit(); ok {
+		if err := group.MaxReasoningEffortOverLimitValidator(v); err != nil {
+			return &ValidationError{Name: "max_reasoning_effort_over_limit", err: fmt.Errorf(`ent: validator failed for field "Group.max_reasoning_effort_over_limit": %w`, err)}
 		}
 	}
 	if _, ok := _c.mutation.ReasoningEffortMappings(); !ok {
@@ -1376,9 +1685,17 @@ func (_c *GroupCreate) createSpec() (*Group, *sqlgraph.CreateSpec) {
 		_spec.SetField(group.FieldDescription, field.TypeString, value)
 		_node.Description = &value
 	}
+	if value, ok := _c.mutation.I18n(); ok {
+		_spec.SetField(group.FieldI18n, field.TypeJSON, value)
+		_node.I18n = value
+	}
 	if value, ok := _c.mutation.RateMultiplier(); ok {
 		_spec.SetField(group.FieldRateMultiplier, field.TypeFloat64, value)
 		_node.RateMultiplier = value
+	}
+	if value, ok := _c.mutation.RateSyncGroupIds(); ok {
+		_spec.SetField(group.FieldRateSyncGroupIds, field.TypeJSON, value)
+		_node.RateSyncGroupIds = value
 	}
 	if value, ok := _c.mutation.PeakRateEnabled(); ok {
 		_spec.SetField(group.FieldPeakRateEnabled, field.TypeBool, value)
@@ -1396,6 +1713,14 @@ func (_c *GroupCreate) createSpec() (*Group, *sqlgraph.CreateSpec) {
 		_spec.SetField(group.FieldPeakRateMultiplier, field.TypeFloat64, value)
 		_node.PeakRateMultiplier = value
 	}
+	if value, ok := _c.mutation.SyncIsolationEnabled(); ok {
+		_spec.SetField(group.FieldSyncIsolationEnabled, field.TypeBool, value)
+		_node.SyncIsolationEnabled = value
+	}
+	if value, ok := _c.mutation.SyncIsolationSourceGroupID(); ok {
+		_spec.SetField(group.FieldSyncIsolationSourceGroupID, field.TypeInt64, value)
+		_node.SyncIsolationSourceGroupID = value
+	}
 	if value, ok := _c.mutation.IsExclusive(); ok {
 		_spec.SetField(group.FieldIsExclusive, field.TypeBool, value)
 		_node.IsExclusive = value
@@ -1411,6 +1736,14 @@ func (_c *GroupCreate) createSpec() (*Group, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.Platform(); ok {
 		_spec.SetField(group.FieldPlatform, field.TypeString, value)
 		_node.Platform = value
+	}
+	if value, ok := _c.mutation.BlockedUserAgents(); ok {
+		_spec.SetField(group.FieldBlockedUserAgents, field.TypeString, value)
+		_node.BlockedUserAgents = value
+	}
+	if value, ok := _c.mutation.RequiredProtocol(); ok {
+		_spec.SetField(group.FieldRequiredProtocol, field.TypeString, value)
+		_node.RequiredProtocol = value
 	}
 	if value, ok := _c.mutation.SubscriptionType(); ok {
 		_spec.SetField(group.FieldSubscriptionType, field.TypeString, value)
@@ -1432,6 +1765,10 @@ func (_c *GroupCreate) createSpec() (*Group, *sqlgraph.CreateSpec) {
 		_spec.SetField(group.FieldDefaultValidityDays, field.TypeInt, value)
 		_node.DefaultValidityDays = value
 	}
+	if value, ok := _c.mutation.AccountErrorFailoverEnabled(); ok {
+		_spec.SetField(group.FieldAccountErrorFailoverEnabled, field.TypeBool, value)
+		_node.AccountErrorFailoverEnabled = value
+	}
 	if value, ok := _c.mutation.AllowImageGeneration(); ok {
 		_spec.SetField(group.FieldAllowImageGeneration, field.TypeBool, value)
 		_node.AllowImageGeneration = value
@@ -1439,6 +1776,14 @@ func (_c *GroupCreate) createSpec() (*Group, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.AllowBatchImageGeneration(); ok {
 		_spec.SetField(group.FieldAllowBatchImageGeneration, field.TypeBool, value)
 		_node.AllowBatchImageGeneration = value
+	}
+	if value, ok := _c.mutation.ImageAutoSizeFromReference(); ok {
+		_spec.SetField(group.FieldImageAutoSizeFromReference, field.TypeBool, value)
+		_node.ImageAutoSizeFromReference = value
+	}
+	if value, ok := _c.mutation.ImageCountBilling(); ok {
+		_spec.SetField(group.FieldImageCountBilling, field.TypeBool, value)
+		_node.ImageCountBilling = value
 	}
 	if value, ok := _c.mutation.ImageRateIndependent(); ok {
 		_spec.SetField(group.FieldImageRateIndependent, field.TypeBool, value)
@@ -1560,6 +1905,18 @@ func (_c *GroupCreate) createSpec() (*Group, *sqlgraph.CreateSpec) {
 		_spec.SetField(group.FieldAllowLive, field.TypeBool, value)
 		_node.AllowLive = value
 	}
+	if value, ok := _c.mutation.ForceOpenaiFast(); ok {
+		_spec.SetField(group.FieldForceOpenaiFast, field.TypeBool, value)
+		_node.ForceOpenaiFast = value
+	}
+	if value, ok := _c.mutation.ForceOpenaiUltrafast(); ok {
+		_spec.SetField(group.FieldForceOpenaiUltrafast, field.TypeBool, value)
+		_node.ForceOpenaiUltrafast = value
+	}
+	if value, ok := _c.mutation.FreeOpenaiFast(); ok {
+		_spec.SetField(group.FieldFreeOpenaiFast, field.TypeBool, value)
+		_node.FreeOpenaiFast = value
+	}
 	if value, ok := _c.mutation.RequireOauthOnly(); ok {
 		_spec.SetField(group.FieldRequireOauthOnly, field.TypeBool, value)
 		_node.RequireOauthOnly = value
@@ -1576,9 +1933,17 @@ func (_c *GroupCreate) createSpec() (*Group, *sqlgraph.CreateSpec) {
 		_spec.SetField(group.FieldMessagesDispatchModelConfig, field.TypeJSON, value)
 		_node.MessagesDispatchModelConfig = value
 	}
-	if value, ok := _c.mutation.ModelsListConfig(); ok {
-		_spec.SetField(group.FieldModelsListConfig, field.TypeJSON, value)
-		_node.ModelsListConfig = value
+	if value, ok := _c.mutation.ModelAllowlist(); ok {
+		_spec.SetField(group.FieldModelAllowlist, field.TypeJSON, value)
+		_node.ModelAllowlist = value
+	}
+	if value, ok := _c.mutation.AnthropicThinkingCompat(); ok {
+		_spec.SetField(group.FieldAnthropicThinkingCompat, field.TypeJSON, value)
+		_node.AnthropicThinkingCompat = value
+	}
+	if value, ok := _c.mutation.CodexModelsManifestConfig(); ok {
+		_spec.SetField(group.FieldCodexModelsManifestConfig, field.TypeJSON, value)
+		_node.CodexModelsManifestConfig = value
 	}
 	if value, ok := _c.mutation.RpmLimit(); ok {
 		_spec.SetField(group.FieldRpmLimit, field.TypeInt, value)
@@ -1587,6 +1952,10 @@ func (_c *GroupCreate) createSpec() (*Group, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.MaxReasoningEffort(); ok {
 		_spec.SetField(group.FieldMaxReasoningEffort, field.TypeString, value)
 		_node.MaxReasoningEffort = value
+	}
+	if value, ok := _c.mutation.MaxReasoningEffortOverLimit(); ok {
+		_spec.SetField(group.FieldMaxReasoningEffortOverLimit, field.TypeString, value)
+		_node.MaxReasoningEffortOverLimit = value
 	}
 	if value, ok := _c.mutation.ReasoningEffortMappings(); ok {
 		_spec.SetField(group.FieldReasoningEffortMappings, field.TypeJSON, value)
@@ -1820,6 +2189,18 @@ func (u *GroupUpsert) ClearDescription() *GroupUpsert {
 	return u
 }
 
+// SetI18n sets the "i18n" field.
+func (u *GroupUpsert) SetI18n(v domain.GroupI18n) *GroupUpsert {
+	u.Set(group.FieldI18n, v)
+	return u
+}
+
+// UpdateI18n sets the "i18n" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateI18n() *GroupUpsert {
+	u.SetExcluded(group.FieldI18n)
+	return u
+}
+
 // SetRateMultiplier sets the "rate_multiplier" field.
 func (u *GroupUpsert) SetRateMultiplier(v float64) *GroupUpsert {
 	u.Set(group.FieldRateMultiplier, v)
@@ -1835,6 +2216,18 @@ func (u *GroupUpsert) UpdateRateMultiplier() *GroupUpsert {
 // AddRateMultiplier adds v to the "rate_multiplier" field.
 func (u *GroupUpsert) AddRateMultiplier(v float64) *GroupUpsert {
 	u.Add(group.FieldRateMultiplier, v)
+	return u
+}
+
+// SetRateSyncGroupIds sets the "rate_sync_group_ids" field.
+func (u *GroupUpsert) SetRateSyncGroupIds(v []int64) *GroupUpsert {
+	u.Set(group.FieldRateSyncGroupIds, v)
+	return u
+}
+
+// UpdateRateSyncGroupIds sets the "rate_sync_group_ids" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateRateSyncGroupIds() *GroupUpsert {
+	u.SetExcluded(group.FieldRateSyncGroupIds)
 	return u
 }
 
@@ -1892,6 +2285,36 @@ func (u *GroupUpsert) AddPeakRateMultiplier(v float64) *GroupUpsert {
 	return u
 }
 
+// SetSyncIsolationEnabled sets the "sync_isolation_enabled" field.
+func (u *GroupUpsert) SetSyncIsolationEnabled(v bool) *GroupUpsert {
+	u.Set(group.FieldSyncIsolationEnabled, v)
+	return u
+}
+
+// UpdateSyncIsolationEnabled sets the "sync_isolation_enabled" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateSyncIsolationEnabled() *GroupUpsert {
+	u.SetExcluded(group.FieldSyncIsolationEnabled)
+	return u
+}
+
+// SetSyncIsolationSourceGroupID sets the "sync_isolation_source_group_id" field.
+func (u *GroupUpsert) SetSyncIsolationSourceGroupID(v int64) *GroupUpsert {
+	u.Set(group.FieldSyncIsolationSourceGroupID, v)
+	return u
+}
+
+// UpdateSyncIsolationSourceGroupID sets the "sync_isolation_source_group_id" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateSyncIsolationSourceGroupID() *GroupUpsert {
+	u.SetExcluded(group.FieldSyncIsolationSourceGroupID)
+	return u
+}
+
+// AddSyncIsolationSourceGroupID adds v to the "sync_isolation_source_group_id" field.
+func (u *GroupUpsert) AddSyncIsolationSourceGroupID(v int64) *GroupUpsert {
+	u.Add(group.FieldSyncIsolationSourceGroupID, v)
+	return u
+}
+
 // SetIsExclusive sets the "is_exclusive" field.
 func (u *GroupUpsert) SetIsExclusive(v bool) *GroupUpsert {
 	u.Set(group.FieldIsExclusive, v)
@@ -1925,6 +2348,30 @@ func (u *GroupUpsert) SetPlatform(v string) *GroupUpsert {
 // UpdatePlatform sets the "platform" field to the value that was provided on create.
 func (u *GroupUpsert) UpdatePlatform() *GroupUpsert {
 	u.SetExcluded(group.FieldPlatform)
+	return u
+}
+
+// SetBlockedUserAgents sets the "blocked_user_agents" field.
+func (u *GroupUpsert) SetBlockedUserAgents(v string) *GroupUpsert {
+	u.Set(group.FieldBlockedUserAgents, v)
+	return u
+}
+
+// UpdateBlockedUserAgents sets the "blocked_user_agents" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateBlockedUserAgents() *GroupUpsert {
+	u.SetExcluded(group.FieldBlockedUserAgents)
+	return u
+}
+
+// SetRequiredProtocol sets the "required_protocol" field.
+func (u *GroupUpsert) SetRequiredProtocol(v string) *GroupUpsert {
+	u.Set(group.FieldRequiredProtocol, v)
+	return u
+}
+
+// UpdateRequiredProtocol sets the "required_protocol" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateRequiredProtocol() *GroupUpsert {
+	u.SetExcluded(group.FieldRequiredProtocol)
 	return u
 }
 
@@ -2030,6 +2477,18 @@ func (u *GroupUpsert) AddDefaultValidityDays(v int) *GroupUpsert {
 	return u
 }
 
+// SetAccountErrorFailoverEnabled sets the "account_error_failover_enabled" field.
+func (u *GroupUpsert) SetAccountErrorFailoverEnabled(v bool) *GroupUpsert {
+	u.Set(group.FieldAccountErrorFailoverEnabled, v)
+	return u
+}
+
+// UpdateAccountErrorFailoverEnabled sets the "account_error_failover_enabled" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateAccountErrorFailoverEnabled() *GroupUpsert {
+	u.SetExcluded(group.FieldAccountErrorFailoverEnabled)
+	return u
+}
+
 // SetAllowImageGeneration sets the "allow_image_generation" field.
 func (u *GroupUpsert) SetAllowImageGeneration(v bool) *GroupUpsert {
 	u.Set(group.FieldAllowImageGeneration, v)
@@ -2051,6 +2510,30 @@ func (u *GroupUpsert) SetAllowBatchImageGeneration(v bool) *GroupUpsert {
 // UpdateAllowBatchImageGeneration sets the "allow_batch_image_generation" field to the value that was provided on create.
 func (u *GroupUpsert) UpdateAllowBatchImageGeneration() *GroupUpsert {
 	u.SetExcluded(group.FieldAllowBatchImageGeneration)
+	return u
+}
+
+// SetImageAutoSizeFromReference sets the "image_auto_size_from_reference" field.
+func (u *GroupUpsert) SetImageAutoSizeFromReference(v bool) *GroupUpsert {
+	u.Set(group.FieldImageAutoSizeFromReference, v)
+	return u
+}
+
+// UpdateImageAutoSizeFromReference sets the "image_auto_size_from_reference" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateImageAutoSizeFromReference() *GroupUpsert {
+	u.SetExcluded(group.FieldImageAutoSizeFromReference)
+	return u
+}
+
+// SetImageCountBilling sets the "image_count_billing" field.
+func (u *GroupUpsert) SetImageCountBilling(v bool) *GroupUpsert {
+	u.Set(group.FieldImageCountBilling, v)
+	return u
+}
+
+// UpdateImageCountBilling sets the "image_count_billing" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateImageCountBilling() *GroupUpsert {
+	u.SetExcluded(group.FieldImageCountBilling)
 	return u
 }
 
@@ -2445,7 +2928,7 @@ func (u *GroupUpsert) UpdateLongContextPricingEnabled() *GroupUpsert {
 }
 
 // SetModelPricing sets the "model_pricing" field.
-func (u *GroupUpsert) SetModelPricing(v json.RawMessage) *GroupUpsert {
+func (u *GroupUpsert) SetModelPricing(v jsontext.Value) *GroupUpsert {
 	u.Set(group.FieldModelPricing, v)
 	return u
 }
@@ -2618,6 +3101,42 @@ func (u *GroupUpsert) UpdateAllowLive() *GroupUpsert {
 	return u
 }
 
+// SetForceOpenaiFast sets the "force_openai_fast" field.
+func (u *GroupUpsert) SetForceOpenaiFast(v bool) *GroupUpsert {
+	u.Set(group.FieldForceOpenaiFast, v)
+	return u
+}
+
+// UpdateForceOpenaiFast sets the "force_openai_fast" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateForceOpenaiFast() *GroupUpsert {
+	u.SetExcluded(group.FieldForceOpenaiFast)
+	return u
+}
+
+// SetForceOpenaiUltrafast sets the "force_openai_ultrafast" field.
+func (u *GroupUpsert) SetForceOpenaiUltrafast(v bool) *GroupUpsert {
+	u.Set(group.FieldForceOpenaiUltrafast, v)
+	return u
+}
+
+// UpdateForceOpenaiUltrafast sets the "force_openai_ultrafast" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateForceOpenaiUltrafast() *GroupUpsert {
+	u.SetExcluded(group.FieldForceOpenaiUltrafast)
+	return u
+}
+
+// SetFreeOpenaiFast sets the "free_openai_fast" field.
+func (u *GroupUpsert) SetFreeOpenaiFast(v bool) *GroupUpsert {
+	u.Set(group.FieldFreeOpenaiFast, v)
+	return u
+}
+
+// UpdateFreeOpenaiFast sets the "free_openai_fast" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateFreeOpenaiFast() *GroupUpsert {
+	u.SetExcluded(group.FieldFreeOpenaiFast)
+	return u
+}
+
 // SetRequireOauthOnly sets the "require_oauth_only" field.
 func (u *GroupUpsert) SetRequireOauthOnly(v bool) *GroupUpsert {
 	u.Set(group.FieldRequireOauthOnly, v)
@@ -2666,15 +3185,39 @@ func (u *GroupUpsert) UpdateMessagesDispatchModelConfig() *GroupUpsert {
 	return u
 }
 
-// SetModelsListConfig sets the "models_list_config" field.
-func (u *GroupUpsert) SetModelsListConfig(v domain.GroupModelsListConfig) *GroupUpsert {
-	u.Set(group.FieldModelsListConfig, v)
+// SetModelAllowlist sets the "model_allowlist" field.
+func (u *GroupUpsert) SetModelAllowlist(v domain.GroupModelAllowlist) *GroupUpsert {
+	u.Set(group.FieldModelAllowlist, v)
 	return u
 }
 
-// UpdateModelsListConfig sets the "models_list_config" field to the value that was provided on create.
-func (u *GroupUpsert) UpdateModelsListConfig() *GroupUpsert {
-	u.SetExcluded(group.FieldModelsListConfig)
+// UpdateModelAllowlist sets the "model_allowlist" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateModelAllowlist() *GroupUpsert {
+	u.SetExcluded(group.FieldModelAllowlist)
+	return u
+}
+
+// SetAnthropicThinkingCompat sets the "anthropic_thinking_compat" field.
+func (u *GroupUpsert) SetAnthropicThinkingCompat(v domain.GroupAnthropicThinkingCompat) *GroupUpsert {
+	u.Set(group.FieldAnthropicThinkingCompat, v)
+	return u
+}
+
+// UpdateAnthropicThinkingCompat sets the "anthropic_thinking_compat" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateAnthropicThinkingCompat() *GroupUpsert {
+	u.SetExcluded(group.FieldAnthropicThinkingCompat)
+	return u
+}
+
+// SetCodexModelsManifestConfig sets the "codex_models_manifest_config" field.
+func (u *GroupUpsert) SetCodexModelsManifestConfig(v domain.GroupCodexModelsManifestConfig) *GroupUpsert {
+	u.Set(group.FieldCodexModelsManifestConfig, v)
+	return u
+}
+
+// UpdateCodexModelsManifestConfig sets the "codex_models_manifest_config" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateCodexModelsManifestConfig() *GroupUpsert {
+	u.SetExcluded(group.FieldCodexModelsManifestConfig)
 	return u
 }
 
@@ -2705,6 +3248,18 @@ func (u *GroupUpsert) SetMaxReasoningEffort(v string) *GroupUpsert {
 // UpdateMaxReasoningEffort sets the "max_reasoning_effort" field to the value that was provided on create.
 func (u *GroupUpsert) UpdateMaxReasoningEffort() *GroupUpsert {
 	u.SetExcluded(group.FieldMaxReasoningEffort)
+	return u
+}
+
+// SetMaxReasoningEffortOverLimit sets the "max_reasoning_effort_over_limit" field.
+func (u *GroupUpsert) SetMaxReasoningEffortOverLimit(v string) *GroupUpsert {
+	u.Set(group.FieldMaxReasoningEffortOverLimit, v)
+	return u
+}
+
+// UpdateMaxReasoningEffortOverLimit sets the "max_reasoning_effort_over_limit" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateMaxReasoningEffortOverLimit() *GroupUpsert {
+	u.SetExcluded(group.FieldMaxReasoningEffortOverLimit)
 	return u
 }
 
@@ -2886,6 +3441,20 @@ func (u *GroupUpsertOne) ClearDescription() *GroupUpsertOne {
 	})
 }
 
+// SetI18n sets the "i18n" field.
+func (u *GroupUpsertOne) SetI18n(v domain.GroupI18n) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetI18n(v)
+	})
+}
+
+// UpdateI18n sets the "i18n" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateI18n() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateI18n()
+	})
+}
+
 // SetRateMultiplier sets the "rate_multiplier" field.
 func (u *GroupUpsertOne) SetRateMultiplier(v float64) *GroupUpsertOne {
 	return u.Update(func(s *GroupUpsert) {
@@ -2904,6 +3473,20 @@ func (u *GroupUpsertOne) AddRateMultiplier(v float64) *GroupUpsertOne {
 func (u *GroupUpsertOne) UpdateRateMultiplier() *GroupUpsertOne {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdateRateMultiplier()
+	})
+}
+
+// SetRateSyncGroupIds sets the "rate_sync_group_ids" field.
+func (u *GroupUpsertOne) SetRateSyncGroupIds(v []int64) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetRateSyncGroupIds(v)
+	})
+}
+
+// UpdateRateSyncGroupIds sets the "rate_sync_group_ids" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateRateSyncGroupIds() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateRateSyncGroupIds()
 	})
 }
 
@@ -2970,6 +3553,41 @@ func (u *GroupUpsertOne) UpdatePeakRateMultiplier() *GroupUpsertOne {
 	})
 }
 
+// SetSyncIsolationEnabled sets the "sync_isolation_enabled" field.
+func (u *GroupUpsertOne) SetSyncIsolationEnabled(v bool) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetSyncIsolationEnabled(v)
+	})
+}
+
+// UpdateSyncIsolationEnabled sets the "sync_isolation_enabled" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateSyncIsolationEnabled() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateSyncIsolationEnabled()
+	})
+}
+
+// SetSyncIsolationSourceGroupID sets the "sync_isolation_source_group_id" field.
+func (u *GroupUpsertOne) SetSyncIsolationSourceGroupID(v int64) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetSyncIsolationSourceGroupID(v)
+	})
+}
+
+// AddSyncIsolationSourceGroupID adds v to the "sync_isolation_source_group_id" field.
+func (u *GroupUpsertOne) AddSyncIsolationSourceGroupID(v int64) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.AddSyncIsolationSourceGroupID(v)
+	})
+}
+
+// UpdateSyncIsolationSourceGroupID sets the "sync_isolation_source_group_id" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateSyncIsolationSourceGroupID() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateSyncIsolationSourceGroupID()
+	})
+}
+
 // SetIsExclusive sets the "is_exclusive" field.
 func (u *GroupUpsertOne) SetIsExclusive(v bool) *GroupUpsertOne {
 	return u.Update(func(s *GroupUpsert) {
@@ -3009,6 +3627,34 @@ func (u *GroupUpsertOne) SetPlatform(v string) *GroupUpsertOne {
 func (u *GroupUpsertOne) UpdatePlatform() *GroupUpsertOne {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdatePlatform()
+	})
+}
+
+// SetBlockedUserAgents sets the "blocked_user_agents" field.
+func (u *GroupUpsertOne) SetBlockedUserAgents(v string) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetBlockedUserAgents(v)
+	})
+}
+
+// UpdateBlockedUserAgents sets the "blocked_user_agents" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateBlockedUserAgents() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateBlockedUserAgents()
+	})
+}
+
+// SetRequiredProtocol sets the "required_protocol" field.
+func (u *GroupUpsertOne) SetRequiredProtocol(v string) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetRequiredProtocol(v)
+	})
+}
+
+// UpdateRequiredProtocol sets the "required_protocol" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateRequiredProtocol() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateRequiredProtocol()
 	})
 }
 
@@ -3131,6 +3777,20 @@ func (u *GroupUpsertOne) UpdateDefaultValidityDays() *GroupUpsertOne {
 	})
 }
 
+// SetAccountErrorFailoverEnabled sets the "account_error_failover_enabled" field.
+func (u *GroupUpsertOne) SetAccountErrorFailoverEnabled(v bool) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetAccountErrorFailoverEnabled(v)
+	})
+}
+
+// UpdateAccountErrorFailoverEnabled sets the "account_error_failover_enabled" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateAccountErrorFailoverEnabled() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateAccountErrorFailoverEnabled()
+	})
+}
+
 // SetAllowImageGeneration sets the "allow_image_generation" field.
 func (u *GroupUpsertOne) SetAllowImageGeneration(v bool) *GroupUpsertOne {
 	return u.Update(func(s *GroupUpsert) {
@@ -3156,6 +3816,34 @@ func (u *GroupUpsertOne) SetAllowBatchImageGeneration(v bool) *GroupUpsertOne {
 func (u *GroupUpsertOne) UpdateAllowBatchImageGeneration() *GroupUpsertOne {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdateAllowBatchImageGeneration()
+	})
+}
+
+// SetImageAutoSizeFromReference sets the "image_auto_size_from_reference" field.
+func (u *GroupUpsertOne) SetImageAutoSizeFromReference(v bool) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetImageAutoSizeFromReference(v)
+	})
+}
+
+// UpdateImageAutoSizeFromReference sets the "image_auto_size_from_reference" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateImageAutoSizeFromReference() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateImageAutoSizeFromReference()
+	})
+}
+
+// SetImageCountBilling sets the "image_count_billing" field.
+func (u *GroupUpsertOne) SetImageCountBilling(v bool) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetImageCountBilling(v)
+	})
+}
+
+// UpdateImageCountBilling sets the "image_count_billing" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateImageCountBilling() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateImageCountBilling()
 	})
 }
 
@@ -3615,7 +4303,7 @@ func (u *GroupUpsertOne) UpdateLongContextPricingEnabled() *GroupUpsertOne {
 }
 
 // SetModelPricing sets the "model_pricing" field.
-func (u *GroupUpsertOne) SetModelPricing(v json.RawMessage) *GroupUpsertOne {
+func (u *GroupUpsertOne) SetModelPricing(v jsontext.Value) *GroupUpsertOne {
 	return u.Update(func(s *GroupUpsert) {
 		s.SetModelPricing(v)
 	})
@@ -3817,6 +4505,48 @@ func (u *GroupUpsertOne) UpdateAllowLive() *GroupUpsertOne {
 	})
 }
 
+// SetForceOpenaiFast sets the "force_openai_fast" field.
+func (u *GroupUpsertOne) SetForceOpenaiFast(v bool) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetForceOpenaiFast(v)
+	})
+}
+
+// UpdateForceOpenaiFast sets the "force_openai_fast" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateForceOpenaiFast() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateForceOpenaiFast()
+	})
+}
+
+// SetForceOpenaiUltrafast sets the "force_openai_ultrafast" field.
+func (u *GroupUpsertOne) SetForceOpenaiUltrafast(v bool) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetForceOpenaiUltrafast(v)
+	})
+}
+
+// UpdateForceOpenaiUltrafast sets the "force_openai_ultrafast" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateForceOpenaiUltrafast() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateForceOpenaiUltrafast()
+	})
+}
+
+// SetFreeOpenaiFast sets the "free_openai_fast" field.
+func (u *GroupUpsertOne) SetFreeOpenaiFast(v bool) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetFreeOpenaiFast(v)
+	})
+}
+
+// UpdateFreeOpenaiFast sets the "free_openai_fast" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateFreeOpenaiFast() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateFreeOpenaiFast()
+	})
+}
+
 // SetRequireOauthOnly sets the "require_oauth_only" field.
 func (u *GroupUpsertOne) SetRequireOauthOnly(v bool) *GroupUpsertOne {
 	return u.Update(func(s *GroupUpsert) {
@@ -3873,17 +4603,45 @@ func (u *GroupUpsertOne) UpdateMessagesDispatchModelConfig() *GroupUpsertOne {
 	})
 }
 
-// SetModelsListConfig sets the "models_list_config" field.
-func (u *GroupUpsertOne) SetModelsListConfig(v domain.GroupModelsListConfig) *GroupUpsertOne {
+// SetModelAllowlist sets the "model_allowlist" field.
+func (u *GroupUpsertOne) SetModelAllowlist(v domain.GroupModelAllowlist) *GroupUpsertOne {
 	return u.Update(func(s *GroupUpsert) {
-		s.SetModelsListConfig(v)
+		s.SetModelAllowlist(v)
 	})
 }
 
-// UpdateModelsListConfig sets the "models_list_config" field to the value that was provided on create.
-func (u *GroupUpsertOne) UpdateModelsListConfig() *GroupUpsertOne {
+// UpdateModelAllowlist sets the "model_allowlist" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateModelAllowlist() *GroupUpsertOne {
 	return u.Update(func(s *GroupUpsert) {
-		s.UpdateModelsListConfig()
+		s.UpdateModelAllowlist()
+	})
+}
+
+// SetAnthropicThinkingCompat sets the "anthropic_thinking_compat" field.
+func (u *GroupUpsertOne) SetAnthropicThinkingCompat(v domain.GroupAnthropicThinkingCompat) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetAnthropicThinkingCompat(v)
+	})
+}
+
+// UpdateAnthropicThinkingCompat sets the "anthropic_thinking_compat" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateAnthropicThinkingCompat() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateAnthropicThinkingCompat()
+	})
+}
+
+// SetCodexModelsManifestConfig sets the "codex_models_manifest_config" field.
+func (u *GroupUpsertOne) SetCodexModelsManifestConfig(v domain.GroupCodexModelsManifestConfig) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetCodexModelsManifestConfig(v)
+	})
+}
+
+// UpdateCodexModelsManifestConfig sets the "codex_models_manifest_config" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateCodexModelsManifestConfig() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateCodexModelsManifestConfig()
 	})
 }
 
@@ -3919,6 +4677,20 @@ func (u *GroupUpsertOne) SetMaxReasoningEffort(v string) *GroupUpsertOne {
 func (u *GroupUpsertOne) UpdateMaxReasoningEffort() *GroupUpsertOne {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdateMaxReasoningEffort()
+	})
+}
+
+// SetMaxReasoningEffortOverLimit sets the "max_reasoning_effort_over_limit" field.
+func (u *GroupUpsertOne) SetMaxReasoningEffortOverLimit(v string) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetMaxReasoningEffortOverLimit(v)
+	})
+}
+
+// UpdateMaxReasoningEffortOverLimit sets the "max_reasoning_effort_over_limit" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateMaxReasoningEffortOverLimit() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateMaxReasoningEffortOverLimit()
 	})
 }
 
@@ -4276,6 +5048,20 @@ func (u *GroupUpsertBulk) ClearDescription() *GroupUpsertBulk {
 	})
 }
 
+// SetI18n sets the "i18n" field.
+func (u *GroupUpsertBulk) SetI18n(v domain.GroupI18n) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetI18n(v)
+	})
+}
+
+// UpdateI18n sets the "i18n" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateI18n() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateI18n()
+	})
+}
+
 // SetRateMultiplier sets the "rate_multiplier" field.
 func (u *GroupUpsertBulk) SetRateMultiplier(v float64) *GroupUpsertBulk {
 	return u.Update(func(s *GroupUpsert) {
@@ -4294,6 +5080,20 @@ func (u *GroupUpsertBulk) AddRateMultiplier(v float64) *GroupUpsertBulk {
 func (u *GroupUpsertBulk) UpdateRateMultiplier() *GroupUpsertBulk {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdateRateMultiplier()
+	})
+}
+
+// SetRateSyncGroupIds sets the "rate_sync_group_ids" field.
+func (u *GroupUpsertBulk) SetRateSyncGroupIds(v []int64) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetRateSyncGroupIds(v)
+	})
+}
+
+// UpdateRateSyncGroupIds sets the "rate_sync_group_ids" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateRateSyncGroupIds() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateRateSyncGroupIds()
 	})
 }
 
@@ -4360,6 +5160,41 @@ func (u *GroupUpsertBulk) UpdatePeakRateMultiplier() *GroupUpsertBulk {
 	})
 }
 
+// SetSyncIsolationEnabled sets the "sync_isolation_enabled" field.
+func (u *GroupUpsertBulk) SetSyncIsolationEnabled(v bool) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetSyncIsolationEnabled(v)
+	})
+}
+
+// UpdateSyncIsolationEnabled sets the "sync_isolation_enabled" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateSyncIsolationEnabled() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateSyncIsolationEnabled()
+	})
+}
+
+// SetSyncIsolationSourceGroupID sets the "sync_isolation_source_group_id" field.
+func (u *GroupUpsertBulk) SetSyncIsolationSourceGroupID(v int64) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetSyncIsolationSourceGroupID(v)
+	})
+}
+
+// AddSyncIsolationSourceGroupID adds v to the "sync_isolation_source_group_id" field.
+func (u *GroupUpsertBulk) AddSyncIsolationSourceGroupID(v int64) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.AddSyncIsolationSourceGroupID(v)
+	})
+}
+
+// UpdateSyncIsolationSourceGroupID sets the "sync_isolation_source_group_id" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateSyncIsolationSourceGroupID() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateSyncIsolationSourceGroupID()
+	})
+}
+
 // SetIsExclusive sets the "is_exclusive" field.
 func (u *GroupUpsertBulk) SetIsExclusive(v bool) *GroupUpsertBulk {
 	return u.Update(func(s *GroupUpsert) {
@@ -4399,6 +5234,34 @@ func (u *GroupUpsertBulk) SetPlatform(v string) *GroupUpsertBulk {
 func (u *GroupUpsertBulk) UpdatePlatform() *GroupUpsertBulk {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdatePlatform()
+	})
+}
+
+// SetBlockedUserAgents sets the "blocked_user_agents" field.
+func (u *GroupUpsertBulk) SetBlockedUserAgents(v string) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetBlockedUserAgents(v)
+	})
+}
+
+// UpdateBlockedUserAgents sets the "blocked_user_agents" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateBlockedUserAgents() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateBlockedUserAgents()
+	})
+}
+
+// SetRequiredProtocol sets the "required_protocol" field.
+func (u *GroupUpsertBulk) SetRequiredProtocol(v string) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetRequiredProtocol(v)
+	})
+}
+
+// UpdateRequiredProtocol sets the "required_protocol" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateRequiredProtocol() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateRequiredProtocol()
 	})
 }
 
@@ -4521,6 +5384,20 @@ func (u *GroupUpsertBulk) UpdateDefaultValidityDays() *GroupUpsertBulk {
 	})
 }
 
+// SetAccountErrorFailoverEnabled sets the "account_error_failover_enabled" field.
+func (u *GroupUpsertBulk) SetAccountErrorFailoverEnabled(v bool) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetAccountErrorFailoverEnabled(v)
+	})
+}
+
+// UpdateAccountErrorFailoverEnabled sets the "account_error_failover_enabled" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateAccountErrorFailoverEnabled() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateAccountErrorFailoverEnabled()
+	})
+}
+
 // SetAllowImageGeneration sets the "allow_image_generation" field.
 func (u *GroupUpsertBulk) SetAllowImageGeneration(v bool) *GroupUpsertBulk {
 	return u.Update(func(s *GroupUpsert) {
@@ -4546,6 +5423,34 @@ func (u *GroupUpsertBulk) SetAllowBatchImageGeneration(v bool) *GroupUpsertBulk 
 func (u *GroupUpsertBulk) UpdateAllowBatchImageGeneration() *GroupUpsertBulk {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdateAllowBatchImageGeneration()
+	})
+}
+
+// SetImageAutoSizeFromReference sets the "image_auto_size_from_reference" field.
+func (u *GroupUpsertBulk) SetImageAutoSizeFromReference(v bool) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetImageAutoSizeFromReference(v)
+	})
+}
+
+// UpdateImageAutoSizeFromReference sets the "image_auto_size_from_reference" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateImageAutoSizeFromReference() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateImageAutoSizeFromReference()
+	})
+}
+
+// SetImageCountBilling sets the "image_count_billing" field.
+func (u *GroupUpsertBulk) SetImageCountBilling(v bool) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetImageCountBilling(v)
+	})
+}
+
+// UpdateImageCountBilling sets the "image_count_billing" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateImageCountBilling() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateImageCountBilling()
 	})
 }
 
@@ -5005,7 +5910,7 @@ func (u *GroupUpsertBulk) UpdateLongContextPricingEnabled() *GroupUpsertBulk {
 }
 
 // SetModelPricing sets the "model_pricing" field.
-func (u *GroupUpsertBulk) SetModelPricing(v json.RawMessage) *GroupUpsertBulk {
+func (u *GroupUpsertBulk) SetModelPricing(v jsontext.Value) *GroupUpsertBulk {
 	return u.Update(func(s *GroupUpsert) {
 		s.SetModelPricing(v)
 	})
@@ -5207,6 +6112,48 @@ func (u *GroupUpsertBulk) UpdateAllowLive() *GroupUpsertBulk {
 	})
 }
 
+// SetForceOpenaiFast sets the "force_openai_fast" field.
+func (u *GroupUpsertBulk) SetForceOpenaiFast(v bool) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetForceOpenaiFast(v)
+	})
+}
+
+// UpdateForceOpenaiFast sets the "force_openai_fast" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateForceOpenaiFast() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateForceOpenaiFast()
+	})
+}
+
+// SetForceOpenaiUltrafast sets the "force_openai_ultrafast" field.
+func (u *GroupUpsertBulk) SetForceOpenaiUltrafast(v bool) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetForceOpenaiUltrafast(v)
+	})
+}
+
+// UpdateForceOpenaiUltrafast sets the "force_openai_ultrafast" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateForceOpenaiUltrafast() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateForceOpenaiUltrafast()
+	})
+}
+
+// SetFreeOpenaiFast sets the "free_openai_fast" field.
+func (u *GroupUpsertBulk) SetFreeOpenaiFast(v bool) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetFreeOpenaiFast(v)
+	})
+}
+
+// UpdateFreeOpenaiFast sets the "free_openai_fast" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateFreeOpenaiFast() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateFreeOpenaiFast()
+	})
+}
+
 // SetRequireOauthOnly sets the "require_oauth_only" field.
 func (u *GroupUpsertBulk) SetRequireOauthOnly(v bool) *GroupUpsertBulk {
 	return u.Update(func(s *GroupUpsert) {
@@ -5263,17 +6210,45 @@ func (u *GroupUpsertBulk) UpdateMessagesDispatchModelConfig() *GroupUpsertBulk {
 	})
 }
 
-// SetModelsListConfig sets the "models_list_config" field.
-func (u *GroupUpsertBulk) SetModelsListConfig(v domain.GroupModelsListConfig) *GroupUpsertBulk {
+// SetModelAllowlist sets the "model_allowlist" field.
+func (u *GroupUpsertBulk) SetModelAllowlist(v domain.GroupModelAllowlist) *GroupUpsertBulk {
 	return u.Update(func(s *GroupUpsert) {
-		s.SetModelsListConfig(v)
+		s.SetModelAllowlist(v)
 	})
 }
 
-// UpdateModelsListConfig sets the "models_list_config" field to the value that was provided on create.
-func (u *GroupUpsertBulk) UpdateModelsListConfig() *GroupUpsertBulk {
+// UpdateModelAllowlist sets the "model_allowlist" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateModelAllowlist() *GroupUpsertBulk {
 	return u.Update(func(s *GroupUpsert) {
-		s.UpdateModelsListConfig()
+		s.UpdateModelAllowlist()
+	})
+}
+
+// SetAnthropicThinkingCompat sets the "anthropic_thinking_compat" field.
+func (u *GroupUpsertBulk) SetAnthropicThinkingCompat(v domain.GroupAnthropicThinkingCompat) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetAnthropicThinkingCompat(v)
+	})
+}
+
+// UpdateAnthropicThinkingCompat sets the "anthropic_thinking_compat" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateAnthropicThinkingCompat() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateAnthropicThinkingCompat()
+	})
+}
+
+// SetCodexModelsManifestConfig sets the "codex_models_manifest_config" field.
+func (u *GroupUpsertBulk) SetCodexModelsManifestConfig(v domain.GroupCodexModelsManifestConfig) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetCodexModelsManifestConfig(v)
+	})
+}
+
+// UpdateCodexModelsManifestConfig sets the "codex_models_manifest_config" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateCodexModelsManifestConfig() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateCodexModelsManifestConfig()
 	})
 }
 
@@ -5309,6 +6284,20 @@ func (u *GroupUpsertBulk) SetMaxReasoningEffort(v string) *GroupUpsertBulk {
 func (u *GroupUpsertBulk) UpdateMaxReasoningEffort() *GroupUpsertBulk {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdateMaxReasoningEffort()
+	})
+}
+
+// SetMaxReasoningEffortOverLimit sets the "max_reasoning_effort_over_limit" field.
+func (u *GroupUpsertBulk) SetMaxReasoningEffortOverLimit(v string) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetMaxReasoningEffortOverLimit(v)
+	})
+}
+
+// UpdateMaxReasoningEffortOverLimit sets the "max_reasoning_effort_over_limit" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateMaxReasoningEffortOverLimit() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateMaxReasoningEffortOverLimit()
 	})
 }
 

@@ -9,18 +9,48 @@ const appStoreMocks = vi.hoisted(() => ({
   showError: vi.fn(),
 }))
 
+const accountApiMocks = vi.hoisted(() => ({
+  getById: vi.fn(),
+}))
+
+const userApiMocks = vi.hoisted(() => ({
+  getById: vi.fn(),
+}))
+
 vi.mock('@/utils/ipGeoLookup', () => ipGeoMocks)
 vi.mock('@/stores/app', () => ({ useAppStore: () => appStoreMocks }))
+vi.mock('@/api/admin/accounts', () => ({
+  getById: (...args: unknown[]) => accountApiMocks.getById(...args),
+}))
+vi.mock('@/api/admin/users', () => ({
+  getById: (...args: unknown[]) => userApiMocks.getById(...args),
+}))
 
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 
+import en from '@/i18n/locales/en/admin/resources'
+import zh from '@/i18n/locales/zh/admin/resources'
 import UsageTable from '../UsageTable.vue'
 
+let locale: 'en' | 'zh' = 'en'
+const localizedMessages: Record<'en' | 'zh', Record<string, string>> = {
+  en: {
+    'admin.usage.longContext': en.usage.longContext,
+    'admin.usage.longContextPricingTooltip': en.usage.longContextPricingTooltip,
+  },
+  zh: {
+    'admin.usage.longContext': zh.usage.longContext,
+    'admin.usage.longContextPricingTooltip': zh.usage.longContextPricingTooltip,
+  },
+}
+
 const messages: Record<string, string> = {
+  'usage.outputTps': 'Output TPS',
   'admin.usage.userDeletedBadge': 'Deleted',
   'usage.costDetails': 'Cost Breakdown',
+  'usage.searchCost': 'Search cost (before rate)',
   'admin.usage.inputCost': 'Input Cost',
   'admin.usage.outputCost': 'Output Cost',
   'admin.usage.cacheCreationCost': 'Cache Creation Cost',
@@ -30,6 +60,7 @@ const messages: Record<string, string> = {
   'usage.perMillionTokens': '/ 1M tokens',
   'usage.serviceTier': 'Service tier',
   'usage.serviceTierPriority': 'Fast',
+  'usage.serviceTierUltrafast': 'Ultrafast',
   'usage.serviceTierFlex': 'Flex',
   'usage.serviceTierStandard': 'Standard',
   'usage.rate': 'Rate',
@@ -54,10 +85,14 @@ const messages: Record<string, string> = {
   'usage.imageSizeUnknown': 'unknown',
   'usage.imageUnitPrice': 'Per-image price',
   'usage.imageTotalPrice': 'Image total price',
+  'usage.stream': 'Stream',
+  'usage.sync': 'Sync',
+  'usage.nativeCompactionV2': 'Compaction',
   'admin.usage.billingModeToken': 'Token',
   'admin.usage.billingModePerRequest': 'Per request',
   'admin.usage.billingModeImage': 'Image',
 	'admin.usage.requestIdCopied': 'Request ID copied',
+	'admin.usage.upstreamRequestIdCopied': 'Upstream ID copied',
 	'keys.copied': 'Copied',
 	'keys.copyToClipboard': 'Copy to clipboard',
 	'common.copyFailed': 'Copy failed',
@@ -66,6 +101,8 @@ const messages: Record<string, string> = {
 	'usage.upstreamResponseModel': 'Upstream response',
 	'usage.modelVariant': 'Possible version variant',
 	'usage.modelMismatch': 'Different model',
+  'admin.usage.upstreamMultiplier': 'Upstream rate',
+  'admin.usage.apiAddress': 'API URL',
 }
 
 vi.mock('vue-i18n', async () => {
@@ -73,7 +110,10 @@ vi.mock('vue-i18n', async () => {
   return {
     ...actual,
     useI18n: () => ({
-      t: (key: string) => messages[key] ?? key,
+      t: (key: string, params: Record<string, string | number> = {}) => {
+        const message = localizedMessages[locale][key] ?? messages[key] ?? key
+        return message.replace(/\{(\w+)\}/g, (match, name) => String(params[name] ?? match))
+      },
     }),
   }
 })
@@ -82,12 +122,15 @@ const DataTableStub = {
   props: ['data'],
   template: `
     <div>
-      <div v-for="row in data" :key="row.request_id">
+      <div v-for="row in data" :key="row.request_id" :data-request-id="row.request_id">
         <slot name="cell-model" :row="row" :value="row.model" />
+        <slot name="cell-reasoning_effort" :row="row" :value="row.reasoning_effort" />
         <slot name="cell-billing_mode" :row="row" />
         <slot name="cell-tokens" :row="row" />
+        <slot name="cell-latency" :row="row" />
         <slot name="cell-cost" :row="row" />
         <slot name="cell-request_id" :row="row" />
+        <slot name="cell-upstream_request_id" :row="row" />
       </div>
     </div>
   `,
@@ -122,7 +165,59 @@ const baseImageRow = {
 }
 
 describe('admin UsageTable tooltip', () => {
+  it.each([
+    [100, 100, 800, '800 (80.00%)'],
+    [2, 0, 1, '1 (33.33%)'],
+    [0, 0, 1000, '1.0K (100.00%)'],
+  ])('shows the cache hit rate beside cached tokens (%i, %i, %i)', (input, created, cached, expected) => {
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [{ ...baseImageRow, image_count: 0, billing_mode: 'token', input_tokens: input, output_tokens: 500, cache_creation_tokens: created, cache_read_tokens: cached }],
+        loading: false,
+        columns: [{ key: 'tokens', label: 'Tokens' }],
+      },
+      global: { stubs: { DataTable: DataTableStub, EmptyState: true, Icon: true, Teleport: true } },
+    })
+    expect(wrapper.find('.text-sky-600').text()).toBe(expected)
+    wrapper.unmount()
+  })
+
+  it('shows the two OpenAI cache-write buckets without Anthropic lifetime labels', async () => {
+    const row = { ...baseImageRow, image_count: 0, billing_mode: 'token', cache_creation_tokens: 2399, cache_creation_30m_tokens: 9, cache_creation_12h_tokens: 2390 }
+    const wrapper = mount(UsageTable, {
+      props: { data: [row], loading: false, columns: [] },
+      global: { stubs: { DataTable: DataTableStub, EmptyState: true, Icon: true, Teleport: true } },
+    })
+    try {
+      await wrapper.find('.group.relative').trigger('mouseenter')
+      await nextTick()
+      const text = wrapper.get('.fixed').text()
+      expect(text).toContain('30m')
+      expect(text).toContain('12h')
+      expect(text).toContain('2,390')
+      expect(text).not.toContain('5m')
+      expect(text).not.toMatch(/\b1h\b/)
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
+  it('shows output TPS in the latency cell using total duration', () => {
+    const row = { ...baseImageRow, image_count: 0, billing_mode: 'token', output_tokens: 1000, duration_ms: 20_000, first_token_ms: 10_000 }
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [row, { ...row, request_id: 'no-duration', duration_ms: null }, { ...row, request_id: 'image', image_count: 1 }],
+        loading: false,
+        columns: [{ key: 'latency', label: 'Latency' }],
+      },
+      global: { stubs: { DataTable: DataTableStub, EmptyState: true, Icon: true, Teleport: true } },
+    })
+    expect(wrapper.findAll('[data-testid="output-tps"]').map(cell => cell.text())).toEqual(['50.0 tok/s', '—', '—'])
+    expect(wrapper.text()).toContain('Output TPS')
+  })
+
   beforeEach(() => {
+    locale = 'en'
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
       x: 0,
       y: 0,
@@ -136,7 +231,11 @@ describe('admin UsageTable tooltip', () => {
     } as DOMRect)
   })
 
-  it('marks only usage rows that actually applied long-context billing', () => {
+  it.each([
+    ['en', 'Long context', 'Long-context pricing was applied. Input and output rates depend on the pricing tier, not a uniform multiplier.'],
+    ['zh', '长上下文', '已应用长上下文计费。输入和输出费率取决于定价档位，并非统一倍率。'],
+  ] as const)('marks only applied long-context billing with localized text in %s', (language, label, tooltip) => {
+    locale = language
     const wrapper = mount(UsageTable, {
       props: {
         data: [
@@ -149,6 +248,10 @@ describe('admin UsageTable tooltip', () => {
             ...baseImageRow,
             request_id: 'req-long-context-disabled',
             long_context_billing_applied: false,
+          },
+          {
+            ...baseImageRow,
+            request_id: 'req-long-context-absent',
           },
         ],
         loading: false,
@@ -165,7 +268,78 @@ describe('admin UsageTable tooltip', () => {
     })
 
     expect(wrapper.findAll('[data-testid="long-context-billing-marker"]')).toHaveLength(1)
-    expect(wrapper.get('[data-testid="long-context-billing-marker"]').text()).toBe('x2')
+    const marker = wrapper.get('[data-request-id="req-long-context-enabled"] [data-testid="long-context-billing-marker"]')
+    expect(marker.text()).toBe(label)
+    expect(marker.attributes('title')).toBe(tooltip)
+    expect(wrapper.find('[data-request-id="req-long-context-disabled"] [data-testid="long-context-billing-marker"]').exists()).toBe(false)
+    expect(wrapper.find('[data-request-id="req-long-context-absent"] [data-testid="long-context-billing-marker"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('x2')
+  })
+
+  it('keeps the request type badge and adds a separate badge only for native compaction rows', () => {
+    const DataTableStreamStub = {
+      props: ['data'],
+      template: `
+        <div>
+          <div v-for="row in data" :key="row.request_id">
+            <slot name="cell-stream" :row="row" />
+          </div>
+        </div>
+      `,
+    }
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [
+          {
+            ...baseImageRow,
+            request_id: 'req-compaction-stream',
+            request_type: 'stream',
+            stream: true,
+            native_compaction_v2: true,
+          },
+          {
+            ...baseImageRow,
+            request_id: 'req-historical-sync',
+            request_type: 'sync',
+            stream: false,
+            native_compaction_v2: false,
+          },
+        ],
+        loading: false,
+        columns: [],
+      },
+      global: {
+        stubs: {
+          DataTable: DataTableStreamStub,
+          EmptyState: true,
+          Icon: true,
+          Teleport: true,
+        },
+      },
+    })
+
+    const requestBadges = wrapper.findAll('[data-testid="request-type-badge"]')
+    expect(requestBadges).toHaveLength(2)
+    expect(requestBadges[0].text()).toBe('Stream')
+    expect(requestBadges[1].text()).toBe('Sync')
+    expect(wrapper.findAll('[data-testid="native-compaction-badge"]')).toHaveLength(1)
+    expect(wrapper.get('[data-testid="native-compaction-badge"]').text()).toBe('Compaction')
+  })
+
+  it.each([
+    [0, '0.0x'],
+    [0.5, '0.50x'],
+    [undefined, '1.00x'],
+  ])('shows the stored user rate %s in cost details', async (rate, expected) => {
+    const wrapper = mount(UsageTable, {
+      props: { data: [{ ...baseImageRow, rate_multiplier: rate }], loading: false, columns: [] },
+      global: { stubs: { DataTable: DataTableStub, EmptyState: true, Icon: true, Teleport: true } },
+    })
+    const triggers = wrapper.findAll('.group.relative')
+    await triggers[triggers.length - 1].trigger('mouseenter')
+    const rateLabel = wrapper.get('.fixed').findAll('span').find(span => span.text() === 'Rate')!
+    expect(rateLabel.element.parentElement?.textContent).toContain(expected)
+    wrapper.unmount()
   })
 
   it('shows service tier and billing breakdown in cost tooltip', async () => {
@@ -218,6 +392,53 @@ describe('admin UsageTable tooltip', () => {
     expect(text).toContain('$0.069568')
   })
 
+  it.each(['token', 'image', 'per_request'])('keeps eight decimal places in %s cost details', async (billingMode) => {
+    const row = {
+      ...baseImageRow,
+      billing_mode: billingMode,
+      image_count: billingMode === 'image' ? 2 : 0,
+      input_cost: 0.00000001,
+      image_input_cost: 0.00000002,
+      output_cost: 0.00000003,
+      image_output_cost: 0.00000004,
+      cache_creation_cost: 0.00000005,
+      cache_read_cost: 0.00000006,
+      total_cost: 0.00000022,
+      actual_cost: 0.00000042,
+      account_stats_cost: 0.00000012,
+      account_rate_multiplier: 1.5,
+    }
+    const wrapper = mount(UsageTable, {
+      props: { data: [row], loading: false, columns: [] },
+      global: { stubs: { DataTable: DataTableStub, EmptyState: true, Icon: true, Teleport: true } },
+    })
+    const triggers = wrapper.findAll('.group.relative')
+    await triggers[triggers.length - 1].trigger('mouseenter')
+    const amounts = wrapper.get('.fixed').findAll('span').map(span => span.text())
+    expect(amounts).toEqual(expect.arrayContaining([
+      '$0.00000001', '$0.00000002', '$0.00000003', '$0.00000004',
+      '$0.00000005', '$0.00000006', '$0.00000022', '$0.00000042', '$0.00000018',
+    ]))
+    if (billingMode === 'image') expect(amounts).toContain('$0.00000011')
+    wrapper.unmount()
+  })
+
+  it('uses eight decimal places for missing cost values', async () => {
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [{ ...baseImageRow, billing_mode: 'per_request', image_count: 0, total_cost: undefined, actual_cost: undefined }],
+        loading: false,
+        columns: [],
+      },
+      global: { stubs: { DataTable: DataTableStub, EmptyState: true, Icon: true, Teleport: true } },
+    })
+    const triggers = wrapper.findAll('.group.relative')
+    await triggers[triggers.length - 1].trigger('mouseenter')
+    const amounts = wrapper.get('.fixed').findAll('span').map(span => span.text()).filter(text => text.startsWith('$'))
+    expect(amounts).toEqual(['$0.00000000', '$0.00000000', '$0.00000000', '$0.00000000'])
+    wrapper.unmount()
+  })
+
   it('shows requested and upstream models separately for admin rows', () => {
     const row = {
       request_id: 'req-admin-model-1',
@@ -254,6 +475,86 @@ describe('admin UsageTable tooltip', () => {
     const text = wrapper.text()
     expect(text).toContain('claude-sonnet-4')
     expect(text).toContain('claude-sonnet-4-20250514')
+  })
+
+  it('shows requested and forwarded reasoning effort separately when they differ', () => {
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [{
+          request_id: 'req-admin-effort-1',
+          model: 'gpt-5.4',
+          reasoning_effort: 'max',
+          upstream_reasoning_effort: 'xhigh',
+        }],
+        loading: false,
+        columns: [],
+      },
+      global: {
+        stubs: {
+          DataTable: DataTableStub,
+          EmptyState: true,
+          Icon: true,
+          Teleport: true,
+        },
+      },
+    })
+
+    const text = wrapper.text()
+    expect(text).toContain('Max')
+    expect(text).toContain('XHigh')
+    expect(text).toContain('↳')
+  })
+
+  it('shows a single reasoning effort when requested matches forwarded', () => {
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [{
+          request_id: 'req-admin-effort-2',
+          model: 'gpt-5.6-sol',
+          reasoning_effort: 'max',
+        }],
+        loading: false,
+        columns: [],
+      },
+      global: {
+        stubs: {
+          DataTable: DataTableStub,
+          EmptyState: true,
+          Icon: true,
+          Teleport: true,
+        },
+      },
+    })
+
+    const text = wrapper.text()
+    expect(text).toContain('Max')
+    expect(text).not.toContain('↳')
+  })
+
+  it('hides mapped reasoning effort for user rows that only have the requested value', () => {
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [{
+          request_id: 'req-user-effort-1',
+          model: 'gpt-5.4',
+          reasoning_effort: 'max',
+        }],
+        loading: false,
+        columns: [],
+      },
+      global: {
+        stubs: {
+          DataTable: DataTableStub,
+          EmptyState: true,
+          Icon: true,
+          Teleport: true,
+        },
+      },
+    })
+
+    expect(wrapper.text()).toContain('Max')
+    expect(wrapper.text()).not.toContain('XHigh')
+    expect(wrapper.text()).not.toContain('↳')
   })
 
 	it.each([
@@ -453,6 +754,35 @@ describe('admin UsageTable request ID column', () => {
     expect(writeText).toHaveBeenCalledWith('req-admin-visible-id')
     expect(appStoreMocks.showSuccess).toHaveBeenCalledWith('Request ID copied')
   })
+
+  it('renders and copies the upstream ID', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('navigator', { clipboard: { writeText } })
+
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [{ ...baseImageRow, request_id: '', upstream_request_id: '20260903082826779695' }],
+        loading: false,
+        columns: [{ key: 'upstream_request_id', label: 'Upstream ID' }],
+      },
+      global: {
+        stubs: {
+          DataTable: DataTableStub,
+          EmptyState: true,
+          Icon: true,
+          Teleport: true,
+        },
+      },
+    })
+
+    expect(wrapper.text()).toContain('20260903082826779695')
+    const copyButtons = wrapper.findAll('button[title="Copy to clipboard"]')
+    expect(copyButtons).toHaveLength(1)
+    await copyButtons[0].trigger('click')
+
+    expect(writeText).toHaveBeenCalledWith('20260903082826779695')
+    expect(appStoreMocks.showSuccess).toHaveBeenCalledWith('Upstream ID copied')
+  })
 })
 
 describe('admin UsageTable IP geolocation batch toolbar', () => {
@@ -561,6 +891,7 @@ const DataTableStubWithUser = {
       <div v-for="row in data" :key="row.request_id">
         <slot name="cell-user" :row="row" />
         <slot name="cell-model" :row="row" :value="row.model" />
+        <slot name="cell-reasoning_effort" :row="row" :value="row.reasoning_effort" />
         <slot name="cell-billing_mode" :row="row" />
         <slot name="cell-tokens" :row="row" />
         <slot name="cell-cost" :row="row" />
@@ -638,5 +969,282 @@ describe('admin UsageTable deleted-user badge', () => {
 
     expect(wrapper.text()).not.toContain('Deleted')
     expect(wrapper.text()).toContain('active@test.com')
+  })
+})
+
+describe('admin UsageTable account hover', () => {
+  const DataTableAccountStub = {
+    props: ['data'],
+    template: `
+      <div>
+        <div v-for="row in data" :key="row.request_id">
+          <slot name="cell-account" :row="row" />
+        </div>
+      </div>
+    `,
+  }
+
+  const TeleportStub = { template: '<div><slot /></div>' }
+
+  beforeEach(() => {
+    accountApiMocks.getById.mockReset()
+    userApiMocks.getById.mockReset()
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      x: 0,
+      y: 0,
+      top: 20,
+      left: 20,
+      right: 120,
+      bottom: 40,
+      width: 100,
+      height: 20,
+      toJSON: () => ({}),
+    } as DOMRect)
+  })
+
+  it('shows probed upstream declared rate and API URL from the account summary without fetching', async () => {
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [{
+          request_id: 'req-account-hover',
+          model: 'gpt-5.4',
+          account: {
+            id: 9,
+            name: 'relay-a',
+            upstream_rate_multiplier: 0.065,
+            rate_multiplier: 0.35,
+            base_url: 'https://api.example.com/v1',
+          },
+        }],
+        loading: false,
+        columns: [{ key: 'account', label: 'Account' }],
+      },
+      global: {
+        stubs: {
+          DataTable: DataTableAccountStub,
+          EmptyState: true,
+          Icon: true,
+          Teleport: TeleportStub,
+        },
+      },
+    })
+
+    await wrapper.get('button').trigger('mouseenter')
+    await nextTick()
+
+    const tooltip = wrapper.get('[data-testid="usage-account-tooltip"]')
+    expect(tooltip.text()).toContain('Upstream rate')
+    expect(tooltip.text()).toContain('0.065x')
+    expect(tooltip.text()).not.toContain('0.35x')
+    expect(tooltip.text()).toContain('API URL')
+    expect(tooltip.text()).toContain('https://api.example.com/v1')
+    expect(accountApiMocks.getById).not.toHaveBeenCalled()
+  })
+
+  it('loads missing hover fields from account extra.upstream_billing_probe, not account billing rate', async () => {
+    accountApiMocks.getById.mockResolvedValue({
+      id: 11,
+      name: 'relay-b',
+      rate_multiplier: 1.5,
+      credentials: { base_url: 'https://relay.llmfree.work' },
+      extra: {
+        upstream_billing_probe: {
+          status: 'ok',
+          data: {
+            object: 'sub2api.key_billing',
+            schema_version: 1,
+            billing_scope: 'token',
+            group_rate_multiplier: 1,
+            resolved_rate_multiplier: 0.065,
+            peak_rate_enabled: false,
+            effective_rate_multiplier: 0.065,
+            observed_at: '2026-07-13T00:00:00Z',
+          },
+          last_attempt_at: '2026-07-13T00:00:00Z',
+          next_probe_at: '2026-07-13T00:30:00Z',
+        },
+      },
+    })
+
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [{
+          request_id: 'req-account-lookup',
+          model: 'gpt-5.4',
+          account_rate_multiplier: 1.5,
+          account: { id: 11, name: 'relay-b' },
+        }],
+        loading: false,
+        columns: [{ key: 'account', label: 'Account' }],
+      },
+      global: {
+        stubs: {
+          DataTable: DataTableAccountStub,
+          EmptyState: true,
+          Icon: true,
+          Teleport: TeleportStub,
+        },
+      },
+    })
+
+    await wrapper.get('button').trigger('mouseenter')
+    await flushPromises()
+
+    expect(accountApiMocks.getById).toHaveBeenCalledWith(11)
+    const tooltip = wrapper.get('[data-testid="usage-account-tooltip"]')
+    expect(tooltip.text()).toContain('0.065x')
+    expect(tooltip.text()).not.toContain('1.50x')
+    expect(tooltip.text()).toContain('https://relay.llmfree.work')
+  })
+
+  it('shows dash when the account has no upstream billing probe', async () => {
+    accountApiMocks.getById.mockResolvedValue({
+      id: 12,
+      name: 'oauth-a',
+      rate_multiplier: 1.5,
+      credentials: { base_url: 'https://api.openai.com' },
+    })
+
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [{
+          request_id: 'req-account-no-probe',
+          model: 'gpt-5.4',
+          account: { id: 12, name: 'oauth-a' },
+        }],
+        loading: false,
+        columns: [{ key: 'account', label: 'Account' }],
+      },
+      global: {
+        stubs: {
+          DataTable: DataTableAccountStub,
+          EmptyState: true,
+          Icon: true,
+          Teleport: TeleportStub,
+        },
+      },
+    })
+
+    await wrapper.get('button').trigger('mouseenter')
+    await flushPromises()
+
+    const tooltip = wrapper.get('[data-testid="usage-account-tooltip"]')
+    expect(tooltip.text()).toContain('-')
+    expect(tooltip.text()).not.toContain('1.50x')
+    expect(tooltip.text()).toContain('https://api.openai.com')
+  })
+})
+
+describe('admin UsageTable user notes', () => {
+  const TeleportStub = { template: '<div><slot /></div>' }
+
+  beforeEach(() => {
+    userApiMocks.getById.mockReset()
+    accountApiMocks.getById.mockReset()
+  })
+
+  it('shows notes instead of email when the user has notes', () => {
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [{
+          request_id: 'req-user-notes',
+          model: 'claude-3',
+          user_id: 8,
+          user: { id: 8, email: 'alice@example.com', notes: '张三' },
+        }],
+        loading: false,
+        columns: [{ key: 'user', label: 'User' }],
+      },
+      global: {
+        stubs: {
+          DataTable: DataTableStubWithUser,
+          EmptyState: true,
+          Icon: true,
+          Teleport: TeleportStub,
+        },
+      },
+    })
+
+    expect(wrapper.text()).toContain('张三')
+    expect(wrapper.text()).not.toContain('alice@example.com')
+    expect(userApiMocks.getById).not.toHaveBeenCalled()
+  })
+
+  it('keeps email when notes are empty', () => {
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [{
+          request_id: 'req-user-no-notes',
+          model: 'claude-3',
+          user_id: 9,
+          user: { id: 9, email: 'bob@example.com', notes: '' },
+        }],
+        loading: false,
+        columns: [{ key: 'user', label: 'User' }],
+      },
+      global: {
+        stubs: {
+          DataTable: DataTableStubWithUser,
+          EmptyState: true,
+          Icon: true,
+          Teleport: TeleportStub,
+        },
+      },
+    })
+
+    expect(wrapper.text()).toContain('bob@example.com')
+    expect(userApiMocks.getById).not.toHaveBeenCalled()
+  })
+
+  it('loads notes from the admin user API when the usage payload omits them', async () => {
+    userApiMocks.getById.mockResolvedValue({
+      id: 10,
+      email: 'carol@example.com',
+      notes: 'Carol 备注',
+    })
+
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [{
+          request_id: 'req-user-lookup',
+          model: 'claude-3',
+          user_id: 10,
+          user: { id: 10, email: 'carol@example.com' },
+        }],
+        loading: false,
+        columns: [{ key: 'user', label: 'User' }],
+      },
+      global: {
+        stubs: {
+          DataTable: DataTableStubWithUser,
+          EmptyState: true,
+          Icon: true,
+          Teleport: TeleportStub,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    expect(userApiMocks.getById).toHaveBeenCalledWith(10, true)
+    expect(wrapper.text()).toContain('Carol 备注')
+    expect(wrapper.text()).not.toContain('carol@example.com')
+  })
+})
+
+
+describe('Google Search cost details', () => {
+  it('shows observed query count, base search fee, and the final debit', async () => {
+    const row = { ...baseImageRow, billing_mode: 'token', image_count: 0, search_count: 2, search_cost: 0.0392, rate_multiplier: 1.75, total_cost: 0.0392, actual_cost: 0.0686 }
+    const wrapper = mount(UsageTable, {
+      props: { data: [row], loading: false, columns: [] },
+      global: { stubs: { DataTable: DataTableStub, EmptyState: true, Icon: true, Teleport: true } },
+    })
+    const triggers = wrapper.findAll('.group.relative')
+    await triggers[triggers.length - 1].trigger('mouseenter')
+    expect(wrapper.text()).toContain('Search cost (before rate) (2)')
+    expect(wrapper.text()).toContain('$0.03920000')
+    expect(wrapper.text()).toContain('$0.06860000')
+    wrapper.unmount()
   })
 })

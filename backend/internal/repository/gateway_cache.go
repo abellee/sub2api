@@ -15,6 +15,7 @@ import (
 )
 
 const stickySessionPrefix = "sticky_session:"
+const openAIResponsesSessionWindowPrefix = "openai_responses_session_window:"
 const liveCallPrefix = "live:call:"
 
 type gatewayCache struct {
@@ -29,6 +30,10 @@ func NewGatewayCache(rdb *redis.Client) service.GatewayCache {
 // 格式: sticky_session:{groupID}:{sessionHash}
 func buildSessionKey(groupID int64, sessionHash string) string {
 	return fmt.Sprintf("%s%d:%s", stickySessionPrefix, groupID, sessionHash)
+}
+
+func buildOpenAIResponsesSessionWindowKey(groupID int64, sessionHash string) string {
+	return fmt.Sprintf("%s%d:%s", openAIResponsesSessionWindowPrefix, groupID, sessionHash)
 }
 
 func (c *gatewayCache) GetSessionAccountID(ctx context.Context, groupID int64, sessionHash string) (int64, error) {
@@ -65,10 +70,137 @@ func (c *gatewayCache) DeleteSessionAccountID(ctx context.Context, groupID int64
 	return c.rdb.Del(ctx, key).Err()
 }
 
+var claimOpenAIResponsesSessionWindowScript = redis.NewScript(`
+local previous = redis.call('GET', KEYS[1])
+redis.call('SET', KEYS[1], ARGV[1], 'PX', ARGV[2])
+return previous
+`)
+
+var compareAndRefreshOpenAIResponsesSessionWindowScript = redis.NewScript(`
+local current = redis.call('GET', KEYS[1])
+if current == false or current ~= ARGV[1] then
+  return 0
+end
+redis.call('PEXPIRE', KEYS[1], ARGV[2])
+return 1
+`)
+
+var compareAndDeleteOpenAIResponsesSessionWindowScript = redis.NewScript(`
+local current = redis.call('GET', KEYS[1])
+if current == false or current ~= ARGV[1] then
+  return 0
+end
+redis.call('DEL', KEYS[1])
+return 1
+`)
+
+func (c *gatewayCache) ClaimOpenAIResponsesSessionWindow(ctx context.Context, groupID int64, sessionHash string, owner []byte, ttl time.Duration) ([]byte, error) {
+	if c == nil || c.rdb == nil {
+		return nil, errors.New("gateway cache unavailable")
+	}
+	if len(owner) == 0 || strings.TrimSpace(sessionHash) == "" || ttl <= 0 {
+		return nil, errors.New("invalid OpenAI Responses session-window claim")
+	}
+	result, err := claimOpenAIResponsesSessionWindowScript.Run(
+		ctx,
+		c.rdb,
+		[]string{buildOpenAIResponsesSessionWindowKey(groupID, sessionHash)},
+		owner,
+		ttl.Milliseconds(),
+	).Result()
+	if errors.Is(err, redis.Nil) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	switch value := result.(type) {
+	case nil:
+		return nil, nil
+	case string:
+		return []byte(value), nil
+	case []byte:
+		return append([]byte(nil), value...), nil
+	default:
+		return nil, fmt.Errorf("unexpected OpenAI Responses session-window claim result %T", result)
+	}
+}
+
+func (c *gatewayCache) CompareAndRefreshOpenAIResponsesSessionWindow(ctx context.Context, groupID int64, sessionHash string, expected []byte, ttl time.Duration) (bool, error) {
+	if c == nil || c.rdb == nil {
+		return false, errors.New("gateway cache unavailable")
+	}
+	if len(expected) == 0 || strings.TrimSpace(sessionHash) == "" || ttl <= 0 {
+		return false, errors.New("invalid OpenAI Responses session-window refresh")
+	}
+	n, err := compareAndRefreshOpenAIResponsesSessionWindowScript.Run(
+		ctx,
+		c.rdb,
+		[]string{buildOpenAIResponsesSessionWindowKey(groupID, sessionHash)},
+		expected,
+		ttl.Milliseconds(),
+	).Int()
+	return n == 1, err
+}
+
+func (c *gatewayCache) CompareAndDeleteOpenAIResponsesSessionWindow(ctx context.Context, groupID int64, sessionHash string, expected []byte) (bool, error) {
+	if c == nil || c.rdb == nil {
+		return false, errors.New("gateway cache unavailable")
+	}
+	if len(expected) == 0 || strings.TrimSpace(sessionHash) == "" {
+		return false, errors.New("invalid OpenAI Responses session-window delete")
+	}
+	n, err := compareAndDeleteOpenAIResponsesSessionWindowScript.Run(
+		ctx,
+		c.rdb,
+		[]string{buildOpenAIResponsesSessionWindowKey(groupID, sessionHash)},
+		expected,
+	).Int()
+	return n == 1, err
+}
+
+var _ service.OpenAIWSSessionPreemptionCache = (*gatewayCache)(nil)
+
 const (
 	grokVideoPendingBillingPrefix = "grok_video_pending:"
 	grokVideoBilledPrefix         = "grok_video_billed:"
+	grokVideoCDNPrefix            = "grok_video_cdn:"
 )
+
+func (c *gatewayCache) SetGrokVideoCDN(ctx context.Context, publicPath, upstreamURL string, ttl time.Duration) error {
+	if c == nil || c.rdb == nil {
+		return errors.New("gateway cache unavailable")
+	}
+	publicPath = strings.TrimSpace(publicPath)
+	upstreamURL = strings.TrimSpace(upstreamURL)
+	if publicPath == "" || upstreamURL == "" || len(publicPath) > 4096 || len(upstreamURL) > 8192 {
+		return errors.New("invalid grok video cdn mapping")
+	}
+	if ttl <= 0 {
+		ttl = 7 * 24 * time.Hour
+	}
+	sum := sha256.Sum256([]byte(publicPath))
+	return c.rdb.Set(ctx, grokVideoCDNPrefix+hex.EncodeToString(sum[:]), upstreamURL, ttl).Err()
+}
+
+func (c *gatewayCache) GetGrokVideoCDN(ctx context.Context, publicPath string) (string, error) {
+	if c == nil || c.rdb == nil {
+		return "", errors.New("gateway cache unavailable")
+	}
+	publicPath = strings.TrimSpace(publicPath)
+	if publicPath == "" {
+		return "", errors.New("invalid grok video cdn path")
+	}
+	sum := sha256.Sum256([]byte(publicPath))
+	val, err := c.rdb.Get(ctx, grokVideoCDNPrefix+hex.EncodeToString(sum[:])).Result()
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			return "", nil
+		}
+		return "", err
+	}
+	return val, nil
+}
 
 func (c *gatewayCache) SetGrokVideoPendingBilling(ctx context.Context, key string, payload []byte, ttl time.Duration) error {
 	if c == nil || c.rdb == nil {
@@ -130,22 +262,169 @@ func (c *gatewayCache) ReleaseGrokVideoBilled(ctx context.Context, key string) e
 // Compile-time assertion: gatewayCache must implement CyberSessionBlockStore.
 var _ service.CyberSessionBlockStore = (*gatewayCache)(nil)
 var _ service.LiveCallStore = (*gatewayCache)(nil)
+var _ service.GrokVideoCDNStore = (*gatewayCache)(nil)
 
-const cyberSessionBlockPrefix = "cyber_session_block:"
+const reasoningContentPrefix = "reasoning_content:"
 
-// SetCyberSessionBlocked 把被 cyber_policy 命中的会话写入屏蔽表（TTL 自动过期）。
-// 存储值 "1" 作为存在标记（IsCyberSessionBlocked 只检查 key 是否存在，不读值）。
-func (c *gatewayCache) SetCyberSessionBlocked(ctx context.Context, key string, ttl time.Duration) error {
-	return c.rdb.Set(ctx, cyberSessionBlockPrefix+key, "1", ttl).Err()
+// reasoningContentDefaultTTL 是 reasoning 缓存的默认过期时间。Codex 会话可能
+// 跨多天恢复，取 7 天；调用方传入非正 TTL 时兜底。
+const reasoningContentDefaultTTL = 7 * 24 * time.Hour
+
+// SetReasoningContent 按 reasoning item id 缓存 reasoning 全文。
+// itemID 或 content 为空时直接返回 nil（无可缓存内容，属正常情况而非错误）。
+func (c *gatewayCache) SetReasoningContent(ctx context.Context, itemID string, content string, ttl time.Duration) error {
+	if c == nil || c.rdb == nil {
+		return errors.New("gateway cache unavailable")
+	}
+	itemID = strings.TrimSpace(itemID)
+	if itemID == "" || content == "" {
+		return nil
+	}
+	if ttl <= 0 {
+		ttl = reasoningContentDefaultTTL
+	}
+	return c.rdb.Set(ctx, reasoningContentPrefix+itemID, content, ttl).Err()
 }
 
-// IsCyberSessionBlocked 查询会话是否在屏蔽表中。
-func (c *gatewayCache) IsCyberSessionBlocked(ctx context.Context, key string) (bool, error) {
-	n, err := c.rdb.Exists(ctx, cyberSessionBlockPrefix+key).Result()
-	if err != nil {
-		return false, err
+// GetReasoningContent 返回缓存的 reasoning 全文；未命中返回
+// service.ErrReasoningContentNotFound。
+func (c *gatewayCache) GetReasoningContent(ctx context.Context, itemID string) (string, error) {
+	if c == nil || c.rdb == nil {
+		return "", errors.New("gateway cache unavailable")
 	}
-	return n > 0, nil
+	itemID = strings.TrimSpace(itemID)
+	if itemID == "" {
+		return "", service.ErrReasoningContentNotFound
+	}
+	val, err := c.rdb.Get(ctx, reasoningContentPrefix+itemID).Result()
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			return "", service.ErrReasoningContentNotFound
+		}
+		return "", err
+	}
+	return val, nil
+}
+
+const (
+	cyberSessionBlockPrefix             = "cyber_session_block:"
+	cyberSessionScopePrefix             = "cyber_session_scope:"
+	cyberSessionTranscriptLengthsPrefix = "cyber_session_transcript_lengths:"
+	cyberSessionRedisCommandMaxKeys     = 128
+)
+
+func cyberSessionTranscriptLengthsKey(apiKeyID int64) string {
+	return cyberSessionTranscriptLengthsPrefix + strconv.FormatInt(apiKeyID, 10)
+}
+
+// SetCyberSessionBlocked writes exact blocks in bounded transactions. The
+// transcript length index and the coarse scope are activated only after all
+// exact blocks have been stored.
+func (c *gatewayCache) SetCyberSessionBlocked(ctx context.Context, block service.CyberSessionBlock, ttl time.Duration) error {
+	if len(block.Keys) == 0 {
+		return nil
+	}
+	exactKeys := make([]string, 0, cyberSessionRedisCommandMaxKeys)
+	flush := func() error {
+		if len(exactKeys) == 0 {
+			return nil
+		}
+		pipe := c.rdb.TxPipeline()
+		for _, key := range exactKeys {
+			pipe.Set(ctx, cyberSessionBlockPrefix+key, "1", ttl)
+		}
+		_, err := pipe.Exec(ctx)
+		exactKeys = exactKeys[:0]
+		return err
+	}
+	for _, key := range block.Keys {
+		if key != "" {
+			exactKeys = append(exactKeys, key)
+			if len(exactKeys) == cyberSessionRedisCommandMaxKeys {
+				if err := flush(); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	if err := flush(); err != nil {
+		return err
+	}
+	if block.ScopeKey == "" {
+		return nil
+	}
+	pipe := c.rdb.TxPipeline()
+	if len(block.TranscriptLengths) > 0 {
+		lengthsKey := cyberSessionTranscriptLengthsKey(block.APIKeyID)
+		members := make([]any, len(block.TranscriptLengths))
+		for i, length := range block.TranscriptLengths {
+			members[i] = length
+		}
+		pipe.SAdd(ctx, lengthsKey, members...)
+		pipe.Expire(ctx, lengthsKey, ttl)
+	}
+	pipe.Set(ctx, cyberSessionScopePrefix+block.ScopeKey, "1", ttl)
+	_, err := pipe.Exec(ctx)
+	return err
+}
+
+// cyberSessionTranscriptLengthsScript reads the API key's length index only
+// when the source scope is active, keeping inactive sources to one EXISTS.
+var cyberSessionTranscriptLengthsScript = redis.NewScript(`
+	if redis.call('EXISTS', KEYS[1]) == 0 then
+		return {}
+	end
+	return redis.call('SMEMBERS', KEYS[2])
+`)
+
+func (c *gatewayCache) CyberSessionTranscriptLengths(ctx context.Context, apiKeyID int64, scopeKey string) ([]int, error) {
+	if scopeKey == "" {
+		return nil, nil
+	}
+	members, err := cyberSessionTranscriptLengthsScript.Run(ctx, c.rdb, []string{
+		cyberSessionScopePrefix + scopeKey,
+		cyberSessionTranscriptLengthsKey(apiKeyID),
+	}).StringSlice()
+	if err != nil {
+		return nil, err
+	}
+	lengths := make([]int, 0, len(members))
+	for _, member := range members {
+		length, err := strconv.Atoi(member)
+		if err != nil {
+			return nil, fmt.Errorf("invalid cyber transcript length %q: %w", member, err)
+		}
+		lengths = append(lengths, length)
+	}
+	return lengths, nil
+}
+
+// FindCyberSessionBlocked checks bounded batches in caller order and stops at
+// the first blocked key, preserving the original earliest-match behavior.
+func (c *gatewayCache) FindCyberSessionBlocked(ctx context.Context, keys []string) (string, error) {
+	if len(keys) == 0 {
+		return "", nil
+	}
+	for start := 0; start < len(keys); start += cyberSessionRedisCommandMaxKeys {
+		end := start + cyberSessionRedisCommandMaxKeys
+		if end > len(keys) {
+			end = len(keys)
+		}
+		redisKeys := make([]string, end-start)
+		for i, key := range keys[start:end] {
+			redisKeys[i] = cyberSessionBlockPrefix + key
+		}
+		values, err := c.rdb.MGet(ctx, redisKeys...).Result()
+		if err != nil {
+			return "", err
+		}
+		for i, value := range values {
+			if value != nil {
+				return keys[start+i], nil
+			}
+		}
+	}
+	return "", nil
 }
 
 var claimLiveControllerScript = redis.NewScript(`

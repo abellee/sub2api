@@ -15,6 +15,7 @@ import (
 	coderws "github.com/coder/websocket"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 	"go.uber.org/zap"
 )
 
@@ -29,7 +30,7 @@ func (h *OpenAIGatewayHandler) Live(c *gin.Context) {
 		h.errorResponse(c, http.StatusInternalServerError, "api_error", "User context not found")
 		return
 	}
-	if apiKey.Group == nil || apiKey.Group.Platform != service.PlatformOpenAI {
+	if apiKey.Group == nil || (apiKey.Group.Platform != service.PlatformOpenAI && apiKey.Group.Platform != service.PlatformComposite) {
 		h.errorResponse(c, http.StatusNotFound, "not_found_error", "Live is not supported for this platform")
 		return
 	}
@@ -43,6 +44,18 @@ func (h *OpenAIGatewayHandler) Live(c *gin.Context) {
 		return
 	}
 	model := strings.TrimSpace(gjson.GetBytes(request.Session, "model").String())
+	if !compositeTargetPlatformAllowed(c, apiKey, model, service.PlatformOpenAI) {
+		h.errorResponse(c, http.StatusNotFound, "not_found_error", "Live only supports OpenAI models for Composite groups")
+		return
+	}
+	if upstreamModel, ok := service.ResolvedUpstreamModelFromContext(c.Request.Context()); ok && upstreamModel != model {
+		rewrittenSession, rewriteErr := sjson.SetBytes(request.Session, "model", upstreamModel)
+		if rewriteErr != nil {
+			h.errorResponse(c, http.StatusInternalServerError, "api_error", "Failed to apply Composite model route")
+			return
+		}
+		request.Session = rewrittenSession
+	}
 	reqLog := requestLogger(
 		c,
 		"handler.openai_gateway.live",
@@ -76,6 +89,7 @@ func (h *OpenAIGatewayHandler) Live(c *gin.Context) {
 		subscription,
 		service.QuotaPlatform(c.Request.Context(), apiKey),
 	); err != nil {
+		markOpsUserBalanceError(c, err)
 		status, code, message, retryAfter := billingErrorDetails(err)
 		if retryAfter > 0 {
 			c.Header("Retry-After", strconv.Itoa(retryAfter))
@@ -100,6 +114,7 @@ func (h *OpenAIGatewayHandler) Live(c *gin.Context) {
 	defer userRelease()
 
 	identity := liveCallIdentity(c, apiKey, subject.UserID, subscription)
+	c.Request = c.Request.WithContext(h.gatewayService.PrepareRequestAccountFailover(c.Request.Context(), apiKey.GroupID, apiKey.Group, "", service.PlatformOpenAI, service.OpenAIEndpointCapabilityLive))
 	created, err := h.gatewayService.CreateLiveCall(c.Request.Context(), request, identity, subject.Concurrency)
 	if err != nil {
 		h.writeLiveCreateError(c, err)
@@ -231,6 +246,6 @@ func (h *OpenAIGatewayHandler) LiveSideband(c *gin.Context) {
 func liveEnabledForAPIKey(apiKey *service.APIKey) bool {
 	return apiKey != nil &&
 		apiKey.Group != nil &&
-		apiKey.Group.Platform == service.PlatformOpenAI &&
+		(apiKey.Group.Platform == service.PlatformOpenAI || apiKey.Group.Platform == service.PlatformComposite) &&
 		apiKey.Group.AllowLive
 }

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -21,6 +22,59 @@ import (
 
 func init() {
 	gin.SetMode(gin.TestMode)
+}
+
+func TestMediaRoutesReachHandlersWithEmbeddedFrontend(t *testing.T) {
+	server, err := NewFrontendServer(&mockSettingsProvider{settings: map[string]string{}})
+	require.NoError(t, err)
+	for name, frontend := range map[string]gin.HandlerFunc{"configured": server.Middleware(), "legacy": ServeEmbeddedFrontend()} {
+		t.Run(name, func(t *testing.T) {
+			router := gin.New()
+			router.Use(frontend)
+			for _, route := range []struct{ method, path string }{
+				{http.MethodPost, "/media/images/generations"},
+				{http.MethodGet, "/media/tasks/task-123"},
+				{http.MethodPost, "/internal/media/result"},
+				{http.MethodPost, "/internal/media/settle"},
+			} {
+				router.Handle(route.method, route.path, func(c *gin.Context) {
+					c.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
+				})
+				w := httptest.NewRecorder()
+				router.ServeHTTP(w, httptest.NewRequest(route.method, route.path, strings.NewReader(`{}`)))
+				require.Equal(t, http.StatusUnauthorized, w.Code, route.path)
+				require.Contains(t, w.Header().Get("Content-Type"), "application/json")
+				require.JSONEq(t, `{"error":"authentication required"}`, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestCreativeDocsEmbeddedIndex(t *testing.T) {
+	want, err := frontendFS.ReadFile("dist/creative-docs/index.html")
+	require.NoError(t, err)
+	server, err := NewFrontendServer(&mockSettingsProvider{settings: map[string]string{}})
+	require.NoError(t, err)
+	for name, handler := range map[string]gin.HandlerFunc{"configured": server.Middleware(), "legacy": ServeEmbeddedFrontend()} {
+		t.Run(name, func(t *testing.T) {
+			router := gin.New()
+			router.Use(middleware.SecurityHeaders(config.CSPConfig{Enabled: true}, nil), handler)
+			for _, path := range []string{"/creative-docs/index.html", "/creative-docs/"} {
+				w := httptest.NewRecorder()
+				router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+				require.Equal(t, http.StatusOK, w.Code)
+				assert.Empty(t, w.Header().Get("Location"))
+				assert.Equal(t, string(want), w.Body.String())
+				assert.Equal(t, "SAMEORIGIN", w.Header().Get("X-Frame-Options"))
+				assert.Contains(t, w.Header().Get("Content-Security-Policy"), "frame-ancestors 'self'")
+				assert.NotContains(t, w.Header().Get("Content-Security-Policy"), "frame-ancestors 'none'")
+			}
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/login", nil))
+			assert.Equal(t, "DENY", w.Header().Get("X-Frame-Options"))
+			assert.Contains(t, w.Header().Get("Content-Security-Policy"), "frame-ancestors 'none'")
+		})
+	}
 }
 
 func TestInjectSiteTitle(t *testing.T) {
@@ -361,7 +415,7 @@ func TestFrontendServer_ServeIndexHTML(t *testing.T) {
 		assert.True(t, strings.HasSuffix(etag, `"`))
 	})
 
-	t.Run("returns_304_for_matching_etag", func(t *testing.T) {
+	t.Run("returns_304_only_when_no_nonce_is_present", func(t *testing.T) {
 		provider := &mockSettingsProvider{
 			settings: map[string]string{"test": "value"},
 		}
@@ -369,12 +423,8 @@ func TestFrontendServer_ServeIndexHTML(t *testing.T) {
 		server, err := NewFrontendServer(provider)
 		require.NoError(t, err)
 
-		// Use a real router for proper 304 handling
+		// No nonce in context means the cached body has no per-request part.
 		router := gin.New()
-		router.Use(func(c *gin.Context) {
-			c.Set(middleware.CSPNonceKey, "test-nonce")
-			c.Next()
-		})
 		router.Use(server.Middleware())
 
 		// First request to populate cache and get ETag
@@ -392,9 +442,47 @@ func TestFrontendServer_ServeIndexHTML(t *testing.T) {
 
 		assert.Equal(t, http.StatusNotModified, w2.Code)
 		assert.Empty(t, w2.Body.String())
+		assertNoStoreHTMLHeaders(t, w2.Header())
 	})
 
-	t.Run("sets_cache_control_header", func(t *testing.T) {
+	t.Run("serves_fresh_html_when_cached_nonce_is_stale", func(t *testing.T) {
+		provider := &mockSettingsProvider{
+			settings: map[string]string{"test": "value"},
+		}
+
+		server, err := NewFrontendServer(provider)
+		require.NoError(t, err)
+
+		router := gin.New()
+		router.Use(func(c *gin.Context) {
+			c.Set(middleware.CSPNonceKey, c.GetHeader("X-Test-Nonce"))
+			c.Next()
+		})
+		router.Use(server.Middleware())
+
+		w1 := httptest.NewRecorder()
+		req1 := httptest.NewRequest(http.MethodGet, "/", nil)
+		req1.Header.Set("X-Test-Nonce", "first-nonce")
+		router.ServeHTTP(w1, req1)
+		etag := w1.Header().Get("ETag")
+		require.NotEmpty(t, etag)
+		assert.Contains(t, w1.Body.String(), `nonce="first-nonce"`)
+
+		// The document embeds the request nonce, so a matching ETag must not
+		// turn this into a 304 that reuses the previous nonce.
+		w2 := httptest.NewRecorder()
+		req2 := httptest.NewRequest(http.MethodGet, "/", nil)
+		req2.Header.Set("X-Test-Nonce", "second-nonce")
+		req2.Header.Set("If-None-Match", etag)
+		router.ServeHTTP(w2, req2)
+
+		assert.Equal(t, http.StatusOK, w2.Code)
+		assert.Contains(t, w2.Body.String(), `nonce="second-nonce"`)
+		assert.NotContains(t, w2.Body.String(), `nonce="first-nonce"`)
+		assertNoStoreHTMLHeaders(t, w2.Header())
+	})
+
+	t.Run("sets_no_store_cache_headers", func(t *testing.T) {
 		provider := &mockSettingsProvider{
 			settings: map[string]string{"test": "value"},
 		}
@@ -409,7 +497,7 @@ func TestFrontendServer_ServeIndexHTML(t *testing.T) {
 
 		server.serveIndexHTML(c)
 
-		assert.Equal(t, "no-cache", w.Header().Get("Cache-Control"))
+		assertNoStoreHTMLHeaders(t, w.Header())
 	})
 
 	t.Run("fallback_on_settings_error", func(t *testing.T) {
@@ -433,6 +521,78 @@ func TestFrontendServer_ServeIndexHTML(t *testing.T) {
 		// Should still return 200 with base HTML
 		assert.Equal(t, http.StatusOK, w.Code)
 		assert.Contains(t, w.Header().Get("Content-Type"), "text/html")
+	})
+}
+
+func assertNoStoreHTMLHeaders(t *testing.T, header http.Header) {
+	t.Helper()
+	assert.Equal(t, "no-cache, no-store, must-revalidate", header.Get("Cache-Control"))
+	assert.Equal(t, "no-cache", header.Get("Pragma"))
+	assert.Equal(t, "0", header.Get("Expires"))
+	assert.Equal(t, "no-store", header.Get("CDN-Cache-Control"))
+	assert.Equal(t, "no-store", header.Get("Surrogate-Control"))
+}
+
+func TestFrontendServer_NoStoreHeadersOnEveryHTMLPath(t *testing.T) {
+	t.Run("cache_hit", func(t *testing.T) {
+		provider := &mockSettingsProvider{
+			settings: map[string]string{"test": "value"},
+		}
+
+		server, err := NewFrontendServer(provider)
+		require.NoError(t, err)
+
+		w1 := httptest.NewRecorder()
+		c1, _ := gin.CreateTestContext(w1)
+		c1.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+		c1.Set(middleware.CSPNonceKey, "nonce1")
+		server.serveIndexHTML(c1)
+		require.Equal(t, http.StatusOK, w1.Code)
+
+		w2 := httptest.NewRecorder()
+		c2, _ := gin.CreateTestContext(w2)
+		c2.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+		c2.Set(middleware.CSPNonceKey, "nonce2")
+		server.serveIndexHTML(c2)
+
+		assert.Equal(t, http.StatusOK, w2.Code)
+		assertNoStoreHTMLHeaders(t, w2.Header())
+	})
+
+	t.Run("settings_error_fallback", func(t *testing.T) {
+		provider := &mockSettingsProvider{
+			err: context.DeadlineExceeded,
+		}
+
+		server, err := NewFrontendServer(provider)
+		require.NoError(t, err)
+
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+		c.Set(middleware.CSPNonceKey, "nonce123")
+		server.serveIndexHTML(c)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		assertNoStoreHTMLHeaders(t, w.Header())
+	})
+
+	t.Run("settings_marshal_error_fallback", func(t *testing.T) {
+		provider := &mockSettingsProvider{
+			settings: make(chan struct{}),
+		}
+
+		server, err := NewFrontendServer(provider)
+		require.NoError(t, err)
+
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+		c.Set(middleware.CSPNonceKey, "nonce123")
+		server.serveIndexHTML(c)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		assertNoStoreHTMLHeaders(t, w.Header())
 	})
 }
 
@@ -529,6 +689,10 @@ func TestFrontendServer_Middleware(t *testing.T) {
 
 		apiPaths := []string{
 			"/api/v1/users",
+			"/media/images/generations",
+			"/media/tasks/task-123",
+			"/internal/media/result",
+			"/internal/media/settle",
 			"/models",
 			"/v1/models",
 			"/v1beta/chat",
@@ -537,8 +701,14 @@ func TestFrontendServer_Middleware(t *testing.T) {
 			"/antigravity/test",
 			"/setup/init",
 			"/health",
+			"/.well-known/oauth-protected-resource",
+			"/.well-known/oauth-protected-resource/api/v1/mcp",
+			"/.well-known/oauth-authorization-server",
 			"/responses",
 			"/responses/compact",
+			"/chat/completions",
+			"/models/gpt-5.5",
+			"/v3/contents/generations/tasks/task-123",
 		}
 
 		for _, path := range apiPaths {
@@ -659,11 +829,11 @@ func TestFrontendServer_Middleware(t *testing.T) {
 
 		// Request for existing static file
 		w := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/logo.png", nil)
+		req := httptest.NewRequest(http.MethodGet, "/logo.svg", nil)
 		router.ServeHTTP(w, req)
 
 		assert.Equal(t, http.StatusOK, w.Code)
-		assert.Contains(t, w.Header().Get("Content-Type"), "image/png")
+		assert.Contains(t, w.Header().Get("Content-Type"), "image/svg+xml")
 		assert.Empty(t, w.Header().Get("Cache-Control"))
 
 		entries, err := fs.ReadDir(server.distFS, "assets")
@@ -695,6 +865,40 @@ func TestEmbeddedFrontendBypassesBareVideoAPIRoutes(t *testing.T) {
 		"/videos/request-123",
 	} {
 		require.True(t, shouldBypassEmbeddedFrontend(path), "path=%s", path)
+	}
+}
+
+func TestEmbeddedFrontendBypassesBareAPIAliases(t *testing.T) {
+	for _, path := range []string{
+		"/chat/completions",
+		"/embeddings",
+		"/messages/count_tokens",
+		"/models/gpt-5.5",
+		"/videos",
+		"/tts",
+		"/stt",
+		"/custom-voices",
+		"/custom-voices/voice-123",
+		"/custom-voices/voice-123/audio",
+		"/realtime",
+		"/web_search",
+		"/x_search",
+		"/contents/generations/tasks",
+		"/contents/generations/tasks/task-123",
+		"/v3/contents/generations/tasks",
+		"/v3/contents/generations/tasks/task-123",
+	} {
+		require.True(t, shouldBypassEmbeddedFrontend(path), "path=%s", path)
+	}
+
+	for _, path := range []string{
+		"/model-plaza",
+		"/custom/page-1",
+		"/monitor",
+		"/setup",
+		"/v3/other",
+	} {
+		require.False(t, shouldBypassEmbeddedFrontend(path), "path=%s", path)
 	}
 }
 
@@ -751,11 +955,11 @@ func TestServeEmbeddedFrontend(t *testing.T) {
 		router.Use(middleware)
 
 		w := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/logo.png", nil)
+		req := httptest.NewRequest(http.MethodGet, "/logo.svg", nil)
 		router.ServeHTTP(w, req)
 
 		assert.Equal(t, http.StatusOK, w.Code)
-		assert.Contains(t, w.Header().Get("Content-Type"), "image/png")
+		assert.Contains(t, w.Header().Get("Content-Type"), "image/svg+xml")
 	})
 
 	t.Run("serves_index_html_for_root", func(t *testing.T) {
@@ -798,6 +1002,10 @@ func TestServeEmbeddedFrontend(t *testing.T) {
 
 		apiPaths := []string{
 			"/api/users",
+			"/media/images/generations",
+			"/media/tasks/task-123",
+			"/internal/media/result",
+			"/internal/media/settle",
 			"/models",
 			"/v1/models",
 			"/v1beta/chat",
@@ -806,8 +1014,14 @@ func TestServeEmbeddedFrontend(t *testing.T) {
 			"/antigravity/test",
 			"/setup/init",
 			"/health",
+			"/.well-known/oauth-protected-resource",
+			"/.well-known/oauth-protected-resource/api/v1/mcp",
+			"/.well-known/oauth-authorization-server",
 			"/responses",
 			"/responses/compact",
+			"/chat/completions",
+			"/models/gpt-5.5",
+			"/v3/contents/generations/tasks/task-123",
 		}
 
 		for _, path := range apiPaths {

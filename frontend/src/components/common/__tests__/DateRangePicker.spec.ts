@@ -34,6 +34,24 @@ const formatLocalDate = (date: Date): string => {
 }
 
 describe('DateRangePicker', () => {
+  it('recognizes today when start and end are today', () => {
+    const today = formatLocalDate(new Date())
+
+    const wrapper = mount(DateRangePicker, {
+      props: {
+        startDate: today,
+        endDate: today
+      },
+      global: {
+        stubs: {
+          Icon: true
+        }
+      }
+    })
+
+    expect(wrapper.text()).toContain('Today')
+  })
+
   it('uses last 24 hours as the default recognized preset', () => {
     const now = new Date()
     const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000)
@@ -70,12 +88,23 @@ describe('DateRangePicker', () => {
     })
 
     await wrapper.find('.date-picker-trigger').trigger('click')
+    // Date controls must be safe to embed in a query form.
+    for (const button of wrapper.findAll('button')) expect(button.attributes('type')).toBe('button')
     const presetButton = wrapper.findAll('.date-picker-preset').find((node) =>
       node.text().includes('Last 24 Hours')
     )
     expect(presetButton).toBeDefined()
 
     await presetButton!.trigger('click')
+
+    expect(wrapper.emitted('preset-change')?.[0]).toEqual([
+      expect.objectContaining({
+        startDate: expect.any(String),
+        endDate: expect.any(String),
+        preset: 'last24Hours'
+      })
+    ])
+
     await wrapper.find('.date-picker-apply').trigger('click')
 
     const nowAfterClick = new Date()
@@ -93,4 +122,5 @@ describe('DateRangePicker', () => {
       }
     ])
   })
+
 })

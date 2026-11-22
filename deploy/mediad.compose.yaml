@@ -1,0 +1,15 @@
+services:
+  mediad:
+    image: ghcr.io/abellee/sub2api-mediad:${MEDIAD_VERSION:-0.1.0}
+    container_name: sub2api-mediad
+    restart: unless-stopped
+    network_mode: host
+    env_file: mediad.env
+    environment:
+      MEDIAD_LISTEN: 127.0.0.1:8090
+      MEDIAD_DATA_DIR: /app/data
+      MEDIAD_RESULT_DIR: /app/media
+      MEDIAD_PERSIST_CREDENTIALS: "true"
+    volumes:
+      - ./data:/app/data
+      - ./media:/app/media

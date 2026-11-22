@@ -21,6 +21,31 @@ export interface LiveCapability {
   reason?: string
 }
 
+export interface GroupRecommendation {
+  group_id: number
+  name: string
+  platform: GroupPlatform
+  rate_multiplier: number
+  reason: string
+  rating: number
+}
+
+export async function getRecommendations(): Promise<GroupRecommendation[]> {
+  const { data } = await apiClient.get<GroupRecommendation[]>('/admin/groups/recommendations')
+  return data
+}
+
+export async function setRecommendation(
+  id: number,
+  payload: { reason: string; rating: number }
+): Promise<void> {
+  await apiClient.put(`/admin/groups/${id}/recommendation`, payload)
+}
+
+export async function deleteRecommendation(id: number): Promise<void> {
+  await apiClient.delete(`/admin/groups/${id}/recommendation`)
+}
+
 /**
  * List all groups with pagination
  * @param page - Page number (default: 1)
@@ -103,15 +128,15 @@ export async function getById(id: number): Promise<AdminGroup> {
 }
 
 /**
- * Get candidate models for custom /v1/models list.
+ * Get candidate models for the group model allowlist.
  * id=0 returns platform default models for create flow.
  */
-export async function getModelsListCandidates(
+export async function getModelAllowlistCandidates(
   id: number,
   platform?: GroupPlatform
 ): Promise<string[]> {
   const { data } = await apiClient.get<{ models: string[] }>(
-    `/admin/groups/${id}/models-list-candidates`,
+    `/admin/groups/${id}/model-allowlist-candidates`,
     {
       params: platform ? { platform } : undefined
     }
@@ -449,12 +474,31 @@ export async function clearGroupRPMOverrides(id: number): Promise<{ message: str
  * Get usage summary (today + yesterday + cumulative cost) for all groups
  * @returns Array of group usage summaries
  */
-export async function getUsageSummary(): Promise<
-  { group_id: number; today_cost: number; yesterday_cost: number; total_cost: number }[]
-> {
-  const { data } = await apiClient.get<
-    { group_id: number; today_cost: number; yesterday_cost: number; total_cost: number }[]
-  >('/admin/groups/usage-summary')
+export interface GroupUsageSummary {
+  group_id: number
+  today_cost: number
+  yesterday_cost: number
+  total_cost: number
+  today_input_tokens: number
+  today_cache_creation_tokens: number
+  today_cache_read_tokens: number
+  today_cache_hit_rate: number
+  last_24h_input_tokens: number
+  last_24h_cache_creation_tokens: number
+  last_24h_cache_read_tokens: number
+  last_24h_cache_hit_rate: number
+  last_7d_input_tokens: number
+  last_7d_cache_creation_tokens: number
+  last_7d_cache_read_tokens: number
+  last_7d_cache_hit_rate: number
+  total_input_tokens: number
+  total_cache_creation_tokens: number
+  total_cache_read_tokens: number
+  total_cache_hit_rate: number
+}
+
+export async function getUsageSummary(): Promise<GroupUsageSummary[]> {
+  const { data } = await apiClient.get<GroupUsageSummary[]>('/admin/groups/usage-summary')
   return data
 }
 
@@ -476,8 +520,11 @@ export const groupsAPI = {
   getByPlatform,
   getAllIncludingInactive,
   getLiveCapability,
+  getRecommendations,
+  setRecommendation,
+  deleteRecommendation,
   getById,
-  getModelsListCandidates,
+  getModelAllowlistCandidates,
   create,
   duplicate,
   update,

@@ -1,0 +1,96 @@
+// lotteryd 奖励服务 gRPC 协议。
+//
+// 主站（sub2api）在充值回调完成后异步调用 NotifyPayment 通知 lotteryd；
+// 事件可携带"使用意图"（intents），为后续充值时消耗积分/兑换道具预留。
+// 语义约定：
+//   - 金额一律用 decimal 字符串传递（避免浮点精度问题）；
+//   - 幂等：同一 order_no 的重复通知不会重复发放积分；
+//   - intents 中的每一项要么整体生效、要么在 effects 中回执失败原因。
+syntax = "proto3";
+
+package lotteryd.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "lotteryd/api/gen/lotteryd/v1;rewardsv1";
+
+// RewardService 积分/道具奖励服务。
+service RewardService {
+  // NotifyPayment 充值回调通知。主站在支付回调入账成功后以协程调用，
+  // 失败不影响主流程。同一订单重复通知幂等。
+  rpc NotifyPayment(NotifyPaymentRequest) returns (NotifyPaymentResponse);
+
+  // GetPointsBalance 查询用户积分余额（主站展示用，可选）。
+  rpc GetPointsBalance(GetPointsBalanceRequest) returns (GetPointsBalanceResponse);
+}
+
+// NotifyPaymentRequest 充值事件。
+message NotifyPaymentRequest {
+  // 商户订单号（sub2_ 前缀），幂等键。
+  string order_no = 1;
+  // 渠道流水号（如有）。
+  string trade_no = 2;
+  int64 user_id = 3;
+  string user_email = 4;
+  // 订单类型：balance（余额充值）/ subscription 等。
+  string order_type = 5;
+  // 支付渠道标识：easypay / alipay / wxpay / stripe / airwallex ...
+  string provider_key = 6;
+  // 订单面额（充值到账金额）与实付金额，decimal 字符串。
+  string amount = 7;
+  string pay_amount = 8;
+  string currency = 9;
+  // 事件阶段：PAID / COMPLETED / REFUNDED。
+  string phase = 10;
+  // 事件时间（未填由服务端取当前时间）。
+  google.protobuf.Timestamp event_at = 11;
+  // 渠道/业务扩展信息原样透传。
+  map<string, string> metadata = 12;
+  // 预留：充值时使用积分/道具的意图列表。
+  repeated PaymentIntent intents = 13;
+}
+
+// PaymentIntent 充值过程中使用积分或道具的意图（预留字段，当前主站可不填）。
+message PaymentIntent {
+  // 意图类型：
+  //   spend_points — 消耗积分，amount 为积分数量（正整数字符串）
+  //   use_item     — 使用道具，item_code 为道具编码，quantity 为数量
+  string kind = 1;
+  string item_code = 2;
+  string amount = 3;
+  int32 quantity = 4;
+  // 意图级扩展参数。
+  map<string, string> params = 5;
+}
+
+// NotifyPaymentResponse 通知处理结果。
+message NotifyPaymentResponse {
+  // accepted 是否受理（校验通过且已处理；重复通知也返回 true）。
+  bool accepted = 1;
+  string message = 2;
+  // 本次事件产生的效果回执（积分入账、道具消耗等）。
+  repeated AppliedEffect effects = 3;
+}
+
+// AppliedEffect 单项效果结果。
+message AppliedEffect {
+  // grant_points / spend_points / use_item ...
+  string kind = 1;
+  string item_code = 2;
+  // 数量（积分数量或道具数量），decimal/整数字符串。
+  string amount = 3;
+  // 操作后的积分余额（kind 为积分相关时返回）。
+  int64 balance_after = 4;
+  // 失败原因（成功为空）。
+  string error = 5;
+}
+
+message GetPointsBalanceRequest {
+  int64 user_id = 1;
+}
+
+message GetPointsBalanceResponse {
+  int64 balance = 1;
+  int64 total_earned = 2;
+  int64 total_spent = 3;
+}

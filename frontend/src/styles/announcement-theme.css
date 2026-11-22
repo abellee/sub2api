@@ -1,0 +1,114 @@
+/* Teleported announcement surfaces share the console palette in both themes. */
+.announcement-overlay {
+  --announcement-surface: var(--tf-console-surface, #fff);
+  --announcement-line: var(--tf-console-line, rgb(24 43 83 / 0.12));
+  --announcement-muted-surface: var(--tf-console-table-head, #eef1fc);
+  --announcement-ink: var(--tf-console-active-ink, #4652e0);
+  --announcement-hover: var(--tf-console-hover, rgb(83 110 255 / 0.06));
+  background: rgb(7 9 18 / 0.72);
+  font-family: "TokenFree Console Mono", "Segoe UI", "Microsoft YaHei", sans-serif;
+}
+
+.dark .announcement-overlay {
+  --announcement-surface: var(--tf-console-surface, #101421);
+  --announcement-line: var(--tf-console-line, rgb(255 255 255 / 0.085));
+  --announcement-muted-surface: var(--tf-console-table-head, #191f34);
+  --announcement-ink: var(--tf-console-active-ink, #b7c2ff);
+  --announcement-hover: var(--tf-console-hover, rgb(137 155 255 / 0.08));
+}
+
+.announcement-overlay .announcement-surface {
+  background: var(--announcement-surface);
+  border: 1px solid var(--announcement-line);
+  box-shadow: 0 24px 80px rgb(0 0 0 / 0.28), 0 0 48px rgb(83 110 255 / 0.08);
+}
+
+.announcement-overlay .announcement-header {
+  border-color: var(--announcement-line);
+  background: radial-gradient(ellipse at 100% 0%, rgb(119 85 243 / 0.12), transparent 65%),
+    linear-gradient(115deg, rgb(83 110 255 / 0.08), transparent), var(--announcement-surface);
+}
+
+.announcement-overlay .announcement-header time {
+  font-size: 12px;
+}
+
+.announcement-overlay .announcement-body {
+  background: var(--announcement-surface);
+}
+
+.announcement-overlay .announcement-footer {
+  background: var(--announcement-muted-surface);
+  border-color: var(--announcement-line);
+}
+
+.announcement-overlay .announcement-accent {
+  background: var(--tf-console-action-gradient, linear-gradient(115deg, #486aff, #7755f3));
+  box-shadow: 0 4px 16px rgb(83 110 255 / 0.2);
+}
+
+.announcement-overlay button.announcement-accent:hover:not(:disabled) {
+  filter: brightness(1.08);
+  box-shadow: 0 6px 22px rgb(83 110 255 / 0.28);
+}
+
+.announcement-overlay .announcement-close {
+  background: var(--announcement-hover);
+}
+
+.announcement-overlay .announcement-close:hover {
+  background: var(--announcement-muted-surface);
+}
+
+.announcement-overlay .announcement-surface .announcement-row {
+  border-color: var(--announcement-line);
+}
+
+.announcement-overlay .announcement-surface .announcement-row:hover {
+  background: var(--announcement-hover);
+}
+
+.announcement-overlay .markdown-body a,
+.announcement-overlay .markdown-body li::marker {
+  color: var(--announcement-ink);
+  text-decoration-color: rgb(137 155 255 / 0.45);
+}
+
+.announcement-overlay .markdown-body blockquote {
+  border-color: #899bff;
+  background: var(--announcement-hover);
+}
+
+.announcement-overlay .markdown-body blockquote::before {
+  color: rgb(137 155 255 / 0.3);
+}
+
+.announcement-overlay .markdown-body code {
+  color: var(--announcement-ink);
+  background: var(--announcement-muted-surface);
+  font-family: inherit;
+}
+
+.announcement-overlay .markdown-body pre code {
+  color: inherit;
+  background: transparent;
+}
+
+.announcement-overlay .markdown-body :is(pre, th) {
+  background: var(--announcement-muted-surface);
+}
+
+.announcement-overlay .markdown-body :is(h1, h2, pre, hr, table, th, td, img) {
+  border-color: var(--announcement-line);
+}
+
+.announcement-overlay .markdown-body tbody tr:hover {
+  background: var(--announcement-hover);
+}
+
+@media (max-width: 640px) {
+  .announcement-overlay :is(.announcement-header, .announcement-body, .announcement-footer) {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+}

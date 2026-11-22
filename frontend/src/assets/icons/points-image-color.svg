@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 24 24" role="img" aria-label="积分">
+  <defs>
+    <!-- 外圈：上亮下暗 -->
+    <linearGradient id="pt-rim" x1="0.15" y1="0" x2="0.85" y2="1">
+      <stop offset="0" stop-color="#FFE9A0"/>
+      <stop offset="0.45" stop-color="#FFB627"/>
+      <stop offset="1" stop-color="#E8590C"/>
+    </linearGradient>
+    <!-- 内面：上暗下亮，形成凹陷浮雕感 -->
+    <linearGradient id="pt-face" x1="0.2" y1="0" x2="0.8" y2="1">
+      <stop offset="0" stop-color="#FF8A00"/>
+      <stop offset="0.55" stop-color="#FFA81F"/>
+      <stop offset="1" stop-color="#FFD35C"/>
+    </linearGradient>
+    <linearGradient id="pt-spark" x1="0.2" y1="0" x2="0.8" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#FFF1BF"/>
+    </linearGradient>
+    <radialGradient id="pt-glow" cx="0.35" cy="0.25" r="0.7">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- 投影（只用 blur/offset/flood/merge，兼容性比 feDropShadow 好） -->
+    <filter id="pt-shadow" x="-25%" y="-25%" width="150%" height="160%" color-interpolation-filters="sRGB">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="0.38"/>
+      <feOffset dx="0" dy="0.33" result="blur"/>
+      <feFlood flood-color="#B43A00" flood-opacity="0.35"/>
+      <feComposite in2="blur" operator="in"/>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="pt-spark-shadow" x="-40%" y="-40%" width="180%" height="180%" color-interpolation-filters="sRGB">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="0.14"/>
+      <feOffset dx="0" dy="0.14" result="blur"/>
+      <feFlood flood-color="#B34700" flood-opacity="0.45"/>
+      <feComposite in2="blur" operator="in"/>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- 外圈 + 投影 -->
+  <path fill="url(#pt-rim)" filter="url(#pt-shadow)" d="M13.56 2.9 L19.1 6.1 Q20.66 7 20.66 8.8 L20.66 15.2 Q20.66 17 19.1 17.9 L13.56 21.1 Q12 22 10.44 21.1 L4.9 17.9 Q3.34 17 3.34 15.2 L3.34 8.8 Q3.34 7 4.9 6.1 L10.44 2.9 Q12 2 13.56 2.9 Z"/>
+  <!-- 外圈顶部高光描边 -->
+  <path fill="none" stroke="#FFFFFF" stroke-opacity="0.45" stroke-width="0.12" d="M13.56 2.9 L19.1 6.1 Q20.66 7 20.66 8.8 L20.66 15.2 Q20.66 17 19.1 17.9 L13.56 21.1 Q12 22 10.44 21.1 L4.9 17.9 Q3.34 17 3.34 15.2 L3.34 8.8 Q3.34 7 4.9 6.1 L10.44 2.9 Q12 2 13.56 2.9 Z"/>
+
+  <!-- 内面（缩小到 80%） -->
+  <g transform="translate(12 12) scale(0.8) translate(-12 -12)">
+    <path fill="url(#pt-face)" d="M13.56 2.9 L19.1 6.1 Q20.66 7 20.66 8.8 L20.66 15.2 Q20.66 17 19.1 17.9 L13.56 21.1 Q12 22 10.44 21.1 L4.9 17.9 Q3.34 17 3.34 15.2 L3.34 8.8 Q3.34 7 4.9 6.1 L10.44 2.9 Q12 2 13.56 2.9 Z"/>
+    <path fill="url(#pt-glow)" d="M13.56 2.9 L19.1 6.1 Q20.66 7 20.66 8.8 L20.66 15.2 Q20.66 17 19.1 17.9 L13.56 21.1 Q12 22 10.44 21.1 L4.9 17.9 Q3.34 17 3.34 15.2 L3.34 8.8 Q3.34 7 4.9 6.1 L10.44 2.9 Q12 2 13.56 2.9 Z"/>
+    <path fill="none" stroke="#C94A00" stroke-opacity="0.35" stroke-width="0.12" d="M13.56 2.9 L19.1 6.1 Q20.66 7 20.66 8.8 L20.66 15.2 Q20.66 17 19.1 17.9 L13.56 21.1 Q12 22 10.44 21.1 L4.9 17.9 Q3.34 17 3.34 15.2 L3.34 8.8 Q3.34 7 4.9 6.1 L10.44 2.9 Q12 2 13.56 2.9 Z"/>
+  </g>
+
+  <!-- 闪光 -->
+  <path fill="url(#pt-spark)" filter="url(#pt-spark-shadow)" d="M11.5 7.8 C12.1 11 13.3 12.2 16.5 12.8 C13.3 13.4 12.1 14.6 11.5 17.8 C10.9 14.6 9.7 13.4 6.5 12.8 C9.7 12.2 10.9 11 11.5 7.8 Z"/>
+  <path fill="url(#pt-spark)" filter="url(#pt-spark-shadow)" d="M16.8 6.4 C17 7.3 17.3 7.6 18.2 7.8 C17.3 8 17 8.3 16.8 9.2 C16.6 8.3 16.3 8 15.4 7.8 C16.3 7.6 16.6 7.3 16.8 6.4 Z"/>
+</svg>

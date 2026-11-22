@@ -5,8 +5,10 @@
       :disabled="switching"
       class="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-dark-700"
       :title="currentLocale?.name"
+      :aria-label="currentLocale?.name"
+      :aria-expanded="isOpen"
     >
-      <span class="text-base">{{ currentLocale?.flag }}</span>
+      <img v-if="currentLocale" :src="localeFlags[currentLocale.code]" alt="" class="locale-flag" />
       <span class="hidden sm:inline">{{ currentLocale?.code.toUpperCase() }}</span>
       <Icon
         name="chevronDown"
@@ -32,7 +34,7 @@
               locale.code === currentLocaleCode
           }"
         >
-          <span class="text-base">{{ locale.flag }}</span>
+          <img :src="localeFlags[locale.code]" alt="" class="locale-flag" />
           <span>{{ locale.name }}</span>
           <Icon v-if="locale.code === currentLocaleCode" name="check" size="sm" class="ml-auto text-primary-500" />
         </button>
@@ -46,6 +48,10 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
 import { setLocale, availableLocales } from '@/i18n'
+import englishFlag from '@/assets/icons/flag-en.svg'
+import chineseFlag from '@/assets/icons/flag-zh.svg'
+
+const localeFlags = { en: englishFlag, zh: chineseFlag }
 
 const { locale } = useI18n()
 
@@ -69,6 +75,8 @@ async function selectLocale(code: string) {
   try {
     await setLocale(code)
     isOpen.value = false
+    // 分组名称等内容由后端按请求语言返回，整页刷新让已加载的数据换成新语言
+    window.location.reload()
   } finally {
     switching.value = false
   }
@@ -90,6 +98,14 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.locale-flag {
+  display: block;
+  width: 20px;
+  height: 14px;
+  flex: none;
+  object-fit: contain;
+}
+
 .dropdown-enter-active,
 .dropdown-leave-active {
   transition: all 0.15s ease;

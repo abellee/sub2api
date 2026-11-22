@@ -1,0 +1,3 @@
+[submodule "audit-sdk"]
+	path = backend/audit-sdk
+	url = https://github.com/abellee/audit.git

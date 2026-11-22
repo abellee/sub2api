@@ -4,7 +4,9 @@ import (
 	"context"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
+	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/require"
 )
 
@@ -22,6 +24,21 @@ func TestSubmitUsageRecordTaskCopiesRequestContext(t *testing.T) {
 
 	require.Equal(t, "client-request-123", gotClientRequestID)
 	require.Equal(t, "request-456", gotRequestID)
+}
+
+func TestUsageRecordTaskPreservesAccountBillingDiscriminator(t *testing.T) {
+	svc := service.NewOpenAIGatewayService(failoverPriorityAccountRepo{count: 3}, nil, nil, nil, nil, nil, nil, &config.Config{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, newAccountErrorFailoverTestSettings(), nil)
+	group := &service.Group{ID: 1, Platform: service.PlatformOpenAI, AccountErrorFailoverEnabled: true}
+	ctx := svc.PrepareRequestAccountFailover(context.Background(), &group.ID, group, "", service.PlatformOpenAI)
+	ctx, cancel := context.WithCancel(ctx)
+	cancel()
+	called := false
+	(&GatewayHandler{}).submitUsageRecordTask(ctx, func(worker context.Context) {
+		called = true
+		require.NoError(t, worker.Err())
+		require.True(t, service.RequestAccountFailoverEnabled(worker))
+	})
+	require.True(t, called)
 }
 
 func TestOpenAISubmitUsageRecordTaskCopiesRequestContext(t *testing.T) {

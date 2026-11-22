@@ -25,6 +25,8 @@ This directory contains files for deploying Sub2API on Linux servers and Apple-s
 | `install-datamanagementd.sh` | datamanagementd 一键安装脚本 |
 | `sub2api.service` | Systemd service unit file |
 | `sub2api-datamanagementd.service` | datamanagementd systemd service unit file |
+| `sub2api-appcatalogd.service` | appcatalogd systemd service unit file (SQLite app catalog) |
+| `APPCATALOGD_CN.md` | appcatalogd 部署说明（Docker 镜像独立发布；二进制仍随 install.sh） |
 | `DATAMANAGEMENTD_CN.md` | datamanagementd 部署与联动说明（中文） |
 | `config.example.yaml` | Example configuration file |
 | `EDGE_SECURITY.md` | Reverse proxy, CDN/WAF, trusted proxy, and ingress hardening guide |
@@ -42,7 +44,7 @@ Apple-silicon Macs running macOS 26 can run the complete Sub2API, PostgreSQL, an
 ./apple-container.sh logs app -f
 ```
 
-The script uses Apple named volumes, starts dependencies in order, and performs live readiness checks. It does not provide a continuous restart supervisor; run `./apple-container.sh up` after a host reboot. Docker Compose remains the recommended production deployment path.
+The script uses Apple named volumes, starts dependencies in order, and performs live readiness checks. The application container supervises the Sub2API process so the Web UI's update-and-restart flow can relaunch an updated binary. It does not provide host-level automatic startup; run `./apple-container.sh up` after a host reboot. Docker Compose remains the recommended production deployment path.
 
 See [APPLE_CONTAINER.md](./APPLE_CONTAINER.md) for configuration, upgrades, persistence, networking behavior, and limitations.
 
@@ -79,8 +81,8 @@ docker compose -f docker-compose.local.yml up -d
 # View logs
 docker compose -f docker-compose.local.yml logs -f sub2api
 
-# If admin password was auto-generated, find it in logs:
-docker compose -f docker-compose.local.yml logs sub2api | grep "admin password"
+# If admin email/password were auto-generated, find them in logs:
+docker compose -f docker-compose.local.yml logs sub2api | grep "Generated admin"
 
 # Access Web UI
 # http://localhost:8080
@@ -112,7 +114,7 @@ mkdir -p data postgres_data redis_data
 # Start all services using local directory version
 docker compose -f docker-compose.local.yml up -d
 
-# View logs (check for auto-generated admin password)
+# View logs (check for auto-generated admin email and password)
 docker compose -f docker-compose.local.yml logs -f sub2api
 
 # Access Web UI
@@ -136,15 +138,37 @@ When using Docker Compose with `AUTO_SETUP=true`:
    - Connects to PostgreSQL and Redis
    - Applies database migrations (SQL files in `backend/migrations/*.sql`) and records them in `schema_migrations`
    - Generates JWT secret (if not provided)
-   - Creates admin account (password auto-generated if not provided)
+   - Creates admin account (email and password auto-generated if not provided; a provided password must be 8-72 bytes)
    - Writes config.yaml
 
 2. No manual Setup Wizard needed - just configure `.env` and start
 
-3. If `ADMIN_PASSWORD` is not set, check logs for the generated password:
+3. If `ADMIN_EMAIL` / `ADMIN_PASSWORD` are not set, check logs for the generated admin email (login username) and password:
    ```bash
-   docker compose logs sub2api | grep "admin password"
+   docker compose logs sub2api | grep "Generated admin"
    ```
+
+### Startup and Database Recovery
+
+Sub2API applies database migrations during application startup. PostgreSQL can
+remain in its recovery/startup phase briefly after a host or Docker daemon
+restart. The application retries transient PostgreSQL startup and connection
+errors with bounded exponential backoff, then starts automatically when the
+database becomes ready. Authentication errors, migration checksum mismatches,
+SQL errors, and other permanent configuration or data errors fail immediately.
+
+The Compose example also uses a PostgreSQL health check that verifies both
+server readiness and a simple SQL query. `depends_on: condition: service_healthy`
+controls dependency ordering for a fresh Compose start, but it is not a
+replacement for application-level retries when Docker restores existing
+containers after a host restart.
+
+For systemd deployments, keep `Restart=always` and `RestartSec` configured in
+`sub2api.service`; the application retry covers transient database startup,
+while systemd remains the supervisor for permanent process exits. For
+Kubernetes, use a PostgreSQL readiness probe and retain the Sub2API startup
+retry behavior; configure the application liveness probe separately so a
+database recovery period is not treated as a permanent process failure.
 
 ### Database Migration Notes (PostgreSQL)
 
@@ -169,6 +193,17 @@ SELECT
   (SELECT COUNT(*) FROM old_pairs)           AS old_pair_count,
   (SELECT COUNT(*) FROM user_allowed_groups) AS new_pair_count;
 ```
+
+### appcatalogd（应用中心）
+
+`appcatalogd` 的 Docker 镜像和主服务分开。镜像名是 `weishaw/sub2api-appcatalogd`，用 tag `appcatalogd-v*` 或手动跑 Release appcatalogd 发布。Compose 用 `APP_CATALOG_IMAGE` 指定版本，`docker compose up -d appcatalogd` 只更新 sidecar。
+
+二进制安装仍把 `appcatalogd` 放进主 Release 压缩包。`install.sh` 会一起安装两个 systemd 单元，但 `systemctl restart sub2api-appcatalogd` 可以单独重启 sidecar。
+
+- 主服务通过 `APP_CATALOG_BASE_URL=http://appcatalogd:18099` 访问 sidecar
+- 价格在 `provider-pricing.json`，每次请求重新读取。改这个文件即可，不用发布或重启
+
+详细步骤见：`deploy/APPCATALOGD_CN.md`
 
 ### datamanagementd（数据管理）联动
 
@@ -235,8 +270,8 @@ docker compose down -v
 | `JWT_SECRET` | **Recommended** | *(auto-generated)* | JWT secret (fixed for persistent sessions) |
 | `TOTP_ENCRYPTION_KEY` | **Recommended** | *(auto-generated)* | TOTP encryption key (fixed for persistent 2FA) |
 | `SERVER_PORT` | No | `8080` | Server port |
-| `ADMIN_EMAIL` | No | `admin@sub2api.local` | Admin email |
-| `ADMIN_PASSWORD` | No | *(auto-generated)* | Admin password |
+| `ADMIN_EMAIL` | No | *(auto-generated)* | Admin email (login username) |
+| `ADMIN_PASSWORD` | No | *(auto-generated)* | Admin password (8-72 bytes) |
 | `TZ` | No | `Asia/Shanghai` | Timezone |
 | `UPDATE_GITHUB_TOKEN` | No | *(empty)* | Token for `api.github.com` release checks only; asset downloads remain anonymous. |
 | `GEMINI_OAUTH_CLIENT_ID` | No | *(builtin)* | Google OAuth client ID (Gemini OAuth). Leave empty to use the built-in Gemini CLI client. |
@@ -498,8 +533,13 @@ The main config file is at `/etc/sub2api/config.yaml` (created by Setup Wizard).
 ```
 /opt/sub2api/
 ├── sub2api              # Main binary
+├── appcatalogd          # App catalog sidecar
 ├── sub2api.backup       # Backup (after upgrade)
+├── resources/           # Bundled model pricing files
 └── data/                # Runtime data
+
+/var/lib/sub2api/appcatalog/
+└── appcatalog.db        # App catalog SQLite
 
 /etc/sub2api/
 └── config.yaml          # Configuration file

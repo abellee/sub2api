@@ -7,10 +7,65 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"go.uber.org/zap"
 )
+
+func markAccountErrorFailoverAction(c *gin.Context, action string, accountID int64) {
+	if c == nil || c.Request == nil {
+		return
+	}
+	service.MarkRequestAccountFailoverAction(c.Request.Context(), action, accountID)
+}
+
+func logAccountErrorFailoverResult(c *gin.Context, status int) {
+	if c == nil || c.Request == nil {
+		return
+	}
+	actions, failedAccountIDs := service.GetRequestAccountFailoverTrace(c.Request.Context())
+	if len(actions) == 0 {
+		return
+	}
+	var finalAccountID int64
+	if value, ok := c.Get(opsAccountIDKey); ok {
+		finalAccountID, _ = value.(int64)
+	}
+	requestID, _ := c.Request.Context().Value(ctxkey.RequestID).(string)
+	clientRequestID, _ := c.Request.Context().Value(ctxkey.ClientRequestID).(string)
+	result := "failed"
+	if status < 400 {
+		result = "success"
+	}
+	if outcome := service.RequestAccountFailoverResult(c); outcome != "" {
+		result = outcome
+		if status >= 400 && result == "success" {
+			result = "failed"
+		}
+	}
+	var userID, groupID int64
+	if apiKey := getOpsAPIKey(c); apiKey != nil {
+		if apiKey.User != nil {
+			userID = apiKey.User.ID
+		}
+		if apiKey.GroupID != nil {
+			groupID = *apiKey.GroupID
+		}
+	}
+	logger.FromContext(c.Request.Context()).Info("gateway.account_error_failover_result",
+		zap.String("feature", "account_error_failover"),
+		zap.String("result", result),
+		zap.Int("status_code", status),
+		zap.Int64("user_id", userID),
+		zap.Int64("group_id", groupID),
+		zap.String("request_id", requestID),
+		zap.String("client_request_id", clientRequestID),
+		zap.Strings("actions", actions),
+		zap.Int64s("failed_account_ids", failedAccountIDs),
+		zap.Int64("final_account_id", finalAccountID),
+	)
+}
 
 // TempUnscheduler 用于 HandleFailoverError 中同账号重试耗尽后的临时封禁。
 // GatewayService 隐式实现此接口。
@@ -56,7 +111,13 @@ const (
 const profitVetoExhaustedMessage = "No available accounts: all candidates rejected by group profit control"
 
 func sameAccountRetryDelayFor(failoverErr *service.UpstreamFailoverError, retryCount int) time.Duration {
-	if failoverErr == nil || !failoverErr.RequestScopedTransient || retryCount <= 1 {
+	if failoverErr == nil {
+		return sameAccountRetryDelay
+	}
+	if failoverErr.SameAccountRetryDelay > 0 {
+		return failoverErr.SameAccountRetryDelay
+	}
+	if !failoverErr.RequestScopedTransient || retryCount <= 1 {
 		return sameAccountRetryDelay
 	}
 
@@ -68,6 +129,51 @@ func sameAccountRetryDelayFor(failoverErr *service.UpstreamFailoverError, retryC
 		delay *= 2
 	}
 	return delay
+}
+
+func sameAccountRetryAllowed(ctx context.Context, failoverErr *service.UpstreamFailoverError, retryCount, retryLimit int) bool {
+	if service.RequestAccountFailoverEnabled(ctx) || failoverErr == nil || !failoverErr.ShouldRetryNextAccount() || !failoverErr.RetryableOnSameAccount {
+		return false
+	}
+	if !sameAccountRetryDeadlineAllows(failoverErr) {
+		return false
+	}
+	// Error-specific caps (Grok capacity/stream-idle) remain hard limits even
+	// when the error also carries a freshly reconstructed deadline.
+	if failoverErr.SameAccountRetryMax > 0 {
+		if retryLimit <= 0 {
+			return false
+		}
+		if failoverErr.SameAccountRetryMax < retryLimit {
+			retryLimit = failoverErr.SameAccountRetryMax
+		}
+		return retryCount < retryLimit
+	}
+	// OAuth 429 explicitly opts into a deadline window. It is intentionally not
+	// bounded by the ordinary/default pool retry count.
+	if !failoverErr.SameAccountRetryDeadline.IsZero() {
+		return true
+	}
+	return retryLimit > 0 && retryCount < retryLimit
+}
+
+// sameAccountRetryDeadlineAllows prevents a retry from starting after the
+// service-provided same-account retry window has elapsed.
+func sameAccountRetryDeadlineAllows(failoverErr *service.UpstreamFailoverError) bool {
+	return failoverErr == nil || failoverErr.SameAccountRetryDeadline.IsZero() || time.Now().Before(failoverErr.SameAccountRetryDeadline)
+}
+
+// effectiveSameAccountRetryLimit applies an error-specific cap without
+// overriding an explicit account setting of zero (which disables retries).
+func effectiveSameAccountRetryLimit(failoverErr *service.UpstreamFailoverError, account *service.Account) int {
+	if account == nil {
+		return 0
+	}
+	limit := account.GetPoolModeRetryCount()
+	if limit > 0 && failoverErr != nil && failoverErr.SameAccountRetryMax > 0 && failoverErr.SameAccountRetryMax < limit {
+		return failoverErr.SameAccountRetryMax
+	}
+	return limit
 }
 
 // FailoverState 跨循环迭代共享的 failover 状态
@@ -158,15 +264,19 @@ func (s *FailoverState) HandleFailoverError(
 	}
 
 	// 同账号重试不算切换账号，粘性会话仅在实际切换时强制缓存计费。
-	sameAccountRetry := failoverErr.RetryableOnSameAccount && s.SameAccountRetryCount[accountID] < retryLimit
+	retryCount := s.SameAccountRetryCount[accountID]
+	// Group-level failover tries each eligible account once; pool-mode retries
+	// would repeat an account before moving to the next candidate.
+	sameAccountRetry := sameAccountRetryAllowed(ctx, failoverErr, retryCount, retryLimit)
 	if needForceCacheBilling(s.hasBoundSession, failoverErr, sameAccountRetry) {
 		s.ForceCacheBilling = true
 	}
 
 	// 同账号重试：对 RetryableOnSameAccount 的临时性错误，先在同一账号上重试。
 	// 重试次数上限 retryLimit 由调用方传入（账号级 pool_mode_retry_count 配置）。
-	if failoverErr.RetryableOnSameAccount && s.SameAccountRetryCount[accountID] < retryLimit {
+	if sameAccountRetry {
 		s.SameAccountRetryCount[accountID]++
+		service.MarkRequestAccountFailoverAction(ctx, "retry_same_account", accountID)
 		retryDelay := sameAccountRetryDelayFor(failoverErr, s.SameAccountRetryCount[accountID])
 		logger.FromContext(ctx).Warn("gateway.failover_same_account_retry",
 			zap.Int64("account_id", accountID),
@@ -182,7 +292,7 @@ func (s *FailoverState) HandleFailoverError(
 	}
 
 	// 同账号重试用尽，执行临时封禁
-	if failoverErr.RetryableOnSameAccount {
+	if failoverErr.RetryableOnSameAccount && !service.RequestAccountFailoverEnabled(ctx) {
 		gatewayService.TempUnscheduleRetryableError(ctx, accountID, failoverErr)
 	}
 
@@ -196,6 +306,7 @@ func (s *FailoverState) HandleFailoverError(
 
 	// 递增切换计数
 	s.SwitchCount++
+	service.MarkRequestAccountFailoverAction(ctx, "switch_account", accountID)
 	logger.FromContext(ctx).Warn("gateway.failover_switch_account",
 		zap.Int64("account_id", accountID),
 		zap.Int("upstream_status", failoverErr.StatusCode),
@@ -204,7 +315,7 @@ func (s *FailoverState) HandleFailoverError(
 	)
 
 	// Antigravity 平台换号线性递增延时
-	if platform == service.PlatformAntigravity {
+	if !service.RequestAccountFailoverEnabled(ctx) && platform == service.PlatformAntigravity {
 		delay := time.Duration(s.SwitchCount-1) * time.Second
 		if !sleepWithContext(ctx, delay) {
 			return FailoverCanceled
@@ -226,6 +337,10 @@ func (s *FailoverState) HandleSelectionExhausted(ctx context.Context) FailoverAc
 	// 不代表账号耗尽，直接按取消终止。
 	if ctx.Err() != nil {
 		return FailoverCanceled
+	}
+
+	if service.RequestAccountFailoverEnabled(ctx) {
+		return FailoverExhausted
 	}
 
 	if s.LastFailoverErr != nil &&

@@ -115,6 +115,13 @@ type channelMonitorV2Histogram struct {
 }
 
 func (r *channelMonitorV2Repository) GetDimensions(ctx context.Context, filter service.ChannelMonitorV2Filter, cfg service.ChannelMonitorV2Config) (*service.ChannelMonitorV2Dimensions, error) {
+	if channelMonitorV2RestrictedGroupScopeEmpty(filter, cfg) {
+		return &service.ChannelMonitorV2Dimensions{
+			Platforms: []service.ChannelMonitorV2Dimension{},
+			Groups:    []service.ChannelMonitorV2GroupDimension{},
+			Models:    []service.ChannelMonitorV2Dimension{},
+		}, nil
+	}
 	coverage, err := r.loadCoverage(ctx, filter)
 	if err != nil {
 		return nil, err
@@ -211,6 +218,9 @@ func (r *channelMonitorV2Repository) GetDimensions(ctx context.Context, filter s
 }
 
 func (r *channelMonitorV2Repository) GetSnapshot(ctx context.Context, filter service.ChannelMonitorV2Filter, cfg service.ChannelMonitorV2Config, admin bool) (*service.ChannelMonitorV2Snapshot, error) {
+	if channelMonitorV2RestrictedGroupScopeEmpty(filter, cfg) {
+		return &service.ChannelMonitorV2Snapshot{Trend: []service.ChannelMonitorV2TrendPoint{}}, nil
+	}
 	coverage, err := r.loadCoverage(ctx, filter)
 	if err != nil {
 		return nil, err
@@ -275,6 +285,9 @@ func (r *channelMonitorV2Repository) GetSnapshot(ctx context.Context, filter ser
 }
 
 func (r *channelMonitorV2Repository) GetModels(ctx context.Context, filter service.ChannelMonitorV2Filter, cfg service.ChannelMonitorV2Config, admin bool) (*service.ChannelMonitorV2List[service.ChannelMonitorV2ModelRow], error) {
+	if channelMonitorV2RestrictedGroupScopeEmpty(filter, cfg) {
+		return &service.ChannelMonitorV2List[service.ChannelMonitorV2ModelRow]{Items: []service.ChannelMonitorV2ModelRow{}}, nil
+	}
 	coverage, err := r.loadCoverage(ctx, filter)
 	if err != nil {
 		return nil, err
@@ -353,6 +366,9 @@ type channelMonitorV2MatrixAccumulator struct {
 }
 
 func (r *channelMonitorV2Repository) GetMatrix(ctx context.Context, filter service.ChannelMonitorV2Filter, cfg service.ChannelMonitorV2Config, groupBy service.ChannelMonitorV2GroupBy, admin bool) (*service.ChannelMonitorV2Matrix, error) {
+	if channelMonitorV2RestrictedGroupScopeEmpty(filter, cfg) {
+		return &service.ChannelMonitorV2Matrix{GroupBy: groupBy, Items: []service.ChannelMonitorV2MatrixRow{}}, nil
+	}
 	coverage, err := r.loadCoverage(ctx, filter)
 	if err != nil {
 		return nil, err
@@ -370,7 +386,7 @@ func (r *channelMonitorV2Repository) GetMatrix(ctx context.Context, filter servi
 	seedGroupIDs := configuredChannelMonitorV2GroupIDs(filter, cfg)
 	// Empty config group list means all groups — load active groups so matrix seed
 	// can materialize real platform/group rows (not bare platform placeholders).
-	if len(seedGroupIDs) == 0 &&
+	if len(seedGroupIDs) == 0 && !filter.RestrictGroups &&
 		(groupBy == service.ChannelMonitorV2GroupByPlatformGroup || groupBy == service.ChannelMonitorV2GroupByPlatformGroupModel) {
 		allIDs, loadErr := r.listActiveGroupIDs(ctx)
 		if loadErr != nil {
@@ -496,54 +512,74 @@ func seedChannelMonitorV2MatrixAccumulators(filter service.ChannelMonitorV2Filte
 	if len(filter.Platforms) > 0 {
 		platforms = intersectStrings(platforms, filter.Platforms)
 	}
-	// Platform-only groupBy seeds groupID=0. When group is part of the dimension
-	// (platform_group / platform_group_model), never seed a bare platform row —
-	// only real group IDs (from config or discovered groupInfo).
 	needsGroup := groupBy == service.ChannelMonitorV2GroupByPlatformGroup || groupBy == service.ChannelMonitorV2GroupByPlatformGroupModel
-	groupIDs := []int64{0}
-	if needsGroup {
-		groupIDs = configuredChannelMonitorV2GroupIDs(filter, cfg)
-		if len(groupIDs) == 0 {
-			// Empty config group list means "all groups": use discovered active groups.
-			for id := range groupInfo {
-				groupIDs = append(groupIDs, id)
+	needsModel := groupBy == service.ChannelMonitorV2GroupByPlatformModel || groupBy == service.ChannelMonitorV2GroupByPlatformGroupModel
+	if !needsGroup {
+		for _, platform := range platforms {
+			models := []string{""}
+			if needsModel {
+				models = configuredChannelMonitorV2Models(cfg, platform, filter)
+				if len(models) == 0 {
+					models = []string{""}
+				}
 			}
-			sort.Slice(groupIDs, func(i, j int) bool { return groupIDs[i] < groupIDs[j] })
+			for _, model := range models {
+				key := channelMonitorV2MatrixKey{platform: platform}
+				if needsModel {
+					key.model = model
+				}
+				if accs[key] == nil {
+					accs[key] = &channelMonitorV2MatrixAccumulator{total: newMetricAccumulator(), buckets: make(map[string]*metricAccumulator)}
+				}
+			}
 		}
-		// Still empty → seed nothing; rows come only from fact traffic.
-		if len(groupIDs) == 0 {
-			return accs
-		}
+		return accs
 	}
-	for _, platform := range platforms {
+
+	// platform_group views seed every configured group, including idle ones
+	// whose platform is unknown or not in the enabled-platform list.
+	groupIDs := configuredChannelMonitorV2GroupIDs(filter, cfg)
+	if len(groupIDs) == 0 && !filter.RestrictGroups {
+		for id := range groupInfo {
+			groupIDs = append(groupIDs, id)
+		}
+		sort.Slice(groupIDs, func(i, j int) bool { return groupIDs[i] < groupIDs[j] })
+	}
+	if len(groupIDs) == 0 {
+		return accs
+	}
+	filterPlatforms := map[string]struct{}{}
+	for _, platform := range filter.Platforms {
+		filterPlatforms[platform] = struct{}{}
+	}
+	for _, groupID := range groupIDs {
+		if groupID <= 0 {
+			continue
+		}
+		info := groupInfo[groupID]
+		platform := info.platform
+		if platform == "" {
+			platform = "unknown"
+		}
+		if len(filterPlatforms) > 0 {
+			if _, ok := filterPlatforms[platform]; !ok {
+				continue
+			}
+		}
 		models := []string{""}
-		if groupBy == service.ChannelMonitorV2GroupByPlatformModel || groupBy == service.ChannelMonitorV2GroupByPlatformGroupModel {
+		if needsModel {
 			models = configuredChannelMonitorV2Models(cfg, platform, filter)
 			if len(models) == 0 {
 				models = []string{""}
 			}
 		}
-		for _, groupID := range groupIDs {
-			info := groupInfo[groupID]
-			if needsGroup {
-				if groupID <= 0 {
-					continue
-				}
-				if info.platform == "" || info.platform != platform {
-					continue
-				}
+		for _, model := range models {
+			key := channelMonitorV2MatrixKey{platform: platform, groupID: groupID}
+			if needsModel {
+				key.model = model
 			}
-			for _, model := range models {
-				key := channelMonitorV2MatrixKey{platform: platform}
-				if needsGroup {
-					key.groupID = groupID
-				}
-				if groupBy == service.ChannelMonitorV2GroupByPlatformModel || groupBy == service.ChannelMonitorV2GroupByPlatformGroupModel {
-					key.model = model
-				}
-				if accs[key] == nil {
-					accs[key] = &channelMonitorV2MatrixAccumulator{groupName: info.name, total: newMetricAccumulator(), buckets: make(map[string]*metricAccumulator)}
-				}
+			if accs[key] == nil {
+				accs[key] = &channelMonitorV2MatrixAccumulator{groupName: info.name, total: newMetricAccumulator(), buckets: make(map[string]*metricAccumulator)}
 			}
 		}
 	}
@@ -581,15 +617,44 @@ func channelMonitorV2CatalogFilter(filter service.ChannelMonitorV2Filter) servic
 }
 
 func configuredChannelMonitorV2GroupIDs(filter service.ChannelMonitorV2Filter, cfg service.ChannelMonitorV2Config) []int64 {
+	groups, empty := channelMonitorV2ScopedGroupIDs(filter, cfg)
+	if empty {
+		return []int64{}
+	}
+	return groups
+}
+
+func channelMonitorV2ScopedGroupIDs(filter service.ChannelMonitorV2Filter, cfg service.ChannelMonitorV2Config) ([]int64, bool) {
 	groups := append([]int64(nil), cfg.GroupIDs...)
+	if filter.RestrictGroups {
+		if len(groups) > 0 {
+			groups = intersectInt64(groups, filter.AllowedGroupIDs)
+		} else {
+			groups = append([]int64(nil), filter.AllowedGroupIDs...)
+		}
+		if len(groups) == 0 {
+			return nil, true
+		}
+	}
 	if len(filter.GroupIDs) > 0 {
 		if len(groups) > 0 {
 			groups = intersectInt64(groups, filter.GroupIDs)
 		} else {
 			groups = append([]int64(nil), filter.GroupIDs...)
 		}
+		if len(groups) == 0 {
+			return nil, true
+		}
 	}
-	return groups
+	return groups, false
+}
+
+func channelMonitorV2RestrictedGroupScopeEmpty(filter service.ChannelMonitorV2Filter, cfg service.ChannelMonitorV2Config) bool {
+	if !filter.RestrictGroups {
+		return false
+	}
+	_, empty := channelMonitorV2ScopedGroupIDs(filter, cfg)
+	return empty
 }
 
 type channelMonitorV2GroupInfo struct {
@@ -723,16 +788,7 @@ func (r *channelMonitorV2Repository) loadErrorDetails(ctx context.Context, filte
 	} else {
 		conditions = append(conditions, "FALSE")
 	}
-	groups := cfg.GroupIDs
-	groupScopeEmpty := false
-	if len(filter.GroupIDs) > 0 {
-		if len(groups) > 0 {
-			groups = intersectInt64(groups, filter.GroupIDs)
-			groupScopeEmpty = len(groups) == 0
-		} else {
-			groups = filter.GroupIDs
-		}
-	}
+	groups, groupScopeEmpty := channelMonitorV2ScopedGroupIDs(filter, cfg)
 	if groupScopeEmpty {
 		conditions = append(conditions, "FALSE")
 	} else if len(groups) > 0 {
@@ -913,7 +969,7 @@ func (r *channelMonitorV2Repository) loadFacts(ctx context.Context, filter servi
 		} else {
 			args = append([]any{fmt.Sprintf("%d seconds", int(filter.Bucket.Seconds()))}, args...)
 			where = shiftSQLPlaceholders(where, 1)
-			bucketExpr = "date_bin($1::interval,m.bucket_start,TIMESTAMPTZ '1970-01-01')"
+			bucketExpr = channelMonitorV2DateBinExpr("m.bucket_start")
 			group = bucketExpr + "," + group
 		}
 	}
@@ -955,7 +1011,7 @@ func (r *channelMonitorV2Repository) loadHistograms(ctx context.Context, filter 
 			args = []any{fmt.Sprintf("%d seconds", int(filter.Bucket.Seconds()))}
 			args = append(args, oldArgs...)
 			where = shiftSQLPlaceholders(where, 1)
-			bucketExpr = "date_bin($1::interval,h.bucket_start,TIMESTAMPTZ '1970-01-01')"
+			bucketExpr = channelMonitorV2DateBinExpr("h.bucket_start")
 			group = bucketExpr + "," + group
 		}
 	}
@@ -1136,16 +1192,7 @@ func channelMonitorV2Where(filter service.ChannelMonitorV2Filter, cfg service.Ch
 	} else {
 		conditions = append(conditions, "FALSE")
 	}
-	groups := cfg.GroupIDs
-	groupScopeEmpty := false
-	if len(filter.GroupIDs) > 0 {
-		if len(groups) > 0 {
-			groups = intersectInt64(groups, filter.GroupIDs)
-			groupScopeEmpty = len(groups) == 0
-		} else {
-			groups = filter.GroupIDs
-		}
-	}
+	groups, groupScopeEmpty := channelMonitorV2ScopedGroupIDs(filter, cfg)
 	if groupScopeEmpty {
 		conditions = append(conditions, "FALSE")
 	} else if len(groups) > 0 {
@@ -1417,7 +1464,7 @@ func (r *channelMonitorV2Repository) loadIgnoredErrorCounts(
 	if filter.Bucket > 0 && bucketSeconds == 0 {
 		args = append([]any{fmt.Sprintf("%d seconds", int(filter.Bucket.Seconds()))}, args...)
 		where = shiftSQLPlaceholders(where, 1)
-		bucketExpr = "date_bin($1::interval,e.bucket_start,TIMESTAMPTZ '1970-01-01')"
+		bucketExpr = channelMonitorV2DateBinExpr("e.bucket_start")
 		groupBy = bucketExpr + ", e.platform, e.model"
 	}
 	args = append(args, pq.Array(cfg.IgnoredErrorCategories), service.ChannelMonitorV2TaxonomyVersion)
@@ -1513,7 +1560,7 @@ func (r *channelMonitorV2Repository) loadIgnoredErrorCountsByMatrixKey(
 	if filter.Bucket > 0 && bucketSeconds == 0 {
 		args = append([]any{fmt.Sprintf("%d seconds", int(filter.Bucket.Seconds()))}, args...)
 		where = shiftSQLPlaceholders(where, 1)
-		bucketExpr = "date_bin($1::interval,e.bucket_start,TIMESTAMPTZ '1970-01-01')"
+		bucketExpr = channelMonitorV2DateBinExpr("e.bucket_start")
 		groupSQL = bucketExpr + ", e.platform, e.group_id, e.model"
 	}
 	args = append(args, pq.Array(cfg.IgnoredErrorCategories), service.ChannelMonitorV2TaxonomyVersion)

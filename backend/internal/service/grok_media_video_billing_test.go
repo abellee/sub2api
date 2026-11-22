@@ -7,6 +7,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestGrokVideoKeepsMediaSettlementID(t *testing.T) {
+	id := "media_task_settle:mtask_dca7c5c5054c657b1b4c7ee514859ea1"
+	got := StableGrokVideoBillingRequestID(id)
+	require.Equal(t, id, got)
+	require.LessOrEqual(t, len(got), 64, "must fit usage_logs.request_id")
+	require.Equal(t, "grok-video:upstream-task", StableGrokVideoBillingRequestID("upstream-task"))
+}
+
 func TestGrokVideoE2EDurationFromCreatedAt(t *testing.T) {
 	t.Parallel()
 	created := time.Now().UTC().Add(-45 * time.Second)

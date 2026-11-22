@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
+	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 )
 
@@ -32,6 +33,11 @@ var frontendFS embed.FS
 // PublicSettingsProvider is an interface to fetch public settings
 type PublicSettingsProvider interface {
 	GetPublicSettingsForInjection(ctx context.Context) (any, error)
+}
+
+type PublicTransitPageSettingsProvider interface {
+	PublicSettingsProvider
+	GetPublicTransitRuntime(ctx context.Context) service.PublicTransitRuntime
 }
 
 // FrontendServer serves the embedded frontend with settings injection
@@ -94,9 +100,18 @@ func (s *FrontendServer) Middleware() gin.HandlerFunc {
 			return
 		}
 
+		if strings.TrimRight(path, "/") == service.PublicTransitPagePath && !s.publicTransitPageEnabled(c.Request.Context()) {
+			c.String(http.StatusNotFound, "Public transit page is disabled")
+			c.Abort()
+			return
+		}
+
 		cleanPath := strings.TrimPrefix(path, "/")
 		if cleanPath == "" {
 			cleanPath = "index.html"
+		}
+		if strings.HasSuffix(cleanPath, "/") {
+			cleanPath += "index.html"
 		}
 
 		// For index.html or SPA routes, serve with injected settings
@@ -109,6 +124,9 @@ func (s *FrontendServer) Middleware() gin.HandlerFunc {
 		if s.tryServeOverride(c, cleanPath) {
 			return
 		}
+		if serveNestedIndexHTML(c, s.distFS, cleanPath) {
+			return
+		}
 
 		// Serve static files normally (hashed assets get long-lived cache headers)
 		applyStaticAssetCacheHeaders(c.Writer.Header(), cleanPath)
@@ -117,12 +135,38 @@ func (s *FrontendServer) Middleware() gin.HandlerFunc {
 	}
 }
 
+func (s *FrontendServer) publicTransitPageEnabled(ctx context.Context) bool {
+	if s == nil || s.settings == nil {
+		return false
+	}
+	provider, ok := s.settings.(PublicTransitPageSettingsProvider)
+	if !ok {
+		return false
+	}
+	return provider.GetPublicTransitRuntime(ctx).PageEnabled
+}
+
 func (s *FrontendServer) fileExists(path string) bool {
 	file, err := s.distFS.Open(path)
 	if err != nil {
 		return false
 	}
 	_ = file.Close()
+	return true
+}
+
+// FileServer redirects nested index.html to a directory URL that embedded FS cannot open.
+func serveNestedIndexHTML(c *gin.Context, files fs.FS, path string) bool {
+	if !strings.HasSuffix(path, "/index.html") {
+		return false
+	}
+	body, err := fs.ReadFile(files, path)
+	if err != nil {
+		return false
+	}
+	c.Header("Cache-Control", "no-cache")
+	c.Data(http.StatusOK, "text/html; charset=utf-8", body)
+	c.Abort()
 	return true
 }
 
@@ -149,18 +193,23 @@ func (s *FrontendServer) serveIndexHTML(c *gin.Context) {
 	// Check cache first
 	cached := s.cache.Get()
 	if cached != nil {
-		// Check If-None-Match for 304 response
-		if match := c.GetHeader("If-None-Match"); match == cached.ETag {
-			c.Status(http.StatusNotModified)
-			c.Abort()
-			return
+		// A matching ETag is only enough for 304 when the response has no
+		// per-request nonce. Otherwise the browser would reuse HTML carrying a
+		// stale nonce that no longer matches the CSP header of this request.
+		if nonce == "" {
+			if match := c.GetHeader("If-None-Match"); match == cached.ETag {
+				applyHTMLNoCacheHeaders(c.Writer.Header())
+				c.Status(http.StatusNotModified)
+				c.Abort()
+				return
+			}
 		}
 
 		// Replace nonce placeholder with actual nonce before serving
 		content := replaceNoncePlaceholder(cached.Content, nonce)
 
 		c.Header("ETag", cached.ETag)
-		c.Header("Cache-Control", "no-cache") // Must revalidate
+		applyHTMLNoCacheHeaders(c.Writer.Header())
 		c.Data(http.StatusOK, "text/html; charset=utf-8", content)
 		c.Abort()
 		return
@@ -173,6 +222,7 @@ func (s *FrontendServer) serveIndexHTML(c *gin.Context) {
 	settings, err := s.settings.GetPublicSettingsForInjection(ctx)
 	if err != nil {
 		// Fallback: serve without injection
+		applyHTMLNoCacheHeaders(c.Writer.Header())
 		c.Data(http.StatusOK, "text/html; charset=utf-8", s.baseHTML)
 		c.Abort()
 		return
@@ -181,6 +231,7 @@ func (s *FrontendServer) serveIndexHTML(c *gin.Context) {
 	settingsJSON, err := json.Marshal(settings)
 	if err != nil {
 		// Fallback: serve without injection
+		applyHTMLNoCacheHeaders(c.Writer.Header())
 		c.Data(http.StatusOK, "text/html; charset=utf-8", s.baseHTML)
 		c.Abort()
 		return
@@ -196,7 +247,7 @@ func (s *FrontendServer) serveIndexHTML(c *gin.Context) {
 	if cached != nil {
 		c.Header("ETag", cached.ETag)
 	}
-	c.Header("Cache-Control", "no-cache")
+	applyHTMLNoCacheHeaders(c.Writer.Header())
 	c.Data(http.StatusOK, "text/html; charset=utf-8", content)
 	c.Abort()
 }
@@ -324,11 +375,17 @@ func ServeEmbeddedFrontend() gin.HandlerFunc {
 		if cleanPath == "" {
 			cleanPath = "index.html"
 		}
+		if strings.HasSuffix(cleanPath, "/") {
+			cleanPath += "index.html"
+		}
 
 		if file, err := distFS.Open(cleanPath); err == nil {
 			_ = file.Close()
 			// Try local override first
 			if tryServeOverrideFile(c, overrideDir, cleanPath) {
+				return
+			}
+			if serveNestedIndexHTML(c, distFS, cleanPath) {
 				return
 			}
 			applyStaticAssetCacheHeaders(c.Writer.Header(), cleanPath)
@@ -362,16 +419,36 @@ func shouldBypassEmbeddedFrontend(path string, acceptHeaders ...string) bool {
 		return len(acceptHeaders) == 0 || !strings.Contains(strings.ToLower(acceptHeaders[0]), "text/html")
 	}
 	return strings.HasPrefix(trimmed, "/api/") ||
+		strings.HasPrefix(trimmed, "/media/") ||
+		strings.HasPrefix(trimmed, "/internal/media/") ||
+		strings.HasPrefix(trimmed, "/.well-known/") ||
 		strings.HasPrefix(trimmed, "/v1/") ||
 		strings.HasPrefix(trimmed, "/v1beta/") ||
 		strings.HasPrefix(trimmed, "/backend-api/") ||
 		strings.HasPrefix(trimmed, "/antigravity/") ||
 		strings.HasPrefix(trimmed, "/setup/") ||
 		trimmed == "/health" ||
+		trimmed == "/models" ||
+		strings.HasPrefix(trimmed, "/models/") ||
 		trimmed == "/responses" ||
 		strings.HasPrefix(trimmed, "/responses/") ||
+		trimmed == "/chat/completions" ||
+		trimmed == "/embeddings" ||
+		trimmed == "/messages/count_tokens" ||
 		trimmed == "/alpha/search" ||
+		trimmed == "/web_search" ||
+		trimmed == "/x_search" ||
+		trimmed == "/tts" ||
+		trimmed == "/stt" ||
+		trimmed == "/realtime" ||
+		trimmed == "/custom-voices" ||
+		strings.HasPrefix(trimmed, "/custom-voices/") ||
+		trimmed == "/contents/generations/tasks" ||
+		strings.HasPrefix(trimmed, "/contents/generations/tasks/") ||
+		trimmed == "/v3/contents/generations/tasks" ||
+		strings.HasPrefix(trimmed, "/v3/contents/generations/tasks/") ||
 		strings.HasPrefix(trimmed, "/images/") ||
+		trimmed == "/videos" ||
 		strings.HasPrefix(trimmed, "/videos/")
 }
 

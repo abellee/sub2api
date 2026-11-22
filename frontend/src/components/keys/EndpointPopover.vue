@@ -64,21 +64,21 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div v-if="allEndpoints.length > 0" class="flex flex-wrap gap-2">
+  <div v-if="allEndpoints.length > 0" class="endpoint-list">
     <div
       v-for="(item, index) in allEndpoints"
       :key="index"
-      class="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs transition-colors hover:border-primary-200 dark:border-dark-600 dark:bg-dark-800 dark:hover:border-primary-700"
+      class="endpoint-item"
     >
-      <span class="font-medium text-gray-600 dark:text-gray-300">{{ item.name }}</span>
+      <span class="endpoint-name">{{ item.name }}</span>
       <span
         v-if="item.isDefault"
-        class="rounded bg-primary-50 px-1 py-px text-[10px] font-medium leading-tight text-primary-600 dark:bg-primary-900/30 dark:text-primary-400"
+        class="endpoint-default"
       >{{ t('keys.endpoints.default') }}</span>
 
-      <span class="text-gray-300 dark:text-dark-500">|</span>
+      <span class="endpoint-divider" aria-hidden="true"></span>
 
-      <div class="group/endpoint relative flex items-center gap-1.5">
+      <div class="group/endpoint endpoint-address relative flex items-center gap-1.5">
         <div
           class="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 w-max max-w-[24rem] -translate-x-1/2 translate-y-1 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left opacity-0 shadow-[0_14px_36px_-20px_rgba(15,23,42,0.35)] ring-1 ring-slate-200/80 transition-all duration-150 group-hover/endpoint:translate-y-0 group-hover/endpoint:opacity-100 group-focus-within/endpoint:translate-y-0 group-focus-within/endpoint:opacity-100 dark:border-slate-700 dark:bg-slate-900 dark:ring-slate-700/70"
         >
@@ -99,7 +99,7 @@ onBeforeUnmount(() => {
         </div>
 
         <code
-          class="cursor-pointer font-mono text-gray-500 decoration-gray-400 decoration-dashed underline-offset-2 hover:text-primary-600 hover:underline focus:text-primary-600 focus:underline focus:outline-none dark:text-gray-400 dark:decoration-gray-500 dark:hover:text-primary-400 dark:focus:text-primary-400"
+          class="endpoint-url"
           role="button"
           tabindex="0"
           @click="copy(item.endpoint)"
@@ -139,3 +139,15 @@ onBeforeUnmount(() => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.endpoint-list{display:flex;flex-wrap:wrap;gap:8px 16px;min-width:0}
+.endpoint-item{display:flex;align-items:center;gap:8px;min-width:0;max-width:100%;padding:8px 10px;border-radius:8px;background:var(--keys-card-surface);font-size:12px;color:var(--studio-muted)}
+.endpoint-name{flex-shrink:0;font-weight:500;color:var(--studio-ink)}
+.endpoint-default{flex-shrink:0;padding:2px 6px;border-radius:5px;background:var(--studio-haze);color:var(--studio-muted);font-size:10px;line-height:16px}
+.endpoint-divider{width:1px;height:12px;flex-shrink:0;background:color-mix(in srgb,var(--studio-muted) 25%,transparent)}
+.endpoint-address{min-width:0}.endpoint-url{min-width:0;overflow-wrap:anywhere;font-family:var(--font-mono,monospace);cursor:pointer;text-underline-offset:3px}
+.endpoint-url:hover{color:var(--tf-console-active-ink);text-decoration:underline}.endpoint-url:focus-visible{outline:2px solid var(--tf-console-active-ink);outline-offset:3px;border-radius:4px}
+.endpoint-address>button,.endpoint-address>a{flex-shrink:0;border-radius:5px;padding:4px;color:var(--studio-muted)}.endpoint-address>button:hover,.endpoint-address>a:hover{background:var(--tf-console-hover);color:var(--tf-console-active-ink)}.endpoint-address>button:focus-visible,.endpoint-address>a:focus-visible{outline:2px solid var(--tf-console-active-ink);outline-offset:2px}
+.endpoint-address>button.text-emerald-500{color:#10b981}
+</style>

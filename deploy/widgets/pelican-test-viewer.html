@@ -1,0 +1,2731 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>鹈鹕测试 · 结果查看</title>
+<style>
+  /* 外壳风格与结果页（鹈鹕的海岸骑行）保持一致：米色底、植物绿、圆角胶囊 */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    font-family: system-ui, "Microsoft YaHei", sans-serif;
+    background: #f7f5ed;
+    color: #304b41;
+    position: relative;
+    overflow: hidden;
+    /* 弱化小字号宽字距文字的锯齿感 */
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* ===== 结果内容：除去时间线的剩余区域，内容等比缩放适配（无滚动条） ===== */
+  .stage {
+    position: absolute; top: 0; left: 0; right: 0; bottom: 112px;
+    background: #f7f5ed; overflow: hidden;
+  }
+  .frame {
+    position: absolute; top: 0; left: 0;
+    border: 0; background: #f7f5ed;
+    opacity: 0; transform-origin: 0 0;
+    transition: opacity .32s ease;
+  }
+  /* 待复核动画独立于结果 iframe，避免 SVG 样式污染；低于工具栏里的糖果（z-index:10）。 */
+  .pending-art {
+    position: absolute; left: clamp(-80px, -8vw, -24px); bottom: -30px; z-index: 6;
+    width: min(440px, 85vw); height: auto; aspect-ratio: 1200 / 876;
+    border: 0; background: transparent; pointer-events: none;
+  }
+  .pending-art[hidden] { display: none; }
+  /* 覆盖结果区的透明屏蔽层：仅可查看，鼠标显示禁止样式 */
+  .shield {
+    position: absolute; inset: 0; z-index: 4;
+    cursor: not-allowed;
+  }
+  /* 时间线上方的渐变模糊带：弱化结果底部不重要的内容，从下往上模糊渐弱 */
+  .fade-blur {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 110px; z-index: 3;
+    pointer-events: none;
+    background: linear-gradient(to top, rgba(247, 245, 237, .55), rgba(247, 245, 237, 0) 75%);
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
+    -webkit-mask-image: linear-gradient(to top, #000 15%, transparent);
+    mask-image: linear-gradient(to top, #000 15%, transparent);
+  }
+  /* 切换加载轻纱：盖在当前内容上（内容仍隐约可见），新内容就绪后随交叉切换一起淡出 */
+  .load-veil {
+    position: absolute; inset: 0; z-index: 4;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(247, 245, 237, .42);
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+    opacity: 0; visibility: hidden;
+    transition: opacity .18s ease, visibility 0s linear .18s;
+    pointer-events: none;
+  }
+  .load-veil.show {
+    opacity: 1; visibility: visible;
+    transition: opacity .18s ease;
+  }
+  .load-pill {
+    display: flex; align-items: center; gap: 8px;
+    background: rgba(255, 250, 240, .96);
+    border: 1px solid #b7d0c2; border-radius: 999px;
+    color: #39765c; font-size: 13px; font-weight: 700; letter-spacing: 1px;
+    padding: 8px 16px;
+    box-shadow: 0 4px 16px rgba(48, 75, 65, .12);
+  }
+  .load-spin {
+    width: 14px; height: 14px; border-radius: 50%; flex: none;
+    border: 2px solid #d7e3d4; border-top-color: #477f60;
+    animation: testingSpin .8s linear infinite;
+  }
+
+  /* ===== 顶部中间：常驻说明 + 新数据通知 ===== */
+  .top-notes {
+    position: absolute; top: 18px; left: 50%; transform: translateX(-50%); z-index: 30;
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    max-width: calc(100% - 24px); pointer-events: none;
+  }
+  .notice {
+    display: flex; align-items: center; gap: 8px;
+    background: rgba(255, 251, 235, .95);
+    border: 1px solid #e7cf96; border-radius: 10px;
+    color: #8a6d1f; font-size: 13px; letter-spacing: 1px;
+    padding: 8px 18px;
+    box-shadow: 0 4px 16px rgba(48, 75, 65, .1);
+    white-space: nowrap;
+  }
+  .notice .ico { font-size: 14px; }
+  .toast {
+    display: none; align-items: center; gap: 8px;
+    max-width: 100%;
+    background: rgba(255, 250, 240, .96);
+    border: 1px solid #b7d0c2; border-radius: 999px;
+    color: #39765c; font-size: 13px; font-weight: 700; letter-spacing: 1px;
+    padding: 8px 16px;
+    box-shadow: 0 4px 16px rgba(48, 75, 65, .12);
+  }
+  .toast.show { display: flex; }
+  .toast-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .toast-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: #39765c; }
+
+  /* ===== 浮层公共样式 ===== */
+  .overlay {
+    position: absolute; z-index: 10;
+    background: rgba(255, 250, 240, .9);
+    border: 1px solid #cfdac9; border-radius: 30px;
+    box-shadow: 0 4px 16px rgba(48, 75, 65, .12);
+    backdrop-filter: blur(8px) saturate(1.05);
+    -webkit-backdrop-filter: blur(8px) saturate(1.05);
+  }
+
+  /* ===== 时间线上方工具栏：两侧贴边，分组相对页面水平居中 ===== */
+  .bar {
+    position: absolute; left: 0; right: 0; bottom: 112px; z-index: 10;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 16px 10px;
+    pointer-events: none;
+  }
+  .bar > * { pointer-events: auto; }
+  .candy, .top-right { flex-shrink: 0; }
+  /* 分组脱离文档流，水平对准页面中线，垂直由 JS 对齐到模型选择 */
+  .group-wrap {
+    position: absolute; left: 50%; top: 50%; z-index: 2;
+    transform: translate(-50%, -50%);
+    min-width: 0; max-width: 100%;
+    display: flex; justify-content: center;
+  }
+  /* 模型切换悬浮在分组按钮正上方（脱离文档流，不影响工具栏行高） */
+  .group-wrap .model-tabs {
+    position: absolute; bottom: calc(100% + 8px); left: 50%;
+    transform: translateX(-50%);
+    max-width: calc(100vw - 24px);
+  }
+  .group-wrap .model-tabs:empty { display: none; }
+  .group-btn {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    max-width: 100%; min-width: 180px;
+    border: 1px solid #cfdac9; border-radius: 30px;
+    background: rgba(255, 250, 240, .92); color: #39765c;
+    font: inherit; font-size: 13px; font-weight: 700; letter-spacing: normal;
+    cursor: pointer; padding: 9px 30px 9px 18px;
+    overflow: hidden;
+    box-shadow: 0 4px 16px rgba(48, 75, 65, .12);
+    backdrop-filter: blur(8px) saturate(1.05);
+    -webkit-backdrop-filter: blur(8px) saturate(1.05);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%2368a178' stroke-width='1.6' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 12px center;
+    transition: background-color .15s ease;
+  }
+  .group-btn:hover { background-color: #f2f0e0; }
+  #groupLabel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .group-btn:focus-visible { outline: 3px solid #d9ae60; outline-offset: 3px; }
+  .group-menu {
+    position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%);
+    width: max-content; min-width: 100%; padding: 6px;
+    background: rgba(255, 250, 240, .96); border: 1px solid #cfdac9; border-radius: 14px;
+    box-shadow: 0 8px 24px rgba(48, 75, 65, .16);
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    display: flex; flex-direction: column;
+  }
+  .group-menu[hidden] { display: none; }
+  .group-option {
+    background: none; border: none; cursor: pointer; font: inherit;
+    font-size: 12.5px; letter-spacing: normal; color: #4b5f52;
+    padding: 9px 18px; border-radius: 9px; white-space: nowrap;
+    text-align: left;
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    transition: background-color .12s ease;
+  }
+  .group-option + .group-option { margin-top: 5px; }
+  .g-int {
+    flex: none;
+    font-size: 12px; letter-spacing: normal; color: #96762a;
+    background: #f5ecd4; padding: 2px 8px; border-radius: 999px;
+    box-sizing: border-box; text-align: center;
+  }
+  /* 下拉项里检测间隔靠右，等宽后“检测间隔”四个字左对齐 */
+  .group-option .g-int { margin-left: auto; text-align: left; }
+  .group-option:hover { background: #e5eddc; }
+  .group-option.active { color: #39765c; font-weight: 700; background: #e5eddc; }
+
+  /* ===== 底部：全宽磨砂时间线 ===== */
+  .timeline-box {
+    left: 0; right: 0; bottom: 0;
+    border-radius: 0; border-left: none; border-right: none; border-bottom: none;
+    background: rgba(255, 250, 240, .58);
+    backdrop-filter: blur(14px) saturate(1.1);
+    -webkit-backdrop-filter: blur(14px) saturate(1.1);
+    height: 112px;
+    user-select: none; -webkit-user-select: none;
+  }
+  .tl-scroll {
+    height: 100%; overflow-x: auto; overflow-y: hidden;
+    scrollbar-width: none;
+    /* 两端淡出，与磨砂底融合 */
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 9%, #000 91%, transparent);
+    mask-image: linear-gradient(to right, transparent, #000 9%, #000 91%, transparent);
+    cursor: grab;
+  }
+  .tl-scroll.dragging { cursor: grabbing; }
+  .tl-scroll::-webkit-scrollbar { display: none; }
+  .tl-track {
+    display: flex; align-items: center; gap: 44px;
+    height: 100%; width: max-content;
+    /* 左右内边距由 JS 按容器半宽设置，保证首尾项也能居中 */
+  }
+  .tl-item {
+    position: relative; flex: none;
+    background: none; border: none; cursor: pointer; font: inherit;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 9px;
+    color: #8a9281; padding: 0;
+    transition: opacity .18s linear;
+  }
+  .tl-dot {
+    width: 11px; height: 11px; border-radius: 50%;
+    background: #fffaf0; border: 2px solid #a9b5a0;
+    transition: all .18s ease;
+  }
+  .tl-time { font-size: 11.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .rest-clock-part { display: inline-block; width: 2ch; text-align: center; }
+  .rest-clock-separator { animation: restClockBlink 1s steps(1, end) infinite; }
+  @keyframes restClockBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+  .tl-empty { color: #8a9281; font-size: 13px; white-space: nowrap; }
+  .tl-item.active.s-pass { color: #39765c; }
+  .tl-item.active.s-fail { color: #b0443f; }
+  .tl-item.active.s-pend { color: #96762a; }
+  .tl-item.active.s-run { color: #2f6a4e; }
+  .tl-item.active.s-rest { color: #596d91; }
+  .tl-item.s-rest .tl-dot { background: #596d91; border-color: #596d91; }
+  .tl-item.active.s-rest .tl-dot { box-shadow: 0 0 0 5px rgba(89, 109, 145, .16); }
+  .tl-status.s-rest, .bubble-tag.s-rest { background: #e7ebf3; color: #596d91; }
+  .tl-pointer.s-rest { border-top-color: #596d91; }
+  .tl-item.s-pass .tl-dot { background: #39765c; border-color: #39765c; }
+  .tl-item.s-fail .tl-dot { background: #b0443f; border-color: #b0443f; }
+  .tl-item.s-pend .tl-dot { background: #96762a; border-color: #96762a; }
+  .tl-item.s-run .tl-dot { background: #2f6a4e; border-color: #2f6a4e; }
+  .tl-item.active .tl-dot { transform: scale(1.15); }
+  .tl-item.active.s-pass .tl-dot { box-shadow: 0 0 0 5px rgba(57, 118, 92, .16); }
+  .tl-item.active.s-fail .tl-dot { box-shadow: 0 0 0 5px rgba(176, 68, 63, .16); }
+  .tl-item.active.s-pend .tl-dot { box-shadow: 0 0 0 5px rgba(150, 118, 42, .16); }
+  .tl-item.active.s-run .tl-dot { box-shadow: 0 0 0 5px rgba(47, 106, 78, .16); }
+  .tl-item.active .tl-time { font-weight: 700; }
+  /* 最新一次检测：时间恒定加粗区分，悬停有「最新」提示（title） */
+  .tl-item.latest .tl-time { font-weight: 700; }
+  /* 复核状态标签：时间点下方 */
+  .tl-status {
+    font-size: 12px; font-weight: 600; letter-spacing: 1px;
+    padding: 2px 9px; border-radius: 999px; line-height: 1.4;
+  }
+  .tl-status.s-pass { background: #e5eddc; color: #39765c; }
+  .tl-status.s-fail { background: #f6dedb; color: #b0443f; }
+  .tl-status.s-pend { background: #f5ecd4; color: #96762a; }
+  .tl-status.s-run { background: #e4f0e8; color: #2f6a4e; }
+  /* 状态标签右侧的截断小图标：悬停提示“被截断”。
+     脱流绝对定位：显隐不能改变时间点宽度，否则建轴时测好的中心点全部作废 */
+  .tl-status-row { position: relative; display: inline-flex; align-items: center; }
+  .tl-trunc {
+    position: absolute; left: calc(100% + 4px); top: 50%; transform: translateY(-50%);
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 14px; height: 14px; border-radius: 50%;
+    color: #b0443f; background: #f6dedb; cursor: help;
+  }
+  .tl-trunc[hidden] { display: none; }
+
+  /* ===== 糖果动画：时间线上方左侧，颜色标识当前检测结果 ===== */
+  .candy {
+    position: relative; flex: none;
+    width: 100px; height: 68px;
+    filter: drop-shadow(0 4px 8px rgba(48, 75, 65, .2));
+    user-select: none; -webkit-user-select: none;
+  }
+  .candy svg {
+    display: block; width: 100%; height: 100%;
+    transform-origin: 50% 85%;
+    animation: candyBounce 2.2s ease-in-out infinite;
+  }
+  /* 明暗关系：渐变糖体/糖纸 + 描边 + 底部暗面 + 高光 */
+  .candy .c-body { fill: url(#candyBodyG); stroke: var(--c-outline); stroke-width: 2.5; }
+  .candy .c-wrap { fill: url(#candyWrapG); stroke: var(--c-outline); stroke-width: 2; }
+  .candy .c-fold { stroke: var(--c-outline); stroke-width: 1.5; opacity: .45; }
+  .candy .c-line { stroke: var(--c-line); opacity: .5; }
+  .candy .c-shade { fill: rgba(0, 0, 0, .13); }
+  .candy .c-shine { fill: #ffffff; opacity: .65; }
+  .candy .c-spark { fill: #ffffff; opacity: .85; }
+  .candy .c-num {
+    fill: #fffaf0; font: 700 24px Georgia, "Songti SC", serif;
+    paint-order: stroke; stroke: rgba(0, 0, 0, .18); stroke-width: 3px;
+  }
+  .candy .c-g1 { stop-color: var(--c-g1); }
+  .candy .c-g2 { stop-color: var(--c-g2); }
+  .candy .c-g3 { stop-color: var(--c-g3); }
+  .candy .c-w1 { stop-color: var(--c-w1); }
+  .candy .c-w2 { stop-color: var(--c-w2); }
+  .candy.pass {
+    --c-outline: #35604a; --c-line: #eaf3e1;
+    --c-g1: #8fc7a4; --c-g2: #4f8a68; --c-g3: #38684d;
+    --c-w1: #a3cdb2; --c-w2: #5d9677;
+  }
+  .candy.fail {
+    --c-outline: #8f312e; --c-line: #f8dfda;
+    --c-g1: #eb948d; --c-g2: #c2534d; --c-g3: #9e3a35;
+    --c-w1: #f0a69f; --c-w2: #cf6a62;
+  }
+  .candy.pending {
+    --c-outline: #7d6424; --c-line: #f8f1dc;
+    --c-g1: #f0d48a; --c-g2: #c9a14b; --c-g3: #9a7828;
+    --c-w1: #f3e1ad; --c-w2: #d4b15e;
+  }
+  .candy.resting {
+    --c-outline: #485b7d; --c-line: #e7ebf3;
+    --c-g1: #a8b7d2; --c-g2: #778caf; --c-g3: #526887;
+    --c-w1: #bcc9df; --c-w2: #8398b9;
+  }
+  /* Q 弹：果冻式挤压回弹 */
+  @keyframes candyBounce {
+    0%, 100% { transform: rotate(-4deg) scale(1, 1) translateY(0); }
+    30% { transform: rotate(3deg) scale(1.05, .93) translateY(2px); }
+    55% { transform: rotate(-2deg) scale(.95, 1.08) translateY(-6px); }
+    80% { transform: rotate(4deg) scale(1.04, .95) translateY(0); }
+  }
+  /* 悬停糖果弹出的对话气泡（正上方，尾巴指向糖果中心） */
+  .candy .bubble {
+    position: absolute; left: 12px; bottom: calc(100% + 12px);
+    white-space: nowrap;
+    display: flex; align-items: baseline; gap: 6px;
+    background: rgba(255, 250, 240, .97);
+    border: 1px solid #cfdac9; border-radius: 12px;
+    padding: 9px 13px;
+    font-size: 12.5px; letter-spacing: 1px; color: #4b5f52;
+    box-shadow: 0 4px 14px rgba(48, 75, 65, .15);
+    opacity: 0; transform: translateY(8px) scale(.92);
+    transform-origin: 20% 100%;
+    transition: opacity .18s ease, transform .18s ease;
+    pointer-events: none; z-index: 11;
+  }
+  .candy .bubble::after {
+    content: ''; position: absolute; left: 30px; bottom: -5px;
+    width: 10px; height: 10px;
+    background: rgba(255, 250, 240, .97);
+    border-right: 1px solid #cfdac9; border-bottom: 1px solid #cfdac9;
+    transform: rotate(45deg); border-radius: 2px;
+  }
+  .candy:hover .bubble { opacity: 1; transform: translateY(0) scale(1); }
+  .candy .bubble b { font-weight: 700; color: #304b41; }
+  .bubble-tag {
+    display: inline-block; vertical-align: -2px;
+    font-size: 12px; font-weight: 600; letter-spacing: 1px;
+    padding: 2px 9px; border-radius: 999px; line-height: 1.4;
+  }
+  .bubble-tag.s-pass { background: #e5eddc; color: #39765c; }
+  .bubble-tag.s-fail { background: #f6dedb; color: #b0443f; }
+  .bubble-tag.s-pend { background: #f5ecd4; color: #96762a; }
+  .bubble-tag.s-run { background: #e4f0e8; color: #2f6a4e; }
+
+  /* 内容区盖层：进行中、切换加载、测试失败 */
+  .testing {
+    position: absolute; inset: 0; z-index: 5;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 16px; padding-bottom: 72px;
+    background: #f7f5ed; color: #39765c;
+  }
+  .testing[hidden] { display: none; }
+  .testing.is-fail { color: #b0443f; }
+  .testing.is-fail .spin { display: none; }
+  .testing .spin {
+    width: 36px; height: 36px; border-radius: 50%;
+    border: 3px solid #d7e3d4; border-top-color: #477f60;
+    animation: testingSpin .8s linear infinite;
+  }
+  .testing p { font-size: 15px; font-weight: 600; letter-spacing: 2px; }
+  @keyframes testingSpin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) {
+    .candy svg { animation: none; }
+    .testing .spin { animation: none; }
+    .load-spin { animation: none; }
+  }
+
+  /* 顶部中央三角标：始终对准（居中的）当前选中时间 */
+  .tl-pointer {
+    position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+    width: 0; height: 0; z-index: 3;
+    border-left: 7px solid transparent;
+    border-right: 7px solid transparent;
+    border-top: 8px solid #8a9281;
+  }
+  .tl-pointer.s-pass { border-top-color: #39765c; }
+  .tl-pointer.s-fail { border-top-color: #b0443f; }
+  .tl-pointer.s-pend { border-top-color: #96762a; }
+  .tl-pointer.s-run { border-top-color: #2f6a4e; }
+
+  /* 左右箭头 */
+  .tl-arrow {
+    position: absolute; top: 50%; transform: translateY(-50%); z-index: 2;
+    width: 34px; height: 34px; border-radius: 50%;
+    border: 1px solid #cfdac9; background: rgba(255, 250, 240, .92);
+    color: #39765c; font-size: 16px; line-height: 1; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 2px 8px rgba(48, 75, 65, .1);
+    transition: background .15s ease, opacity .15s ease;
+    font-family: Georgia, serif;
+  }
+  .tl-arrow:hover { background: #e5eddc; }
+  .tl-arrow.left { left: 14px; }
+  .tl-arrow.right { right: 14px; }
+  .tl-arrow[disabled] { opacity: .32; cursor: default; pointer-events: none; }
+
+  /* 右侧：模型切换 tab + 源码/耗时列，底部对齐让模型与耗时同一水平线 */
+  .top-right {
+    display: flex; align-items: flex-end; gap: 12px; flex-shrink: 0;
+  }
+  .model-tabs {
+    display: flex; align-items: center;
+    background: rgba(255, 250, 240, .92);
+    border: 1px solid #cfdac9; border-radius: 999px;
+    padding: 3px;
+    box-shadow: 0 4px 16px rgba(48, 75, 65, .12);
+    backdrop-filter: blur(8px) saturate(1.05);
+    -webkit-backdrop-filter: blur(8px) saturate(1.05);
+  }
+  .model-tabs[hidden] { display: none; }
+  .model-tab {
+    border: none; background: transparent; cursor: pointer;
+    font: inherit; font-size: 12px; color: #4b5f52;
+    width: auto; min-width: 76px; padding: 5px 12px; text-align: center;
+    border-radius: 999px; white-space: nowrap;
+    transition: background-color .15s ease, color .15s ease;
+  }
+  .model-tab:hover { color: #39765c; }
+  .model-tab.active { background: #477f60; color: #fffaf0; font-weight: 600; }
+  .tl-duration {
+    display: inline-flex; align-items: center;
+    font-size: 12px; color: #8a9281;
+    background: rgba(255, 250, 240, .92);
+    border: 1px solid #cfdac9; border-radius: 999px;
+    padding: 8px 16px;
+    box-shadow: 0 4px 16px rgba(48, 75, 65, .12);
+    backdrop-filter: blur(8px) saturate(1.05);
+    -webkit-backdrop-filter: blur(8px) saturate(1.05);
+    user-select: none; -webkit-user-select: none;
+    white-space: nowrap; flex: none;
+  }
+  /* 宽度按两位分钟 + 两位秒数留死，短耗时不再把左侧模型切换挤过去 */
+  .tl-duration-slot { position: relative; margin-left: 5px; flex: none; }
+  .tl-duration-sizer {
+    visibility: hidden; font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .tl-duration b {
+    position: absolute; inset: 0;
+    display: flex; align-items: center;
+    margin: 0; color: #39765c; font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap; overflow: hidden;
+  }
+  /* 时钟图标：与文字同色 */
+  .tl-clock { color: #8a9281; margin-right: 4px; flex: none; }
+  /* 查看源码：圆图标按钮，排在模型切换与耗时中间，相对两粒胶囊垂直居中 */
+  .tl-src {
+    align-self: center;
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; padding: 0;
+    font: inherit; color: #39765c;
+    background: rgba(255, 250, 240, .92);
+    border: 1px solid #cfdac9; border-radius: 999px;
+    cursor: pointer; flex: none;
+    box-shadow: 0 4px 16px rgba(48, 75, 65, .12);
+    backdrop-filter: blur(8px) saturate(1.05);
+    -webkit-backdrop-filter: blur(8px) saturate(1.05);
+    user-select: none; -webkit-user-select: none;
+    transition: background-color .15s ease;
+  }
+  .tl-src:hover:not([disabled]) { background: #e5eddc; }
+  .tl-src:focus-visible { outline: 3px solid #d9ae60; outline-offset: 3px; }
+  .tl-src[disabled] { opacity: .4; cursor: default; }
+  /* 推理等级标识：低/中/高，排在查看源码按钮左侧，风格与耗时胶囊一致 */
+  .tl-reason {
+    align-self: center;
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 26px; height: 26px; padding: 0 9px;
+    font: inherit; font-size: 12px; font-weight: 600; color: #39765c;
+    background: rgba(255, 250, 240, .92);
+    border: 1px solid #cfdac9; border-radius: 999px;
+    flex: none; white-space: nowrap;
+    box-shadow: 0 4px 16px rgba(48, 75, 65, .12);
+    backdrop-filter: blur(8px) saturate(1.05);
+    -webkit-backdrop-filter: blur(8px) saturate(1.05);
+    user-select: none; -webkit-user-select: none;
+  }
+  /* display 覆盖了 UA 的 [hidden]，需显式恢复隐藏 */
+  .tl-reason[hidden] { display: none; }
+  /* 脑子图标：与耗时胶囊的时钟一致，灰色、右距 4px */
+  .tl-brain { color: #8a9281; margin-right: 4px; flex: none; }
+
+  /* 源码弹窗：内容区中央（底部让出时间线高度，居中才对准结果区） */
+  .src-modal {
+    position: fixed; inset: 0; z-index: 30;
+    display: flex; align-items: center; justify-content: center;
+    padding-bottom: 112px;
+    background: rgba(48, 75, 65, .35);
+  }
+  .src-modal[hidden] { display: none; }
+  .src-box {
+    width: min(860px, calc(100vw - 48px)); max-height: 72vh;
+    display: flex; flex-direction: column;
+    background: #fffaf0; border: 1px solid #cfdac9; border-radius: 14px;
+    box-shadow: 0 12px 40px rgba(48, 75, 65, .25);
+    overflow: hidden;
+  }
+  .src-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 10px 16px; border-bottom: 1px solid #dfe4d5;
+    font-size: 12.5px; font-weight: 700; color: #39765c; letter-spacing: 1px;
+    user-select: none; -webkit-user-select: none;
+  }
+  .src-head-actions { display: flex; align-items: center; gap: 6px; }
+  .src-copy {
+    border: 1px solid #cfdac9; background: #fffaf0; cursor: pointer;
+    font: inherit; font-size: 11.5px; color: #39765c;
+    padding: 3px 12px; border-radius: 999px;
+    transition: background-color .12s ease;
+  }
+  .src-copy:hover { background: #e5eddc; }
+  .src-copy.ok { background: #e5eddc; border-color: #b9cdb2; }
+  .src-close {
+    border: none; background: none; cursor: pointer;
+    font-size: 16px; line-height: 1; color: #8a9281;
+    padding: 2px 8px; border-radius: 6px;
+    transition: background-color .12s ease, color .12s ease;
+  }
+  .src-close:hover { background: #e5eddc; color: #39765c; }
+  .src-code {
+    margin: 0; padding: 12px 16px; overflow: auto; flex: 1 1 auto;
+    font: 11.5px/1.55 Consolas, Menlo, monospace; color: #4b5f52;
+    white-space: pre-wrap; word-break: break-all;
+    user-select: text; -webkit-user-select: text;
+    cursor: text;
+  }
+  /* 最小宽度放不进源码/耗时旁边时，分组换到下一行并靠右（模型切换跟随分组悬浮其上） */
+  .bar.group-below { flex-wrap: wrap; row-gap: 8px; }
+  .bar.group-below .candy { order: 1; }
+  .bar.group-below .top-right { order: 2; margin-left: auto; }
+  .bar.group-below .group-wrap {
+    position: relative; order: 3; flex: 1 1 100%;
+    left: auto; top: auto; transform: none; max-width: none;
+    justify-content: flex-end;
+  }
+  /* 下拉列表跟随按钮；按钮靠右时改从右缘对齐，避免居中后伸出屏幕 */
+  .bar.group-below .group-menu { left: auto; right: 0; transform: none; }
+  /* 列表比屏幕宽时不再撑出屏幕：分组名称超出的部分省略。
+     位置和宽度都用内联样式按屏幕坐标写，定位参照盒子比屏幕宽时 right 会对不齐 */
+  .group-menu.clamp { transform: none; min-width: 0; }
+  .group-menu.clamp .group-option { min-width: 0; overflow: hidden; }
+  .group-menu.clamp .g-name {
+    display: block; flex: 1 1 auto;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+  }
+  /* 变窄后耗时与源码按钮在右侧叠成一列：源码按钮叠在耗时上方 */
+  @media (max-width: 1100px) {
+    .top-right {
+      flex-direction: column-reverse; align-items: flex-end; justify-content: center; gap: 6px;
+    }
+    .top-right .tl-duration { order: 1; }
+    /* 交叉轴变成水平，源码按钮跟随胶囊右对齐而不是居中 */
+    .top-right .tl-src { order: 2; align-self: flex-end; }
+    /* 推理等级标识叠在源码按钮上方 */
+    .top-right .tl-reason { order: 3; align-self: flex-end; }
+  }
+  @media (max-width: 768px) {
+    .top-notes { top: 12px; }
+    .notice, .toast { font-size: 11.5px; padding: 6px 12px; }
+    .timeline-box { height: 104px; }
+    .stage { bottom: 104px; }
+    .bar { bottom: 104px; padding: 6px 12px 8px; }
+    .fade-blur { height: 90px; }
+    .group-btn { font-size: 12px; padding: 7px 24px 7px 14px; }
+    .group-btn .g-int { font-size: 10px; padding: 1px 6px; }
+    .top-right { gap: 6px; }
+    .model-tab { width: auto; min-width: 0; font-size: 11.5px; padding: 3px 10px; }
+    .tl-duration { font-size: 11.5px; padding: 6px 12px; }
+    .tl-src { width: 24px; height: 24px; }
+    .tl-reason { height: 24px; font-size: 11.5px; padding: 0 8px; }
+    .candy { width: 84px; height: 57px; }
+    .tl-track { gap: 30px; }
+    .tl-status { font-size: 11px; padding: 1.5px 7px; }
+  }
+  /* 休息时整页使用睡眠 SVG 的夜空色，切换真实检测时恢复原配色。 */
+  body.is-resting { background: #15303b; color: #c5d8d6; color-scheme: dark; }
+  .is-resting .stage { bottom: 0; }
+  .is-resting .stage, .is-resting .frame, .is-resting .testing { background: #15303b; }
+  .is-resting .notice { display: none; }
+  .is-resting .top-right { display: none; }
+  .is-resting .fade-blur { display: none; }
+  .is-resting .load-veil { background: rgba(21, 48, 59, .42); }
+  .is-resting .overlay, .is-resting .group-btn, .is-resting .group-menu,
+  .is-resting .tl-duration, .is-resting .tl-src, .is-resting .tl-reason,
+  .is-resting .candy .bubble, .is-resting .toast, .is-resting .load-pill,
+  .is-resting .src-box, .is-resting .src-copy {
+    background-color: rgba(29, 62, 73, .94); border-color: #466971; color: #c5d8d6;
+    box-shadow: 0 4px 16px rgba(5, 20, 28, .2);
+  }
+  .is-resting .timeline-box { background: transparent; box-shadow: none; }
+  .is-resting .group-option { color: #b7cfcc; }
+  .is-resting .group-btn:hover, .is-resting .group-option:hover,
+  .is-resting .group-option.active, .is-resting .tl-arrow:hover,
+  .is-resting .src-copy:hover, .is-resting .src-close:hover { background-color: #2d5360; color: #e0ebe6; }
+  .is-resting .g-int { background: #344e50; color: #d8cd9f; }
+  .is-resting .tl-item, .is-resting .tl-empty,
+  .is-resting .tl-clock, .is-resting .tl-brain { color: #98b4b7; }
+  .is-resting .tl-item.active.s-rest { color: #d5e6de; }
+  .is-resting .tl-item.s-rest .tl-dot { background: #a7c6c5; border-color: #a7c6c5; }
+  .is-resting .tl-item.active.s-rest .tl-dot { box-shadow: 0 0 0 5px rgba(167, 198, 197, .18); }
+  .is-resting .tl-status, .is-resting .bubble-tag { background: #2c4b54; }
+  .is-resting .tl-status.s-rest, .is-resting .bubble-tag.s-rest { color: #d5e6de; }
+  .is-resting .tl-status.s-pass, .is-resting .tl-status.s-run { color: #a6cebc; }
+  .is-resting .tl-status.s-fail { color: #e4aaa1; }
+  .is-resting .tl-status.s-pend { color: #d8cd9f; }
+  .is-resting .tl-pointer.s-rest { border-top-color: #a7c6c5; }
+  .is-resting .tl-arrow { background: #1d3e49; border-color: #466971; color: #c5d8d6; }
+  .is-resting .tl-duration b, .is-resting .candy .bubble b,
+  .is-resting .src-head, .is-resting .src-code { color: #c5d8d6; }
+  .is-resting .src-head { border-color: #466971; }
+  .is-resting .src-modal { background: rgba(5, 20, 28, .6); }
+  .is-resting .candy .bubble::after { background: #1d3e49; border-color: #466971; }
+  .is-resting .candy.resting {
+    --c-outline: #254751; --c-line: #cadcd5;
+    --c-g1: #7aa3a4; --c-g2: #507d84; --c-g3: #315761;
+    --c-w1: #91b4b3; --c-w2: #5b8584;
+  }
+  .is-resting .group-btn:focus-visible, .is-resting .tl-src:focus-visible { outline-color: #a7c6c5; }
+</style>
+</head>
+<body>
+
+  <!-- 顶部中间：常驻说明，下面是新数据通知 -->
+  <div class="top-notes">
+    <div class="notice" role="alert"><span class="ico">⚠</span>测试结果仅可查看，不可交互</div>
+    <div class="toast" id="toast" role="status" aria-live="polite" aria-hidden="true"></div>
+  </div>
+
+  <!-- 结果内容：双缓冲淡入淡出，外层屏蔽交互 -->
+  <div class="stage" id="stage">
+    <iframe id="frameA" class="frame" title="鹈鹕测试结果" sandbox="allow-same-origin allow-scripts" scrolling="no"></iframe>
+    <iframe id="frameB" class="frame" title="鹈鹕测试结果备用" sandbox="allow-same-origin allow-scripts" scrolling="no" aria-hidden="true"></iframe>
+    <iframe id="pendingArt" class="pending-art" title="待复核鹈鹕动画" sandbox="" scrolling="no" tabindex="-1" aria-hidden="true" hidden></iframe>
+    <div class="shield" aria-hidden="true"></div>
+    <div class="fade-blur" aria-hidden="true"></div>
+    <div class="load-veil" id="loadVeil" aria-hidden="true"><div class="load-pill"><span class="load-spin"></span>加载中</div></div>
+    <div class="testing" id="testing" hidden role="status" aria-live="polite">
+      <div class="spin" id="testingSpin" aria-hidden="true"></div>
+      <p id="testingText">正在测试中</p>
+    </div>
+  </div>
+
+  <template id="angryArt">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 876" width="1200" height="876" font-family="'PingFang SC','Microsoft YaHei','Noto Sans SC',sans-serif">
+  <defs>
+    <linearGradient id="bodyG" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fffdf4"/><stop offset="1" stop-color="#dfe4d9"/>
+    </linearGradient>
+    <linearGradient id="beakG" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f8cb82"/><stop offset="1" stop-color="#eda952"/>
+    </linearGradient>
+    <filter id="blurS" x="-30%" y="-80%" width="160%" height="260%"><feGaussianBlur stdDeviation="6"/></filter>
+  </defs>
+
+  <style>
+    /* ---- timeline: 0-3.6s walk in · 3.6-8.4s uproar · 8.4-9s plop down · then sulk forever ---- */
+    .walkX{transform:translateX(-900px);animation:walkIn 3.6s cubic-bezier(.25,.5,.5,1) forwards}
+    .jump{animation:jump .8s ease-in-out 3.6s 6}
+    .plop{animation:plop .6s ease-out 8.4s forwards}
+    .waddle{animation:waddle .9s ease-in-out 4}
+    .huff{transform-origin:0 -62px;animation:huff 1.3s ease-in-out 9.2s infinite}
+
+    .legA{transform-origin:0 0;animation:stepA .9s ease-in-out 4}
+    .legB{transform-origin:0 0;animation:stepB .9s ease-in-out 4}
+    .legS{transform-origin:0 0;animation:fold .3s ease-in 8.4s forwards}
+    .wing{transform-origin:0 0;animation:wingWalk .9s ease-in-out 4 forwards,wingFlap .28s ease-in-out 3.6s 17 forwards,wingSit .5s ease-out 8.4s forwards}
+    .head{transform-origin:55px -205px;animation:shake .24s ease-in-out 3.6s 20 forwards,headSit .5s ease-out 8.4s forwards}
+    .lower{transform-origin:117px -240px;animation:talk .3s ease-in-out 12,shout .22s ease-in-out 3.6s 22}
+
+    .shadow{transform-box:fill-box;transform-origin:center;animation:shadowJump .8s ease-in-out 3.6s 6}
+    .dust{transform-box:fill-box;transform-origin:center;opacity:0;animation:dust .8s ease-out 3.6s 6}
+    .dustP{transform-box:fill-box;transform-origin:center;opacity:0;animation:dust .8s ease-out 8.5s 1}
+
+    .eWalk{animation:hideAt .01s steps(1,end) 3.6s forwards}
+    .eFuss{opacity:0;animation:showAt .01s steps(1,end) 3.6s forwards,hideAt .01s steps(1,end) 8.4s forwards}
+    .eSit{opacity:0;animation:showAt .01s steps(1,end) 8.5s forwards}
+    .blushRed{opacity:0;animation:showAt .01s steps(1,end) 8.6s forwards}
+    .sitFeet{opacity:0;animation:showAt .01s steps(1,end) 8.7s forwards}
+    .sweat{opacity:0;animation:sw 1.1s ease-in infinite,hideAt .01s steps(1,end) 8.4s forwards}
+    .sweat2{animation-delay:-.5s,0s}
+    .shoutArc{opacity:0;animation:showAt .01s steps(1,end) 3.6s forwards,hideAt .01s steps(1,end) 8.4s forwards}
+    .shoutArc g{animation:arcs .22s ease-out infinite}
+    .vein{opacity:0;transform-box:fill-box;transform-origin:center;animation:showAt .01s steps(1,end) 3.7s forwards,pulse .55s ease-in-out infinite}
+    .steam{opacity:0;transform-box:fill-box;transform-origin:center;animation:steam 2.2s ease-out 9s infinite}
+    .steam.s2{animation-delay:10.1s}
+
+    .bubble{opacity:0;transform-origin:600px 300px;animation:pop .35s ease-out 3.3s forwards,fadeOut .4s ease-in 8.4s forwards}
+    .bshake{animation:bshake .1s linear 3.65s 48}
+    .hmph{opacity:0;transform-origin:500px 450px;animation:pop .35s ease-out 9.2s forwards}
+    .hbob{animation:hbob 2.6s ease-in-out 9.6s infinite}
+
+    @keyframes walkIn{to{transform:translateX(0)}}
+    @keyframes waddle{0%,100%{transform:rotate(0) translateY(0)}25%{transform:rotate(-3deg) translateY(-7px)}50%{transform:rotate(0) translateY(0)}75%{transform:rotate(3deg) translateY(-7px)}}
+    @keyframes stepA{0%,100%{transform:rotate(0)}25%{transform:rotate(26deg)}75%{transform:rotate(-26deg)}}
+    @keyframes stepB{0%,100%{transform:rotate(0)}25%{transform:rotate(-26deg)}75%{transform:rotate(26deg)}}
+    @keyframes wingWalk{0%,100%{transform:rotate(0)}25%{transform:rotate(-14deg)}75%{transform:rotate(14deg)}}
+    @keyframes wingFlap{0%,100%{transform:rotate(-30deg)}50%{transform:rotate(-98deg)}}
+    @keyframes wingSit{from{transform:rotate(-98deg)}to{transform:rotate(-58deg)}}
+    @keyframes shake{0%,100%{transform:rotate(-4deg)}50%{transform:rotate(4deg)}}
+    @keyframes headSit{from{transform:rotate(4deg)}to{transform:rotate(-7deg)}}
+    @keyframes talk{0%,100%{transform:rotate(0)}50%{transform:rotate(10deg)}}
+    @keyframes shout{0%,100%{transform:rotate(2deg)}50%{transform:rotate(24deg)}}
+    @keyframes jump{0%{transform:translateY(0) scale(1,1)}12%{transform:translateY(0) scale(1.06,.93)}40%{transform:translateY(-52px) scale(.97,1.03)}70%{transform:translateY(0) scale(1,1)}78%{transform:translateY(0) scale(1.08,.92)}100%{transform:translateY(0) scale(1,1)}}
+    @keyframes shadowJump{0%,100%{transform:scale(1)}40%{transform:scale(.72)}78%{transform:scale(1.08)}}
+    @keyframes plop{0%{transform:translateY(0) scale(1,1)}40%{transform:translateY(70px) scale(1.1,.88)}65%{transform:translateY(56px) scale(.97,1.04)}100%{transform:translateY(62px) scale(1,1)}}
+    @keyframes fold{to{transform:scaleY(.04)}}
+    @keyframes huff{0%,100%{transform:scale(1,1)}50%{transform:scale(1.025,1.045)}}
+    @keyframes dust{0%,66%{opacity:0;transform:scale(.3)}72%{opacity:.85;transform:scale(.5)}100%{opacity:0;transform:scale(1.6)}}
+    @keyframes showAt{to{opacity:1}}
+    @keyframes hideAt{to{opacity:0}}
+    @keyframes sw{0%{opacity:0;transform:translateY(-4px)}25%{opacity:1}100%{opacity:0;transform:translateY(22px)}}
+    @keyframes arcs{0%{transform:translateX(0);opacity:1}100%{transform:translateX(10px);opacity:.3}}
+    @keyframes pulse{0%,100%{transform:scale(.9)}50%{transform:scale(1.25)}}
+    @keyframes steam{0%{opacity:0;transform:translate(0,10px) scale(.5)}20%{opacity:.9}100%{opacity:0;transform:translate(8px,-62px) scale(1.4)}}
+    @keyframes pop{0%{opacity:0;transform:scale(.3)}70%{opacity:1;transform:scale(1.08)}100%{opacity:1;transform:scale(1)}}
+    @keyframes fadeOut{to{opacity:0;transform:scale(.8)}}
+    @keyframes bshake{0%,100%{transform:rotate(-1.3deg) translateX(-2px)}50%{transform:rotate(1.3deg) translateX(2px)}}
+    @keyframes hbob{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+    /* reduced motion: jump straight to the final sulking pose */
+    @media (prefers-reduced-motion:reduce){*{animation-delay:0s!important;animation-duration:.001s!important;animation-iteration-count:1!important}}
+  </style>
+
+    <!-- ===== the pelican: origin (600,700) = ground contact ===== -->
+    <g transform="translate(600 700)">
+      <g class="walkX">
+        <ellipse class="shadow" cx="0" cy="2" rx="130" ry="14" fill="#8e9a78" opacity=".45" filter="url(#blurS)"/>
+        <!-- landing dust -->
+        <g fill="#f6f0da" stroke="#d8cfae" stroke-width="2">
+          <g class="dust"><circle cx="-90" cy="-8" r="16"/><circle cx="-112" cy="-4" r="11"/><circle cx="-72" cy="-4" r="9"/></g>
+          <g class="dust"><circle cx="105" cy="-8" r="16"/><circle cx="128" cy="-4" r="11"/><circle cx="88" cy="-4" r="9"/></g>
+          <g class="dustP"><circle cx="-110" cy="-10" r="20"/><circle cx="-138" cy="-4" r="13"/><circle cx="140" cy="-10" r="20"/><circle cx="166" cy="-4" r="13"/></g>
+        </g>
+
+        <g class="jump"><g class="plop"><g class="waddle"><g class="huff">
+          <!-- far leg -->
+          <g transform="translate(24 -70)"><g class="legB"><g class="legS">
+            <path d="M0 0 V60" stroke="#c97a45" stroke-width="9" stroke-linecap="round"/>
+            <path d="M-4 62 L26 64 Q32 72 22 74 L-12 74 Q-16 66 -4 62Z" fill="#d68a50" stroke="#8a5a30" stroke-width="3" stroke-linejoin="round"/>
+          </g></g></g>
+          <!-- near leg -->
+          <g transform="translate(-14 -70)"><g class="legA"><g class="legS">
+            <path d="M0 0 V60" stroke="#e8955a" stroke-width="9" stroke-linecap="round"/>
+            <path d="M-4 62 L28 64 Q34 72 24 74 L-12 74 Q-16 66 -4 62Z" fill="#f2a468" stroke="#8a5a30" stroke-width="3" stroke-linejoin="round"/>
+          </g></g></g>
+
+          <!-- tail -->
+          <path d="M-100 -172 L-192 -204 L-122 -138Z" fill="#cfd6c8" stroke="#23403c" stroke-width="4" stroke-linejoin="round"/>
+          <path d="M-104 -146 L-198 -144 L-118 -112Z" fill="#dfe4d6" stroke="#23403c" stroke-width="4" stroke-linejoin="round"/>
+          <!-- body -->
+          <ellipse cx="0" cy="-150" rx="115" ry="88" fill="url(#bodyG)" stroke="#23403c" stroke-width="4.5"/>
+          <path d="M-80 -190 C-60 -222 -20 -232 20 -228" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round" opacity=".8"/>
+          <!-- sitting feet (appear when plopped) -->
+          <g class="sitFeet" transform="translate(0 -24)">
+            <path d="M80 -62 L122 -58 Q130 -48 118 -46 L74 -46 Q68 -58 80 -62Z" fill="#f2a468" stroke="#8a5a30" stroke-width="3" stroke-linejoin="round"/>
+            <path d="M36 -52 L78 -48 Q86 -38 74 -36 L28 -36 Q22 -48 36 -52Z" fill="#e8955a" stroke="#8a5a30" stroke-width="3" stroke-linejoin="round"/>
+          </g>
+          <!-- neck blend -->
+          <ellipse cx="55" cy="-205" rx="48" ry="42" fill="url(#bodyG)"/>
+
+          <!-- head -->
+          <g class="head">
+            <circle cx="78" cy="-262" r="60" fill="url(#bodyG)" stroke="#23403c" stroke-width="4.5"/>
+            <path d="M34 -278 C40 -298 56 -308 74 -310" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" opacity=".8"/>
+            <path d="M50 -318 q-10 -14 -22 -12 M62 -322 q-6 -18 -18 -20" stroke="#23403c" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+            <ellipse cx="86" cy="-240" rx="15" ry="9" fill="#f4a39a" opacity=".7"/>
+            <ellipse class="blushRed" cx="86" cy="-240" rx="20" ry="12" fill="#e8795c" opacity=".6"/>
+
+            <!-- eyes: walking = worried -->
+            <g class="eWalk">
+              <circle cx="102" cy="-266" r="11" fill="#fff" stroke="#23403c" stroke-width="3"/>
+              <circle cx="105" cy="-265" r="4.6" fill="#23403c"/><circle cx="106.5" cy="-266.5" r="1.5" fill="#fff"/>
+              <path d="M88 -284 L114 -292" stroke="#23403c" stroke-width="4.5" stroke-linecap="round"/>
+            </g>
+            <!-- eyes: uproar = > < -->
+            <g class="eFuss">
+              <path d="M92 -276 L112 -266 L92 -256" fill="none" stroke="#23403c" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M86 -288 L116 -278" stroke="#23403c" stroke-width="5" stroke-linecap="round"/>
+            </g>
+            <!-- eyes: sulking = glare -->
+            <g class="eSit">
+              <circle cx="102" cy="-264" r="11" fill="#fff" stroke="#23403c" stroke-width="3"/>
+              <circle cx="98" cy="-262" r="4.8" fill="#23403c"/>
+              <path d="M89 -270 H115" stroke="#23403c" stroke-width="7" stroke-linecap="round"/>
+              <path d="M86 -286 L116 -272" stroke="#23403c" stroke-width="5" stroke-linecap="round"/>
+            </g>
+
+            <!-- beak -->
+            <path d="M117 -258 C150 -266 190 -256 213 -234 L207 -228 C180 -240 148 -242 117 -240Z" fill="url(#beakG)" stroke="#8a5a30" stroke-width="3.5" stroke-linejoin="round"/>
+            <path d="M126 -255 C152 -259 180 -252 200 -238" stroke="#fde7b8" stroke-width="3" fill="none" stroke-linecap="round" opacity=".85"/>
+            <g class="lower">
+              <path d="M117 -240 C148 -238 180 -233 207 -228 C204 -190 160 -186 135 -210 C122 -220 116 -230 117 -240Z" fill="#f3b865" stroke="#8a5a30" stroke-width="3.5" stroke-linejoin="round"/>
+              <path d="M144 -224 q8 20 26 28 M166 -226 q6 14 18 20" stroke="#cf9048" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+            </g>
+
+            <!-- shout waves -->
+            <g class="shoutArc" fill="none" stroke="#d9534a" stroke-width="5" stroke-linecap="round">
+              <g><path d="M232 -258 Q250 -236 232 -214"/><path d="M252 -270 Q282 -236 252 -202"/></g>
+            </g>
+            <!-- sweat -->
+            <path class="sweat" d="M40 -300 q-9 16 0 22 q9 -6 0 -22z" fill="#8fc7d6" stroke="#5e9fb2" stroke-width="2"/>
+            <path class="sweat sweat2" d="M126 -312 q-8 14 0 19 q8 -5 0 -19z" fill="#8fc7d6" stroke="#5e9fb2" stroke-width="2"/>
+            <!-- anger vein -->
+            <g transform="translate(36 -330)"><path class="vein" d="M-14 -5 Q-5 -5 -5 -14 M5 -14 Q5 -5 14 -5 M14 5 Q5 5 5 14 M-5 14 Q-5 5 -14 5" fill="none" stroke="#d9534a" stroke-width="5" stroke-linecap="round"/></g>
+            <!-- steam -->
+            <g fill="#fff" stroke="#9fb0a8" stroke-width="3">
+              <g class="steam"><circle cx="64" cy="-330" r="14"/><circle cx="82" cy="-338" r="10"/></g>
+              <g class="steam s2"><circle cx="102" cy="-326" r="12"/><circle cx="118" cy="-336" r="8"/></g>
+            </g>
+          </g>
+
+          <!-- wing -->
+          <g transform="translate(8 -204)"><g class="wing">
+            <path d="M-20 -6 C22 -10 44 30 22 80 C2 94 -28 62 -28 22 C-28 4 -26 -2 -20 -6Z" fill="#eef0e6" stroke="#23403c" stroke-width="4" stroke-linejoin="round"/>
+            <path d="M-12 22 C2 28 8 40 6 56 M-2 14 C14 22 20 40 16 62" stroke="#9fb0a3" stroke-width="3" fill="none" stroke-linecap="round"/>
+          </g></g>
+        </g></g></g></g>
+      </g>
+    </g>
+
+    <!-- ===== speech bubble ===== -->
+    <g class="bubble"><g class="bshake">
+      <rect x="290" y="146" width="620" height="144" rx="46" fill="#fffdf4" stroke="#23403c" stroke-width="5"/>
+      <path d="M650 290 L706 360 L736 290Z" fill="#fffdf4" stroke="#23403c" stroke-width="5" stroke-linejoin="round"/>
+      <rect x="654" y="286" width="78" height="9" fill="#fffdf4"/>
+      <text x="600" y="240" font-size="56" font-weight="800" text-anchor="middle" fill="#23403c" letter-spacing="2">快喊老板来复核<tspan fill="#d9534a">！！！</tspan></text>
+      <g stroke="#d9534a" stroke-width="5" stroke-linecap="round">
+        <path d="M262 150 l-26 -22 M252 190 l-34 -2 M262 232 l-28 20"/>
+        <path d="M938 150 l26 -22 M948 190 l34 -2 M938 232 l28 20"/>
+      </g>
+    </g></g>
+
+    <!-- ===== final sulk ===== -->
+    <g class="hmph"><g class="hbob">
+      <rect x="372" y="398" width="160" height="78" rx="32" fill="#fffdf4" stroke="#23403c" stroke-width="4.5"/>
+      <path d="M526 432 L584 458 L526 458Z" fill="#fffdf4" stroke="#23403c" stroke-width="4.5" stroke-linejoin="round"/>
+      <rect x="522" y="428" width="10" height="34" fill="#fffdf4"/>
+      <text x="452" y="452" font-size="42" font-weight="800" text-anchor="middle" fill="#d9534a">哼！</text>
+    </g></g>
+</svg>
+</template>
+<template id="sleepingArt">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 876" width="1200" height="876" font-family="'PingFang SC','Microsoft YaHei','Noto Sans SC',sans-serif">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#15303b"/>
+      <stop offset=".55" stop-color="#2d5360"/>
+      <stop offset="1" stop-color="#5b8584"/>
+    </linearGradient>
+    <linearGradient id="sea" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4a7d82"/>
+      <stop offset="1" stop-color="#2a5059"/>
+    </linearGradient>
+    <linearGradient id="sand" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#46675f"/>
+      <stop offset="1" stop-color="#2a4743"/>
+    </linearGradient>
+    <linearGradient id="bodyG" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fffdf4"/>
+      <stop offset="1" stop-color="#dde3d8"/>
+    </linearGradient>
+    <linearGradient id="beakG" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f8cb82"/>
+      <stop offset="1" stop-color="#eda952"/>
+    </linearGradient>
+    <radialGradient id="moonGlow" cx="930" cy="190" r="220" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff0c4" stop-opacity=".45"/>
+      <stop offset="1" stop-color="#fff0c4" stop-opacity="0"/>
+    </radialGradient>
+    <mask id="cres">
+      <rect x="0" y="0" width="1200" height="876" fill="#fff"/>
+      <circle cx="962" cy="168" r="54" fill="#000"/>
+    </mask>
+    <filter id="tglow" x="-10%" y="-40%" width="120%" height="180%">
+      <feGaussianBlur stdDeviation="7" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="blurS" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="8"/></filter>
+    <path id="star" d="M0 -10 Q1.2 -1.2 10 0 Q1.2 1.2 0 10 Q-1.2 1.2 -10 0 Q-1.2 -1.2 0 -10Z"/>
+    <g id="cloudShape">
+        <g stroke="#23403c" stroke-width="9" fill="#23403c">
+          <circle cx="170" cy="150" r="55"/><circle cx="225" cy="100" r="60"/><circle cx="315" cy="78" r="66"/>
+          <circle cx="410" cy="92" r="62"/><circle cx="488" cy="130" r="56"/><circle cx="494" cy="185" r="45"/>
+          <circle cx="410" cy="208" r="50"/><circle cx="310" cy="214" r="52"/><circle cx="220" cy="204" r="48"/>
+        </g>
+        <g fill="#f7f3e8">
+          <circle cx="170" cy="150" r="55"/><circle cx="225" cy="100" r="60"/><circle cx="315" cy="78" r="66"/>
+          <circle cx="410" cy="92" r="62"/><circle cx="488" cy="130" r="56"/><circle cx="494" cy="185" r="45"/>
+          <circle cx="410" cy="208" r="50"/><circle cx="310" cy="214" r="52"/><circle cx="220" cy="204" r="48"/>
+          <rect x="170" y="100" width="320" height="100"/>
+        </g>
+      </g>
+  </defs>
+
+  <style>
+    .breathe{transform-origin:600px 668px;animation:breathe 4.4s ease-in-out infinite}
+    .headrise{animation:headrise 4.4s ease-in-out infinite}
+    .pom{transform-origin:650px 285px;animation:pom 4.4s ease-in-out infinite}
+    .bubble{transform-origin:784px 420px;animation:bubble 4.4s ease-in-out infinite}
+    .z{transform-box:fill-box;transform-origin:center;opacity:0;animation:zfloat 5.4s ease-out infinite}
+    .tw{animation:tw 3.6s ease-in-out infinite}
+    .glow{animation:glow 6s ease-in-out infinite}
+    .shim{animation:shim 5s ease-in-out infinite}
+    .txt{animation:fadein 2.4s ease-out both}
+    .dot,.dream{opacity:0;transform-box:fill-box;transform-origin:center;animation:dream 98s ease-in-out infinite;animation-delay:var(--d)}
+    .dot2{animation-delay:calc(var(--d) + .35s)}.dot3{animation-delay:calc(var(--d) + .7s)}.dream{animation-delay:calc(var(--d) + 1.1s)}
+    .dbob{animation:dbob 4s ease-in-out infinite}
+    .qmark{transform-box:fill-box;transform-origin:center;animation:qm 1.6s ease-in-out infinite}
+    .jit{animation:jit .16s linear infinite}
+    .fl{opacity:0;animation:fl 2.4s ease-out infinite}
+    .sw{opacity:0;animation:sw 1.6s ease-in infinite}
+    .coin{transform-box:fill-box;transform-origin:center;animation:spin 1.4s linear infinite}
+    @keyframes dream{0%{opacity:0;transform:scale(.3)}1.7%{opacity:1;transform:scale(1.06)}2.1%{opacity:1;transform:scale(1)}7.7%{opacity:1;transform:scale(1)}8.7%,100%{opacity:0;transform:scale(.6)}}
+    @keyframes dbob{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+    @keyframes qm{0%,100%{transform:rotate(-10deg) scale(1)}50%{transform:rotate(10deg) scale(1.15)}}
+    @keyframes jit{0%{transform:translate(-1.4px,0)}25%{transform:translate(1.4px,1px)}50%{transform:translate(-1px,-1px)}75%{transform:translate(1.4px,0)}100%{transform:translate(-1.4px,0)}}
+    @keyframes fl{0%{opacity:0;transform:translateY(10px)}30%{opacity:1}100%{opacity:0;transform:translateY(-22px)}}
+    @keyframes sw{0%{opacity:0;transform:translateY(-4px)}25%{opacity:1}100%{opacity:0;transform:translateY(14px)}}
+    @keyframes spin{0%,100%{transform:scaleX(1)}50%{transform:scaleX(.12)}}
+    @keyframes breathe{0%,100%{transform:scale(1,1)}50%{transform:scale(1.012,1.032)}}
+    @keyframes headrise{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+    @keyframes pom{0%,100%{transform:rotate(0)}50%{transform:rotate(4deg)}}
+    @keyframes bubble{0%{transform:scale(.35);opacity:.9}55%{transform:scale(1.15);opacity:.95}62%{transform:scale(1.2);opacity:.95}66%{transform:scale(1.5);opacity:0}100%{transform:scale(.35);opacity:0}}
+    @keyframes zfloat{0%{opacity:0;transform:translate(0,0) scale(.55) rotate(-8deg)}18%{opacity:1}75%{opacity:.85}100%{opacity:0;transform:translate(-10px,-150px) scale(1.35) rotate(-8deg)}}
+    @keyframes tw{0%,100%{opacity:.25}50%{opacity:1}}
+    @keyframes glow{0%,100%{opacity:.75}50%{opacity:1}}
+    @keyframes shim{0%,100%{opacity:.25}50%{opacity:.6}}
+    @keyframes fadein{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+    @media (prefers-reduced-motion:reduce){*{animation:none!important}.z{opacity:.8}.scene{display:none}.scene.s0{display:inline}.s0 .dream,.s0 .dot{opacity:1}}
+  </style>
+
+  <!-- ===== night scene ===== -->
+  <rect width="1200" height="876" fill="url(#sky)"/>
+  <rect width="1200" height="876" fill="url(#moonGlow)" class="glow"/>
+  <circle cx="930" cy="190" r="62" fill="#fbe7b2" mask="url(#cres)"/>
+
+  <!-- stars -->
+  <g fill="#fff4d2">
+    <use href="#star" class="tw" transform="translate(150 120) scale(1.1)"/>
+    <use href="#star" class="tw" style="animation-delay:-1.2s" transform="translate(300 220) scale(.7)"/>
+    <use href="#star" class="tw" style="animation-delay:-2.4s" transform="translate(470 110) scale(.9)"/>
+    <use href="#star" class="tw" style="animation-delay:-.6s" transform="translate(640 190) scale(.6)"/>
+    <use href="#star" class="tw" style="animation-delay:-1.8s" transform="translate(760 90) scale(1)"/>
+    <use href="#star" class="tw" style="animation-delay:-3s" transform="translate(1090 280) scale(.8)"/>
+    <use href="#star" class="tw" style="animation-delay:-.3s" transform="translate(1060 90) scale(.6)"/>
+    <use href="#star" class="tw" style="animation-delay:-2.1s" transform="translate(90 300) scale(.6)"/>
+    <use href="#star" class="tw" style="animation-delay:-1.5s" transform="translate(220 380) scale(.5)"/>
+    <use href="#star" class="tw" style="animation-delay:-2.7s" transform="translate(1000 400) scale(.5)"/>
+  </g>
+
+  <!-- hills / sea / sand -->
+  <path d="M0 470 C120 430 260 420 380 452 C440 466 480 468 520 470 L520 480 L0 480Z" fill="#2c5059"/>
+  <path d="M760 480 C860 440 1000 430 1200 458 L1200 480Z" fill="#2f5560"/>
+  <rect y="470" width="1200" height="120" fill="url(#sea)"/>
+  <g fill="#fff0c4" class="shim">
+    <rect x="905" y="482" width="50" height="3" rx="1.5"/>
+    <rect x="880" y="494" width="100" height="3" rx="1.5"/>
+    <rect x="860" y="508" width="140" height="3.5" rx="1.7"/>
+    <rect x="840" y="524" width="180" height="4" rx="2"/>
+    <rect x="820" y="542" width="220" height="4" rx="2"/>
+  </g>
+  <path d="M0 568 C200 548 420 566 640 560 C860 554 1020 566 1200 556 L1200 876 L0 876Z" fill="url(#sand)"/>
+  <path d="M0 568 C200 548 420 566 640 560 C860 554 1020 566 1200 556" fill="none" stroke="#9cbdb0" stroke-width="3" opacity=".5"/>
+
+  <!-- ===== bed ===== -->
+  <ellipse cx="600" cy="728" rx="340" ry="22" fill="#17302f" opacity=".5" filter="url(#blurS)"/>
+  <rect x="352" y="700" width="22" height="26" rx="7" fill="#b8754f" stroke="#23403c" stroke-width="4"/>
+  <rect x="826" y="700" width="22" height="26" rx="7" fill="#b8754f" stroke="#23403c" stroke-width="4"/>
+  <rect x="320" y="612" width="560" height="98" rx="44" fill="#f4ead0" stroke="#23403c" stroke-width="4.5"/>
+  <path d="M350 690 H850" stroke="#d9cba7" stroke-width="3" stroke-linecap="round"/>
+
+  <!-- ===== pelican ===== -->
+  <!-- body group (breathes) -->
+  <g class="breathe">
+    <!-- tail feathers -->
+    <path d="M452 500 L378 470 L440 540Z" fill="#d3dacb" stroke="#23403c" stroke-width="4" stroke-linejoin="round"/>
+    <path d="M450 530 L384 540 L446 574Z" fill="#e4e8dc" stroke="#23403c" stroke-width="4" stroke-linejoin="round"/>
+    <!-- body -->
+    <ellipse cx="600" cy="500" rx="168" ry="132" fill="url(#bodyG)" stroke="#23403c" stroke-width="4.5"/>
+    <path d="M470 440 C490 400 540 380 590 384" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round" opacity=".8"/>
+    <!-- tucked wing -->
+    <path d="M520 450 C600 430 690 470 700 535 C640 590 540 580 500 520 C490 490 500 465 520 450Z" fill="#eef0e6" stroke="#23403c" stroke-width="4" stroke-linejoin="round"/>
+    <path d="M540 490 C590 488 640 505 670 530 M530 515 C575 516 615 530 645 552" stroke="#9fb0a3" stroke-width="3" fill="none" stroke-linecap="round"/>
+    <!-- blanket -->
+    <path d="M378 590 C440 560 520 578 600 570 C690 562 770 578 826 590 C846 624 840 654 818 672 L384 672 C360 654 358 622 378 590Z" fill="#d9715a" stroke="#23403c" stroke-width="4.5" stroke-linejoin="round"/>
+    <path d="M388 604 C450 580 520 596 600 588 C690 580 765 596 818 606" fill="none" stroke="#f0a48f" stroke-width="5" stroke-linecap="round" opacity=".8"/>
+    <g fill="#ffe9b8">
+      <use href="#star" transform="translate(440 630) scale(.9)"/>
+      <use href="#star" transform="translate(540 646) scale(.7)"/>
+      <use href="#star" transform="translate(640 628) scale(1)"/>
+      <use href="#star" transform="translate(740 646) scale(.75)"/>
+      <use href="#star" transform="translate(800 618) scale(.6)"/>
+    </g>
+  </g>
+
+  <!-- head group -->
+  <g class="headrise">
+    <!-- neck blend -->
+    <ellipse cx="660" cy="430" rx="70" ry="58" fill="url(#bodyG)"/>
+    <!-- head -->
+    <circle cx="690" cy="395" r="82" fill="url(#bodyG)" stroke="#23403c" stroke-width="4.5"/>
+    <path d="M628 372 C634 346 654 330 676 326" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round" opacity=".8"/>
+    <!-- cheek + closed eye -->
+    <ellipse cx="698" cy="428" rx="22" ry="13" fill="#f4a39a" opacity=".75"/>
+    <path d="M696 392 Q714 416 734 392" fill="none" stroke="#23403c" stroke-width="6" stroke-linecap="round"/>
+    <path d="M700 399 l-6 5 M714 406 v7 M728 399 l6 5" stroke="#23403c" stroke-width="3" stroke-linecap="round"/>
+
+    <!-- beak: chubby -->
+    <path d="M744 404 C790 396 842 408 872 436 L863 445 C822 431 782 428 744 432Z" fill="url(#beakG)" stroke="#8a5a30" stroke-width="3.5" stroke-linejoin="round"/>
+    <path d="M744 432 C790 436 840 444 863 445 C858 500 796 506 762 474 C748 460 742 446 744 432Z" fill="#f3b865" stroke="#8a5a30" stroke-width="3.5" stroke-linejoin="round"/>
+    <path d="M776 448 q8 22 28 34 M800 450 q6 16 20 26" stroke="#cf9048" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+    <path d="M758 408 C796 404 830 412 852 428" stroke="#fde7b8" stroke-width="3" fill="none" stroke-linecap="round" opacity=".85"/>
+    <circle cx="790" cy="412" r="2.6" fill="#8a5a30"/>
+
+    <!-- snot bubble -->
+    <g class="bubble">
+      <circle cx="784" cy="420" r="17" fill="#cfeaf2" fill-opacity=".55" stroke="#a9d6e3" stroke-width="2.5"/>
+      <path d="M774 414 q4 -6 11 -6" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round"/>
+    </g>
+
+    <!-- nightcap -->
+    <g>
+      <g class="pom">
+        <path d="M640 276 C604 246 548 268 540 332 C570 306 610 302 656 312Z" fill="#7fb3b8" stroke="#23403c" stroke-width="4" stroke-linejoin="round"/>
+        <circle cx="540" cy="338" r="15" fill="#fff8e6" stroke="#23403c" stroke-width="4"/>
+      </g>
+      <path d="M612 358 C598 290 680 250 740 285 C770 305 768 335 758 346 Q690 385 612 358Z" fill="#7fb3b8" stroke="#23403c" stroke-width="4.5" stroke-linejoin="round"/>
+      <path d="M612 358 Q690 385 758 346" fill="none" stroke="#fff8e6" stroke-width="16" stroke-linecap="round"/>
+      <path d="M612 358 Q690 385 758 346" fill="none" stroke="#23403c" stroke-width="3" stroke-linecap="round" opacity=".35"/>
+      <use href="#star" fill="#fff4d2" transform="translate(690 306) scale(.8)"/>
+      <use href="#star" fill="#fff4d2" transform="translate(728 318) scale(.5)"/>
+    </g>
+  </g>
+
+  <!-- ===== dream bubbles (a different dream every ~14s) ===== -->
+  <g class="scene s0" style="--d:2s">
+    <g stroke="#23403c" stroke-width="4" fill="#f7f3e8">
+      <circle class="dot dot1" cx="498" cy="337" r="7"/>
+      <circle class="dot dot2" cx="468" cy="319" r="10"/>
+      <circle class="dot dot3" cx="436" cy="297" r="14"/>
+    </g>
+    <g class="dream"><g class="dbob"><g transform="translate(10 25) scale(.95)">
+      <use href="#cloudShape"/>
+      <g transform="translate(185 108) scale(1.2)"><ellipse cx="14" cy="58" rx="36" ry="28" fill="url(#bodyG)" stroke="#23403c" stroke-width="3.5"/>
+<circle cx="26" cy="22" r="26" fill="url(#bodyG)" stroke="#23403c" stroke-width="3.5"/>
+<ellipse cx="22" cy="34" rx="7" ry="4" fill="#f4a39a" opacity=".75"/>
+<path d="M48 20 C66 18 84 24 92 34 L88 38 C74 32 60 32 48 33Z" fill="url(#beakG)" stroke="#8a5a30" stroke-width="3" stroke-linejoin="round"/>
+<path d="M48 33 C64 34 80 36 88 38 C84 60 60 62 50 48Z" fill="#f3b865" stroke="#8a5a30" stroke-width="3" stroke-linejoin="round"/><circle cx="36" cy="18" r="4.5" fill="#23403c"/><circle cx="37.5" cy="16.5" r="1.4" fill="#fff"/><path d="M26 7 L46 12" fill="none" stroke="#23403c" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M-10 52 C0 36 24 38 40 46 C44 52 36 58 24 58 C10 60 -2 62 -10 52Z" fill="#eef0e6" stroke="#23403c" stroke-width="3" stroke-linejoin="round"/><text class="qmark" x="6" y="-8" font-size="30" font-weight="800" fill="#d9715a" text-anchor="middle">?</text></g>
+      <text x="410" y="136" font-size="27" font-weight="800" text-anchor="middle" fill="#23403c" font-family="'Arial Rounded MT Bold','Avenir Next',Arial,sans-serif">TokenFree</text>
+      <text x="410" y="178" font-size="27" font-weight="800" text-anchor="middle" fill="#d9715a" font-family="'Arial Rounded MT Bold','Avenir Next',Arial,sans-serif">怎么还没倒闭？</text>
+    </g></g></g>
+  </g>
+  <g class="scene s1" style="--d:16s">
+    <g stroke="#23403c" stroke-width="4" fill="#f7f3e8">
+      <circle class="dot dot1" cx="498" cy="337" r="7"/>
+      <circle class="dot dot2" cx="468" cy="319" r="10"/>
+      <circle class="dot dot3" cx="436" cy="297" r="14"/>
+    </g>
+    <g class="dream"><g class="dbob"><g transform="translate(10 25) scale(.95)">
+      <use href="#cloudShape"/>
+      <g transform="translate(185 108) scale(1.2)"><ellipse cx="14" cy="58" rx="36" ry="28" fill="url(#bodyG)" stroke="#23403c" stroke-width="3.5"/>
+<circle cx="26" cy="22" r="26" fill="url(#bodyG)" stroke="#23403c" stroke-width="3.5"/>
+<ellipse cx="22" cy="34" rx="7" ry="4" fill="#f4a39a" opacity=".75"/>
+<path d="M48 20 C66 18 84 24 92 34 L88 38 C74 32 60 32 48 33Z" fill="url(#beakG)" stroke="#8a5a30" stroke-width="3" stroke-linejoin="round"/>
+<path d="M48 33 C64 34 80 36 88 38 C84 60 60 62 50 48Z" fill="#f3b865" stroke="#8a5a30" stroke-width="3" stroke-linejoin="round"/><path transform="translate(36 18) scale(1.5)" d="M0 5 C-9 -2 -6 -9 0 -4 C6 -9 9 -2 0 5Z" fill="#e8566a" stroke="#23403c" stroke-width="1.6"/><path d="M8 52 C10 40 22 34 30 38 C36 44 30 56 18 60Z" fill="#eef0e6" stroke="#23403c" stroke-width="3" stroke-linejoin="round"/><path class="fl" style="animation-delay:0s" transform="translate(98 6) scale(1.4)" d="M0 5 C-9 -2 -6 -9 0 -4 C6 -9 9 -2 0 5Z" fill="#e8566a" stroke="#23403c" stroke-width="1.4"/><path class="fl" style="animation-delay:0.8s" transform="translate(112 -10) scale(1)" d="M0 5 C-9 -2 -6 -9 0 -4 C6 -9 9 -2 0 5Z" fill="#e8566a" stroke="#23403c" stroke-width="1.4"/><path class="fl" style="animation-delay:1.6s" transform="translate(86 -14) scale(0.9)" d="M0 5 C-9 -2 -6 -9 0 -4 C6 -9 9 -2 0 5Z" fill="#e8566a" stroke="#23403c" stroke-width="1.4"/></g>
+      <text x="410" y="136" font-size="27" font-weight="800" text-anchor="middle" fill="#23403c" font-family="'Arial Rounded MT Bold','Avenir Next',Arial,sans-serif">TokenFree 靠</text>
+      <text x="410" y="178" font-size="27" font-weight="800" text-anchor="middle" fill="#d9715a" font-family="'Arial Rounded MT Bold','Avenir Next',Arial,sans-serif">爱发电撑着吧？</text>
+    </g></g></g>
+  </g>
+  <g class="scene s2" style="--d:30s">
+    <g stroke="#23403c" stroke-width="4" fill="#f7f3e8">
+      <circle class="dot dot1" cx="498" cy="337" r="7"/>
+      <circle class="dot dot2" cx="468" cy="319" r="10"/>
+      <circle class="dot dot3" cx="436" cy="297" r="14"/>
+    </g>
+    <g class="dream"><g class="dbob"><g transform="translate(10 25) scale(.95)">
+      <use href="#cloudShape"/>
+      <g transform="translate(185 108) scale(1.2)"><g class="jit"><ellipse cx="14" cy="58" rx="36" ry="28" fill="url(#bodyG)" stroke="#23403c" stroke-width="3.5"/>
+<circle cx="26" cy="22" r="26" fill="url(#bodyG)" stroke="#23403c" stroke-width="3.5"/>
+<ellipse cx="22" cy="34" rx="7" ry="4" fill="#f4a39a" opacity=".75"/>
+<path d="M48 20 C66 18 84 24 92 34 L88 38 C74 32 60 32 48 33Z" fill="url(#beakG)" stroke="#8a5a30" stroke-width="3" stroke-linejoin="round"/>
+<path d="M48 33 C64 34 80 36 88 38 C84 60 60 62 50 48Z" fill="#f3b865" stroke="#8a5a30" stroke-width="3" stroke-linejoin="round"/><circle cx="36" cy="18" r="7.5" fill="#fff" stroke="#23403c" stroke-width="2.5"/><circle cx="37" cy="18" r="2.4" fill="#23403c"/><path d="M26 3 Q36 -3 46 3" fill="none" stroke="#23403c" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M-6 58 C-30 46 -30 20 -16 10 C-8 22 -2 40 6 54Z" fill="#eef0e6" stroke="#23403c" stroke-width="3" stroke-linejoin="round"/><path class="sw" style="animation-delay:0s" d="M6 4 q-6 10 0 14 q6 -4 0 -14z" fill="#8fc7d6" stroke="#5e9fb2" stroke-width="1.8"/><path class="sw" style="animation-delay:0.8s" d="M-4 22 q-6 10 0 14 q6 -4 0 -14z" fill="#8fc7d6" stroke="#5e9fb2" stroke-width="1.8"/><text x="-6" y="-2" font-size="26" font-weight="800" fill="#d9534a" text-anchor="middle">!!</text></g></g>
+      <text x="410" y="136" font-size="27" font-weight="800" text-anchor="middle" fill="#23403c" font-family="'Arial Rounded MT Bold','Avenir Next',Arial,sans-serif">它要是倒闭了，</text>
+      <text x="410" y="178" font-size="27" font-weight="800" text-anchor="middle" fill="#d9715a" font-family="'Arial Rounded MT Bold','Avenir Next',Arial,sans-serif">我的 Token 呢？！</text>
+    </g></g></g>
+  </g>
+  <g class="scene s3" style="--d:44s">
+    <g stroke="#23403c" stroke-width="4" fill="#f7f3e8">
+      <circle class="dot dot1" cx="498" cy="337" r="7"/>
+      <circle class="dot dot2" cx="468" cy="319" r="10"/>
+      <circle class="dot dot3" cx="436" cy="297" r="14"/>
+    </g>
+    <g class="dream"><g class="dbob"><g transform="translate(10 25) scale(.95)">
+      <use href="#cloudShape"/>
+      <g transform="translate(185 108) scale(1.2)"><ellipse cx="14" cy="58" rx="36" ry="28" fill="url(#bodyG)" stroke="#23403c" stroke-width="3.5"/>
+<circle cx="26" cy="22" r="26" fill="url(#bodyG)" stroke="#23403c" stroke-width="3.5"/>
+<ellipse cx="22" cy="34" rx="7" ry="4" fill="#f4a39a" opacity=".75"/>
+<path d="M48 20 C66 18 84 24 92 34 L88 38 C74 32 60 32 48 33Z" fill="url(#beakG)" stroke="#8a5a30" stroke-width="3" stroke-linejoin="round"/>
+<path d="M48 33 C64 34 80 36 88 38 C84 60 60 62 50 48Z" fill="#f3b865" stroke="#8a5a30" stroke-width="3" stroke-linejoin="round"/><circle cx="36" cy="18" r="4.5" fill="#23403c"/><circle cx="37.5" cy="16.5" r="1.4" fill="#fff"/><path d="M28 18 H45" fill="none" stroke="#23403c" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/><path d="M28 6 L46 0" fill="none" stroke="#23403c" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 64 C34 80 62 84 76 74 C70 66 52 64 32 58Z" fill="#eef0e6" stroke="#23403c" stroke-width="3" stroke-linejoin="round"/><g class="coin"><circle cx="84" cy="74" r="13" fill="#f3c65b" stroke="#23403c" stroke-width="3"/><text x="84" y="80" font-size="17" font-weight="800" fill="#23403c" text-anchor="middle">¥</text></g></g>
+      <text x="410" y="136" font-size="27" font-weight="800" text-anchor="middle" fill="#23403c" font-family="'Arial Rounded MT Bold','Avenir Next',Arial,sans-serif">我赌五毛钱，</text>
+      <text x="410" y="178" font-size="27" font-weight="800" text-anchor="middle" fill="#d9715a" font-family="'Arial Rounded MT Bold','Avenir Next',Arial,sans-serif">它活不过这周。</text>
+    </g></g></g>
+  </g>
+  <g class="scene s4" style="--d:58s">
+    <g stroke="#23403c" stroke-width="4" fill="#f7f3e8">
+      <circle class="dot dot1" cx="498" cy="337" r="7"/>
+      <circle class="dot dot2" cx="468" cy="319" r="10"/>
+      <circle class="dot dot3" cx="436" cy="297" r="14"/>
+    </g>
+    <g class="dream"><g class="dbob"><g transform="translate(10 25) scale(.95)">
+      <use href="#cloudShape"/>
+      <g transform="translate(185 108) scale(1.2)"><ellipse cx="14" cy="58" rx="36" ry="28" fill="url(#bodyG)" stroke="#23403c" stroke-width="3.5"/>
+<circle cx="26" cy="22" r="26" fill="url(#bodyG)" stroke="#23403c" stroke-width="3.5"/>
+<ellipse cx="22" cy="34" rx="7" ry="4" fill="#f4a39a" opacity=".75"/>
+<path d="M48 20 C66 18 84 24 92 34 L88 38 C74 32 60 32 48 33Z" fill="url(#beakG)" stroke="#8a5a30" stroke-width="3" stroke-linejoin="round"/>
+<path d="M48 33 C64 34 80 36 88 38 C84 60 60 62 50 48Z" fill="#f3b865" stroke="#8a5a30" stroke-width="3" stroke-linejoin="round"/><circle cx="36" cy="18" r="6.5" fill="#fff" stroke="#23403c" stroke-width="2.5"/><circle cx="40" cy="19" r="3" fill="#23403c"/><path d="M28 15 H45" fill="none" stroke="#23403c" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><path d="M27 6 L46 14" fill="none" stroke="#23403c" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M-12 52 C6 44 30 46 42 54 C30 66 6 66 -12 60Z" fill="#eef0e6" stroke="#23403c" stroke-width="3" stroke-linejoin="round"/><path class="sw" style="animation-delay:0s" d="M-2 0 q-6 10 0 14 q6 -4 0 -14z" fill="#8fc7d6" stroke="#5e9fb2" stroke-width="1.8"/><text x="4" y="-6" font-size="24" font-weight="800" fill="#7f9b90">…</text></g>
+      <text x="410" y="136" font-size="27" font-weight="800" text-anchor="middle" fill="#23403c" font-family="'Arial Rounded MT Bold','Avenir Next',Arial,sans-serif">TokenFree 免费，</text>
+      <text x="410" y="178" font-size="27" font-weight="800" text-anchor="middle" fill="#d9715a" font-family="'Arial Rounded MT Bold','Avenir Next',Arial,sans-serif">我越想越慌…</text>
+    </g></g></g>
+  </g>
+  <g class="scene s5" style="--d:72s">
+    <g stroke="#23403c" stroke-width="4" fill="#f7f3e8">
+      <circle class="dot dot1" cx="498" cy="337" r="7"/>
+      <circle class="dot dot2" cx="468" cy="319" r="10"/>
+      <circle class="dot dot3" cx="436" cy="297" r="14"/>
+    </g>
+    <g class="dream"><g class="dbob"><g transform="translate(10 25) scale(.95)">
+      <use href="#cloudShape"/>
+      <g transform="translate(185 108) scale(1.2)"><ellipse cx="14" cy="58" rx="36" ry="28" fill="url(#bodyG)" stroke="#23403c" stroke-width="3.5"/>
+<circle cx="26" cy="22" r="26" fill="url(#bodyG)" stroke="#23403c" stroke-width="3.5"/>
+<ellipse cx="22" cy="34" rx="7" ry="4" fill="#f4a39a" opacity=".75"/>
+<path d="M48 20 C66 18 84 24 92 34 L88 38 C74 32 60 32 48 33Z" fill="url(#beakG)" stroke="#8a5a30" stroke-width="3" stroke-linejoin="round"/>
+<path d="M48 33 C64 34 80 36 88 38 C84 60 60 62 50 48Z" fill="#f3b865" stroke="#8a5a30" stroke-width="3" stroke-linejoin="round"/><path d="M29 21 Q36 10 43 21" fill="none" stroke="#23403c" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M-8 54 C-30 56 -46 46 -52 36 C-40 34 -22 38 0 46Z" fill="#eef0e6" stroke="#23403c" stroke-width="3" stroke-linejoin="round"/><path d="M34 74 C56 80 76 76 86 68 C76 64 56 66 34 64Z" fill="#eef0e6" stroke="#23403c" stroke-width="3" stroke-linejoin="round"/><use href="#star" fill="#f3c65b" class="tw" transform="translate(-30 14) scale(.9)"/></g>
+      <text x="410" y="136" font-size="27" font-weight="800" text-anchor="middle" fill="#23403c" font-family="'Arial Rounded MT Bold','Avenir Next',Arial,sans-serif">老板说：别问，</text>
+      <text x="410" y="178" font-size="27" font-weight="800" text-anchor="middle" fill="#d9715a" font-family="'Arial Rounded MT Bold','Avenir Next',Arial,sans-serif">再撑一个月！</text>
+    </g></g></g>
+  </g>
+  <g class="scene s6" style="--d:86s">
+    <g stroke="#23403c" stroke-width="4" fill="#f7f3e8">
+      <circle class="dot dot1" cx="498" cy="337" r="7"/>
+      <circle class="dot dot2" cx="468" cy="319" r="10"/>
+      <circle class="dot dot3" cx="436" cy="297" r="14"/>
+    </g>
+    <g class="dream"><g class="dbob"><g transform="translate(10 25) scale(.95)">
+      <use href="#cloudShape"/>
+      <g transform="translate(185 108) scale(1.2)"><ellipse cx="14" cy="58" rx="36" ry="28" fill="url(#bodyG)" stroke="#23403c" stroke-width="3.5"/>
+<circle cx="26" cy="22" r="26" fill="url(#bodyG)" stroke="#23403c" stroke-width="3.5"/>
+<ellipse cx="22" cy="34" rx="7" ry="4" fill="#f4a39a" opacity=".75"/>
+<path d="M48 20 C66 18 84 24 92 34 L88 38 C74 32 60 32 48 33Z" fill="url(#beakG)" stroke="#8a5a30" stroke-width="3" stroke-linejoin="round"/>
+<path d="M48 33 C64 34 80 36 88 38 C84 60 60 62 50 48Z" fill="#f3b865" stroke="#8a5a30" stroke-width="3" stroke-linejoin="round"/><path transform="translate(36 18) scale(.95)" d="M0 -10 L3 -3 L10 -3 L4 2 L6 9 L0 5 L-6 9 L-4 2 L-10 -3 L-3 -3Z" fill="#f3c65b" stroke="#23403c" stroke-width="1.8" stroke-linejoin="round"/><path d="M-6 58 C-30 46 -30 20 -16 10 C-8 22 -2 40 6 54Z" fill="#eef0e6" stroke="#23403c" stroke-width="3" stroke-linejoin="round"/><path d="M54 -2 l8 -8 M44 -8 l3 -11 M64 8 l11 -3" fill="none" stroke="#23403c" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/><text class="qmark" x="-10" y="-6" font-size="32" font-weight="800" fill="#d9534a" text-anchor="middle">!</text></g>
+      <text x="410" y="136" font-size="27" font-weight="800" text-anchor="middle" fill="#23403c" font-family="'Arial Rounded MT Bold','Avenir Next',Arial,sans-serif">TokenFree 居然</text>
+      <text x="410" y="178" font-size="27" font-weight="800" text-anchor="middle" fill="#d9715a" font-family="'Arial Rounded MT Bold','Avenir Next',Arial,sans-serif">比 bug 还顽强！</text>
+    </g></g></g>
+  </g>
+
+  <!-- Z z z -->
+  <g fill="#fdf1d6" font-weight="800" font-family="'Arial Rounded MT Bold','Avenir Next',Arial,sans-serif">
+    <text class="z" x="800" y="340" font-size="40">Z</text>
+    <text class="z" style="animation-delay:-1.8s" x="800" y="340" font-size="40">Z</text>
+    <text class="z" style="animation-delay:-3.6s" x="800" y="340" font-size="40">Z</text>
+  </g>
+
+  <!-- ===== text ===== -->
+  <g class="txt">
+    <text x="600" y="800" font-size="46" font-weight="800" letter-spacing="4" text-anchor="middle" fill="#fdf1d6" filter="url(#tglow)">小鸟下班睡觉了，你也早点睡</text>
+    <text x="600" y="838" font-size="15" font-weight="700" letter-spacing="7" text-anchor="middle" fill="#9fc4bb">GOOD NIGHT · 晚安</text>
+  </g>
+</svg>
+</template>
+<template id="failedArt">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 876" width="1200" height="876" font-family="'PingFang SC','Microsoft YaHei','Noto Sans SC',sans-serif">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#9cc3c8"/>
+      <stop offset=".38" stop-color="#d9e4d2"/>
+      <stop offset=".7" stop-color="#f5dfb0"/>
+      <stop offset="1" stop-color="#f6c98f"/>
+    </linearGradient>
+    <radialGradient id="sunGlow" cx="430" cy="470" r="330" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff1c8" stop-opacity=".95"/>
+      <stop offset=".35" stop-color="#ffd993" stop-opacity=".5"/>
+      <stop offset="1" stop-color="#ffd993" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="sea" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#e6c79a"/>
+      <stop offset=".25" stop-color="#8fb3aa"/>
+      <stop offset="1" stop-color="#3f7a82"/>
+    </linearGradient>
+    <linearGradient id="sand" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#d9bf92"/>
+      <stop offset=".25" stop-color="#e8d3a8"/>
+      <stop offset="1" stop-color="#cdb084"/>
+    </linearGradient>
+    <linearGradient id="bodyBack" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#f8e5c0"/>
+      <stop offset=".45" stop-color="#e6e8dc"/>
+      <stop offset="1" stop-color="#aebbb2"/>
+    </linearGradient>
+    <linearGradient id="beakG" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f6c677"/><stop offset="1" stop-color="#e29a45"/>
+    </linearGradient>
+    <radialGradient id="screenGlow" cx="390" cy="690" r="420" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ff6e5a" stop-opacity=".32"/>
+      <stop offset="1" stop-color="#ff6e5a" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="fadeBlur" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="40"/></filter>
+    <mask id="fade" maskUnits="userSpaceOnUse" x="0" y="0" width="1200" height="876">
+      <rect width="1200" height="876" fill="#000"/>
+      <rect x="100" y="70" width="1000" height="760" rx="40" fill="#fff" filter="url(#fadeBlur)"/>
+    </mask>
+    <filter id="soft" x="-10%" y="-10%" width="120%" height="120%"><feGaussianBlur stdDeviation="2.2"/></filter>
+    <filter id="blur6" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="6"/></filter>
+    <filter id="grain" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="7"/>
+      <feColorMatrix type="saturate" values="0"/>
+    </filter>
+  </defs>
+  <g transform="translate(108 78.7) scale(0.82)" mask="url(#fade)">
+
+  <!-- ===== BACKGROUND: sky / sun / sea ===== -->
+  <rect width="1200" height="876" fill="url(#sky)"/>
+  <rect width="1200" height="520" fill="url(#sunGlow)"/>
+  <g fill="#fff7e2" opacity=".55" filter="url(#soft)">
+    <ellipse cx="900" cy="300" rx="190" ry="9"/>
+    <ellipse cx="300" cy="360" rx="150" ry="7"/>
+    <ellipse cx="1020" cy="400" rx="130" ry="6"/>
+    <ellipse cx="640" cy="270" rx="110" ry="6"/>
+  </g>
+  <circle cx="430" cy="468" r="46" fill="#fff4d6"/>
+  <g stroke="#3d5a52" stroke-width="2.5" fill="none" stroke-linecap="round" opacity=".55">
+    <path d="M980 250 q8 -8 16 0 q8 -8 16 0"/>
+    <path d="M1060 290 q6 -6 12 0 q6 -6 12 0"/>
+    <path d="M610 330 q6 -6 12 0 q6 -6 12 0"/>
+  </g>
+  <!-- distant hills -->
+  <g filter="url(#soft)" opacity=".7">
+    <path d="M0 478 C90 452 200 446 300 466 L300 482 L0 482 Z" fill="#9db4aa"/>
+    <path d="M820 482 C900 456 1040 446 1200 462 L1200 482 L820 482 Z" fill="#a8bcb0"/>
+  </g>
+  <rect y="478" width="1200" height="130" fill="url(#sea)"/>
+  <!-- sun reflection -->
+  <g fill="#fff0c4">
+    <rect x="410" y="484" width="40" height="3" rx="1.5" opacity=".9"/>
+    <rect x="388" y="494" width="84" height="3" rx="1.5" opacity=".75"/>
+    <rect x="366" y="505" width="130" height="3.5" rx="1.7" opacity=".6"/>
+    <rect x="340" y="517" width="180" height="4" rx="2" opacity=".5"/>
+    <rect x="310" y="531" width="240" height="4" rx="2" opacity=".4"/>
+    <rect x="280" y="546" width="300" height="4.5" rx="2" opacity=".3"/>
+    <rect x="250" y="563" width="360" height="5" rx="2.5" opacity=".22"/>
+  </g>
+  <g stroke="#cfe3dc" stroke-width="2" stroke-linecap="round" opacity=".5">
+    <path d="M700 500 h70 M880 512 h90 M1020 528 h100 M640 540 h110 M900 552 h120 M60 520 h80 M120 548 h100"/>
+  </g>
+  <path d="M0 482 L1200 482" stroke="#fbeccb" stroke-width="2" opacity=".7"/>
+
+  <!-- ===== SAND ===== -->
+  <path d="M0 596 C180 580 360 600 560 592 C800 582 1000 600 1200 588 L1200 876 L0 876 Z" fill="url(#sand)"/>
+  <path d="M0 596 C180 580 360 600 560 592 C800 582 1000 600 1200 588 L1200 612 C1000 622 800 606 560 616 C360 624 180 604 0 620 Z" fill="#bfa77c" opacity=".55"/>
+  <path d="M0 592 C180 576 360 596 560 588 C800 578 1000 596 1200 584" fill="none" stroke="#fffaf0" stroke-width="5" opacity=".85"/>
+  <g stroke="#b99f74" stroke-width="2" fill="none" opacity=".5" stroke-linecap="round">
+    <path d="M620 660 q60 -8 120 0 M880 700 q70 -8 140 0 M700 760 q80 -8 160 0 M1000 640 q60 -6 120 0"/>
+  </g>
+
+  <!-- ===== PELICAN (from behind) ===== -->
+  <!-- driftwood log -->
+  <ellipse cx="800" cy="640" rx="190" ry="14" fill="#7d6a4c" opacity=".35"/>
+  <rect x="640" y="598" width="320" height="38" rx="19" fill="#8c6c4e" stroke="#5b4430" stroke-width="3.5"/>
+  <path d="M660 610 h260 M690 624 h200" stroke="#6d5239" stroke-width="2.5" stroke-linecap="round" opacity=".7"/>
+  <ellipse cx="950" cy="617" rx="9" ry="19" fill="#a98562" stroke="#5b4430" stroke-width="3"/>
+
+  <!-- neck -->
+  <path d="M768 430 C764 396 780 384 782 358 L832 360 C836 384 848 402 844 434 Z" fill="url(#bodyBack)" stroke="#3d5a52" stroke-width="4.5" stroke-linejoin="round"/>
+  <!-- body -->
+  <ellipse cx="806" cy="510" rx="96" ry="112" fill="url(#bodyBack)" stroke="#3d5a52" stroke-width="4.5"/>
+  <!-- folded wings -->
+  <path d="M742 440 C722 510 740 576 784 602 C794 560 792 500 786 440 Z" fill="#e2e5d8" stroke="#3d5a52" stroke-width="3.5" stroke-linejoin="round"/>
+  <path d="M870 440 C890 510 872 576 828 602 C818 560 820 500 826 440 Z" fill="#c9d1c6" stroke="#3d5a52" stroke-width="3.5" stroke-linejoin="round"/>
+  <path d="M752 480 q16 8 28 4 M748 506 q18 10 32 6 M752 534 q16 10 28 6 M860 480 q-16 8 -28 4 M864 506 q-18 10 -32 6 M860 534 q-16 10 -28 6" stroke="#7e9087" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  <path d="M806 440 V600" stroke="#7e9087" stroke-width="2.5" stroke-linecap="round"/>
+  <!-- sunset rim light on the side facing the sun -->
+  <path d="M714 520 C712 460 740 420 772 404" fill="none" stroke="#ffd79a" stroke-width="5" stroke-linecap="round" opacity=".85"/>
+  <!-- tail feathers hanging over the log -->
+  <path d="M764 596 L748 644 L792 606 Z" fill="#d3d9cc" stroke="#3d5a52" stroke-width="3.5" stroke-linejoin="round"/>
+  <path d="M790 600 L794 650 L826 602 Z" fill="#dfe3d6" stroke="#3d5a52" stroke-width="3.5" stroke-linejoin="round"/>
+  <path d="M822 598 L846 644 L852 594 Z" fill="#c4cdc2" stroke="#3d5a52" stroke-width="3.5" stroke-linejoin="round"/>
+  <!-- head, turned toward the sun -->
+  <ellipse cx="808" cy="340" rx="35" ry="32" fill="url(#bodyBack)" stroke="#3d5a52" stroke-width="4.5"/>
+  <path d="M832 322 q16 -12 28 -6 M836 334 q18 -6 28 4 M828 312 q8 -18 22 -20" stroke="#3d5a52" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+  <path d="M778 332 C740 328 700 338 660 358 L664 366 C700 354 740 350 778 352 Z" fill="url(#beakG)" stroke="#8a5a30" stroke-width="3.5" stroke-linejoin="round"/>
+  <path d="M778 352 C740 356 700 362 664 366 C688 400 752 396 782 370 Z" fill="#f0b45e" stroke="#8a5a30" stroke-width="3.5" stroke-linejoin="round"/>
+  <circle cx="790" cy="332" r="6" fill="#f0d98a" stroke="#c9a94a" stroke-width="1.5"/>
+  <circle cx="789" cy="332" r="2.8" fill="#2d4a45"/>
+  <path d="M692 346 C720 340 750 340 772 342" stroke="#fde3ad" stroke-width="2.5" fill="none" stroke-linecap="round" opacity=".8"/>
+
+  <!-- warm light wash over the pelican -->
+  <ellipse cx="760" cy="470" rx="200" ry="220" fill="#ffc98a" opacity=".1"/>
+
+  <!-- ===== FOREGROUND: failed laptop ===== -->
+  <rect width="1200" height="876" fill="url(#screenGlow)"/>
+  <ellipse cx="390" cy="832" rx="330" ry="26" fill="#6e5a3e" opacity=".35" filter="url(#blur6)"/>
+  <g transform="translate(90 -40) rotate(-3 300 720)">
+    <rect x="50" y="575" width="500" height="285" rx="16" fill="#3d5a52" stroke="#24403a" stroke-width="5"/>
+    <rect x="66" y="591" width="468" height="253" rx="7" fill="#1b3430"/>
+    <circle cx="84" cy="608" r="4.5" fill="#e8795c"/><circle cx="99" cy="608" r="4.5" fill="#eec983"/><circle cx="114" cy="608" r="4.5" fill="#9fd6b0"/>
+    <g font-family="Menlo,Consolas,'Courier New',monospace" font-size="20">
+      <text x="84" y="652" fill="#9fd6b0">$ npm test</text>
+      <text x="84" y="688" fill="#ff8f7a">✗ login.test.js</text>
+      <text x="84" y="718" fill="#c9d6cf">  expected 200, got 500</text>
+      <text x="84" y="756" fill="#c9d6cf">Tests: <tspan fill="#ff8f7a">3 failed</tspan>, <tspan fill="#9fd6b0">12 passed</tspan></text>
+    </g>
+    <rect x="84" y="776" width="150" height="40" rx="7" fill="#d9534a"/>
+    <text x="159" y="803" font-size="21" font-weight="800" letter-spacing="3" text-anchor="middle" fill="#fff">FAILED</text>
+    <circle cx="470" cy="700" r="38" fill="#d9534a" stroke="#fff" stroke-width="5"/>
+    <path d="M455 685 l30 30 M485 685 l-30 30" stroke="#fff" stroke-width="7" stroke-linecap="round"/>
+    <path d="M70 595 L330 595 L250 840 L70 840 Z" fill="#fff" opacity=".05"/>
+    <rect x="18" y="858" width="564" height="40" rx="8" fill="#46635c" stroke="#24403a" stroke-width="4"/>
+    <!-- bug -->
+    <g transform="translate(402 572)" stroke="#2d4a45" stroke-width="2.5" stroke-linecap="round">
+      <ellipse cx="0" cy="0" rx="14" ry="10" fill="#e8795c"/>
+      <circle cx="15" cy="-1" r="6.5" fill="#2d4a45"/>
+      <path d="M-8 8 l-5 8 M0 10 v9 M8 8 l5 8 M-8 -8 l-5 -8 M0 -10 v-9 M8 -8 l5 -8" fill="none"/>
+    </g>
+  </g>
+
+  <!-- blurred foreground grass -->
+  <g filter="url(#soft)" stroke="#7f9a6b" stroke-width="5" fill="none" stroke-linecap="round" opacity=".85">
+    <path d="M1130 876 q-6 -70 -30 -100 M1150 876 q4 -60 28 -92 M1112 876 q-18 -40 -44 -54"/>
+    <path d="M630 876 q4 -44 22 -66 M648 876 q12 -30 32 -42"/>
+  </g>
+
+  <!-- ===== TITLE (foreground type) ===== -->
+  <circle cx="194" cy="136" r="4.5" fill="#e8795c"/>
+  <text x="208" y="140" font-size="12" font-weight="800" letter-spacing="2.8" fill="#24413c">THE SLOW COAST CLUB</text>
+  <text x="194" y="236" font-size="66" font-weight="800" fill="#fff8e6" opacity=".55">测试挂了，先吹吹风。</text>
+  <text x="190" y="232" font-size="66" font-weight="800" fill="#24413c">测试挂了，先吹吹风。</text>
+  <text x="192" y="272" font-size="20" letter-spacing="1.5" fill="#3d6159">红了又怎样，海风还是照常吹。</text>
+  <text x="1040" y="750" font-size="12" letter-spacing="2.4" text-anchor="end" fill="#3a5a52" opacity=".85">NO.01 · 鹈鹕的调试时刻</text>
+
+  <!-- ===== photo finish: vignette + grain ===== -->
+
+  <rect width="1200" height="876" filter="url(#grain)" opacity=".1" style="mix-blend-mode:multiply"/>
+  </g>
+</svg>
+  </template>
+
+  <!-- 时间线上方工具栏：糖果 | 分组 | 模型+源码+耗时 -->
+  <div class="bar">
+    <div class="candy pass" id="candy" aria-label="检测结果状态">
+    <svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <radialGradient id="candyBodyG" cx="38%" cy="28%" r="85%">
+          <stop offset="0%" class="c-g1"/>
+          <stop offset="55%" class="c-g2"/>
+          <stop offset="100%" class="c-g3"/>
+        </radialGradient>
+        <linearGradient id="candyWrapG" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" class="c-w1"/>
+          <stop offset="100%" class="c-w2"/>
+        </linearGradient>
+      </defs>
+      <!-- 两端糖纸（带褶皱线） -->
+      <path class="c-wrap" d="M34 40 L14 26 Q8 40 14 54 Z"/>
+      <path class="c-wrap" d="M86 40 L106 26 Q112 40 106 54 Z"/>
+      <path class="c-fold" d="M29 32 q-6 8 -1 16 M91 32 q6 8 1 16" fill="none"/>
+      <!-- 糖体（径向渐变 + 描边） -->
+      <ellipse class="c-body" cx="60" cy="40" rx="30" ry="23"/>
+      <!-- 底部暗面 -->
+      <ellipse class="c-shade" cx="60" cy="52" rx="23" ry="8"/>
+      <!-- 竖条纹 -->
+      <path class="c-line" d="M47 20 q-8 20 0 40" fill="none" stroke-width="5" stroke-linecap="round"/>
+      <path class="c-line" d="M73 20 q8 20 0 40" fill="none" stroke-width="5" stroke-linecap="round"/>
+      <!-- 高光与闪光 -->
+      <path class="c-shine" d="M43 27 q5 -10 17 -11 q-2 9 -9 13 q-5 3 -8 -2 Z"/>
+      <circle class="c-spark" cx="77" cy="23" r="2.6"/>
+      <!-- 数值 -->
+      <text class="c-num" id="candyNum" x="60" y="48" text-anchor="middle">—</text>
+    </svg>
+    <!-- 悬停气泡：糖果测试结果 -->
+    <div class="bubble" role="status">糖果测试结果：<b id="bubbleNum">—</b><span class="bubble-tag s-pend" id="bubbleTag">待复核</span></div>
+    </div>
+
+    <div class="group-wrap" id="groupWrap">
+      <div class="model-tabs" id="modelTabs" role="tablist" aria-label="模型切换"></div>
+      <button id="groupBtn" class="group-btn" type="button" aria-haspopup="listbox" aria-expanded="false">
+        <span id="groupLabel">加载中…</span>
+        <span class="g-int" id="groupInterval" hidden></span>
+      </button>
+      <div id="groupMenu" class="group-menu" role="listbox" hidden></div>
+    </div>
+
+    <div class="top-right">
+      <span id="reasonBadge" class="tl-reason" title="当前推理等级" aria-label="当前推理等级" hidden><svg class="tl-brain" viewBox="0 0 24 24" width="13" height="13" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4"/></svg><span id="reasonText">—</span></span>
+      <button id="srcBtn" class="tl-src" type="button" title="查看源码" aria-label="查看源码" disabled><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M5.5 4 2 8l3.5 4M10.5 4 14 8l-3.5 4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      <div class="tl-duration" title="总耗时" aria-label="总耗时"><svg class="tl-clock" viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 4.6V8l2.4 1.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><span class="tl-duration-slot"><b id="durationText">—</b><span class="tl-duration-sizer" aria-hidden="true">99 分 59 秒</span></span></div>
+    </div>
+  </div>
+
+  <!-- 浮层：检测时间线（底部全宽磨砂，选中项恒居中） -->
+  <div class="overlay timeline-box">
+    <div class="tl-pointer" id="tlPointer"></div>
+    <button class="tl-arrow left" id="arrowLeft" type="button" aria-label="上一个时间点">‹</button>
+    <div class="tl-scroll" id="tlScroll">
+      <div class="tl-track" id="tlTrack"></div>
+    </div>
+    <button class="tl-arrow right" id="arrowRight" type="button" aria-label="下一个时间点">›</button>
+  </div>
+
+  <!-- 源码弹窗：内容区中央显示当前检测结果的源码 -->
+  <div class="src-modal" id="srcModal" hidden>
+    <div class="src-box" role="dialog" aria-modal="true" aria-label="检测结果源码">
+      <div class="src-head"><span id="srcTitle">源码</span><span class="src-head-actions"><button class="src-copy" id="srcCopy" type="button">复制</button><button class="src-close" id="srcClose" type="button" aria-label="关闭">×</button></span></div>
+      <pre class="src-code" id="srcCode"></pre>
+    </div>
+  </div>
+
+<script>
+(function () {
+  // 概览接口只填充分组、模型和时间轴。单次的糖果答案和鹈鹕 HTML 仍走详情接口。
+  var OVERVIEW_URL = (function () {
+    var q = new URLSearchParams(location.search).get('overview');
+    return q || 'https://widget.llmfree.work/iq-detection/overview';
+  })();
+  var groups = [];
+  var models = [];
+  var modelIdx = 0;
+  var reasoningEffort = '';      // 当前推理等级：overview 的全局配置，跑测试时生效
+  var groupOptions = [];
+
+  var groupWrap = document.getElementById('groupWrap');
+  var groupBtn = document.getElementById('groupBtn');
+  var groupMenu = document.getElementById('groupMenu');
+  var groupLabel = document.getElementById('groupLabel');
+  var tlScroll = document.getElementById('tlScroll');
+  var tlTrack = document.getElementById('tlTrack');
+  var arrowLeft = document.getElementById('arrowLeft');
+  var arrowRight = document.getElementById('arrowRight');
+
+  var groupIdx = 0, runIdx = 0;
+  var items = [];
+  var view = [];                 // 时间线展示顺序：从左到右按时间升序（最新在最右）
+  var quietWindows = [];
+  var REST_ID = 'quiet-now';       // 仅用于页面展示，绝不请求检测详情
+  var pendingArtRunId = null;
+  var suppressNextClick = false;
+
+  // ================= 结果切换 =================
+  // 内容区双缓冲：新内容装入后备帧，就绪后与当前帧交叉淡化；换选择时保留当前画面。
+  var frames = [document.getElementById('frameA'), document.getElementById('frameB')];
+  var stage = document.getElementById('stage');
+  var loadVeil = document.getElementById('loadVeil');
+  var frontIdx = null;           // 当前可见 frame 下标
+  var frontSrc = null;
+  var pendingUrl = null;         // 正在离屏加载的 url，防止乱序覆盖
+
+  // 切换加载轻纱：有内容可保留时盖在当前画面上，新内容就绪后随交叉切换一起淡出
+  function showVeil(on) {
+    loadVeil.classList.toggle('show', !!on);
+  }
+
+  // 正文各块的外边界：只看 main 的直接子块。
+  // 内部的滚动动画图形会超出正文，逐元素测量会把内容拉偏。
+  function contentBounds(root) {
+    var top = Infinity, left = Infinity, right = -Infinity, bottom = -Infinity;
+    var nodes = root.children;
+    for (var i = 0; i < nodes.length; i++) {
+      var r = nodes[i].getBoundingClientRect();
+      if (r.width < 2 || r.height < 2) continue;
+      if (r.top < top) top = r.top;
+      if (r.left < left) left = r.left;
+      if (r.right > right) right = r.right;
+      if (r.bottom > bottom) bottom = r.bottom;
+    }
+    if (top === Infinity) return root.getBoundingClientRect();
+    return { top: top, left: left, right: right, bottom: bottom, width: right - left, height: bottom - top };
+  }
+
+  // 内容等比缩放适配：按正文实际内容测量（动画图形会溢出正文，不能算进去），
+  // 缩放到结果区内后水平、垂直都居中
+  function fitFrame(f) {
+    try {
+      var doc = f.contentDocument;
+      if (!doc || !doc.body) return;
+      // 休息场景自行适配整页，原图外侧由同一份 SVG 背景延伸，不能再按正文缩放。
+      if (doc.documentElement.hasAttribute('data-rest-scene')) {
+        f.style.transform = 'none';
+        f.style.left = '0px';
+        f.style.top = '0px';
+        f.style.width = stage.clientWidth + 'px';
+        f.style.height = stage.clientHeight + 'px';
+        return;
+      }
+      doc.documentElement.style.overflow = 'hidden';
+      // 先按结果区宽度排版再测量：iframe 默认 300px，且缩放后的尺寸会让内容重排
+      f.style.transform = 'none';
+      f.style.left = '0px';
+      f.style.top = '0px';
+      f.style.width = stage.clientWidth + 'px';
+      f.style.height = stage.clientHeight + 'px';
+      // 按整页正文适配：整页放得下就保持原大并上下居中，放不下再整体缩小。
+      // main 含页脚下方空白，svg 会被内部滚动图形撑出视口，都不用它们的边界。
+      var target = doc.querySelector('main') || doc.body;
+      target.style.marginTop = '0px';
+      var box = contentBounds(target);
+      var cw = Math.max(box.width, 1);
+      var ch = Math.max(box.height, 1);
+      // 放得下就保持原大，放不下再缩小到刚好落进结果区，避免居中后被时间线挡住
+      var s = Math.min(stage.clientWidth / cw, stage.clientHeight / ch);
+      if (s > 1) s = 1;
+      f.style.transform = 'scale(' + s + ')';
+      // 水平居中靠帧位移；垂直居中直接改结果页正文的上边距，
+      // 帧的 top 在这里移动不了内部文档的原点
+      f.style.left = ((stage.clientWidth - cw * s) / 2 - box.left * s) + 'px';
+      var spare = stage.clientHeight / s - ch;
+      target.style.marginTop = Math.max(0, spare / 2 - box.top) + 'px';
+    } catch (e) { /* 跨域结果页无法测量时保持原样 */ }
+  }
+
+  // 结果详情按检测 id 缓存。切走时取消还没返回的请求，避免旧响应盖住新选中项。
+  var resultCache = {};
+  var detailAbort = null;
+  var detailSeq = 0;
+  var loadGen = 0;
+  var htmlTimer = null;
+  var pendingHtml = null;
+  var EMPTY_DOC = '<!DOCTYPE html><title></title>';
+  var FADE_MS = 320;             // 与 .frame 的 opacity 过渡时长一致
+
+  function resultEndpoint(id) {
+    return OVERVIEW_URL.replace(/\/overview\/?$/, '') + '/results/' + encodeURIComponent(id);
+  }
+
+  function cancelDetail() {
+    detailSeq++;
+    if (detailAbort) {
+      detailAbort.abort();
+      detailAbort = null;
+    }
+  }
+
+  function blankFrame(f) {
+    f.onload = null;
+    f.style.opacity = '0';
+    f.srcdoc = EMPTY_DOC;
+  }
+
+  // 丢弃所有在途装载并清空画面。用于没有内容可保留的时刻（进行中/无选中）。
+  function stopFrames() {
+    loadGen++;
+    if (htmlTimer) { clearTimeout(htmlTimer); htmlTimer = null; }
+    pendingHtml = null;
+    pendingUrl = null;
+    frontSrc = null;
+    frontIdx = null;
+    frames.forEach(blankFrame);
+    showVeil(false);
+  }
+
+  // 开始一次新的选择切换：作废在途装载，但保留当前画面，等新内容就绪后交叉淡入。
+  function beginLoad() {
+    loadGen++;
+    if (htmlTimer) { clearTimeout(htmlTimer); htmlTimer = null; }
+    pendingHtml = null;
+    pendingUrl = null;
+  }
+
+  function queuePaint() {
+    if (htmlTimer) clearTimeout(htmlTimer);
+    htmlTimer = setTimeout(flushPaint, 120);
+  }
+
+  function flushPaint() {
+    htmlTimer = null;
+    if (!pendingHtml || pendingHtml.gen !== loadGen) return;
+    if (anim || drag) { htmlTimer = setTimeout(flushPaint, 80); return; }
+    var job = pendingHtml;
+    pendingHtml = null;
+    paintHtml(job.gen, job.key, job.html);
+  }
+
+  function paintHtml(gen, key, html) {
+    var backIdx = frontIdx === 0 ? 1 : 0;
+    var frame = frames[backIdx];
+    frame._loadGen = gen;
+    frame.onload = function () {
+      if (gen !== loadGen) return;
+      var doc = frame.contentDocument;
+      if (!doc || !doc.body || doc.body.childNodes.length === 0) return;
+      fitFrame(frame);
+      var oldIdx = frontIdx;
+      frontIdx = backIdx;
+      frontSrc = key;
+      // 新帧淡入、旧帧同步淡出；新帧可能叠在旧帧下层，两边一起过渡才是交叉淡化
+      frame.style.opacity = '1';
+      if (oldIdx != null && oldIdx !== backIdx) {
+        var oldFrame = frames[oldIdx];
+        oldFrame.style.opacity = '0';
+        setTimeout(function () {
+          // 期间它又成为当前帧、或已有新内容装入时都不能清
+          if (frontIdx === oldIdx || oldFrame._loadGen === loadGen) return;
+          oldFrame.onload = null;
+          oldFrame.srcdoc = EMPTY_DOC;
+        }, FADE_MS + 60);
+      }
+      showVeil(false);
+      updateTruncMark();
+      if (key === 'failed-art' || key === 'sleeping-art' || (view[runIdx] && ('result:' + view[runIdx].id) === key)) showStage('result');
+    };
+    frame.srcdoc = html;
+  }
+
+  function failedDocument() {
+    var svg = document.getElementById('failedArt').innerHTML.trim();
+    return '<!DOCTYPE html><html><head><meta charset="utf-8"><style>html,body{margin:0;background:#f7f5ed}svg{display:block;width:1200px;height:876px}</style></head><body>' + svg + '</body></html>';
+  }
+
+  function showFailedArt() {
+    scheduleHtml('failed-art', failedDocument());
+    updateSrcBtn();
+  }
+
+  function sleepingDocument() {
+    var svg = document.getElementById('sleepingArt').content.querySelector('svg').cloneNode(true);
+    var ns = 'http://www.w3.org/2000/svg';
+    var background = document.createElementNS(ns, 'g');
+    background.id = 'restSceneBackground';
+    var first = null;
+    // 复用原图“bed”之前的完整背景：渐变、月光动画、海面和沙地路径均保持原样。
+    Array.prototype.some.call(svg.childNodes, function (node) {
+      if (node.nodeType === 8 && node.nodeValue.indexOf('===== bed =====') >= 0) return true;
+      if (node.nodeType === 1 && node.localName !== 'defs' && node.localName !== 'style') {
+        if (!first) first = node;
+        background.appendChild(node.cloneNode(true));
+      }
+      return false;
+    });
+    svg.querySelector('defs').appendChild(background);
+    // 八块边缘只拉伸原背景最外侧的一条像素带，中央原图和动画完全保留。
+    var slices = {
+      left: '0 0 1 876', right: '1199 0 1 876',
+      top: '0 0 1200 1', bottom: '0 875 1200 1',
+      topLeft: '0 0 1 1', topRight: '1199 0 1 1',
+      bottomLeft: '0 875 1 1', bottomRight: '1199 875 1 1'
+    };
+    Object.keys(slices).forEach(function (name) {
+      var slice = document.createElementNS(ns, 'svg');
+      slice.setAttribute('data-rest-edge', name);
+      slice.setAttribute('viewBox', slices[name]);
+      slice.setAttribute('preserveAspectRatio', 'none');
+      slice.setAttribute('overflow', 'hidden');
+      var use = document.createElementNS(ns, 'use');
+      use.setAttribute('href', '#restSceneBackground');
+      slice.appendChild(use);
+      svg.insertBefore(slice, first);
+    });
+    return '<!DOCTYPE html><html data-rest-scene><head><meta charset="utf-8"><title>休息中</title><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#15303b}body>svg{display:block;position:absolute;inset:0;width:100%;height:100%}</style></head><body>' + svg.outerHTML + '<script>(' + layoutRestScene.toString() + ')();<\/script></body></html>';
+  }
+
+  function updatePendingArt(run) {
+    var frame = document.getElementById('pendingArt');
+    var show = !!run && run.status === 'pending';
+    frame.hidden = !show;
+    if (show && pendingArtRunId !== run.id) {
+      var svg = document.getElementById('angryArt').innerHTML.trim();
+      frame.srcdoc = '<!DOCTYPE html><html><head><meta charset="utf-8"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent}svg{display:block;width:100%;height:100%}</style></head><body>' + svg + '</body></html>';
+      pendingArtRunId = run.id;
+    } else if (!show && pendingArtRunId !== null) {
+      frame.srcdoc = EMPTY_DOC;
+      pendingArtRunId = null;
+    }
+  }
+
+  // 运行在休息 iframe 中。画面按工具栏上方可用区域等比居中，背景覆盖整页（含时间线）。
+  function layoutRestScene() {
+    var svg = document.querySelector('body > svg');
+    function fit() {
+      var width = window.innerWidth, height = window.innerHeight;
+      var footer = width <= 768 ? 104 : 112;
+      var available = Math.max(1, height - footer);
+      var scale = Math.min(1, Math.max(1, width) / 1200, available / 876);
+      var left = -(width / scale - 1200) / 2;
+      var top = -(available / scale - 876) / 2;
+      var right = left + width / scale;
+      var bottom = top + height / scale;
+      svg.setAttribute('viewBox', [left, top, width / scale, height / scale].join(' '));
+      var bounds = {
+        left: [left, 0, -left, 876], right: [1200, 0, right - 1200, 876],
+        top: [0, top, 1200, -top], bottom: [0, 876, 1200, bottom - 876],
+        topLeft: [left, top, -left, -top], topRight: [1200, top, right - 1200, -top],
+        bottomLeft: [left, 876, -left, bottom - 876], bottomRight: [1200, 876, right - 1200, bottom - 876]
+      };
+      svg.querySelectorAll('[data-rest-edge]').forEach(function (edge) {
+        var box = bounds[edge.getAttribute('data-rest-edge')];
+        ['x', 'y', 'width', 'height'].forEach(function (key, i) { edge.setAttribute(key, box[i]); });
+      });
+    }
+    window.addEventListener('resize', fit);
+    fit();
+  }
+
+  function scheduleHtml(key, html) {
+    pendingHtml = { key: key, html: html, gen: loadGen };
+    pendingUrl = key;
+    queuePaint();
+  }
+
+  // 正文里没有 </html> 收尾，说明模型输出到上限被掐断
+  function isTruncatedHTML(html) {
+    return !!html && html.toLowerCase().indexOf('</html>') < 0;
+  }
+  // 当前选中项的复核状态旁显示截断小图标；正文画出来才能判断，其余项不标
+  function updateTruncMark() {
+    var run = view[runIdx];
+    var show = !!run && run.status !== 'running' && run.status !== 'failed' &&
+      frontSrc === 'result:' + run.id && isTruncatedHTML(frames[frontIdx || 0].srcdoc);
+    items.forEach(function (el, k) {
+      var mark = el.querySelector('.tl-trunc');
+      if (mark) mark.hidden = !(show && k === runIdx);
+    });
+  }
+  function applyDetail(run, detail) {
+    if (!view[runIdx] || view[runIdx].id !== run.id) return;
+    document.getElementById('candyNum').textContent = detail.answer || '—';
+    updateCandy(run.candy);
+    document.getElementById('durationText').textContent = detail.duration || run.duration || '—';
+    if (detail.html) scheduleHtml('result:' + run.id, detail.html);
+    else showFailedArt();
+  }
+
+  function showDetail(run) {
+    if (!run || run.id == null || run.status === 'resting' || run.status === 'running' || run.status === 'failed') return;
+    var seq = detailSeq;
+    var cached = resultCache[run.id];
+    if (cached) {
+      applyDetail(run, cached);
+      return;
+    }
+    var ctrl = new AbortController();
+    detailAbort = ctrl;
+    fetch(resultEndpoint(run.id), { signal: ctrl.signal })
+      .then(function (res) {
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.json();
+      })
+      .then(function (body) {
+        if (!body || body.code !== 0 || !body.data) throw new Error('bad payload');
+        var data = body.data;
+        var detail = {
+          answer: data.candy_answer || '',
+          html: data.pelican_html || '',
+          duration: fmtDuration(data.pelican_latency_ms || data.candy_latency_ms)
+        };
+        resultCache[run.id] = detail;
+        if (seq !== detailSeq || ctrl.signal.aborted) return;
+        applyDetail(run, detail);
+      })
+      .catch(function (err) {
+        if (seq !== detailSeq) return;
+        if (err && err.name === 'AbortError') return;
+        showFailedArt();
+      });
+  }
+
+  // ================= 时间线 =================
+  // 当天的检测只显示时间，不显示日期（时间格式：MM-DD HH:mm 或完整时间戳）
+  function fmtTime(t) {
+    var d = new Date();
+    var md = ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+    return t.indexOf(md + ' ') === 0 ? t.slice(md.length + 1) : t;
+  }
+
+  function runsForCurrent() {
+    var group = groups[groupIdx];
+    var runs = group ? group.runs.slice() : [];
+    var model = models[modelIdx];
+    if (model) runs = runs.filter(function (r) { return r.model === model; });
+    runs.sort(function (a, b) { return a.at - b.at; });
+    var now = Date.now();
+    if (group && inQuietWindow(now)) runs.push(restRun(now));
+    return runs;
+  }
+
+  function showEmptyTrack(text) {
+    tlTrack.style.paddingLeft = '0px';
+    tlTrack.style.paddingRight = '0px';
+    tlTrack.style.width = '100%';
+    tlTrack.style.justifyContent = 'center';
+    var empty = document.createElement('div');
+    empty.className = 'tl-empty';
+    empty.textContent = text;
+    tlTrack.appendChild(empty);
+  }
+
+  function buildTrack() {
+    tlTrack.innerHTML = '';
+    items = [];
+    view = runsForCurrent();
+    tlTrack.style.width = '';
+    tlTrack.style.justifyContent = '';
+    if (!view.length) {
+      showEmptyTrack(groups.length ? '暂无检测记录' : '');
+      return;
+    }
+    view.forEach(function (r, i) {
+      var item = document.createElement('button');
+      item.className = 'tl-item ' + (STATUS_CLS[r.status] || '') + (i === view.length - 1 ? ' latest' : '');
+      if (r.status === 'resting') item.title = '当前系统时间';
+      else if (i === view.length - 1) item.title = '最新';
+      item.innerHTML = '<span class="tl-dot"></span>' +
+        '<span class="tl-time">' + (r.status === 'resting' ? restTimeHtml(r) : fmtTime(r.time)) + '</span>' +
+        '<span class="tl-status-row"><span class="tl-status ' + STATUS_CLS[r.status] + '">' + STATUS_TEXT[r.status] + '</span>' +
+        '<span class="tl-trunc" hidden title="被截断"><svg viewBox="0 0 12 12" width="9" height="9" aria-hidden="true"><path d="M6 1.4 11 10.2H1Z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M6 4.6v2.4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="6" cy="8.7" r=".65" fill="currentColor"/></svg></span></span>';
+      item.addEventListener('click', function () {
+        if (suppressNextClick) { suppressNextClick = false; return; }
+        selectRun(i, true);
+      });
+      tlTrack.appendChild(item);
+      items.push(item);
+    });
+    // 左右各留半屏内边距，让首尾项也能滚动到正中间
+    var half = tlScroll.clientWidth / 2;
+    tlTrack.style.paddingLeft = half + 'px';
+    tlTrack.style.paddingRight = half + 'px';
+    measureItems();
+    // 重建后图标回到默认隐藏，按当前正文重新点亮
+    updateTruncMark();
+  }
+
+  var itemCenters = [];
+  var itemFades = [];
+  function measureItems() {
+    itemCenters = new Array(items.length);
+    itemFades = new Array(items.length);
+    for (var i = 0; i < items.length; i++) {
+      itemCenters[i] = items[i].offsetLeft + items[i].offsetWidth / 2;
+    }
+  }
+  function itemCenter(i) {
+    if (!itemCenters.length) measureItems();
+    return itemCenters[i];
+  }
+  function centerOfView() {
+    return tlScroll.scrollLeft + tlScroll.clientWidth / 2;
+  }
+
+  // ---- 缓动滚动（rAF 自实现，平滑滚动在部分环境不可用时仍能工作）----
+  var anim = null; // { targetIdx, cancel }
+  function animateScrollTo(targetLeft, targetIdx) {
+    if (anim) anim.cancel();
+    var start = tlScroll.scrollLeft;
+    var dist = targetLeft - start;
+    var dur = Math.min(650, 220 + Math.abs(dist) * 0.6);
+    var t0 = null, finished = false;
+    var guard = 0, raf = 0;
+    var self = { targetIdx: targetIdx, cancel: null };
+    function stop() {
+      finished = true;
+      clearTimeout(guard);
+      cancelAnimationFrame(raf);
+    }
+    function finish() {
+      if (finished) return;
+      stop();
+      tlScroll.scrollLeft = targetLeft;
+      if (anim === self) anim = null;
+    }
+    // 后台节流环境兜底：到时仍未走完就直接跳到目标位
+    guard = setTimeout(finish, dur + 150);
+    function ease(p) { return p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2; }
+    function step(t) {
+      if (finished) return;
+      if (!t0) t0 = t;
+      var p = Math.min((t - t0) / dur, 1);
+      tlScroll.scrollLeft = start + dist * ease(p);
+      if (p < 1) raf = requestAnimationFrame(step);
+      else finish();
+    }
+    // 被新动画或拖动打断时必须连兜底定时器一起清掉，
+    // 否则它会把滚动位置拉回旧目标、提前置空 anim，连点时位置乱跳
+    self.cancel = function () { stop(); if (anim === self) anim = null; };
+    raf = requestAnimationFrame(step);
+    anim = self;
+  }
+
+  var scrollLock = 0;
+  function centerRun(i, animated) {
+    if (!items[i]) return;
+    var targetLeft = itemCenter(i) - tlScroll.clientWidth / 2;
+    if (animated) {
+      animateScrollTo(targetLeft, i);
+    } else {
+      if (anim) anim.cancel();
+      // 瞬间定位会触发 scroll。锁住这次滚动，避免它把默认的最新时间点改掉并取消详情请求。
+      scrollLock++;
+      tlScroll.scrollLeft = targetLeft;
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () { scrollLock--; });
+      });
+    }
+  }
+
+  // ---- 糖果看糖果判定；有糖果复核时以复核为准。进行中用待复核的黄色，失败是红。 ----
+  var STATUS_TEXT = { pass: '通过', fail: '不通过', pending: '待复核', running: '进行中', failed: '失败', resting: '休息中' };
+  var STATUS_CLS = { pass: 's-pass', fail: 's-fail', pending: 's-pend', running: 's-run', failed: 's-fail', resting: 's-rest' };
+  var STAGE_TEXT = { testing: '正在测试中', loading: '加载中', failed: '测试失败' };
+  var candy = document.getElementById('candy');
+  var testing = document.getElementById('testing');
+  var testingSpin = document.getElementById('testingSpin');
+  var testingText = document.getElementById('testingText');
+  function showStage(mode) {
+    if (mode === 'result') {
+      testing.hidden = true;
+      testing.classList.remove('is-fail');
+      return;
+    }
+    testing.hidden = false;
+    testing.classList.toggle('is-fail', mode === 'failed');
+    testingSpin.hidden = mode === 'failed';
+    testingText.textContent = STAGE_TEXT[mode] || STAGE_TEXT.loading;
+  }
+  function updateCandy(status) {
+    var isFail = status === 'fail' || status === 'failed';
+    candy.classList.toggle('pass', status === 'pass');
+    candy.classList.toggle('fail', isFail);
+    candy.classList.toggle('pending', status === 'pending' || status === 'running');
+    candy.classList.toggle('resting', status === 'resting');
+    candy.setAttribute('aria-label', '检测结果：' + STATUS_TEXT[status]);
+    // 悬停气泡内容
+    document.getElementById('bubbleNum').textContent = document.getElementById('candyNum').textContent;
+    var tag = document.getElementById('bubbleTag');
+    tag.textContent = STATUS_TEXT[status];
+    tag.className = 'bubble-tag ' + STATUS_CLS[status];
+    updateSrcBtn();
+    updateTruncMark();
+  }
+
+  // ================= 查看源码 =================
+  // 当前检测结果对应的源码：详情接口的 pelican_html；失败时是失败占位页
+  function currentSource() {
+    var run = view[runIdx];
+    if (!run || run.id == null || run.status === 'resting') return null;
+    var d = resultCache[run.id];
+    if (d && d.html) return d.html;
+    if (run.status === 'failed') return failedDocument();
+    return null;
+  }
+  var srcBtn = document.getElementById('srcBtn');
+  var srcModal = document.getElementById('srcModal');
+  var srcCode = document.getElementById('srcCode');
+  function updateSrcBtn() {
+    if (!srcBtn) return;
+    var run = view[runIdx];
+    srcBtn.disabled = !(run && run.status !== 'running' && currentSource());
+  }
+  srcBtn.addEventListener('click', function () {
+    var run = view[runIdx];
+    var html = currentSource();
+    if (!html) return;
+    document.getElementById('srcTitle').textContent = '源码 · ' + (run ? fmtTime(run.time) : '') + ' · ' + html.length + ' 字符';
+    srcCode.textContent = html;
+    srcCode.scrollTop = 0;
+    srcModal.hidden = false;
+  });
+  function closeSrc() { srcModal.hidden = true; }
+  document.getElementById('srcClose').addEventListener('click', closeSrc);
+  // 复制源码正文，成功后短暂显示“已复制”
+  var srcCopy = document.getElementById('srcCopy');
+  var copyTimer = null;
+  srcCopy.addEventListener('click', function () {
+    function done(ok) {
+      srcCopy.textContent = ok ? '已复制' : '复制失败';
+      srcCopy.classList.toggle('ok', ok);
+      if (copyTimer) clearTimeout(copyTimer);
+      copyTimer = setTimeout(function () {
+        srcCopy.textContent = '复制';
+        srcCopy.classList.remove('ok');
+      }, 1200);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(srcCode.textContent).then(function () { done(true); }, function () { done(false); });
+    } else {
+      var ta = document.createElement('textarea');
+      ta.value = srcCode.textContent;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+      document.body.removeChild(ta);
+      done(ok);
+    }
+  });
+  srcModal.addEventListener('click', function (e) { if (e.target === srcModal) closeSrc(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !srcModal.hidden) closeSrc(); });
+
+  var tlPointer = document.getElementById('tlPointer');
+  function syncPointer(status) {
+    tlPointer.className = 'tl-pointer' + (STATUS_CLS[status] ? ' ' + STATUS_CLS[status] : '');
+  }
+
+  function setActive(i) {
+    if (i === runIdx) return;
+    cancelDetail();
+    if (i < 0 || i >= view.length) {
+      runIdx = -1;
+      items.forEach(function (el) { el.classList.remove('active'); });
+      measureItems();
+      syncPointer('');
+      document.getElementById('candyNum').textContent = '—';
+      updateCandy('pending');
+      stopFrames();
+      showStage('result');
+      document.getElementById('durationText').textContent = '—';
+      layoutGroup();
+      return;
+    }
+    runIdx = i;
+    var run = view[i];
+    var cached = resultCache[run.id];
+    items.forEach(function (el, k) { el.classList.toggle('active', k === i); });
+    // 激活态会把时间文字加粗、轻微加宽该项，切换后重测，避免中心点漂移
+    measureItems();
+    syncPointer(run.status);
+    document.getElementById('durationText').textContent = (cached && cached.duration) || run.duration || '—';
+    if (run.status === 'resting') {
+      beginLoad();
+      document.getElementById('candyNum').textContent = '—';
+      updateCandy('resting');
+      if (frontSrc) { showStage('result'); showVeil(true); } else { showStage('loading'); }
+      scheduleHtml('sleeping-art', sleepingDocument());
+    } else if (run.status === 'running') {
+      stopFrames();
+      document.getElementById('candyNum').textContent = '—';
+      updateCandy(run.candy);
+      showStage('testing');
+    } else if (run.status === 'failed') {
+      beginLoad();
+      document.getElementById('candyNum').textContent = '—';
+      updateCandy(run.candy);
+      // 已有画面时轻纱提示加载中；没有内容可保留才出全屏加载盖层
+      if (frontSrc) { showStage('result'); showVeil(true); } else { showStage('loading'); }
+      showFailedArt();
+    } else {
+      beginLoad();
+      document.getElementById('candyNum').textContent = (cached && cached.answer) || '—';
+      updateCandy(run.candy);
+      if (frontSrc) { showStage('result'); showVeil(true); } else { showStage('loading'); }
+      showDetail(run);
+    }
+    layoutGroup();
+  }
+
+  // 分组按钮的最小宽度。旁边放不下时换到模型选择下一行，避免被挤扁
+  var GROUP_MIN = 180;
+  // 分组相对页面居中：两侧谁更宽，就按那个宽度对称留白，按钮超出则省略
+  function layoutGroup() {
+    var selected = view[runIdx];
+    var resting = !!selected && selected.status === 'resting';
+    document.getElementById('modelTabs').hidden = resting;
+    document.body.classList.toggle('is-resting', resting);
+    updatePendingArt(selected);
+    var bar = groupWrap.parentElement;
+    var right = bar.querySelector('.top-right');
+    var cs = getComputedStyle(bar);
+    var pad = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
+    var side = Math.max(candy.offsetWidth, right.offsetWidth);
+    var slot = Math.max(0, bar.clientWidth - pad - side * 2 - 24);
+    var below = slot < GROUP_MIN;
+    bar.classList.toggle('group-below', below);
+    // 检测间隔只在当前这一行放不下时才藏：先按内容原宽量，装得下就留着
+    var gi = document.getElementById('groupInterval');
+    var room = below ? (bar.clientWidth - pad) : slot;
+    if (!gi.hidden) {
+      gi.style.display = '';
+      groupWrap.style.maxWidth = 'none';
+      groupBtn.style.maxWidth = 'none';
+      var natural = groupBtn.offsetWidth;
+      groupBtn.style.maxWidth = '';
+      gi.style.display = natural > room + 1 ? 'none' : '';
+    }
+    if (below) {
+      groupWrap.style.maxWidth = '';
+      groupWrap.style.top = '';
+      return;
+    }
+    groupWrap.style.maxWidth = slot + 'px';
+    // 分组按钮与右侧总耗时同一水平线（模型切换悬浮在分组上方，不参与对齐）。
+    // 直接用两者相对工具栏的位置，避免偏移参照盒子不一致。
+    var dur = right.querySelector('.tl-duration');
+    var tabs = right.querySelector('.model-tabs');
+    var anchor = resting ? candy : (dur || tabs);
+    groupWrap.style.top = (anchor.getBoundingClientRect().top - bar.getBoundingClientRect().top + anchor.offsetHeight / 2) + 'px';
+  }
+
+  function selectRun(i, animated) {
+    setActive(i);
+    centerRun(i, animated);
+  }
+
+  // 滚动驱动：离中心最近的项即为当前项；同时按距离淡化其它项。
+  // 位置在时间线重建时量一次，滚动过程不再读布局。
+  var scrollRaf = 0;
+  tlScroll.addEventListener('scroll', function () {
+    if (scrollRaf) return;
+    scrollRaf = requestAnimationFrame(function () {
+      scrollRaf = 0;
+      updateOnScroll();
+    });
+  });
+  function updateOnScroll() {
+    if (!items.length) { updateArrows(); return; }
+    if (!itemCenters.length) measureItems();
+    var center = centerOfView();
+    var best = 0, bestDist = Infinity;
+    var span = tlScroll.clientWidth * 0.42;
+    for (var i = 0; i < items.length; i++) {
+      var d = Math.abs(itemCenters[i] - center);
+      if (d < bestDist) { bestDist = d; best = i; }
+      var fade = Math.max(0.28, 1 - d / span);
+      if (itemFades[i] === undefined || Math.abs(itemFades[i] - fade) > 0.04) {
+        itemFades[i] = fade;
+        items[i].style.opacity = fade.toFixed(2);
+      }
+    }
+    // 程序化动画期间选中项已锁定，不随中间位置漂移
+    if (!anim && scrollLock === 0 && best !== runIdx) setActive(best);
+    updateArrows();
+  }
+
+  function updateArrows() {
+    var maxScroll = tlScroll.scrollWidth - tlScroll.clientWidth;
+    arrowLeft.disabled = tlScroll.scrollLeft <= 1;
+    arrowRight.disabled = tlScroll.scrollLeft >= maxScroll - 1;
+  }
+
+  // ---- 左右箭头：逐项切换 ----
+  arrowLeft.addEventListener('click', function () {
+    if (runIdx > 0) selectRun(runIdx - 1, true);
+  });
+  arrowRight.addEventListener('click', function () {
+    if (runIdx < items.length - 1) selectRun(runIdx + 1, true);
+  });
+
+  // ---- 拖动滚动 ----
+  var drag = null;
+  tlScroll.addEventListener('pointerdown', function (e) {
+    if (e.button !== 0) return;
+    if (anim) anim.cancel();  // 拖动打断动画
+    drag = { startX: e.clientX, startScroll: tlScroll.scrollLeft, moved: false };
+  });
+  window.addEventListener('pointermove', function (e) {
+    if (!drag) return;
+    var dx = e.clientX - drag.startX;
+    if (Math.abs(dx) > 4 && !drag.moved) {
+      drag.moved = true;
+      tlScroll.classList.add('dragging');
+    }
+    if (drag.moved) tlScroll.scrollLeft = drag.startScroll - dx;
+  });
+  window.addEventListener('pointerup', function () {
+    if (!drag) return;
+    var wasDrag = drag.moved;
+    drag = null;
+    tlScroll.classList.remove('dragging');
+    if (wasDrag) {
+      suppressNextClick = true;                 // 拖动结束，吞掉误触 click
+      var center = centerOfView();              // 松手后吸附到最近的时间点
+      var best = 0, bestDist = Infinity;
+      for (var i = 0; i < items.length; i++) {
+        var d = Math.abs(itemCenter(i) - center);
+        if (d < bestDist) { bestDist = d; best = i; }
+      }
+      selectRun(best, true);
+    }
+  });
+
+  // ---- 分组 dropdown ----
+  function intervalLabel(group) {
+    if (!group || !(group.interval > 0)) return '';
+    return '检测间隔 ' + group.interval + ' 分钟';
+  }
+  // 检测间隔标签等宽，靠右排列时“检测间隔”左缘才能对齐
+  function alignIntervals() {
+    var wasHidden = groupMenu.hidden;
+    groupMenu.hidden = false;
+    var tags = groupMenu.querySelectorAll('.g-int');
+    var max = 0;
+    for (var i = 0; i < tags.length; i++) {
+      tags[i].style.width = '';
+      max = Math.max(max, tags[i].offsetWidth);
+    }
+    for (var j = 0; j < tags.length; j++) tags[j].style.width = max + 'px';
+    groupMenu.hidden = wasHidden;
+  }
+  function renderGroups() {
+    groupMenu.innerHTML = '';
+    groups.forEach(function (g, i) {
+      var opt = document.createElement('button');
+      opt.type = 'button';
+      opt.className = 'group-option';
+      opt.setAttribute('role', 'option');
+      var name = document.createElement('span');
+      name.className = 'g-name';
+      name.textContent = g.name;
+      opt.appendChild(name);
+      var label = intervalLabel(g);
+      if (label) {
+        var tag = document.createElement('span');
+        tag.className = 'g-int';
+        tag.textContent = label;
+        opt.appendChild(tag);
+      }
+      opt.addEventListener('click', function () {
+        setGroup(i);
+        resetToLatest();
+        toggleMenu(false);
+      });
+      groupMenu.appendChild(opt);
+    });
+    alignIntervals();
+    groupOptions = Array.prototype.slice.call(groupMenu.querySelectorAll('.group-option'));
+  }
+
+  function toggleMenu(open) {
+    groupMenu.hidden = (open === undefined) ? !groupMenu.hidden : !open;
+    groupBtn.setAttribute('aria-expanded', String(!groupMenu.hidden));
+    if (!groupMenu.hidden) clampMenu();
+  }
+  // 下拉列表超出屏幕时限到屏幕宽度内，分组名称超出的部分省略
+  function clampMenu() {
+    groupMenu.classList.remove('clamp');
+    groupMenu.style.width = '';
+    groupMenu.style.minWidth = '';
+    groupMenu.style.left = '';
+    groupMenu.style.right = '';
+    var r = groupMenu.getBoundingClientRect();
+    if (r.left >= 8 && r.right <= window.innerWidth - 8) return;
+    var host = groupMenu.offsetParent.getBoundingClientRect();
+    groupMenu.classList.add('clamp');
+    groupMenu.style.minWidth = '0px';
+    groupMenu.style.right = 'auto';
+    groupMenu.style.width = Math.max(0, window.innerWidth - 24) + 'px';
+    groupMenu.style.left = (12 - host.left) + 'px';
+  }
+  function setGroup(i) {
+    groupIdx = i;
+    var group = groups[i];
+    if (group) {
+      try { window.localStorage.setItem('iq-detection:last-group-id', String(group.id)); } catch (e) {}
+    }
+    groupLabel.textContent = group ? group.name : '暂无分组';
+    groupOptions.forEach(function (el, k) { el.classList.toggle('active', k === i); });
+    var gi = document.getElementById('groupInterval');
+    var label = intervalLabel(group);
+    if (label) {
+      gi.hidden = false;
+      gi.textContent = label;
+    } else {
+      gi.hidden = true;
+    }
+  }
+  groupBtn.addEventListener('click', function () { toggleMenu(); });
+  document.addEventListener('click', function (e) {
+    if (!groupMenu.hidden && !groupWrap.contains(e.target)) toggleMenu(false);
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') toggleMenu(false);
+  });
+
+  // 重建时间线并默认选中最新一次（最右侧）
+  function resetToLatest() {
+    buildTrack();
+    runIdx = -1;
+    if (!items.length) {
+      document.getElementById('candyNum').textContent = '—';
+      updateCandy('pending');
+      stopFrames();
+      showStage('result');
+      document.getElementById('durationText').textContent = '—';
+      layoutGroup();
+      updateArrows();
+      return;
+    }
+    selectRun(items.length - 1, false);   // 瞬间定位，无滚动动画
+    updateArrows();
+  }
+
+  window.addEventListener('resize', function () {
+    var half = tlScroll.clientWidth / 2;
+    tlTrack.style.paddingLeft = half + 'px';
+    tlTrack.style.paddingRight = half + 'px';
+    measureItems();
+    centerRun(runIdx, false);
+    refit();
+  });
+  var fittedW = 0, fittedH = 0;
+  function refit() {
+    var w = stage.clientWidth, h = stage.clientHeight;
+    if (w === fittedW && h === fittedH) return;
+    fittedW = w;
+    fittedH = h;
+    if (frontSrc) fitFrame(frames[frontIdx || 0]);
+    layoutGroup();
+  }
+  // 嵌入环境里窗口尺寸变化不一定派发 resize，直接观察结果区尺寸。
+  // 适配会改 iframe 高度，回调里按尺寸去重，避免来回触发。
+  if (window.ResizeObserver) {
+    new ResizeObserver(refit).observe(stage);
+  }
+  // 嵌入预览里窗口变宽不一定派发 resize，也不一定触发尺寸观察。
+  // 工具栏宽度或模型选择位置变了，就重算分组对齐。
+  var bar = groupWrap.parentElement;
+  var barKey = '';
+  setInterval(function () {
+    var tabs = bar.querySelector('.model-tabs');
+    var key = bar.clientWidth + '/' + Math.round(tabs.getBoundingClientRect().top);
+    if (key === barKey) return;
+    barKey = key;
+    layoutGroup();
+  }, 200);
+
+  // ---- 模型切换：按当前模型过滤该分组的时间轴 ----
+  var modelTabEls = [];
+  function renderModels() {
+    var host = document.getElementById('modelTabs');
+    host.innerHTML = '';
+    modelTabEls = models.map(function (name, i) {
+      var tab = document.createElement('button');
+      tab.type = 'button';
+      tab.className = 'model-tab' + (i === modelIdx ? ' active' : '');
+      tab.setAttribute('role', 'tab');
+      tab.setAttribute('aria-selected', String(i === modelIdx));
+      tab.textContent = name;
+      tab.addEventListener('click', function () {
+        if (modelIdx === i) return;
+        modelIdx = i;
+        modelTabEls.forEach(function (el, k) {
+          var on = k === i;
+          el.classList.toggle('active', on);
+          el.setAttribute('aria-selected', String(on));
+        });
+        resetToLatest();
+      });
+      host.appendChild(tab);
+      return tab;
+    });
+  }
+
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+  function fmtCreated(d) {
+    if (!d || isNaN(d.getTime())) return '';
+    return pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+  }
+  function fmtDuration(ms) {
+    if (!ms) return '';
+    var sec = Math.round(ms / 1000);
+    var m = Math.floor(sec / 60);
+    var s = sec % 60;
+    return m > 0 ? (m + ' 分 ' + s + ' 秒') : (s + ' 秒');
+  }
+  // 时间轴只表示鹈鹕测试：默认待复核，只有真实的复核结果才显示通过或不通过。报错仍是失败。
+  function pelicanStatus(result) {
+    if (result.status === 'running') return 'running';
+    if (result.status === 'failed' || result.pelican_error) return 'failed';
+    if (result.pelican_review === 'approved') return 'pass';
+    if (result.pelican_review === 'rejected') return 'fail';
+    return 'pending';
+  }
+  // 糖果按判定结果。有糖果复核时以复核为准。
+  function candyStatus(result) {
+    if (result.status === 'running') return 'running';
+    if (result.status === 'failed' || result.pelican_error) return 'failed';
+    if (result.candy_review === 'approved') return 'pass';
+    if (result.candy_review === 'rejected') return 'fail';
+    if (result.candy_correct === true) return 'pass';
+    if (result.candy_correct === false) return 'fail';
+    return 'pending';
+  }
+  function mapResult(result) {
+    var d = new Date(result.created_at);
+    return {
+      id: result.id,
+      model: result.model || '',
+      time: fmtCreated(d),
+      at: isNaN(d.getTime()) ? 0 : d.getTime(),
+      status: pelicanStatus(result),
+      candy: candyStatus(result),
+      duration: fmtDuration(result.pelican_latency_ms || result.candy_latency_ms)
+    };
+  }
+  // 推理等级标识：overview 的 settings.reasoning_effort（全局配置，跑测试时生效）。
+  // low/medium/high 映射为 低/中/高；其他非空值原样显示，空值隐藏。
+  function renderReasoning() {
+    var badge = document.getElementById('reasonBadge');
+    if (!badge) return;
+    var raw = (reasoningEffort || '').trim();
+    var v = raw.toLowerCase();
+    var label = v === 'low' ? '低' : v === 'medium' ? '中' : v === 'high' ? '高' : raw;
+    if (!label) { badge.hidden = true; return; }
+    var text = document.getElementById('reasonText');
+    if (text) text.textContent = label; // 只更新文字节点，保留脑子图标
+    badge.hidden = false;
+  }
+  function clockMinutes(value) {
+    var match = typeof value === 'string' && /^(\d{1,2}):(\d{2})$/.exec(value);
+    if (!match || Number(match[1]) > 23 || Number(match[2]) > 59) return null;
+    return Number(match[1]) * 60 + Number(match[2]);
+  }
+
+  function beijingDate(now) { return new Date(now + 8 * 60 * 60 * 1000); }
+
+  // 与调度器一致：北京时间，起点包含、终点不包含，起止相同表示全天。
+  function inQuietWindow(now) {
+    var date = beijingDate(now);
+    var minute = date.getUTCHours() * 60 + date.getUTCMinutes();
+    return quietWindows.some(function (w) {
+      if (!w) return false;
+      var start = clockMinutes(w.start), end = clockMinutes(w.end);
+      if (start === null || end === null) return false;
+      return start === end || (start < end ? minute >= start && minute < end : minute >= start || minute < end);
+    });
+  }
+
+  function restRun(now) {
+    var date = new Date(now);
+    var clock = [pad2(date.getHours()), pad2(date.getMinutes()), pad2(date.getSeconds())];
+    return { id: REST_ID, at: now, time: '当前 ' + clock.join(':'), clock: clock, status: 'resting', candy: 'resting', duration: '' };
+  }
+
+  function restTimeHtml(run) {
+    return '当前 ' + run.clock.map(function (part) {
+      return '<span class="rest-clock-part">' + part + '</span>';
+    }).join('<span class="rest-clock-separator">:</span>');
+  }
+
+  // 即使概览数据没变化，也按时进入/退出休息；看历史时保留原选择。
+  function refreshRestPoint() {
+    if (!overviewReady || pendingApply) return;
+    var last = view[view.length - 1];
+    var hasRest = !!last && last.status === 'resting';
+    var now = Date.now();
+    var wantsRest = !!groups[groupIdx] && inQuietWindow(now);
+    if (hasRest === wantsRest) {
+      if (hasRest) {
+        var rest = restRun(now);
+        if (last.time !== rest.time) {
+          last.time = rest.time;
+          last.at = now;
+          last.clock = rest.clock;
+          // 只更新等宽数字，保留分隔符节点，让闪烁动画连续且不打断历史浏览/滚动。
+          items[items.length - 1].querySelectorAll('.rest-clock-part').forEach(function (part, i) {
+            if (part.textContent !== rest.clock[i]) part.textContent = rest.clock[i];
+          });
+        }
+      }
+      return;
+    }
+    if (drag || anim) return;
+    var selected = view[runIdx];
+    var followLatest = !selected || runIdx === view.length - 1;
+    buildTrack();
+    var index = followLatest ? view.length - 1 : view.findIndex(function (r) { return r.id === selected.id; });
+    runIdx = -1;
+    if (!view.length) resetToLatest();
+    else selectRun(index < 0 ? view.length - 1 : index, false);
+    updateArrows();
+  }
+  // 正在看最新一条时，新结果出现后继续停在最新。看更早的记录时留在原地。
+  function applyOverview(data, preserve) {
+    var prevGroupId = preserve && groups[groupIdx] ? groups[groupIdx].id : null;
+    if (prevGroupId == null) {
+      try { prevGroupId = window.localStorage.getItem('iq-detection:last-group-id'); } catch (e) {}
+    }
+    var prevModel = preserve ? models[modelIdx] : '';
+    var prevRunId = preserve && view[runIdx] ? view[runIdx].id : null;
+    var followLatest = !!(preserve && view.length && runIdx === view.length - 1);
+    var prevRuns = {};
+    if (preserve && view[runIdx] && view[runIdx].status === 'resting') prevRuns[REST_ID] = view[runIdx];
+    if (preserve) {
+      groups.forEach(function (g) {
+        g.runs.forEach(function (r) { prevRuns[r.id] = r; });
+      });
+    }
+    var settings = (data && data.settings) || {};
+    models = (settings.models || []).filter(function (name) { return !!name; });
+    reasoningEffort = settings.reasoning_effort || '';
+    renderReasoning();
+    quietWindows = Array.isArray(settings.quiet_windows) ? settings.quiet_windows : [];
+    groups = ((data && data.groups) || []).map(function (g) {
+      return {
+        id: g.id,
+        name: g.name || ('分组 ' + g.id),
+        interval: g.interval_minutes,
+        runs: (g.results || []).map(mapResult)
+      };
+    });
+    if (!models.length) {
+      groups.forEach(function (g) {
+        g.runs.forEach(function (r) {
+          if (r.model && models.indexOf(r.model) < 0) models.push(r.model);
+        });
+      });
+    }
+    var note = '';
+    if (preserve) {
+      var fresh = [];
+      var updated = 0;
+      groups.forEach(function (g) {
+        g.runs.forEach(function (r) {
+          var prev = prevRuns[r.id];
+          if (!prev) fresh.push(r);
+          else if (prev.status !== r.status || prev.candy !== r.candy) {
+            updated++;
+            delete resultCache[r.id];
+          }
+        });
+      });
+      if (fresh.length === 1) note = (fresh[0].model ? fresh[0].model + ' ' : '') + '新增 1 条检测结果';
+      else if (fresh.length > 1) note = '新增 ' + fresh.length + ' 条检测结果';
+      else if (updated === 1) note = '有 1 条检测结果已更新';
+      else if (updated > 1) note = '有 ' + updated + ' 条检测结果已更新';
+    }
+    var mi = 0;
+    if (prevModel) {
+      var found = models.indexOf(prevModel);
+      if (found >= 0) mi = found;
+    }
+    modelIdx = mi;
+    renderModels();
+    renderGroups();
+    if (!groups.length) {
+      groupLabel.textContent = '暂无分组';
+      document.getElementById('groupInterval').hidden = true;
+      resetToLatest();
+      if (note) showToast(note);
+      return;
+    }
+    var gi = 0;
+    if (prevGroupId != null) {
+      for (var i = 0; i < groups.length; i++) {
+        if (String(groups[i].id) === String(prevGroupId)) { gi = i; break; }
+      }
+    }
+    setGroup(gi);
+    if (!preserve) {
+      resetToLatest();
+      return;
+    }
+    buildTrack();
+    var idx = -1;
+    if (followLatest) idx = view.length - 1;
+    else if (prevRunId != null) {
+      for (var k = 0; k < view.length; k++) {
+        if (view[k].id === prevRunId) { idx = k; break; }
+      }
+    }
+    var prev = prevRuns[prevRunId];
+    var next = idx >= 0 ? view[idx] : null;
+    var needReload = !next || !prev || next.id !== prev.id || prev.status !== next.status || prev.candy !== next.candy;
+    if (idx < 0) {
+      runIdx = -1;
+      if (view.length) selectRun(view.length - 1, false);
+      else resetToLatest();
+    } else if (needReload) {
+      runIdx = -1;
+      selectRun(idx, false);
+    } else {
+      runIdx = idx;
+      items.forEach(function (el, n) { el.classList.toggle('active', n === idx); });
+      measureItems();
+      syncPointer(next.status);
+      // 正文没重载（frontSrc 仍有效），重建时间线后把截断图标补回来
+      updateTruncMark();
+      if (prev.duration !== next.duration) {
+        document.getElementById('durationText').textContent = next.duration || '—';
+      }
+      centerRun(idx, false);
+      updateArrows();
+      layoutGroup();
+    }
+    if (note) showToast(note);
+  }
+
+  var toast = document.getElementById('toast');
+  var toastTimer = null;
+  function showToast(text) {
+    toast.textContent = '';
+    var dot = document.createElement('span');
+    dot.className = 'toast-dot';
+    dot.setAttribute('aria-hidden', 'true');
+    var label = document.createElement('span');
+    label.className = 'toast-text';
+    label.textContent = text;
+    toast.appendChild(dot);
+    toast.appendChild(label);
+    toast.classList.add('show');
+    toast.setAttribute('aria-hidden', 'false');
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () {
+      toast.classList.remove('show');
+      toast.setAttribute('aria-hidden', 'true');
+    }, 4500);
+  }
+
+  // 概览每 10 秒拉一次。内容没变就不动页面；变了再更新，并在中上角提示。
+  var POLL_MS = 10000;
+  var overviewReady = false;
+  var lastSnapshot = '';
+  var overviewSeq = 0;
+  var overviewAbort = null;
+  var pollTimer = null;
+  var lastPollAt = 0;
+  var pendingApply = null;
+  var applyWait = null;
+
+  function overviewSnapshot(data) {
+    var settings = (data && data.settings) || {};
+    var list = ((data && data.groups) || []).map(function (g) {
+      return {
+        id: g.id,
+        name: g.name || '',
+        interval: g.interval_minutes,
+        results: (g.results || []).map(function (r) {
+          return [
+            r.id, r.model || '', r.status || '', r.created_at || '',
+            r.candy_correct, r.candy_review || '', r.pelican_review || '', r.pelican_error || '',
+            r.pelican_latency_ms || 0, r.candy_latency_ms || 0
+          ];
+        }).sort(function (a, b) { return (a[0] > b[0] ? 1 : a[0] < b[0] ? -1 : 0); })
+      };
+    }).sort(function (a, b) { return (a.id > b.id ? 1 : a.id < b.id ? -1 : 0); });
+    return JSON.stringify({ models: settings.models || [], effort: settings.reasoning_effort || '', quietWindows: settings.quiet_windows || [], groups: list });
+  }
+
+  function flushApply() {
+    applyWait = null;
+    if (!pendingApply) return;
+    if (drag || anim) {
+      applyWait = setTimeout(flushApply, 120);
+      return;
+    }
+    var data = pendingApply;
+    pendingApply = null;
+    applyOverview(data, true);
+  }
+
+  function takeOverview(data, preserve) {
+    if (preserve && (drag || anim)) {
+      pendingApply = data;
+      if (!applyWait) applyWait = setTimeout(flushApply, 120);
+      return;
+    }
+    pendingApply = null;
+    applyOverview(data, preserve);
+  }
+
+  function fetchOverview(isPoll) {
+    if (overviewAbort) overviewAbort.abort();
+    var ctrl = new AbortController();
+    overviewAbort = ctrl;
+    var seq = ++overviewSeq;
+    lastPollAt = Date.now();
+    fetch(OVERVIEW_URL, { signal: ctrl.signal, cache: 'no-store' })
+      .then(function (res) {
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.json();
+      })
+      .then(function (body) {
+        if (seq !== overviewSeq) return;
+        if (!body || body.code !== 0 || !body.data) throw new Error('bad payload');
+        var sig = overviewSnapshot(body.data);
+        var preserve = overviewReady;
+        if (preserve && sig === lastSnapshot) return;
+        lastSnapshot = sig;
+        overviewReady = true;
+        takeOverview(body.data, preserve);
+      })
+      .catch(function (err) {
+        if (seq !== overviewSeq) return;
+        if (err && err.name === 'AbortError') return;
+        if (isPoll || overviewReady) return;
+        groupLabel.textContent = '加载失败';
+        document.getElementById('groupInterval').hidden = true;
+        tlTrack.innerHTML = '';
+        showEmptyTrack('概览加载失败');
+      });
+  }
+
+  function ensurePoll() {
+    if (pollTimer) return;
+    pollTimer = setInterval(fetchOverview, POLL_MS, true);
+  }
+
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState !== 'visible' || !pollTimer) return;
+    refreshRestPoint();
+    if (Date.now() - lastPollAt >= POLL_MS) fetchOverview(true);
+  });
+
+  // ---- 初始化 ----
+  fetchOverview(false);
+  ensurePoll();
+  setInterval(refreshRestPoint, 1000);
+})();
+</script>
+</body>
+</html>

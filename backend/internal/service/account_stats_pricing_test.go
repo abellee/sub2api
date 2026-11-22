@@ -228,6 +228,90 @@ func TestCalculateStatsCost_TokenBilling_WithCache(t *testing.T) {
 	require.InDelta(t, 0.95, *result, 1e-12)
 }
 
+func TestCalculateStatsCost_TokenBilling_WithCacheTTLPrices(t *testing.T) {
+	pricing := &ChannelModelPricing{
+		BillingMode:       BillingModeToken,
+		CacheWritePrice:   testPtrFloat64(0.003),
+		CacheWrite1hPrice: testPtrFloat64(0.005),
+	}
+	tokens := UsageTokens{
+		CacheCreationTokens:   200,
+		CacheCreation5mTokens: 80,
+		CacheCreation1hTokens: 120,
+	}
+
+	result := calculateStatsCost(pricing, tokens, 1)
+	require.NotNil(t, result)
+	// 80*0.003 + 120*0.005 = 0.84
+	require.InDelta(t, 0.84, *result, 1e-12)
+}
+
+func TestTryCustomRules_CacheTTLAllocation(t *testing.T) {
+	tests := []struct {
+		name      string
+		aggregate int
+		cache5m   int
+		cache1h   int
+		wantCost  float64
+	}{
+		{name: "pure 5m remainder", aggregate: 200, cache5m: 60, wantCost: 0.6},
+		{name: "pure 1h remainder", aggregate: 200, cache1h: 60, wantCost: 0.72},
+		{name: "mixed remainder", aggregate: 200, cache5m: 40, cache1h: 60, wantCost: 0.72},
+		{name: "no details", aggregate: 200, wantCost: 0.6},
+		{name: "complete pure 5m", aggregate: 200, cache5m: 200, wantCost: 0.6},
+		{name: "complete pure 1h", aggregate: 200, cache1h: 200, wantCost: 1.0},
+		{name: "zero aggregate retains details", cache5m: 40, cache1h: 60, wantCost: 0.42},
+		{name: "zero tokens"},
+		{name: "ratio cap", aggregate: 120, cache5m: 80, cache1h: 160, wantCost: 0.52},
+	}
+	for _, interval := range []bool{false, true} {
+		path := "flat"
+		if interval {
+			path = "interval"
+		}
+		t.Run(path, func(t *testing.T) {
+			for _, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					pricing := ChannelModelPricing{
+						Models:            []string{"claude-test"},
+						BillingMode:       BillingModeToken,
+						CacheWritePrice:   testPtrFloat64(0.003),
+						CacheWrite1hPrice: testPtrFloat64(0.005),
+					}
+					wantCost := tt.wantCost
+					if interval {
+						pricing.Intervals = []PricingInterval{{
+							MinTokens:         0,
+							CacheWritePrice:   testPtrFloat64(0.006),
+							CacheWrite1hPrice: testPtrFloat64(0.010),
+						}}
+						wantCost *= 2
+					}
+					channel := &Channel{
+						AccountStatsPricingRules: []AccountStatsPricingRule{{
+							AccountIDs: []int64{1},
+							Pricing:    []ChannelModelPricing{pricing},
+						}},
+					}
+					tokens := UsageTokens{
+						InputTokens:           1,
+						CacheCreationTokens:   tt.aggregate,
+						CacheCreation5mTokens: tt.cache5m,
+						CacheCreation1hTokens: tt.cache1h,
+					}
+					result := tryCustomRules(channel, 1, 0, "anthropic", "claude-test", tokens, 1, nil, true)
+					if wantCost == 0 {
+						require.Nil(t, result)
+						return
+					}
+					require.NotNil(t, result)
+					require.InDelta(t, wantCost, *result, 1e-12)
+				})
+			}
+		})
+	}
+}
+
 func TestCalculateStatsCost_TokenBilling_WithImageOutput(t *testing.T) {
 	pricing := &ChannelModelPricing{
 		BillingMode:      BillingModeToken,
@@ -363,7 +447,7 @@ func TestTryCustomRules_FirstMatchWins(t *testing.T) {
 		},
 	}
 	tokens := UsageTokens{InputTokens: 100, OutputTokens: 50}
-	result := tryCustomRules(channel, 999, 1, "", "claude-opus-4", tokens, 1)
+	result := tryCustomRules(channel, 999, 1, "", "claude-opus-4", tokens, 1, nil, true)
 	require.NotNil(t, result)
 	// 应使用第一条规则的价格：100*0.01 + 50*0.02 = 2.0
 	require.InDelta(t, 2.0, *result, 1e-12)
@@ -387,7 +471,7 @@ func TestTryCustomRules_SkipsNonMatchingRules(t *testing.T) {
 		},
 	}
 	tokens := UsageTokens{InputTokens: 100}
-	result := tryCustomRules(channel, 999, 1, "", "claude-opus-4", tokens, 1)
+	result := tryCustomRules(channel, 999, 1, "", "claude-opus-4", tokens, 1, nil, true)
 	require.NotNil(t, result)
 	// 跳过规则1（账号不匹配），使用规则2：100*0.05 = 5.0
 	require.InDelta(t, 5.0, *result, 1e-12)
@@ -405,7 +489,7 @@ func TestTryCustomRules_NoMatch_ReturnsNil(t *testing.T) {
 		},
 	}
 	tokens := UsageTokens{InputTokens: 100}
-	result := tryCustomRules(channel, 999, 2, "", "claude-opus-4", tokens, 1)
+	result := tryCustomRules(channel, 999, 2, "", "claude-opus-4", tokens, 1, nil, true)
 	require.Nil(t, result) // 账号和分组都不匹配
 }
 
@@ -427,7 +511,7 @@ func TestTryCustomRules_RuleMatchesButModelNot_ContinuesToNext(t *testing.T) {
 		},
 	}
 	tokens := UsageTokens{InputTokens: 100}
-	result := tryCustomRules(channel, 999, 1, "", "claude-opus-4", tokens, 1)
+	result := tryCustomRules(channel, 999, 1, "", "claude-opus-4", tokens, 1, nil, true)
 	require.NotNil(t, result)
 	require.InDelta(t, 5.0, *result, 1e-12) // 使用规则2
 }
@@ -454,10 +538,22 @@ func TestTryModelFilePricing_Success(t *testing.T) {
 		},
 	})
 	tokens := UsageTokens{InputTokens: 100, OutputTokens: 50}
-	result := tryModelFilePricing(bs, "claude-sonnet-4", tokens, "")
+	result := tryModelFilePricing(bs, "claude-sonnet-4", tokens, "", time.Time{}, true)
 	require.NotNil(t, result)
 	// 100*0.001 + 50*0.002 = 0.1 + 0.1 = 0.2
 	require.InDelta(t, 0.2, *result, 1e-12)
+}
+
+func TestTryModelFilePricing_Fable51HasNoImplicitReasoningMultiplier(t *testing.T) {
+	bs := newTestBillingServiceWithPrices(map[string]*ModelPricing{
+		"claude-fable-5-1": {InputPricePerToken: 0.001},
+	})
+	tokens := UsageTokens{InputTokens: 100}
+	standard := tryModelFilePricing(bs, "claude-fable-5-1", tokens, "", time.Time{}, true, "xhigh")
+	max := tryModelFilePricing(bs, "claude-fable-5-1", tokens, "", time.Time{}, true, "max")
+	require.NotNil(t, standard)
+	require.NotNil(t, max)
+	require.Equal(t, *standard, *max)
 }
 
 func TestTryModelFilePricing_AppliesLongContextPricing(t *testing.T) {
@@ -473,7 +569,7 @@ func TestTryModelFilePricing_AppliesLongContextPricing(t *testing.T) {
 	})
 	tokens := UsageTokens{InputTokens: 101, OutputTokens: 10, CacheReadTokens: 5}
 
-	result := tryModelFilePricing(bs, "gpt-5.6-sol", tokens, "")
+	result := tryModelFilePricing(bs, "gpt-5.6-sol", tokens, "", time.Time{}, true)
 
 	require.NotNil(t, result)
 	// Input and cache-read use the 2x input tier; output uses the 1.5x tier.
@@ -512,7 +608,7 @@ func TestTryModelFilePricing_AppliesServiceTierPricing(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := tryModelFilePricing(bs, "gpt-5.6-sol", tokens, tt.serviceTier)
+			result := tryModelFilePricing(bs, "gpt-5.6-sol", tokens, tt.serviceTier, time.Time{}, true)
 			require.NotNil(t, result)
 			require.InDelta(t, tt.want, *result, 1e-12)
 		})
@@ -542,7 +638,7 @@ func TestTryModelFilePricing_CombinesPriorityAndLongContextPricing(t *testing.T)
 		CacheReadTokens:     5,
 	}
 
-	result := tryModelFilePricing(bs, "gpt-5.6-sol", tokens, "priority")
+	result := tryModelFilePricing(bs, "gpt-5.6-sol", tokens, "priority", time.Time{}, true)
 
 	require.NotNil(t, result)
 	// priority 单价先应用，再叠加长上下文输入 2x、输出 1.5x。
@@ -553,7 +649,7 @@ func TestTryModelFilePricing_PricingNotFound(t *testing.T) {
 	// "nonexistent-model" does not match any fallback pattern
 	bs := newTestBillingServiceWithPrices(map[string]*ModelPricing{})
 	tokens := UsageTokens{InputTokens: 100, OutputTokens: 50}
-	result := tryModelFilePricing(bs, "nonexistent-model", tokens, "")
+	result := tryModelFilePricing(bs, "nonexistent-model", tokens, "", time.Time{}, true)
 	require.Nil(t, result)
 }
 
@@ -563,7 +659,7 @@ func TestTryModelFilePricing_NilFallback(t *testing.T) {
 		"claude-sonnet-4": nil,
 	})
 	tokens := UsageTokens{InputTokens: 100}
-	result := tryModelFilePricing(bs, "claude-sonnet-4", tokens, "")
+	result := tryModelFilePricing(bs, "claude-sonnet-4", tokens, "", time.Time{}, true)
 	require.Nil(t, result)
 }
 
@@ -575,7 +671,7 @@ func TestTryModelFilePricing_ZeroCost(t *testing.T) {
 		},
 	})
 	tokens := UsageTokens{} // all zero tokens → cost = 0 → nil
-	result := tryModelFilePricing(bs, "claude-sonnet-4", tokens, "")
+	result := tryModelFilePricing(bs, "claude-sonnet-4", tokens, "", time.Time{}, true)
 	require.Nil(t, result)
 }
 
@@ -592,10 +688,11 @@ func TestTryModelFilePricing_WithImageOutput(t *testing.T) {
 		OutputTokens:      50,
 		ImageOutputTokens: 10,
 	}
-	result := tryModelFilePricing(bs, "claude-sonnet-4", tokens, "")
+	result := tryModelFilePricing(bs, "claude-sonnet-4", tokens, "", time.Time{}, true)
 	require.NotNil(t, result)
-	// 100*0.001 + 50*0.002 + 10*0.01 = 0.1 + 0.1 + 0.1 = 0.3
-	require.InDelta(t, 0.3, *result, 1e-12)
+	// ImageOutputTokens 是 OutputTokens 的子集，先扣除再按图片单价计。
+	// 100*0.001 + (50-10)*0.002 + 10*0.01 = 0.1 + 0.08 + 0.1 = 0.28
+	require.InDelta(t, 0.28, *result, 1e-12)
 }
 
 func TestTryModelFilePricing_WithCacheTokens(t *testing.T) {
@@ -613,11 +710,109 @@ func TestTryModelFilePricing_WithCacheTokens(t *testing.T) {
 		CacheCreationTokens: 200,
 		CacheReadTokens:     300,
 	}
-	result := tryModelFilePricing(bs, "claude-sonnet-4", tokens, "")
+	result := tryModelFilePricing(bs, "claude-sonnet-4", tokens, "", time.Time{}, true)
 	require.NotNil(t, result)
 	// 100*0.001 + 50*0.002 + 200*0.003 + 300*0.0005
 	// = 0.1 + 0.1 + 0.6 + 0.15 = 0.95
 	require.InDelta(t, 0.95, *result, 1e-12)
+}
+
+func TestTryModelFilePricing_DeepSeekPeakPricing(t *testing.T) {
+	weekday := func(hour, minute int) time.Time {
+		return time.Date(2026, time.August, 24, hour, minute, 0, 0, time.UTC)
+	}
+	for _, model := range []struct {
+		name                          string
+		input, output, cacheReadPrice float64
+	}{
+		{"deepseek-v4-flash", 1.5e-7, 6e-7, 3e-9},
+		{"deepseek-v4-pro", 6.6e-7, 1.98e-6, 2.2e-8},
+	} {
+		for _, usage := range []struct {
+			name   string
+			tokens UsageTokens
+		}{
+			{"input", UsageTokens{InputTokens: 1000}},
+			{"output", UsageTokens{OutputTokens: 500}},
+			{"cache_read", UsageTokens{CacheReadTokens: 1000}},
+			{"mixed", UsageTokens{InputTokens: 1000, OutputTokens: 500, CacheReadTokens: 1000}},
+		} {
+			t.Run(model.name+"/"+usage.name, func(t *testing.T) {
+				bs := newTestBillingService()
+				tokens := usage.tokens
+				baseCost := float64(tokens.InputTokens)*model.input +
+					float64(tokens.OutputTokens)*model.output + float64(tokens.CacheReadTokens)*model.cacheReadPrice
+				for _, slot := range []struct {
+					name       string
+					at         time.Time
+					multiplier float64
+				}{
+					{"before_morning_peak", weekday(0, 59), 1},
+					{"morning_peak_start", weekday(1, 0), 2},
+					{"morning_peak_last_minute", weekday(3, 59), 2},
+					{"morning_peak_end", weekday(4, 0), 1},
+					{"afternoon_peak_start", weekday(6, 0), 2},
+					{"afternoon_peak_last_minute", weekday(9, 59), 2},
+					{"afternoon_peak_end", weekday(10, 0), 1},
+					{"saturday", time.Date(2026, time.August, 22, 2, 0, 0, 0, time.UTC), 1},
+					{"sunday", time.Date(2026, time.August, 23, 7, 0, 0, 0, time.UTC), 1},
+				} {
+					t.Run(slot.name, func(t *testing.T) {
+						cost := tryModelFilePricing(bs, model.name, tokens, "", slot.at, true)
+						require.NotNil(t, cost)
+						require.InDelta(t, baseCost*slot.multiplier, *cost, 1e-12)
+					})
+				}
+			})
+		}
+	}
+}
+
+func TestResolveAccountStatsCost_DeepSeekPricingPriority(t *testing.T) {
+	peak := time.Date(2026, time.August, 24, 2, 0, 0, 0, time.UTC)
+	for _, tt := range []struct {
+		name         string
+		customRule   bool
+		applyPricing bool
+		noChannel    bool
+		want         float64
+	}{
+		{name: "catalog", want: 1000 * 1.5e-7 * 2},
+		{name: "custom_rule", customRule: true, want: 1},
+		{name: "custom_rule_before_customer_price", customRule: true, applyPricing: true, want: 1},
+		{name: "customer_price", applyPricing: true, want: 0.75},
+		{name: "no_channel", noChannel: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			channel := &Channel{
+				ID: 1, Status: StatusActive, ApplyPricingToAccountStats: tt.applyPricing,
+				ModelPricing: []ChannelModelPricing{{
+					Models: []string{"deepseek-v4-flash"}, InputPrice: testPtrFloat64(0.02),
+				}},
+			}
+			if tt.customRule {
+				channel.AccountStatsPricingRules = []AccountStatsPricingRule{{
+					AccountIDs: []int64{1},
+					Pricing: []ChannelModelPricing{{
+						Models: []string{"deepseek-v4-flash"}, InputPrice: testPtrFloat64(0.001),
+					}},
+				}}
+			}
+			cs := newTestChannelServiceForStats(t, channel, 10, PlatformDeepseek)
+			groupID := int64(10)
+			if tt.noChannel {
+				groupID = 99
+			}
+			cost := resolveAccountStatsCost(context.Background(), cs, newTestBillingService(),
+				1, groupID, "deepseek-v4-flash", UsageTokens{InputTokens: 1000}, 1, 0.75, "", peak, true, 1)
+			if tt.noChannel {
+				require.Nil(t, cost)
+				return
+			}
+			require.NotNil(t, cost)
+			require.InDelta(t, tt.want, *cost, 1e-12)
+		})
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -630,7 +825,7 @@ func TestResolveAccountStatsCost_NilChannelService(t *testing.T) {
 		nil, // channelService is nil
 		newTestBillingServiceWithPrices(map[string]*ModelPricing{}),
 		1, 1, "claude-sonnet-4",
-		UsageTokens{InputTokens: 100}, 1, 0.5, "",
+		UsageTokens{InputTokens: 100}, 1, 0.5, "", time.Time{}, true, 1,
 	)
 	require.Nil(t, result)
 }
@@ -646,7 +841,7 @@ func TestResolveAccountStatsCost_EmptyUpstreamModel(t *testing.T) {
 		cs,
 		newTestBillingServiceWithPrices(map[string]*ModelPricing{}),
 		1, 1, "", // empty upstream model
-		UsageTokens{InputTokens: 100}, 1, 0.5, "",
+		UsageTokens{InputTokens: 100}, 1, 0.5, "", time.Time{}, true, 1,
 	)
 	require.Nil(t, result)
 }
@@ -663,7 +858,7 @@ func TestResolveAccountStatsCost_GetChannelForGroupReturnsNil(t *testing.T) {
 		cs,
 		newTestBillingServiceWithPrices(map[string]*ModelPricing{}),
 		1, 99, "claude-sonnet-4", // groupID 99 has no channel
-		UsageTokens{InputTokens: 100}, 1, 0.5, "",
+		UsageTokens{InputTokens: 100}, 1, 0.5, "", time.Time{}, true, 1,
 	)
 	require.Nil(t, result)
 }
@@ -694,11 +889,90 @@ func TestResolveAccountStatsCost_HitsCustomRule(t *testing.T) {
 		context.Background(),
 		cs, nil, // billingService not needed when custom rule hits
 		1, 10, "claude-sonnet-4",
-		tokens, 1, 999.0, "priority", // 自定义账号价格不叠加服务层级倍率
+		tokens, 1, 999.0, "priority", time.Time{}, true, 1, // 自定义账号价格不叠加服务层级倍率
 	)
 	require.NotNil(t, result)
 	// 100*0.01 + 50*0.02 = 1.0 + 1.0 = 2.0
 	require.InDelta(t, 2.0, *result, 1e-12)
+}
+
+func TestResolveAccountStatsCost_CustomRuleLongContext(t *testing.T) {
+	for _, tt := range []struct {
+		name       string
+		tokens     UsageTokens
+		disabled   bool
+		inclusive  bool
+		interval   bool
+		perRequest bool
+		noCatalog  bool
+		unknown    bool
+		inputOnly  bool
+		doubleAll  bool
+		reasoning  string
+		want       float64
+	}{
+		{name: "below_threshold", tokens: UsageTokens{InputTokens: 99, OutputTokens: 10}, want: 0.119},
+		{name: "at_threshold", tokens: UsageTokens{InputTokens: 100, OutputTokens: 10}, want: 0.12},
+		{name: "above_threshold", tokens: UsageTokens{InputTokens: 101, OutputTokens: 10}, want: 0.232},
+		{name: "two_times_input_and_output", tokens: UsageTokens{InputTokens: 101, OutputTokens: 10}, doubleAll: true, want: 0.242},
+		{name: "inclusive_threshold", tokens: UsageTokens{InputTokens: 100, OutputTokens: 10}, inclusive: true, want: 0.23},
+		{name: "output_not_in_threshold", tokens: UsageTokens{InputTokens: 90, OutputTokens: 1000}, want: 2.09},
+		{name: "cache_crosses_threshold", tokens: UsageTokens{InputTokens: 90, OutputTokens: 10,
+			CacheCreationTokens: 5, CacheCreation5mTokens: 2, CacheCreation1hTokens: 3, CacheReadTokens: 6}, want: 0.2592},
+		{name: "openai_cache_crosses_threshold", tokens: UsageTokens{InputTokens: 90, OutputTokens: 10,
+			CacheCreationTokens: 5, CacheCreation30mTokens: 2, CacheCreation12hTokens: 3, CacheReadTokens: 6}, want: 0.2592},
+		{name: "cache_without_ttl", tokens: UsageTokens{InputTokens: 90, CacheCreationTokens: 5, CacheReadTokens: 6}, want: 0.2112},
+		{name: "disabled", tokens: UsageTokens{InputTokens: 101, OutputTokens: 10}, disabled: true, want: 0.121},
+		{name: "explicit_interval", tokens: UsageTokens{InputTokens: 101}, interval: true, want: 0.404},
+		{name: "per_request", tokens: UsageTokens{InputTokens: 101}, perRequest: true, want: 0.5},
+		{name: "no_catalog", tokens: UsageTokens{InputTokens: 101, OutputTokens: 10}, noCatalog: true, want: 0.121},
+		{name: "unknown_model", tokens: UsageTokens{InputTokens: 101, OutputTokens: 10}, unknown: true, want: 0.121},
+		{name: "missing_output_multiplier", tokens: UsageTokens{InputTokens: 101, OutputTokens: 10}, inputOnly: true, want: 0.222},
+		{name: "reasoning_multiplier", tokens: UsageTokens{InputTokens: 101, OutputTokens: 10}, reasoning: "high", want: 0.348},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			pricing := ChannelModelPricing{
+				Models: []string{"*"}, InputPrice: testPtrFloat64(0.001), OutputPrice: testPtrFloat64(0.002),
+				CacheWritePrice: testPtrFloat64(0.003), CacheWrite1hPrice: testPtrFloat64(0.006), CacheWrite12hPrice: testPtrFloat64(0.006), CacheReadPrice: testPtrFloat64(0.0001),
+				ReasoningEffortMultipliers: map[string]float64{"high": 1.5},
+			}
+			if tt.interval {
+				pricing.Intervals = []PricingInterval{{MinTokens: 0, InputPrice: testPtrFloat64(0.004)}}
+			}
+			if tt.perRequest {
+				pricing.BillingMode = BillingModePerRequest
+				pricing.PerRequestPrice = testPtrFloat64(0.5)
+			}
+			channel := &Channel{ID: 1, Status: StatusActive, ApplyPricingToAccountStats: true,
+				AccountStatsPricingRules: []AccountStatsPricingRule{{AccountIDs: []int64{1}, Pricing: []ChannelModelPricing{pricing}}}}
+			cs := newTestChannelServiceForStats(t, channel, 10, PlatformOpenAI)
+			modelPricing := &ModelPricing{LongContextInputThreshold: 100, LongContextInputMultiplier: 2,
+				LongContextOutputMultiplier: 1.5, LongContextThresholdInclusive: tt.inclusive}
+			if tt.inputOnly {
+				modelPricing.LongContextOutputMultiplier = 0
+			}
+			if tt.doubleAll {
+				modelPricing.LongContextOutputMultiplier = 2
+			}
+			bs := newTestBillingServiceWithPrices(map[string]*ModelPricing{"gpt-5.6-sol": modelPricing})
+			if tt.noCatalog {
+				bs = nil
+			}
+			model := "gpt-5.6-sol"
+			if tt.unknown {
+				model = "unknown-model"
+			}
+			// 再算一次，确认未修改缓存中的原始价格，也没有回退使用客户售价 999。
+			for range 2 {
+				cost := resolveAccountStatsCost(context.Background(), cs, bs,
+					1, 10, model, tt.tokens, 1, 999, "priority", time.Time{}, !tt.disabled, 1, tt.reasoning)
+				require.NotNil(t, cost)
+				require.InDelta(t, tt.want, *cost, 1e-12)
+			}
+			require.Equal(t, 0.001, *channel.AccountStatsPricingRules[0].Pricing[0].InputPrice)
+			require.Equal(t, 0.002, *channel.AccountStatsPricingRules[0].Pricing[0].OutputPrice)
+		})
+	}
 }
 
 func TestResolveAccountStatsCost_ApplyPricingToAccountStats_UsesTotalCost(t *testing.T) {
@@ -716,7 +990,7 @@ func TestResolveAccountStatsCost_ApplyPricingToAccountStats_UsesTotalCost(t *tes
 		context.Background(),
 		cs, nil,
 		1, 10, "claude-sonnet-4",
-		tokens, 1, 0.75, "priority", // 已完成用户计费，不再重复应用服务层级倍率
+		tokens, 1, 0.75, "priority", time.Time{}, true, 1, // 已完成用户计费，不再重复应用服务层级倍率
 	)
 	require.NotNil(t, result)
 	require.InDelta(t, 0.75, *result, 1e-12)
@@ -734,7 +1008,7 @@ func TestResolveAccountStatsCost_ApplyPricingToAccountStats_ZeroTotalCost_Return
 		context.Background(),
 		cs, nil,
 		1, 10, "claude-sonnet-4",
-		UsageTokens{}, 1, 0.0, "", // totalCost = 0
+		UsageTokens{}, 1, 0.0, "", time.Time{}, true, 1, // totalCost = 0
 	)
 	require.Nil(t, result)
 }
@@ -761,11 +1035,49 @@ func TestResolveAccountStatsCost_FallsBackToLiteLLM(t *testing.T) {
 		context.Background(),
 		cs, bs,
 		1, 10, "claude-sonnet-4",
-		tokens, 1, 999.0, "", // totalCost ignored
+		tokens, 1, 999.0, "", time.Time{}, true, 1, // totalCost ignored
 	)
 	require.NotNil(t, result)
 	// 100*0.001 + 50*0.002 = 0.1 + 0.1 = 0.2
 	require.InDelta(t, 0.2, *result, 1e-12)
+}
+
+// Scenario: 上游端点价格倍数只放大模型定价文件档，渠道计费档保持原值。
+func TestResolveAccountStatsCost_UpstreamPriceFactorScalesModelFilePricingOnly(t *testing.T) {
+	bs := newTestBillingServiceWithPrices(map[string]*ModelPricing{
+		"claude-sonnet-4": {InputPricePerToken: 0.001, OutputPricePerToken: 0.002},
+	})
+	tokens := UsageTokens{InputTokens: 100, OutputTokens: 50}
+
+	modelFile := newTestChannelServiceForStats(t, &Channel{ID: 1, Status: StatusActive}, 10, "anthropic")
+	result := resolveAccountStatsCost(context.Background(), modelFile, bs, 1, 10, "claude-sonnet-4", tokens, 1, 999.0, "", time.Time{}, true, 1.1)
+	require.NotNil(t, result)
+	require.InDelta(t, 0.22, *result, 1e-12)
+
+	applyPricing := newTestChannelServiceForStats(t, &Channel{ID: 1, Status: StatusActive, ApplyPricingToAccountStats: true}, 10, "anthropic")
+	result = resolveAccountStatsCost(context.Background(), applyPricing, bs, 1, 10, "claude-sonnet-4", tokens, 1, 0.75, "", time.Time{}, true, 1.1)
+	require.NotNil(t, result)
+	require.InDelta(t, 0.75, *result, 1e-12)
+}
+
+func TestResolveAccountStatsCost_FallbackHonorsAnthropicFast(t *testing.T) {
+	channel := &Channel{ID: 1, Status: StatusActive}
+	cs := newTestChannelServiceForStats(t, channel, 10, "anthropic")
+	bs := newTestBillingServiceWithPrices(map[string]*ModelPricing{
+		"claude-opus-5": {
+			InputPricePerToken:  5e-6,
+			OutputPricePerToken: 25e-6,
+		},
+	})
+
+	result := resolveAccountStatsCost(
+		context.Background(), cs, bs,
+		1, 10, "claude-opus-5",
+		UsageTokens{InputTokens: 1_000_000, OutputTokens: 1_000_000},
+		1, 0, "fast", time.Time{}, true, 1,
+	)
+	require.NotNil(t, result)
+	require.InDelta(t, 60, *result, 1e-12)
 }
 
 func TestResolveAccountStatsCost_Gemini36FlashTierUsesFallbackPricing(t *testing.T) {
@@ -781,10 +1093,10 @@ func TestResolveAccountStatsCost_Gemini36FlashTierUsesFallbackPricing(t *testing
 		context.Background(),
 		cs, bs,
 		1, 10, "gemini-3.6-flash-low",
-		UsageTokens{InputTokens: 1_000_000, OutputTokens: 1_000_000, CacheReadTokens: 1_000_000}, 1, 0, "",
+		UsageTokens{InputTokens: 1_000_000, OutputTokens: 1_000_000, CacheReadTokens: 1_000_000}, 1, 0, "", time.Time{}, true, 1,
 	)
 	require.NotNil(t, result)
-	require.InDelta(t, 9.15, *result, 1e-12)
+	require.InDelta(t, 4.575, *result, 1e-12)
 }
 
 func TestResolveAccountStatsCost_AllMiss_ReturnsNil(t *testing.T) {
@@ -805,7 +1117,7 @@ func TestResolveAccountStatsCost_AllMiss_ReturnsNil(t *testing.T) {
 		context.Background(),
 		cs, bs,
 		1, 10, "totally-unknown-model",
-		tokens, 1, 0.0, "",
+		tokens, 1, 0.0, "", time.Time{}, true, 1,
 	)
 	require.Nil(t, result)
 }
@@ -822,7 +1134,7 @@ func TestResolveAccountStatsCost_NilBillingService_SkipsLiteLLM(t *testing.T) {
 		context.Background(),
 		cs, nil, // billingService is nil
 		1, 10, "claude-sonnet-4",
-		UsageTokens{InputTokens: 100}, 1, 0.0, "",
+		UsageTokens{InputTokens: 100}, 1, 0.0, "", time.Time{}, true, 1,
 	)
 	require.Nil(t, result)
 }
@@ -855,7 +1167,7 @@ func TestResolveAccountStatsCost_CustomRulePriorityOverApplyPricing(t *testing.T
 		context.Background(),
 		cs, nil,
 		1, 10, "claude-sonnet-4",
-		tokens, 1, 99.0, "", // totalCost = 99.0 (would be used if ApplyPricing wins)
+		tokens, 1, 99.0, "", time.Time{}, true, 1, // totalCost = 99.0 (would be used if ApplyPricing wins)
 	)
 	require.NotNil(t, result)
 	// Custom rule: 100*0.05 = 5.0 (NOT 99.0 from totalCost)
@@ -883,11 +1195,144 @@ func TestApplyAccountStatsCost_UsesUsageLogServiceTier(t *testing.T) {
 	applyAccountStatsCost(
 		context.Background(), usageLog, cs, bs,
 		1, 10, "gpt-5.6-sol", "gpt-5.6-sol",
-		UsageTokens{InputTokens: 100, OutputTokens: 50}, 999,
+		UsageTokens{InputTokens: 100, OutputTokens: 50}, 999, time.Time{}, true, 1,
 	)
 
 	require.NotNil(t, usageLog.AccountStatsCost)
 	require.InDelta(t, 0.4, *usageLog.AccountStatsCost, 1e-12)
+}
+
+func TestApplyAccountStatsCost_LongContextFollowsGroupOrAccountGate(t *testing.T) {
+	// 渠道售价不参与优先级 3：结果只取模型定价文件。
+	channel := &Channel{
+		ID:     1,
+		Status: StatusActive,
+		ModelPricing: []ChannelModelPricing{{
+			Models: []string{"gpt-5.6-sol"}, InputPrice: testPtrFloat64(0.01),
+		}},
+	}
+	cs := newTestChannelServiceForStats(t, channel, 10, PlatformOpenAI)
+	bs := newTestBillingServiceWithPrices(map[string]*ModelPricing{
+		"gpt-5.6-sol": {
+			InputPricePerToken:             0.001,
+			InputPricePerTokenPriority:     0.002,
+			OutputPricePerToken:            0.002,
+			OutputPricePerTokenPriority:    0.004,
+			CacheReadPricePerToken:         0.0001,
+			CacheReadPricePerTokenPriority: 0.0002,
+			LongContextInputThreshold:      100,
+			LongContextInputMultiplier:     2,
+			LongContextOutputMultiplier:    1.5,
+		},
+	})
+	tokens := UsageTokens{InputTokens: 101, OutputTokens: 10, CacheReadTokens: 5}
+	accountOff, accountOn := false, true
+	for _, tt := range []struct {
+		name     string
+		gate     *bool
+		group    *Group
+		tier     string
+		wantCost float64
+	}{
+		{name: "account_off", gate: &accountOff, wantCost: 0.1215},
+		{name: "account_off_priority", gate: &accountOff, tier: "priority", wantCost: 0.243},
+		{name: "account_on_priority", gate: &accountOn, tier: "priority", wantCost: 0.466},
+		{name: "group_on_account_off", gate: &accountOff, group: &Group{LongContextPricingEnabled: true}, wantCost: 0.233},
+		{name: "group_on_account_off_priority", gate: &accountOff, group: &Group{LongContextPricingEnabled: true}, tier: "priority", wantCost: 0.466},
+		{name: "group_off_account_off", gate: &accountOff, group: &Group{}, wantCost: 0.1215},
+		{name: "group_off_account_on", gate: &accountOn, group: &Group{}, wantCost: 0.233},
+		// 非 OpenAI 平台没有账号开关，按官方阶梯计。
+		{name: "no_gate", wantCost: 0.233},
+		{name: "no_gate_priority", tier: "priority", wantCost: 0.466},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			usageLog := &UsageLog{ServiceTier: &tt.tier}
+			applyAccountStatsCost(context.Background(), usageLog, cs, bs,
+				1, 10, "gpt-5.6-sol", "gpt-5.6-sol", tokens, 999, time.Time{},
+				accountStatsLongContextPricingEnabled(tt.gate, tt.group), 1)
+			require.NotNil(t, usageLog.AccountStatsCost)
+			require.InDelta(t, tt.wantCost, *usageLog.AccountStatsCost, 1e-12)
+		})
+	}
+}
+
+// 分组开启时，客户售价和账号成本都应计算长上下文费率。
+func TestOpenAIGatewayServiceRecordUsage_AccountStatsLongContextFollowsGroupOrAccountGate(t *testing.T) {
+	baseCost := 300000*2.5e-6 + 2000*15e-6
+	longContextCost := 300000*2.5e-6*2 + 2000*15e-6*1.5
+	for _, tt := range []struct {
+		name             string
+		groupLongContext bool
+		accountExtra     map[string]any
+		customPricing    bool
+		inputTokens      int
+		wantTotalCost    float64
+		wantAccountCost  float64
+	}{
+		{name: "group_on_account_off", groupLongContext: true, wantTotalCost: longContextCost, wantAccountCost: longContextCost},
+		{name: "group_off_account_off", wantTotalCost: baseCost, wantAccountCost: baseCost},
+		{name: "custom_group_on_account_off", groupLongContext: true, customPricing: true, wantTotalCost: longContextCost, wantAccountCost: longContextCost},
+		{name: "custom_group_off_account_off", customPricing: true, wantTotalCost: baseCost, wantAccountCost: baseCost},
+		{
+			name: "group_on_explicit_account_off", groupLongContext: true,
+			accountExtra:  map[string]any{"openai_long_context_billing_enabled": false},
+			wantTotalCost: longContextCost, wantAccountCost: longContextCost,
+		},
+		{
+			name: "custom_group_on_short_context", groupLongContext: true, customPricing: true, inputTokens: 200000,
+			wantTotalCost: 200000*2.5e-6 + 2000*15e-6, wantAccountCost: 200000*2.5e-6 + 2000*15e-6,
+		},
+		{
+			name: "custom_account_on", customPricing: true,
+			accountExtra:  map[string]any{"openai_long_context_billing_enabled": true},
+			wantTotalCost: longContextCost, wantAccountCost: longContextCost,
+		},
+		{
+			name:            "group_off_account_on",
+			accountExtra:    map[string]any{"openai_long_context_billing_enabled": true},
+			wantTotalCost:   longContextCost,
+			wantAccountCost: longContextCost,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+			svc := newOpenAIRecordUsageServiceForTest(usageRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{}, nil)
+			swapInOpenAILadderCatalog(t, svc)
+			channel := &Channel{ID: 1, Status: StatusActive}
+			if tt.customPricing {
+				channel.AccountStatsPricingRules = []AccountStatsPricingRule{{AccountIDs: []int64{3015}, Pricing: []ChannelModelPricing{{
+					Models: []string{"gpt-5.4*"}, InputPrice: testPtrFloat64(2.5e-6), OutputPrice: testPtrFloat64(15e-6),
+				}}}}
+			}
+			svc.channelService = newTestChannelServiceForStats(t, channel, 1, PlatformOpenAI)
+			apiKey := openAIRecordUsageAPIKeyWithGroup(svc, 1015, tt.groupLongContext)
+			apiKey.GroupID = i64p(1)
+			apiKey.Group.RateMultiplier = 1
+			inputTokens := tt.inputTokens
+			if inputTokens == 0 {
+				inputTokens = 300000
+			}
+
+			err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+				Result: &OpenAIForwardResult{
+					RequestID: "resp_account_stats_long_context_" + tt.name,
+					Usage:     OpenAIUsage{InputTokens: inputTokens, OutputTokens: 2000},
+					Model:     "gpt-5.4-2026-03-05",
+					Duration:  time.Second,
+				},
+				APIKey:  apiKey,
+				User:    &User{ID: 2015},
+				Account: &Account{ID: 3015, Platform: PlatformOpenAI, Extra: tt.accountExtra},
+			})
+
+			require.NoError(t, err)
+			require.NotNil(t, usageRepo.lastLog)
+			require.InDelta(t, tt.wantTotalCost, usageRepo.lastLog.TotalCost, 1e-10)
+			require.InDelta(t, tt.wantTotalCost, usageRepo.lastLog.ActualCost, 1e-10)
+			require.NotNil(t, usageRepo.lastLog.AccountStatsCost)
+			require.InDelta(t, tt.wantAccountCost, *usageRepo.lastLog.AccountStatsCost, 1e-10)
+		})
+	}
 }
 
 // ---------------------------------------------------------------------------

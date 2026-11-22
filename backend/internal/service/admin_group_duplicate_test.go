@@ -61,7 +61,7 @@ func cloneGroupForDuplicateTest(group *Group) *Group {
 	cloned.ModelRouting = cloneGroupModelRouting(group.ModelRouting)
 	cloned.SupportedModelScopes = append([]string(nil), group.SupportedModelScopes...)
 	cloned.MessagesDispatchModelConfig = cloneGroupMessagesDispatchModelConfig(group.MessagesDispatchModelConfig)
-	cloned.ModelsListConfig.Models = append([]string(nil), group.ModelsListConfig.Models...)
+	cloned.ModelAllowlist.Models = append([]string(nil), group.ModelAllowlist.Models...)
 	cloned.AccountGroups = append([]AccountGroup(nil), group.AccountGroups...)
 	return &cloned
 }
@@ -140,6 +140,8 @@ func TestDuplicateGroupCopiesConfigurationDeeplyAndResetsRuntimeState(t *testing
 		DefaultValidityDays:          91,
 		AllowImageGeneration:         true,
 		AllowBatchImageGeneration:    true,
+		ImageAutoSizeFromReference:   true,
+		AccountErrorFailoverEnabled:  true,
 		ImageRateIndependent:         true,
 		ImageRateMultiplier:          1.4,
 		ImagePrice1K:                 groupDuplicateTestPointer(0.01),
@@ -166,6 +168,8 @@ func TestDuplicateGroupCopiesConfigurationDeeplyAndResetsRuntimeState(t *testing
 		SortOrder:                       9,
 		AllowMessagesDispatch:           true,
 		AllowLive:                       true,
+		ForceOpenAIFast:                 true,
+		FreeOpenAIFast:                  true,
 		RequireOAuthOnly:                true,
 		RequirePrivacySet:               true,
 		DefaultMappedModel:              "gpt-5.4",
@@ -175,17 +179,18 @@ func TestDuplicateGroupCopiesConfigurationDeeplyAndResetsRuntimeState(t *testing
 			HaikuMappedModel:   "gpt-5-mini",
 			ExactModelMappings: map[string]string{"claude-special": "gpt-special"},
 		},
-		ModelsListConfig:        GroupModelsListConfig{Enabled: true, Models: []string{"gpt-5.4", "gpt-5-mini"}},
-		RPMLimit:                99,
-		MaxReasoningEffort:      "medium",
-		ReasoningEffortMappings: []ReasoningEffortMapping{{From: "max", To: "xhigh"}},
-		CreatedAt:               createdAt,
-		UpdatedAt:               createdAt,
-		AccountCount:            12,
-		ActiveAccountCount:      8,
-		RateLimitedAccountCount: 2,
-		DuplicateOperationID:    "old-operation-must-not-copy",
-		AccountGroups:           []AccountGroup{{AccountID: 13, GroupID: 41, Priority: 37}},
+		ModelAllowlist:              GroupModelAllowlist{Enabled: true, Models: []string{"gpt-5.4", "gpt-5-mini"}},
+		RPMLimit:                    99,
+		MaxReasoningEffort:          "medium",
+		MaxReasoningEffortOverLimit: ReasoningEffortOverLimitDeny,
+		ReasoningEffortMappings:     []ReasoningEffortMapping{{From: "max", To: "xhigh"}},
+		CreatedAt:                   createdAt,
+		UpdatedAt:                   createdAt,
+		AccountCount:                12,
+		ActiveAccountCount:          8,
+		RateLimitedAccountCount:     2,
+		DuplicateOperationID:        "old-operation-must-not-copy",
+		AccountGroups:               []AccountGroup{{AccountID: 13, GroupID: 41, Priority: 37}},
 	}
 	repo := newDuplicateGroupRepoStub(source)
 	repo.sourceBindings[source.ID] = []AccountGroup{
@@ -206,15 +211,21 @@ func TestDuplicateGroupCopiesConfigurationDeeplyAndResetsRuntimeState(t *testing
 	require.Equal(t, source.RateMultiplier, duplicate.RateMultiplier)
 	require.Equal(t, source.PeakRateMultiplier, duplicate.PeakRateMultiplier)
 	require.Equal(t, source.DefaultValidityDays, duplicate.DefaultValidityDays)
+	require.True(t, duplicate.ImageAutoSizeFromReference)
+	require.True(t, duplicate.AccountErrorFailoverEnabled)
 	require.Equal(t, source.ImagePrice4K, duplicate.ImagePrice4K)
 	require.Equal(t, source.VideoModelPrices, duplicate.VideoModelPrices)
 	require.Equal(t, source.WebSearchPricePerCall, duplicate.WebSearchPricePerCall)
 	require.Equal(t, source.FallbackGroupID, duplicate.FallbackGroupID)
 	require.Equal(t, source.ModelRouting, duplicate.ModelRouting)
 	require.Equal(t, source.MessagesDispatchModelConfig, duplicate.MessagesDispatchModelConfig)
-	require.Equal(t, source.ModelsListConfig, duplicate.ModelsListConfig)
+	require.Equal(t, source.ForceOpenAIFast, duplicate.ForceOpenAIFast)
+	require.Equal(t, source.ForceOpenAIUltrafast, duplicate.ForceOpenAIUltrafast)
+	require.Equal(t, source.FreeOpenAIFast, duplicate.FreeOpenAIFast)
+	require.Equal(t, source.ModelAllowlist, duplicate.ModelAllowlist)
 	require.Equal(t, source.RPMLimit, duplicate.RPMLimit)
 	require.Equal(t, source.MaxReasoningEffort, duplicate.MaxReasoningEffort)
+	require.Equal(t, source.MaxReasoningEffortOverLimit, duplicate.MaxReasoningEffortOverLimit)
 	require.Equal(t, source.ReasoningEffortMappings, duplicate.ReasoningEffortMappings)
 	require.EqualValues(t, 2, duplicate.AccountCount)
 	require.EqualValues(t, 2, duplicate.ActiveAccountCount)
@@ -229,14 +240,14 @@ func TestDuplicateGroupCopiesConfigurationDeeplyAndResetsRuntimeState(t *testing
 	duplicate.VideoModelPrices[VideoPriceFamilyGrokImagineVideo15][VideoBillingResolution720P] = 999
 	duplicate.SupportedModelScopes[0] = "changed"
 	duplicate.MessagesDispatchModelConfig.ExactModelMappings["claude-special"] = "changed"
-	duplicate.ModelsListConfig.Models[0] = "changed"
+	duplicate.ModelAllowlist.Models[0] = "changed"
 	duplicate.ReasoningEffortMappings[0].To = "changed"
 	*duplicate.DailyLimitUSD = 999
 	require.Equal(t, int64(13), source.ModelRouting["gpt-*"][0])
 	require.Equal(t, 0.14, source.VideoModelPrices[VideoPriceFamilyGrokImagineVideo15][VideoBillingResolution720P])
 	require.Equal(t, "claude", source.SupportedModelScopes[0])
 	require.Equal(t, "gpt-special", source.MessagesDispatchModelConfig.ExactModelMappings["claude-special"])
-	require.Equal(t, "gpt-5.4", source.ModelsListConfig.Models[0])
+	require.Equal(t, "gpt-5.4", source.ModelAllowlist.Models[0])
 	require.Equal(t, "xhigh", source.ReasoningEffortMappings[0].To)
 	require.Equal(t, 11.0, *source.DailyLimitUSD)
 }
@@ -260,6 +271,17 @@ func TestDuplicateGroupRecoversSameOperationAndScopesByAdmin(t *testing.T) {
 	require.Equal(t, first.ID, recovered.ID)
 	require.NotEqual(t, first.ID, otherAdmin.ID)
 	require.Equal(t, "team (Copy 2)", otherAdmin.Name)
+}
+
+func TestDuplicateGroupPreservesUltrafast(t *testing.T) {
+	source := &Group{ID: 9, Name: "ultrafast", Platform: PlatformOpenAI, Status: StatusActive, ForceOpenAIUltrafast: true, FreeOpenAIFast: true}
+	repo := newDuplicateGroupRepoStub(source)
+	svc := &adminServiceImpl{groupRepo: repo, groupDuplicateRepo: repo}
+	duplicate, err := svc.DuplicateGroup(context.Background(), source.ID, "admin:1", "")
+	require.NoError(t, err)
+	require.True(t, duplicate.ForceOpenAIUltrafast)
+	require.False(t, duplicate.ForceOpenAIFast)
+	require.True(t, duplicate.FreeOpenAIFast)
 }
 
 func TestDuplicateGroupAdvancesNameAndTruncatesUnicodeByRunes(t *testing.T) {

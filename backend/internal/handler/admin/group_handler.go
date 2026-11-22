@@ -6,10 +6,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
@@ -24,18 +26,123 @@ type GroupHandler struct {
 	adminService         service.AdminService
 	dashboardService     *service.DashboardService
 	groupCapacityService *service.GroupCapacityService
+	recommendationStore  *service.GroupRecommendationStore
+	cfg                  *config.Config
+}
+
+func (h *GroupHandler) SetRecommendationStore(store *service.GroupRecommendationStore) {
+	h.recommendationStore = store
+}
+
+type groupRecommendationResponse struct {
+	GroupID        int64   `json:"group_id"`
+	Name           string  `json:"name"`
+	Platform       string  `json:"platform"`
+	RateMultiplier float64 `json:"rate_multiplier"`
+	Reason         string  `json:"reason,omitempty"`
+	Rating         float64 `json:"rating"`
+}
+
+type groupRecommendationRequest struct {
+	Reason string  `json:"reason"`
+	Rating float64 `json:"rating"`
+}
+
+func (h *GroupHandler) GetRecommendations(c *gin.Context) {
+	if h.recommendationStore == nil {
+		response.Success(c, []groupRecommendationResponse{})
+		return
+	}
+	groups, err := h.adminService.GetAllGroupsIncludingInactive(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	byID := make(map[int64]service.Group, len(groups))
+	valid := make(map[int64]struct{}, len(groups))
+	for _, group := range groups {
+		byID[group.ID] = group
+		valid[group.ID] = struct{}{}
+	}
+	records, err := h.recommendationStore.List(valid)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "读取推荐分组失败")
+		return
+	}
+	out := make([]groupRecommendationResponse, 0, len(records))
+	for _, record := range records {
+		if group, ok := byID[record.GroupID]; ok {
+			out = append(out, groupRecommendationResponse{GroupID: group.ID, Name: group.Name, Platform: group.Platform, RateMultiplier: group.RateMultiplier, Reason: record.Reason, Rating: record.Rating})
+		}
+	}
+	response.Success(c, out)
+}
+
+func (h *GroupHandler) SetRecommendation(c *gin.Context) {
+	if h.recommendationStore == nil {
+		response.Error(c, http.StatusInternalServerError, "推荐服务不可用")
+		return
+	}
+	groupID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || groupID <= 0 {
+		response.BadRequest(c, "无效的分组 ID")
+		return
+	}
+	if _, err := h.adminService.GetGroup(c.Request.Context(), groupID); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	var req groupRecommendationRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "推荐信息格式无效")
+		return
+	}
+	req.Reason = strings.TrimSpace(req.Reason)
+	if len(req.Reason) > 500 {
+		response.BadRequest(c, "推荐理由不能超过 500 个字符")
+		return
+	}
+	if req.Rating < 0.5 || req.Rating > 5 || req.Rating*2 != float64(int(req.Rating*2)) {
+		response.BadRequest(c, "推荐等级必须为 0.5 到 5 之间的半星值")
+		return
+	}
+	if err := h.recommendationStore.Set(service.GroupRecommendation{GroupID: groupID, Reason: req.Reason, Rating: req.Rating}); err != nil {
+		response.Error(c, http.StatusInternalServerError, "保存推荐分组失败")
+		return
+	}
+	response.Success(c, gin.H{"message": "推荐分组已保存"})
+}
+
+func (h *GroupHandler) DeleteRecommendation(c *gin.Context) {
+	if h.recommendationStore == nil {
+		response.Error(c, http.StatusInternalServerError, "推荐服务不可用")
+		return
+	}
+	groupID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || groupID <= 0 {
+		response.BadRequest(c, "无效的分组 ID")
+		return
+	}
+	if err := h.recommendationStore.Delete(groupID); err != nil {
+		response.Error(c, http.StatusInternalServerError, "取消推荐分组失败")
+		return
+	}
+	response.Success(c, gin.H{"message": "推荐分组已取消"})
 }
 
 type publicModelPlazaGroup struct {
-	ID               int64                         `json:"id"`
-	Name             string                        `json:"name"`
-	Platform         string                        `json:"platform"`
-	RateMultiplier   float64                       `json:"rate_multiplier"`
-	ModelsListConfig service.GroupModelsListConfig `json:"models_list_config"`
+	ID             int64                       `json:"id"`
+	Name           string                      `json:"name"`
+	Platform       string                      `json:"platform"`
+	RateMultiplier float64                     `json:"rate_multiplier"`
+	ModelAllowlist service.GroupModelAllowlist `json:"model_allowlist"`
 }
 
 // GetLiveCapability 返回当前服务端是否具备生成 Live attestation 的运行环境。
 func (h *GroupHandler) GetLiveCapability(c *gin.Context) {
+	if h.rejectUnsupportedSimpleModeOperation(c, "live_capability") {
+		return
+	}
 	err := liveattestation.NewProvider().Check(c.Request.Context())
 	result := gin.H{"supported": err == nil}
 	if err != nil {
@@ -89,24 +196,119 @@ func (f optionalLimitField) ToServiceInput() *float64 {
 	if f.value != nil {
 		return f.value
 	}
-	zero := 0.0
-	return &zero
+	unlimited := -1.0
+	return &unlimited
 }
 
 // NewGroupHandler creates a new admin group handler
 func NewGroupHandler(adminService service.AdminService, dashboardService *service.DashboardService, groupCapacityService *service.GroupCapacityService) *GroupHandler {
+	return NewGroupHandlerWithConfig(adminService, dashboardService, groupCapacityService, nil)
+}
+
+func NewGroupHandlerWithConfig(adminService service.AdminService, dashboardService *service.DashboardService, groupCapacityService *service.GroupCapacityService, cfg *config.Config) *GroupHandler {
 	return &GroupHandler{
 		adminService:         adminService,
 		dashboardService:     dashboardService,
 		groupCapacityService: groupCapacityService,
+		cfg:                  cfg,
 	}
+}
+
+func (h *GroupHandler) isSimpleMode() bool {
+	return h != nil && h.cfg != nil && h.cfg.RunMode == config.RunModeSimple
+}
+
+type simpleModeGroupOperation string
+
+const (
+	simpleModeGroupList   simpleModeGroupOperation = "list"
+	simpleModeGroupGetAll simpleModeGroupOperation = "get_all"
+	simpleModeGroupGet    simpleModeGroupOperation = "get"
+	simpleModeGroupCreate simpleModeGroupOperation = "create"
+	simpleModeGroupUpdate simpleModeGroupOperation = "update"
+	simpleModeGroupDelete simpleModeGroupOperation = "delete"
+)
+
+var simpleModeGroupOperations = map[simpleModeGroupOperation]struct{}{
+	simpleModeGroupList: {}, simpleModeGroupGetAll: {}, simpleModeGroupGet: {},
+	simpleModeGroupCreate: {}, simpleModeGroupUpdate: {}, simpleModeGroupDelete: {},
+}
+
+func (h *GroupHandler) rejectUnsupportedSimpleModeOperation(c *gin.Context, operation simpleModeGroupOperation) bool {
+	if _, allowed := simpleModeGroupOperations[operation]; allowed {
+		return false
+	}
+	if err := service.ValidateSimpleModeGroupOperation(h.cfg, service.AdminGroupOperation(operation)); err != nil {
+		response.ErrorFrom(c, err)
+		return true
+	}
+	return false
+}
+
+type simpleModeGroupResponse struct {
+	BlockedUserAgents           string `json:"blocked_user_agents"`
+	RequiredProtocol            string `json:"required_protocol"`
+	AccountErrorFailoverEnabled bool   `json:"account_error_failover_enabled"`
+	SyncIsolationEnabled        bool   `json:"sync_isolation_enabled"`
+	ID                          int64  `json:"id"`
+	Name                        string `json:"name"`
+	Description                 string `json:"description"`
+	Platform                    string `json:"platform"`
+	Status                      string `json:"status"`
+
+	I18n service.GroupI18n `json:"i18n,omitempty"`
+
+	AccountCount            int64     `json:"account_count,omitempty"`
+	ActiveAccountCount      int64     `json:"active_account_count,omitempty"`
+	RateLimitedAccountCount int64     `json:"rate_limited_account_count,omitempty"`
+	SortOrder               int       `json:"sort_order"`
+	CreatedAt               time.Time `json:"created_at"`
+	UpdatedAt               time.Time `json:"updated_at"`
+}
+
+func groupForSimpleMode(group *service.Group) *simpleModeGroupResponse {
+	if group == nil {
+		return nil
+	}
+	return &simpleModeGroupResponse{
+		BlockedUserAgents:           group.BlockedUserAgents,
+		RequiredProtocol:            group.RequiredProtocol,
+		AccountErrorFailoverEnabled: group.AccountErrorFailoverEnabled, SyncIsolationEnabled: group.SyncIsolationEnabled,
+		ID: group.ID, Name: group.Name, Description: group.Description, Platform: group.Platform,
+		Status:             group.Status,
+		I18n:               group.I18n,
+		AccountCount:       group.AccountCount,
+		ActiveAccountCount: group.ActiveAccountCount, RateLimitedAccountCount: group.RateLimitedAccountCount,
+		SortOrder: group.SortOrder, CreatedAt: group.CreatedAt, UpdatedAt: group.UpdatedAt,
+	}
+}
+
+func sanitizeCreateGroupRequestForSimpleMode(req *CreateGroupRequest) {
+	if req == nil {
+		return
+	}
+	allowed := CreateGroupRequest{Name: req.Name, Description: req.Description, I18n: req.I18n, BlockedUserAgents: req.BlockedUserAgents, RequiredProtocol: req.RequiredProtocol, Platform: req.Platform, AccountErrorFailoverEnabled: req.AccountErrorFailoverEnabled, SyncIsolationEnabled: req.SyncIsolationEnabled}
+	allowed.RateMultiplier = 1
+	allowed.SubscriptionType = service.SubscriptionTypeStandard
+	*req = allowed
+}
+
+func sanitizeUpdateGroupRequestForSimpleMode(req *UpdateGroupRequest) {
+	if req == nil {
+		return
+	}
+	*req = UpdateGroupRequest{Name: req.Name, Description: req.Description, I18n: req.I18n, BlockedUserAgents: req.BlockedUserAgents, RequiredProtocol: req.RequiredProtocol, AccountErrorFailoverEnabled: req.AccountErrorFailoverEnabled, SyncIsolationEnabled: req.SyncIsolationEnabled}
 }
 
 // CreateGroupRequest represents create group request
 type CreateGroupRequest struct {
+	BlockedUserAgents         string                        `json:"blocked_user_agents"`
+	RequiredProtocol          string                        `json:"required_protocol"`
 	Name                      string                        `json:"name" binding:"required"`
 	Description               string                        `json:"description"`
-	Platform                  string                        `json:"platform" binding:"omitempty,oneof=anthropic openai gemini antigravity grok composite"`
+	I18n                      service.GroupI18n             `json:"i18n"` // 名称与描述的界面语言译文
+	Platform                  string                        `json:"platform" binding:"omitempty,group_platform"`
+	RateSyncGroupIDs          []int64                       `json:"rate_sync_group_ids"`
 	RateMultiplier            float64                       `json:"rate_multiplier"`
 	IsExclusive               bool                          `json:"is_exclusive"`
 	SubscriptionType          string                        `json:"subscription_type" binding:"omitempty,oneof=standard subscription"`
@@ -118,6 +320,10 @@ type CreateGroupRequest struct {
 	// 图片生成计费配置（antigravity 和 gemini 平台使用，负数表示清除配置）
 	AllowImageGeneration            bool                          `json:"allow_image_generation"`
 	AllowBatchImageGeneration       bool                          `json:"allow_batch_image_generation"`
+	ImageCountBilling               bool                          `json:"image_count_billing"`
+	ImageAutoSizeFromReference      bool                          `json:"image_auto_size_from_reference"`
+	AccountErrorFailoverEnabled     bool                          `json:"account_error_failover_enabled"`
+	SyncIsolationEnabled            bool                          `json:"sync_isolation_enabled"`
 	ImageRateIndependent            bool                          `json:"image_rate_independent"`
 	ImageRateMultiplier             *float64                      `json:"image_rate_multiplier"`
 	BatchImageDiscountMultiplier    *float64                      `json:"batch_image_discount_multiplier"`
@@ -155,16 +361,24 @@ type CreateGroupRequest struct {
 	// OpenAI Messages 调度配置（仅 openai 平台使用）
 	AllowMessagesDispatch       bool                                      `json:"allow_messages_dispatch"`
 	AllowLive                   bool                                      `json:"allow_live"`
+	ForceOpenAIFast             bool                                      `json:"force_openai_fast"`
+	ForceOpenAIUltrafast        bool                                      `json:"force_openai_ultrafast"`
+	FreeOpenAIFast              bool                                      `json:"free_openai_fast"`
 	RequireOAuthOnly            bool                                      `json:"require_oauth_only"`
 	RequirePrivacySet           bool                                      `json:"require_privacy_set"`
 	DefaultMappedModel          string                                    `json:"default_mapped_model"`
 	MessagesDispatchModelConfig service.OpenAIMessagesDispatchModelConfig `json:"messages_dispatch_model_config"`
-	ModelsListConfig            service.GroupModelsListConfig             `json:"models_list_config"`
+	ModelAllowlist              service.GroupModelAllowlist               `json:"model_allowlist"`
+	AnthropicThinkingCompat     service.GroupAnthropicThinkingCompat      `json:"anthropic_thinking_compat"`
+	// 固定账号 manifest 配置；创建路径禁止开启，仅编辑可配置。
+	CodexModelsManifestConfig service.GroupCodexModelsManifestConfig `json:"codex_models_manifest_config"`
 	// 分组 RPM 上限（0 = 不限制）
 	RPMLimit int `json:"rpm_limit"`
-	// OpenAI/Codex 请求推理强度上限，空字符串表示不限制。
+	// Anthropic/OpenAI 请求推理强度上限，空字符串表示不限制。
 	MaxReasoningEffort string `json:"max_reasoning_effort"`
-	// OpenAI/Codex 推理强度精确映射。
+	// 超过上限时的访问控制：downgrade（默认）或 deny。
+	MaxReasoningEffortOverLimit string `json:"max_reasoning_effort_over_limit"`
+	// Anthropic/OpenAI 推理强度映射，可按模型精确名、前缀或后缀限定。
 	ReasoningEffortMappings []service.ReasoningEffortMapping `json:"reasoning_effort_mappings"`
 	// 从指定分组复制账号（创建后自动绑定）
 	CopyAccountsFromGroupIDs []int64 `json:"copy_accounts_from_group_ids"`
@@ -172,9 +386,13 @@ type CreateGroupRequest struct {
 
 // UpdateGroupRequest represents update group request
 type UpdateGroupRequest struct {
+	BlockedUserAgents         *string                        `json:"blocked_user_agents"`
+	RequiredProtocol          *string                        `json:"required_protocol"`
 	Name                      string                         `json:"name"`
 	Description               *string                        `json:"description"`
-	Platform                  string                         `json:"platform" binding:"omitempty,oneof=anthropic openai gemini antigravity grok composite"`
+	I18n                      *service.GroupI18n             `json:"i18n"` // 缺省不修改，传入则整体替换
+	Platform                  string                         `json:"platform" binding:"omitempty,group_platform"`
+	RateSyncGroupIDs          *[]int64                       `json:"rate_sync_group_ids"`
 	RateMultiplier            *float64                       `json:"rate_multiplier"`
 	IsExclusive               *bool                          `json:"is_exclusive"`
 	Status                    string                         `json:"status" binding:"omitempty,oneof=active inactive"`
@@ -187,6 +405,10 @@ type UpdateGroupRequest struct {
 	// 图片生成计费配置（antigravity 和 gemini 平台使用，负数表示清除配置）
 	AllowImageGeneration            *bool                         `json:"allow_image_generation"`
 	AllowBatchImageGeneration       *bool                         `json:"allow_batch_image_generation"`
+	ImageCountBilling               *bool                         `json:"image_count_billing"`
+	ImageAutoSizeFromReference      *bool                         `json:"image_auto_size_from_reference"`
+	AccountErrorFailoverEnabled     *bool                         `json:"account_error_failover_enabled"`
+	SyncIsolationEnabled            *bool                         `json:"sync_isolation_enabled"`
 	ImageRateIndependent            *bool                         `json:"image_rate_independent"`
 	ImageRateMultiplier             *float64                      `json:"image_rate_multiplier"`
 	BatchImageDiscountMultiplier    *float64                      `json:"batch_image_discount_multiplier"`
@@ -224,15 +446,23 @@ type UpdateGroupRequest struct {
 	// OpenAI Messages 调度配置（仅 openai 平台使用）
 	AllowMessagesDispatch       *bool                                      `json:"allow_messages_dispatch"`
 	AllowLive                   *bool                                      `json:"allow_live"`
+	ForceOpenAIFast             *bool                                      `json:"force_openai_fast"`
+	ForceOpenAIUltrafast        *bool                                      `json:"force_openai_ultrafast"`
+	FreeOpenAIFast              *bool                                      `json:"free_openai_fast"`
 	RequireOAuthOnly            *bool                                      `json:"require_oauth_only"`
 	RequirePrivacySet           *bool                                      `json:"require_privacy_set"`
 	DefaultMappedModel          *string                                    `json:"default_mapped_model"`
 	MessagesDispatchModelConfig *service.OpenAIMessagesDispatchModelConfig `json:"messages_dispatch_model_config"`
-	ModelsListConfig            *service.GroupModelsListConfig             `json:"models_list_config"`
+	ModelAllowlist              *service.GroupModelAllowlist               `json:"model_allowlist"`
+	AnthropicThinkingCompat     *service.GroupAnthropicThinkingCompat      `json:"anthropic_thinking_compat"`
+	// 固定账号 manifest 配置；nil 表示不修改。
+	CodexModelsManifestConfig *service.GroupCodexModelsManifestConfig `json:"codex_models_manifest_config"`
 	// 分组 RPM 上限（0 = 不限制）；nil 表示未提供不改动
 	RPMLimit *int `json:"rpm_limit"`
-	// OpenAI/Codex 请求推理强度上限；空字符串清除，nil 不修改。
+	// Anthropic/OpenAI 请求推理强度上限；空字符串清除，nil 不修改。
 	MaxReasoningEffort *string `json:"max_reasoning_effort"`
+	// 超过上限时的访问控制；空字符串视为 downgrade，nil 不修改。
+	MaxReasoningEffortOverLimit *string `json:"max_reasoning_effort_over_limit"`
 	// nil 不修改，空数组清空，非空数组替换。
 	ReasoningEffortMappings *[]service.ReasoningEffortMapping `json:"reasoning_effort_mappings"`
 	// 从指定分组复制账号（同步操作：先清空当前分组的账号绑定，再绑定源分组的账号）
@@ -242,7 +472,7 @@ type UpdateGroupRequest struct {
 type CompositeRouteRequest struct {
 	PublicModel    string `json:"public_model" binding:"required"`
 	MatchType      string `json:"match_type" binding:"omitempty,oneof=exact prefix"`
-	TargetPlatform string `json:"target_platform" binding:"required,oneof=anthropic openai gemini antigravity grok"`
+	TargetPlatform string `json:"target_platform" binding:"required,concrete_platform"`
 	UpstreamModel  string `json:"upstream_model"`
 	Endpoint       string `json:"endpoint" binding:"omitempty,oneof=any messages count_tokens responses chat_completions embeddings images gemini"`
 	Priority       int    `json:"priority"`
@@ -258,6 +488,9 @@ type CompositeRoutePreviewRequest struct {
 // List handles listing all groups with pagination
 // GET /api/v1/admin/groups
 func (h *GroupHandler) List(c *gin.Context) {
+	if h.rejectUnsupportedSimpleModeOperation(c, simpleModeGroupList) {
+		return
+	}
 	page, pageSize := response.ParsePagination(c)
 	platform := c.Query("platform")
 	status := c.Query("status")
@@ -272,7 +505,7 @@ func (h *GroupHandler) List(c *gin.Context) {
 	sortOrder := c.DefaultQuery("sort_order", "asc")
 
 	var isExclusive *bool
-	if isExclusiveStr != "" {
+	if !h.isSimpleMode() && isExclusiveStr != "" {
 		val := isExclusiveStr == "true"
 		isExclusive = &val
 	}
@@ -283,6 +516,16 @@ func (h *GroupHandler) List(c *gin.Context) {
 		return
 	}
 
+	if h.isSimpleMode() {
+		simpleGroups := make([]simpleModeGroupResponse, 0, len(groups))
+		for i := range groups {
+			if service.IsGroupBindableInSimpleMode(&groups[i]) {
+				simpleGroups = append(simpleGroups, *groupForSimpleMode(&groups[i]))
+			}
+		}
+		response.Paginated(c, simpleGroups, total, page, pageSize)
+		return
+	}
 	outGroups := make([]dto.AdminGroup, 0, len(groups))
 	for i := range groups {
 		outGroups = append(outGroups, *dto.GroupFromServiceAdmin(&groups[i]))
@@ -293,6 +536,9 @@ func (h *GroupHandler) List(c *gin.Context) {
 // ListCompositeRoutes handles listing composite model routes for one group.
 // GET /api/v1/admin/groups/:id/composite-routes
 func (h *GroupHandler) ListCompositeRoutes(c *gin.Context) {
+	if h.rejectUnsupportedSimpleModeOperation(c, "advanced") {
+		return
+	}
 	groupID, ok := parsePositiveIDParam(c, "id")
 	if !ok {
 		return
@@ -308,6 +554,9 @@ func (h *GroupHandler) ListCompositeRoutes(c *gin.Context) {
 // CreateCompositeRoute handles creating one composite model route.
 // POST /api/v1/admin/groups/:id/composite-routes
 func (h *GroupHandler) CreateCompositeRoute(c *gin.Context) {
+	if h.rejectUnsupportedSimpleModeOperation(c, "advanced") {
+		return
+	}
 	groupID, ok := parsePositiveIDParam(c, "id")
 	if !ok {
 		return
@@ -328,6 +577,9 @@ func (h *GroupHandler) CreateCompositeRoute(c *gin.Context) {
 // UpdateCompositeRoute handles replacing one composite model route.
 // PUT /api/v1/admin/groups/:id/composite-routes/:route_id
 func (h *GroupHandler) UpdateCompositeRoute(c *gin.Context) {
+	if h.rejectUnsupportedSimpleModeOperation(c, "advanced") {
+		return
+	}
 	groupID, ok := parsePositiveIDParam(c, "id")
 	if !ok {
 		return
@@ -352,6 +604,9 @@ func (h *GroupHandler) UpdateCompositeRoute(c *gin.Context) {
 // DeleteCompositeRoute handles deleting one composite model route.
 // DELETE /api/v1/admin/groups/:id/composite-routes/:route_id
 func (h *GroupHandler) DeleteCompositeRoute(c *gin.Context) {
+	if h.rejectUnsupportedSimpleModeOperation(c, "advanced") {
+		return
+	}
 	groupID, ok := parsePositiveIDParam(c, "id")
 	if !ok {
 		return
@@ -370,6 +625,9 @@ func (h *GroupHandler) DeleteCompositeRoute(c *gin.Context) {
 // PreviewCompositeRoute resolves a model without mutating routes.
 // POST /api/v1/admin/groups/:id/composite-routes/preview
 func (h *GroupHandler) PreviewCompositeRoute(c *gin.Context) {
+	if h.rejectUnsupportedSimpleModeOperation(c, "advanced") {
+		return
+	}
 	groupID, ok := parsePositiveIDParam(c, "id")
 	if !ok {
 		return
@@ -423,6 +681,9 @@ func parsePositiveIDParam(c *gin.Context, name string) (int64, bool) {
 // bound to them even after the group is disabled).
 // GET /api/v1/admin/groups/all
 func (h *GroupHandler) GetAll(c *gin.Context) {
+	if h.rejectUnsupportedSimpleModeOperation(c, simpleModeGroupGetAll) {
+		return
+	}
 	platform := c.Query("platform")
 	includeInactive := c.Query("include_inactive") == "true"
 
@@ -442,6 +703,16 @@ func (h *GroupHandler) GetAll(c *gin.Context) {
 		return
 	}
 
+	if h.isSimpleMode() {
+		simpleGroups := make([]simpleModeGroupResponse, 0, len(groups))
+		for i := range groups {
+			if service.IsGroupBindableInSimpleMode(&groups[i]) {
+				simpleGroups = append(simpleGroups, *groupForSimpleMode(&groups[i]))
+			}
+		}
+		response.Success(c, simpleGroups)
+		return
+	}
 	outGroups := make([]dto.AdminGroup, 0, len(groups))
 	for i := range groups {
 		outGroups = append(outGroups, *dto.GroupFromServiceAdmin(&groups[i]))
@@ -461,15 +732,15 @@ func (h *GroupHandler) ListPublicModelPlazaGroups(c *gin.Context) {
 	outGroups := make([]publicModelPlazaGroup, 0, len(groups))
 	for i := range groups {
 		group := &groups[i]
-		if group.IsExclusive || !group.IsActive() || len(group.ModelsListConfig.Models) == 0 {
+		if group.IsExclusive || !group.IsActive() || len(group.ModelAllowlist.Models) == 0 {
 			continue
 		}
 		outGroups = append(outGroups, publicModelPlazaGroup{
-			ID:               group.ID,
-			Name:             group.Name,
-			Platform:         group.Platform,
-			RateMultiplier:   group.RateMultiplier,
-			ModelsListConfig: group.ModelsListConfig,
+			ID:             group.ID,
+			Name:           group.Name,
+			Platform:       group.Platform,
+			RateMultiplier: group.RateMultiplier,
+			ModelAllowlist: group.ModelAllowlist,
 		})
 	}
 	response.Success(c, outGroups)
@@ -478,6 +749,9 @@ func (h *GroupHandler) ListPublicModelPlazaGroups(c *gin.Context) {
 // GetByID handles getting a group by ID
 // GET /api/v1/admin/groups/:id
 func (h *GroupHandler) GetByID(c *gin.Context) {
+	if h.rejectUnsupportedSimpleModeOperation(c, simpleModeGroupGet) {
+		return
+	}
 	groupID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		response.BadRequest(c, "Invalid group ID")
@@ -490,12 +764,19 @@ func (h *GroupHandler) GetByID(c *gin.Context) {
 		return
 	}
 
+	if h.isSimpleMode() {
+		response.Success(c, groupForSimpleMode(group))
+		return
+	}
 	response.Success(c, dto.GroupFromServiceAdmin(group))
 }
 
-// GetModelsListCandidates handles getting candidate model IDs for custom /v1/models list.
-// GET /api/v1/admin/groups/:id/models-list-candidates
-func (h *GroupHandler) GetModelsListCandidates(c *gin.Context) {
+// GetGroupModelAllowlistCandidates handles getting candidate model IDs for the group model allowlist.
+// GET /api/v1/admin/groups/:id/model-allowlist-candidates
+func (h *GroupHandler) GetGroupModelAllowlistCandidates(c *gin.Context) {
+	if h.rejectUnsupportedSimpleModeOperation(c, "advanced") {
+		return
+	}
 	groupID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil || groupID < 0 {
 		response.BadRequest(c, "Invalid group ID")
@@ -518,10 +799,20 @@ func (h *GroupHandler) GetModelsListCandidates(c *gin.Context) {
 // Create handles creating a new group
 // POST /api/v1/admin/groups
 func (h *GroupHandler) Create(c *gin.Context) {
+	if h.rejectUnsupportedSimpleModeOperation(c, simpleModeGroupCreate) {
+		return
+	}
 	var req CreateGroupRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
+	}
+	if h.isSimpleMode() && req.Platform == service.PlatformComposite {
+		response.BadRequest(c, "Platform is not supported in simple mode")
+		return
+	}
+	if h.isSimpleMode() {
+		sanitizeCreateGroupRequestForSimpleMode(&req)
 	}
 
 	if err := service.ValidatePeakRateConfig(req.SubscriptionType, req.PeakRateEnabled, req.PeakStart, req.PeakEnd, float64ValueOrDefault(req.PeakRateMultiplier, 1.0)); err != nil {
@@ -539,7 +830,11 @@ func (h *GroupHandler) Create(c *gin.Context) {
 	group, err := h.adminService.CreateGroup(c.Request.Context(), &service.CreateGroupInput{
 		Name:                            req.Name,
 		Description:                     req.Description,
+		I18n:                            req.I18n,
 		Platform:                        req.Platform,
+		RequiredProtocol:                req.RequiredProtocol,
+		BlockedUserAgents:               req.BlockedUserAgents,
+		RateSyncGroupIDs:                req.RateSyncGroupIDs,
 		RateMultiplier:                  req.RateMultiplier,
 		IsExclusive:                     req.IsExclusive,
 		SubscriptionType:                req.SubscriptionType,
@@ -550,6 +845,10 @@ func (h *GroupHandler) Create(c *gin.Context) {
 		ModelPricing:                    req.ModelPricing,
 		AllowImageGeneration:            req.AllowImageGeneration,
 		AllowBatchImageGeneration:       req.AllowBatchImageGeneration,
+		ImageCountBilling:               req.ImageCountBilling,
+		ImageAutoSizeFromReference:      req.ImageAutoSizeFromReference,
+		AccountErrorFailoverEnabled:     req.AccountErrorFailoverEnabled,
+		SyncIsolationEnabled:            req.SyncIsolationEnabled,
 		ImageRateIndependent:            req.ImageRateIndependent,
 		ImageRateMultiplier:             req.ImageRateMultiplier,
 		BatchImageDiscountMultiplier:    req.BatchImageDiscountMultiplier,
@@ -584,13 +883,19 @@ func (h *GroupHandler) Create(c *gin.Context) {
 		SupportedModelScopes:            req.SupportedModelScopes,
 		AllowMessagesDispatch:           req.AllowMessagesDispatch,
 		AllowLive:                       req.AllowLive,
+		ForceOpenAIFast:                 req.ForceOpenAIFast,
+		ForceOpenAIUltrafast:            req.ForceOpenAIUltrafast,
+		FreeOpenAIFast:                  req.FreeOpenAIFast,
 		RequireOAuthOnly:                req.RequireOAuthOnly,
 		RequirePrivacySet:               req.RequirePrivacySet,
 		DefaultMappedModel:              req.DefaultMappedModel,
 		MessagesDispatchModelConfig:     req.MessagesDispatchModelConfig,
-		ModelsListConfig:                req.ModelsListConfig,
+		ModelAllowlist:                  req.ModelAllowlist,
+		AnthropicThinkingCompat:         req.AnthropicThinkingCompat,
+		CodexModelsManifestConfig:       req.CodexModelsManifestConfig,
 		RPMLimit:                        req.RPMLimit,
 		MaxReasoningEffort:              req.MaxReasoningEffort,
+		MaxReasoningEffortOverLimit:     req.MaxReasoningEffortOverLimit,
 		ReasoningEffortMappings:         req.ReasoningEffortMappings,
 		CopyAccountsFromGroupIDs:        req.CopyAccountsFromGroupIDs,
 	})
@@ -599,12 +904,19 @@ func (h *GroupHandler) Create(c *gin.Context) {
 		return
 	}
 
+	if h.isSimpleMode() {
+		response.Success(c, groupForSimpleMode(group))
+		return
+	}
 	response.Success(c, dto.GroupFromServiceAdmin(group))
 }
 
 // Duplicate handles creating an inactive group copy with the source account bindings.
 // POST /api/v1/admin/groups/:id/duplicate
 func (h *GroupHandler) Duplicate(c *gin.Context) {
+	if h.rejectUnsupportedSimpleModeOperation(c, "advanced") {
+		return
+	}
 	groupID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil || groupID <= 0 {
 		response.BadRequest(c, "Invalid group ID")
@@ -652,6 +964,9 @@ func (h *GroupHandler) Duplicate(c *gin.Context) {
 // Update handles updating a group
 // PUT /api/v1/admin/groups/:id
 func (h *GroupHandler) Update(c *gin.Context) {
+	if h.rejectUnsupportedSimpleModeOperation(c, simpleModeGroupUpdate) {
+		return
+	}
 	groupID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		response.BadRequest(c, "Invalid group ID")
@@ -663,11 +978,18 @@ func (h *GroupHandler) Update(c *gin.Context) {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
+	if h.isSimpleMode() {
+		sanitizeUpdateGroupRequestForSimpleMode(&req)
+	}
 
 	group, err := h.adminService.UpdateGroup(c.Request.Context(), groupID, &service.UpdateGroupInput{
 		Name:                            req.Name,
 		Description:                     req.Description,
+		I18n:                            req.I18n,
 		Platform:                        req.Platform,
+		RequiredProtocol:                req.RequiredProtocol,
+		BlockedUserAgents:               req.BlockedUserAgents,
+		RateSyncGroupIDs:                req.RateSyncGroupIDs,
 		RateMultiplier:                  req.RateMultiplier,
 		IsExclusive:                     req.IsExclusive,
 		Status:                          req.Status,
@@ -679,6 +1001,10 @@ func (h *GroupHandler) Update(c *gin.Context) {
 		ModelPricing:                    req.ModelPricing,
 		AllowImageGeneration:            req.AllowImageGeneration,
 		AllowBatchImageGeneration:       req.AllowBatchImageGeneration,
+		ImageCountBilling:               req.ImageCountBilling,
+		ImageAutoSizeFromReference:      req.ImageAutoSizeFromReference,
+		AccountErrorFailoverEnabled:     req.AccountErrorFailoverEnabled,
+		SyncIsolationEnabled:            req.SyncIsolationEnabled,
 		ImageRateIndependent:            req.ImageRateIndependent,
 		ImageRateMultiplier:             req.ImageRateMultiplier,
 		BatchImageDiscountMultiplier:    req.BatchImageDiscountMultiplier,
@@ -713,13 +1039,19 @@ func (h *GroupHandler) Update(c *gin.Context) {
 		SupportedModelScopes:            req.SupportedModelScopes,
 		AllowMessagesDispatch:           req.AllowMessagesDispatch,
 		AllowLive:                       req.AllowLive,
+		ForceOpenAIFast:                 req.ForceOpenAIFast,
+		ForceOpenAIUltrafast:            req.ForceOpenAIUltrafast,
+		FreeOpenAIFast:                  req.FreeOpenAIFast,
 		RequireOAuthOnly:                req.RequireOAuthOnly,
 		RequirePrivacySet:               req.RequirePrivacySet,
 		DefaultMappedModel:              req.DefaultMappedModel,
 		MessagesDispatchModelConfig:     req.MessagesDispatchModelConfig,
-		ModelsListConfig:                req.ModelsListConfig,
+		ModelAllowlist:                  req.ModelAllowlist,
+		AnthropicThinkingCompat:         req.AnthropicThinkingCompat,
+		CodexModelsManifestConfig:       req.CodexModelsManifestConfig,
 		RPMLimit:                        req.RPMLimit,
 		MaxReasoningEffort:              req.MaxReasoningEffort,
+		MaxReasoningEffortOverLimit:     req.MaxReasoningEffortOverLimit,
 		ReasoningEffortMappings:         req.ReasoningEffortMappings,
 		CopyAccountsFromGroupIDs:        req.CopyAccountsFromGroupIDs,
 	})
@@ -728,19 +1060,30 @@ func (h *GroupHandler) Update(c *gin.Context) {
 		return
 	}
 
+	if h.isSimpleMode() {
+		response.Success(c, groupForSimpleMode(group))
+		return
+	}
 	response.Success(c, dto.GroupFromServiceAdmin(group))
 }
 
 // Delete handles deleting a group
 // DELETE /api/v1/admin/groups/:id
 func (h *GroupHandler) Delete(c *gin.Context) {
+	if h.rejectUnsupportedSimpleModeOperation(c, simpleModeGroupDelete) {
+		return
+	}
 	groupID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		response.BadRequest(c, "Invalid group ID")
 		return
 	}
 
-	err = h.adminService.DeleteGroup(c.Request.Context(), groupID)
+	if h.isSimpleMode() {
+		err = h.adminService.DeleteGroupIfEmpty(c.Request.Context(), groupID)
+	} else {
+		err = h.adminService.DeleteGroup(c.Request.Context(), groupID)
+	}
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -752,6 +1095,9 @@ func (h *GroupHandler) Delete(c *gin.Context) {
 // GetStats handles getting group statistics
 // GET /api/v1/admin/groups/:id/stats
 func (h *GroupHandler) GetStats(c *gin.Context) {
+	if h.rejectUnsupportedSimpleModeOperation(c, "stats") {
+		return
+	}
 	groupID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		response.BadRequest(c, "Invalid group ID")
@@ -768,12 +1114,18 @@ func (h *GroupHandler) GetStats(c *gin.Context) {
 	_ = groupID // TODO: implement actual stats
 }
 
-// GetUsageSummary returns today's, yesterday's, and cumulative cost for all groups.
+// GetUsageSummary returns today's/yesterday's/cumulative cost and rolling cache usage for all groups.
 // GET /api/v1/admin/groups/usage-summary
 func (h *GroupHandler) GetUsageSummary(c *gin.Context) {
+	if h.rejectUnsupportedSimpleModeOperation(c, "advanced") {
+		return
+	}
 	todayStart := service.GroupUsageTodayStart(time.Now())
 
-	results, err := h.dashboardService.GetGroupUsageSummary(c.Request.Context(), todayStart)
+	results, err := h.dashboardService.GetGroupUsageSummary(
+		c.Request.Context(),
+		todayStart,
+	)
 	if err != nil {
 		response.Error(c, 500, "Failed to get group usage summary")
 		return
@@ -785,6 +1137,9 @@ func (h *GroupHandler) GetUsageSummary(c *gin.Context) {
 // GetCapacitySummary returns aggregated capacity (concurrency/sessions/RPM) for all active groups.
 // GET /api/v1/admin/groups/capacity-summary
 func (h *GroupHandler) GetCapacitySummary(c *gin.Context) {
+	if h.rejectUnsupportedSimpleModeOperation(c, "advanced") {
+		return
+	}
 	results, err := h.groupCapacityService.GetAllGroupCapacity(c.Request.Context())
 	if err != nil {
 		response.Error(c, 500, "Failed to get group capacity summary")
@@ -796,6 +1151,9 @@ func (h *GroupHandler) GetCapacitySummary(c *gin.Context) {
 // GetGroupAPIKeys handles getting API keys in a group
 // GET /api/v1/admin/groups/:id/api-keys
 func (h *GroupHandler) GetGroupAPIKeys(c *gin.Context) {
+	if h.rejectUnsupportedSimpleModeOperation(c, "api_keys") {
+		return
+	}
 	groupID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		response.BadRequest(c, "Invalid group ID")
@@ -820,6 +1178,9 @@ func (h *GroupHandler) GetGroupAPIKeys(c *gin.Context) {
 // GetGroupRateMultipliers handles getting rate multipliers for users in a group
 // GET /api/v1/admin/groups/:id/rate-multipliers
 func (h *GroupHandler) GetGroupRateMultipliers(c *gin.Context) {
+	if h.rejectUnsupportedSimpleModeOperation(c, "advanced") {
+		return
+	}
 	groupID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		response.BadRequest(c, "Invalid group ID")
@@ -841,6 +1202,9 @@ func (h *GroupHandler) GetGroupRateMultipliers(c *gin.Context) {
 // ClearGroupRateMultipliers handles clearing all rate multipliers for a group
 // DELETE /api/v1/admin/groups/:id/rate-multipliers
 func (h *GroupHandler) ClearGroupRateMultipliers(c *gin.Context) {
+	if h.rejectUnsupportedSimpleModeOperation(c, "advanced") {
+		return
+	}
 	groupID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		response.BadRequest(c, "Invalid group ID")
@@ -863,6 +1227,9 @@ type BatchSetGroupRateMultipliersRequest struct {
 // BatchSetGroupRateMultipliers handles batch setting rate multipliers for a group
 // PUT /api/v1/admin/groups/:id/rate-multipliers
 func (h *GroupHandler) BatchSetGroupRateMultipliers(c *gin.Context) {
+	if h.rejectUnsupportedSimpleModeOperation(c, "advanced") {
+		return
+	}
 	groupID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		response.BadRequest(c, "Invalid group ID")
@@ -891,6 +1258,9 @@ type BatchSetGroupRPMOverridesRequest struct {
 // BatchSetGroupRPMOverrides handles batch setting rpm_override for users in a group
 // PUT /api/v1/admin/groups/:id/rpm-overrides
 func (h *GroupHandler) BatchSetGroupRPMOverrides(c *gin.Context) {
+	if h.rejectUnsupportedSimpleModeOperation(c, "advanced") {
+		return
+	}
 	groupID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		response.BadRequest(c, "Invalid group ID")
@@ -914,6 +1284,9 @@ func (h *GroupHandler) BatchSetGroupRPMOverrides(c *gin.Context) {
 // ClearGroupRPMOverrides handles clearing all rpm_override for a group
 // DELETE /api/v1/admin/groups/:id/rpm-overrides
 func (h *GroupHandler) ClearGroupRPMOverrides(c *gin.Context) {
+	if h.rejectUnsupportedSimpleModeOperation(c, "advanced") {
+		return
+	}
 	groupID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		response.BadRequest(c, "Invalid group ID")
@@ -939,6 +1312,9 @@ type UpdateSortOrderRequest struct {
 // UpdateSortOrder handles updating group sort orders
 // PUT /api/v1/admin/groups/sort-order
 func (h *GroupHandler) UpdateSortOrder(c *gin.Context) {
+	if h.rejectUnsupportedSimpleModeOperation(c, "advanced") {
+		return
+	}
 	var req UpdateSortOrderRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())

@@ -291,6 +291,9 @@ func classifyGrokCredentialFailure(account *Account, err error) grokCredentialFa
 }
 
 func (s *OpenAIGatewayService) applyGrokCredentialAccountFailure(ctx context.Context, account *Account, class grokCredentialFailureClass) (string, error) {
+	if RequestAccountFailoverEnabled(ctx) {
+		return "", nil
+	}
 	if s == nil || account == nil || ctx == nil || ctx.Err() != nil {
 		if ctx != nil {
 			return "", ctx.Err()
@@ -647,6 +650,10 @@ func (s *OpenAIGatewayService) newGrokCredentialFailover(c *gin.Context, account
 		class.message = "Grok OAuth credentials are unavailable"
 	}
 	appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+		// Credential acquisition happens before the inference transport opens,
+		// so the account binding is not evidence of an inference proxy route.
+		ProxyID:   nil,
+		ProxyName: opsProxyNameUnknown,
 		Platform:  PlatformGrok,
 		AccountID: account.ID,
 		Stage:     string(GatewayFailureStageAccountAuth),

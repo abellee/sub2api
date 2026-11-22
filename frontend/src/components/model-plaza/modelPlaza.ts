@@ -1,85 +1,341 @@
-import type { ModelPlazaGroup } from '@/api/modelPlaza'
+import Decimal from 'decimal.js'
+import type { ModelPlazaGroup, PlazaModel } from '@/api/modelPlaza'
+import type { UserPricingInterval } from '@/api/channels'
+import {
+  BILLING_MODE_IMAGE,
+  BILLING_MODE_PER_REQUEST,
+  BILLING_MODE_TOKEN,
+  BILLING_MODE_VIDEO,
+  type BillingMode,
+} from '@/constants/channel'
+import { formatDecimal } from '@/utils/pricing'
+
+export const MODEL_PLAZA_IMAGE_TIERS = ['1K', '2K', '4K'] as const
+export const MODEL_PLAZA_VIDEO_TIERS = ['480p', '720p', '1080p'] as const
+
+export type ModelPlazaBillingKind = 'token' | 'per_request' | 'image' | 'video'
+
+export interface ModelPlazaTierPrice {
+  label: string
+  original: string | null
+}
+
+export interface ModelPlazaTokenTierPrice {
+  label: string
+  input: string | null
+  output: string | null
+  cache: string | null
+  cacheWrite: string | null
+  cacheWrite1h: string | null
+  cacheRead: string | null
+}
 
 export interface ModelPlazaEntry {
   id: string
   provider: string
-  input: number | null
-  output: number | null
-  cache: number | null
+  kind: ModelPlazaBillingKind
+  input: string | null
+  output: string | null
+  cache: string | null
+  cacheWrite: string | null
+  cacheWrite1h: string | null
+  cacheRead: string | null
+  tiers: ModelPlazaTierPrice[]
+  tokenTiers: ModelPlazaTokenTierPrice[]
+  /** Sub2API official context tiers shown on demand when the channel has none. */
+  officialTokenTiers: ModelPlazaTokenTierPrice[]
   groupId: number
   groupName: string
   rateMultiplier: number
+  currency: 'USD' | 'CNY'
+  timePricing: PlazaModel['time_pricing'] | null
+}
+
+export function modelPlazaProviderForGroup(
+  group: Pick<ModelPlazaGroup, 'platform'>,
+): string {
+  return normalizeProvider(group.platform)
+}
+
+/** Whether token intervals are owned by the selected channel. */
+export function hasModelPlazaChannelContextPricing(model: PlazaModel): boolean {
+  if (model.has_channel_context_pricing === true) return true
+  if (model.has_channel_context_pricing != null) return false
+  // Compatibility for the live API response emitted before the ownership
+  // flag was added. Other providers remain conservative to avoid exposing
+  // catalog-only ladders as paid channel pricing.
+  return normalizeProvider(model.platform) === 'grok'
+    && (model.pricing?.intervals?.length ?? 0) > 0
 }
 
 export function buildModelPlazaEntries(
   groups: ModelPlazaGroup[],
 ): ModelPlazaEntry[] {
-  return groups.flatMap((group) => {
+  return groups.flatMap<ModelPlazaEntry>((group) => {
     const seen = new Set<string>()
-    return group.models.flatMap((model) => {
+    return group.models.flatMap<ModelPlazaEntry>((model): ModelPlazaEntry[] => {
       const id = model.name.trim()
       if (seen.has(id)) return []
       seen.add(id)
+      const kind = modelPlazaEntryKind(group, model)
+      const rateMultiplier = mediaRateMultiplier(group, kind)
+      if (kind !== 'token') {
+        return [{
+          id,
+          provider: modelPlazaProviderForGroup(group),
+          kind,
+          input: null,
+          output: null,
+          cache: null,
+          cacheWrite: null,
+          cacheWrite1h: null,
+          cacheRead: null,
+          tiers: kind === 'per_request' ? requestTiers(model) : mediaTiers(kind, model),
+          tokenTiers: [],
+          officialTokenTiers: [],
+          groupId: group.id,
+          groupName: group.name,
+          rateMultiplier,
+          currency: currencyForModel(modelPlazaProviderForGroup(group), model),
+          timePricing: model.time_pricing ?? null,
+        }]
+      }
+      const channel = hasMeaningfulPricing(model.pricing) ? model.pricing : null
       const official = model.official_pricing
+      const price = (field: 'input_price' | 'output_price' | 'cache_read_price' | 'cache_write_price' | 'cache_write_1h_price') => channel?.[field] ?? official?.[field] ?? null
+      const cacheWrite = perMillion(price('cache_write_price'))
+      const cacheWrite1h = perMillion(price('cache_write_1h_price'))
+      const cacheRead = perMillion(price('cache_read_price'))
+      // Older production responses (before the ownership flag was added)
+      // already contained Grok channel intervals in pricing. Keep those
+      // payloads readable while leaving omitted flags on other providers
+      // conservative, since their intervals may be catalog-only.
+      const channelIntervals = hasModelPlazaChannelContextPricing(model)
+        ? channel?.intervals ?? []
+        : []
+      const channelTiers = tokenTiers(channelIntervals, official?.intervals ?? [])
+      const officialTiers = channelTiers.length > 0 ? [] : tokenTiers(official?.intervals ?? [], official?.intervals ?? [])
       return [{
         id,
-        provider: normalizeProvider(model.platform || group.platform),
-        input: perMillion(official?.input_price),
-        output: perMillion(official?.output_price),
-        cache: perMillion(official?.cache_read_price ?? official?.cache_write_price),
+        provider: modelPlazaProviderForGroup(group),
+        kind: 'token',
+        input: perMillion(price('input_price')),
+        output: perMillion(price('output_price')),
+        cache: cacheRead ?? cacheWrite,
+        cacheWrite,
+        cacheWrite1h,
+        cacheRead,
+        tiers: [],
+        tokenTiers: channelTiers,
+        officialTokenTiers: officialTiers,
         groupId: group.id,
         groupName: group.name,
         rateMultiplier: group.user_rate_multiplier ?? group.rate_multiplier,
+        currency: currencyForModel(modelPlazaProviderForGroup(group), model),
+        timePricing: model.time_pricing ?? null,
       }]
     })
   })
 }
 
-export function formatActualModelPrice(value: number | null, rateMultiplier: number): string {
-  if (value == null || !Number.isFinite(value) || !Number.isFinite(rateMultiplier)) return '-'
-
-  const left = toScaledInteger(value)
-  const right = toScaledInteger(rateMultiplier)
-  const product = left.integer * right.integer
-  const scale = left.scale + right.scale
-  const negative = product < 0n
-  const digits = (negative ? -product : product).toString().padStart(scale + 1, '0')
-  const integerPart = scale === 0 ? digits : digits.slice(0, -scale)
-  const rawFraction = scale === 0 ? '' : digits.slice(-scale)
-  const fraction = rawFraction.replace(/0+$/, '')
-  const groupedInteger = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
-  const paddedFraction = fraction.length < 2 ? fraction.padEnd(2, '0') : fraction
-
-  return `${negative ? '-' : ''}${groupedInteger}.${paddedFraction}`
-}
-
-function toScaledInteger(value: number): { integer: bigint; scale: number } {
-  const negative = value < 0
-  const [coefficient, exponentText = '0'] = Math.abs(value).toString().toLowerCase().split('e')
-  const [integerPart, fractionPart = ''] = coefficient.split('.')
-  let digits = `${integerPart}${fractionPart}`.replace(/^0+(?=\d)/, '')
-  let scale = fractionPart.length - Number(exponentText)
-
-  if (scale < 0) {
-    digits += '0'.repeat(-scale)
-    scale = 0
+export function modelPlazaEntryKind(
+  group: ModelPlazaGroup,
+  model: PlazaModel,
+): ModelPlazaBillingKind {
+  const mode = billingModeOf(model)
+  if (mode === BILLING_MODE_PER_REQUEST) return 'per_request'
+  if (mode === BILLING_MODE_IMAGE) return 'image'
+  if (mode === BILLING_MODE_VIDEO) return 'video'
+  if (mode === BILLING_MODE_TOKEN) return 'token'
+  if (isGrokImagineVideo(model.name)) return 'video'
+  if (isGrokImagineImage(model.name)) return 'image'
+  if (isGptImageModel(model.name) && !hasTokenPaidPrice(model) && isMediaRateGroup(group)) {
+    return 'image'
   }
-
-  const integer = BigInt(digits || '0')
-  return { integer: negative ? -integer : integer, scale }
+  return 'token'
 }
 
-function perMillion(value: number | null | undefined) {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return null
+export function formatActualModelPrice(value: string | number | null, rateMultiplier: string | number): string {
+  if (value == null) return '-'
+  try {
+    return formatDecimal(new Decimal(value).mul(rateMultiplier), 2, true)
+  } catch {
+    return '-'
+  }
+}
 
-  const scaled = toScaledInteger(value)
-  const scale = scaled.scale - 6
-  if (scale <= 0) return Number(scaled.integer * (10n ** BigInt(-scale)))
+function mediaRateMultiplier(group: ModelPlazaGroup, kind: ModelPlazaBillingKind): number {
+  const groupRate = group.user_rate_multiplier ?? group.rate_multiplier
+  if (kind === 'image' && group.image_rate_independent) {
+    return group.image_rate_multiplier ?? 1
+  }
+  if (kind === 'video' && group.video_rate_independent) {
+    return group.video_rate_multiplier ?? 1
+  }
+  return groupRate
+}
 
-  const negative = scaled.integer < 0n
-  const digits = (negative ? -scaled.integer : scaled.integer).toString().padStart(scale + 1, '0')
-  const decimal = `${digits.slice(0, -scale)}.${digits.slice(-scale)}`
-  return Number(`${negative ? '-' : ''}${decimal}`)
+function requestTiers(model: PlazaModel): ModelPlazaTierPrice[] {
+  const tiers: ModelPlazaTierPrice[] = []
+  const defaultPrice = formatRequestPrice(model.pricing?.per_request_price)
+  if (defaultPrice != null) tiers.push({ label: '', original: defaultPrice })
+  for (const interval of model.pricing?.intervals ?? []) {
+    const price = formatRequestPrice(interval.per_request_price)
+    if (price == null) continue
+    tiers.push({
+      label: interval.tier_label || (interval.min_tokens === 0 && interval.max_tokens == null
+        ? '≥0' : tokenRangeLabel(interval.min_tokens, interval.max_tokens)),
+      original: price,
+    })
+  }
+  return tiers.length > 0 ? tiers : [{ label: '', original: null }]
+}
+
+function mediaTiers(kind: 'image' | 'video', model: PlazaModel): ModelPlazaTierPrice[] {
+  const labels = kind === 'image' ? MODEL_PLAZA_IMAGE_TIERS : MODEL_PLAZA_VIDEO_TIERS
+  const prices = requestTierMap(model)
+  const tiers = labels
+    .filter((label) => prices.has(label))
+    .map((label) => ({ label, original: prices.get(label) ?? null }))
+  if (tiers.length > 0) return tiers
+  const flatPrice = formatRequestPrice(model.pricing?.per_request_price)
+  return flatPrice == null ? [] : [{ label: '', original: flatPrice }]
+}
+
+function requestTierMap(model: PlazaModel): Map<string, string> {
+  const map = new Map<string, string>()
+  for (const interval of model.pricing?.intervals ?? []) {
+    if (!interval.tier_label || interval.per_request_price == null) continue
+    const formatted = formatRequestPrice(interval.per_request_price)
+    if (formatted != null) map.set(interval.tier_label, formatted)
+  }
+  return map
+}
+
+function tokenTiers(channelIntervals: UserPricingInterval[], officialIntervals: UserPricingInterval[]): ModelPlazaTokenTierPrice[] {
+	// Long-context prices are only advertised when the selected channel has
+	// explicitly configured token intervals. Official intervals remain a
+	// per-field fallback for those same channel-defined tiers.
+	const intervals = channelIntervals
+  return intervals
+    .filter((interval) => interval.min_tokens > 0 && (
+      interval.input_price != null
+      || interval.output_price != null
+      || interval.cache_read_price != null
+      || interval.cache_write_price != null
+      || interval.cache_write_1h_price != null
+    ))
+    .map((interval) => {
+      const official = officialIntervals.find((candidate) => (
+        candidate.tier_label === interval.tier_label
+        || (candidate.min_tokens === interval.min_tokens && candidate.max_tokens === interval.max_tokens)
+      ))
+      const price = (field: 'input_price' | 'output_price' | 'cache_read_price' | 'cache_write_price' | 'cache_write_1h_price') => interval[field] ?? official?.[field] ?? null
+      const cacheWrite = perMillion(price('cache_write_price'))
+      const cacheWrite1h = perMillion(price('cache_write_1h_price'))
+      const cacheRead = perMillion(price('cache_read_price'))
+      return {
+        label: interval.tier_label || tokenRangeLabel(interval.min_tokens, interval.max_tokens),
+        input: perMillion(price('input_price')),
+        output: perMillion(price('output_price')),
+        cache: cacheRead ?? cacheWrite,
+        cacheWrite,
+        cacheWrite1h,
+        cacheRead,
+      }
+    })
+}
+
+function hasMeaningfulPricing(pricing: PlazaModel['pricing']): pricing is NonNullable<PlazaModel['pricing']> {
+  if (!pricing) return false
+  return pricing.input_price != null
+    || pricing.output_price != null
+    || pricing.cache_read_price != null
+    || pricing.cache_write_price != null
+    || pricing.cache_write_1h_price != null
+    || pricing.per_request_price != null
+    || pricing.intervals.length > 0
+}
+
+function currencyForProvider(provider: string): 'USD' | 'CNY' {
+  return ['deepseek', 'kimi', 'zhipu', 'glm', 'moonshot', 'minimax', 'doubao'].includes(provider.toLowerCase()) ? 'CNY' : 'USD'
+}
+
+function currencyForModel(provider: string, model: PlazaModel): 'USD' | 'CNY' {
+  const identity = `${provider} ${model.platform} ${model.name}`.toLowerCase()
+  return /deepseek|(?:^|\s)glm[-\s]|kimi|moonshot|minimax|doubao|zhipu/.test(identity) ? 'CNY' : currencyForProvider(provider)
+}
+
+function tokenRangeLabel(min: number, max: number | null): string {
+  if (max == null) return `>${formatTokenCount(min)}`
+  if (min <= 0) return `<=${formatTokenCount(max)}`
+  return `${formatTokenCount(min)}-${formatTokenCount(max)}`
+}
+
+function formatTokenCount(value: number): string {
+  if (value >= 1_000_000) return `${formatTokenScale(value, 1_000_000)}M`
+  if (value >= 1_000) return `${formatTokenScale(value, 1_000)}K`
+  return String(value)
+}
+
+function formatTokenScale(value: number, scale: number): string {
+  return String(Math.round((value / scale) * 100) / 100)
+}
+
+function formatRequestPrice(value: number | null | undefined): string | null {
+  if (value == null || !Number.isFinite(value)) return null
+  try {
+    return new Decimal(value).toFixed()
+  } catch {
+    return null
+  }
+}
+
+function billingModeOf(model: PlazaModel): BillingMode | null {
+  return (model.pricing?.billing_mode as BillingMode | undefined) ?? null
+}
+
+function hasTokenPaidPrice(model: PlazaModel): boolean {
+  const pricing = model.pricing
+  if (!pricing || pricing.billing_mode === BILLING_MODE_IMAGE || pricing.billing_mode === BILLING_MODE_VIDEO) {
+    return false
+  }
+  return pricing.input_price != null
+    || pricing.output_price != null
+    || pricing.cache_read_price != null
+    || pricing.cache_write_price != null
+    || pricing.cache_write_1h_price != null
+}
+
+function isMediaRateGroup(group: ModelPlazaGroup): boolean {
+  return Boolean(group.image_rate_independent || group.video_rate_independent)
+}
+
+function isGrokImagineImage(name: string): boolean {
+  const model = normalizeName(name)
+  return model === 'grok-imagine' || model === 'grok-imagine-edit' || model.startsWith('grok-imagine-image')
+}
+
+function isGrokImagineVideo(name: string): boolean {
+  const model = normalizeName(name)
+  return model.includes('grok-imagine-video') || /(?:^|\/)grok-video(?:-|$)/.test(model)
+}
+
+function isGptImageModel(name: string): boolean {
+  return normalizeName(name).startsWith('gpt-image')
+}
+
+function normalizeName(name: string): string {
+  return name.trim().toLowerCase()
+}
+
+function perMillion(value: number | null | undefined): string | null {
+  if (value == null || !Number.isFinite(value)) return null
+  try {
+    return new Decimal(value).mul(1_000_000).toFixed()
+  } catch {
+    return null
+  }
 }
 
 function normalizeProvider(provider: string) {

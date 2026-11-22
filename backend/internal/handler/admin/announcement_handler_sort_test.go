@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -41,11 +42,13 @@ func (r *announcementRepoCapture) GetByID(ctx context.Context, id int64) (*servi
 
 type announcementUserRepoCapture struct {
 	service.UserRepository
-	listParams pagination.PaginationParams
+	listParams  pagination.PaginationParams
+	listFilters service.UserListFilters
 }
 
 func (r *announcementUserRepoCapture) ListWithFilters(ctx context.Context, params pagination.PaginationParams, filters service.UserListFilters) ([]service.User, *pagination.PaginationResult, error) {
 	r.listParams = params
+	r.listFilters = filters
 	return []service.User{}, &pagination.PaginationResult{
 		Total:    0,
 		Page:     params.Page,
@@ -56,6 +59,10 @@ func (r *announcementUserRepoCapture) ListWithFilters(ctx context.Context, param
 
 type announcementReadRepoCapture struct {
 	service.AnnouncementReadRepository
+}
+
+func (r *announcementReadRepoCapture) CountByAnnouncementID(ctx context.Context, announcementID int64) (int64, error) {
+	return 42, nil
 }
 
 func (r *announcementReadRepoCapture) GetReadMapByUsers(ctx context.Context, announcementID int64, userIDs []int64) (map[int64]time.Time, error) {
@@ -135,4 +142,35 @@ func TestAdminAnnouncementReadStatusSortDefaults(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Equal(t, "email", userRepo.listParams.SortBy)
 	require.Equal(t, "asc", userRepo.listParams.SortOrder)
+}
+
+func TestAdminAnnouncementReadStatusFilterAndCount(t *testing.T) {
+	for _, status := range []string{"", "all", "read"} {
+		t.Run(status, func(t *testing.T) {
+			userRepo := &announcementUserRepoCapture{}
+			router := newAnnouncementSortTestRouter(&announcementRepoCapture{}, userRepo)
+			req := httptest.NewRequest(http.MethodGet, "/admin/announcements/7/read-status?page=3&page_size=10&search=alice&read_status="+status, nil)
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+			require.Equal(t, http.StatusOK, rec.Code)
+			require.Equal(t, "alice", userRepo.listFilters.Search)
+			require.Equal(t, 3, userRepo.listParams.Page)
+			if status == "read" {
+				require.Equal(t, int64(7), userRepo.listFilters.ReadAnnouncementID)
+			} else {
+				require.Zero(t, userRepo.listFilters.ReadAnnouncementID)
+			}
+			var body struct {
+				Data struct {
+					ReadCount int64 `json:"read_count"`
+					Total     int64 `json:"total"`
+					Page      int   `json:"page"`
+				}
+			}
+			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+			require.Equal(t, int64(42), body.Data.ReadCount)
+			require.Zero(t, body.Data.Total)
+			require.Equal(t, 3, body.Data.Page)
+		})
+	}
 }

@@ -75,6 +75,9 @@ func (UsageLog) Fields() []ent.Field {
 			Optional().
 			Nillable(),
 
+		// Temporary tokenizer evaluation; excluded from billing and aggregates.
+		field.JSON("input_token_estimate", map[string]any{}).Optional(),
+
 		// Token 计数字段
 		field.Int("input_tokens").
 			Default(0),
@@ -87,6 +90,10 @@ func (UsageLog) Fields() []ent.Field {
 		field.Int("cache_creation_5m_tokens").
 			Default(0),
 		field.Int("cache_creation_1h_tokens").
+			Default(0),
+		field.Int("cache_creation_30m_tokens").
+			Default(0),
+		field.Int("cache_creation_12h_tokens").
 			Default(0),
 
 		// 成本字段
@@ -120,6 +127,9 @@ func (UsageLog) Fields() []ent.Field {
 			Optional().
 			Nillable().
 			SchemaType(map[string]string{dialect.Postgres: "decimal(10,4)"}),
+
+		field.Int("search_count").Default(0),
+		field.Float("search_cost").Default(0).SchemaType(map[string]string{dialect.Postgres: "decimal(20,10)"}),
 
 		// 其他字段
 		field.Int8("billing_type").

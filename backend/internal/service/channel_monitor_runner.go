@@ -94,12 +94,18 @@ func (t *scheduledMonitor) nextDelay() time.Duration {
 //
 // pool 在构造时即建好：避免 Start 在 mu 内赋值、fire/Stop 在 mu 外读取的竞态隐患，
 // 且 pond.NewPool 创建本身近似零开销，提前建池不会浪费资源。
-func NewChannelMonitorRunner(svc *ChannelMonitorService, settingService *SettingService) *ChannelMonitorRunner {
+func NewChannelMonitorRunner(
+	svc *ChannelMonitorService,
+	settingService *SettingService,
+) *ChannelMonitorRunner {
 	return newChannelMonitorRunner(svc, settingService)
 }
 
 // newChannelMonitorRunner 内部构造，接受最小化接口，便于单元测试注入 stub。
-func newChannelMonitorRunner(svc monitorRunnerSvc, settingService *SettingService) *ChannelMonitorRunner {
+func newChannelMonitorRunner(
+	svc monitorRunnerSvc,
+	settingService *SettingService,
+) *ChannelMonitorRunner {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &ChannelMonitorRunner{
 		svc:            svc,
@@ -269,7 +275,7 @@ func (r *ChannelMonitorRunner) fire(ctx context.Context, task *scheduledMonitor)
 		return
 	}
 	if _, ok := r.pool.TrySubmit(func() {
-		r.runOne(task.id, task.name)
+		r.runOne(task)
 	}); !ok {
 		// 池满：丢弃本次检测，但必须释放已占用的 inFlight 槽，否则该 monitor 会被永久卡住。
 		r.releaseInFlight(task.id)
@@ -299,7 +305,8 @@ func (r *ChannelMonitorRunner) releaseInFlight(id int64) {
 
 // runOne 执行单个监控的检测。普通错误只记日志；API key 解密失败会撤销任务。
 // 任务结束时（含 panic recover）必须释放 in-flight 槽。
-func (r *ChannelMonitorRunner) runOne(id int64, name string) {
+func (r *ChannelMonitorRunner) runOne(task *scheduledMonitor) {
+	id, name := task.id, task.name
 	ctx, cancel := context.WithTimeout(context.Background(), monitorRequestTimeout+monitorPingTimeout+monitorRunOneBuffer)
 	defer cancel()
 
@@ -312,7 +319,8 @@ func (r *ChannelMonitorRunner) runOne(id int64, name string) {
 		}
 	}()
 
-	if _, err := r.svc.RunCheck(ctx, id); err != nil {
+	_, err := r.svc.RunCheck(ctx, id)
+	if err != nil {
 		if errors.Is(err, ErrChannelMonitorAPIKeyDecryptFailed) {
 			r.Unschedule(id)
 		}

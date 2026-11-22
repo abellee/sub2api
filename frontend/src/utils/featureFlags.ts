@@ -69,6 +69,7 @@
  * `AppSidebar.NavItem.featureFlag`, where `false` hides the menu entry.
  */
 import { useAppStore } from '@/stores/app'
+import { useAuthStore } from '@/stores/auth'
 import type { PublicSettings } from '@/types'
 import { DEFAULT_INTERVAL_SECONDS } from '@/constants/channelMonitor'
 
@@ -99,15 +100,36 @@ export const FeatureFlags = {
     mode: 'opt-out',
     label: 'Channel Monitor',
   }),
+  /** Per-caller result of the user-facing allow-list. Missing (old backends) fails closed. */
+  channelMonitorVisible: defineFlag({
+    key: 'channel_monitor_visible',
+    mode: 'opt-in',
+    label: 'Channel Monitor Visible To User',
+  }),
   availableChannels: defineFlag({
     key: 'available_channels_enabled',
     mode: 'opt-in',
     label: 'Available Channels',
   }),
+  subscription: defineFlag({
+    key: 'subscription_enabled',
+    mode: 'opt-out',
+    label: 'Subscription',
+  }),
+  publicTransit: defineFlag({
+    key: 'public_transit_page_enabled',
+    mode: 'opt-in',
+    label: 'Public Transit Page',
+  }),
   modelPlaza: defineFlag({
     key: 'model_plaza_enabled',
     mode: 'opt-in',
     label: 'Model Plaza',
+  }),
+  pluginManagement: defineFlag({
+    key: 'plugin_management_enabled',
+    mode: 'opt-in',
+    label: 'Plugin Management',
   }),
   payment: defineFlag({
     key: 'payment_enabled',
@@ -124,6 +146,12 @@ export const FeatureFlags = {
     mode: 'opt-in',
     label: 'Affiliate',
   }),
+  // Read-only: enabled by the deployment's MCP_PUBLIC_URL, not an admin toggle.
+  mcp: defineFlag({
+    key: 'mcp_enabled',
+    mode: 'opt-in',
+    label: 'MCP',
+  }),
 } as const
 
 export type RegisteredFeatureFlag = keyof typeof FeatureFlags
@@ -135,9 +163,19 @@ export type RegisteredFeatureFlag = keyof typeof FeatureFlags
  */
 export function isFeatureFlagEnabled(flag: FeatureFlagDefinition): boolean {
   const appStore = useAppStore()
-  const raw = appStore.cachedPublicSettings?.[flag.key] as
-    | boolean
-    | undefined
+  return resolveFeatureFlag(appStore.cachedPublicSettings, flag)
+}
+
+/**
+ * Pure resolver behind `isFeatureFlagEnabled`. Use it when the caller already
+ * holds a settings object (e.g. a store instance from `@/stores`) and should
+ * not reach for `useAppStore` itself — keeps views testable without Pinia.
+ */
+export function resolveFeatureFlag(
+  settings: Partial<PublicSettings> | null | undefined,
+  flag: FeatureFlagDefinition,
+): boolean {
+  const raw = settings?.[flag.key] as boolean | undefined
   if (typeof raw === 'boolean') return raw
   // Settings not yet loaded → fall back to the flag's declared mode:
   //   opt-out → visible by default, opt-in → hidden by default.
@@ -156,6 +194,22 @@ export function makeSidebarFlag(flag: FeatureFlagDefinition): () => boolean {
 /** True when channel monitor feature flag is enabled. */
 export function isChannelMonitorRouteEnabled(): boolean {
   return isFeatureFlagEnabled(FeatureFlags.channelMonitor)
+}
+
+/**
+ * True when the signed-in caller may see user-facing Channel Status.
+ * Requires the global enabled switch AND the per-caller visibility result.
+ * Admins bypass the allow-list while the feature is enabled.
+ * Missing mode/flag (old backends, empty settings) is treated as selected:
+ * non-admins are hidden; only an explicit `all` opens the user surface.
+ */
+export function isChannelMonitorVisibleToUser(): boolean {
+  if (!isChannelMonitorRouteEnabled()) return false
+  if (useAuthStore().isAdmin) return true
+  const appStore = useAppStore()
+  const visible = appStore.cachedPublicSettings?.channel_monitor_visible
+  if (typeof visible === 'boolean') return visible
+  return appStore.cachedPublicSettings?.channel_monitor_visibility === 'all'
 }
 
 export type ChannelMonitorMode = 'v1' | 'v2'
@@ -185,4 +239,21 @@ export function getChannelMonitorRefreshIntervalSeconds(): number {
 export function isChannelMonitorThroughputHidden(): boolean {
   const appStore = useAppStore()
   return Boolean(appStore.cachedPublicSettings?.channel_monitor_hide_throughput)
+}
+
+/**
+ * Show quota/balance snapshots on the user-facing monitor page
+ * (channel_monitor_show_quota, default off). The backend strips
+ * latest_quota server-side when the switch is off; this flag is
+ * defense-in-depth only. Admin views always show quota.
+ */
+export function isChannelMonitorQuotaVisible(): boolean {
+  const appStore = useAppStore()
+  return appStore.cachedPublicSettings?.channel_monitor_show_quota === true
+}
+
+/** Hide the user ranking tab on user-facing monitor v2. Admin always keeps it. */
+export function isChannelMonitorUserRankingHidden(): boolean {
+  const appStore = useAppStore()
+  return Boolean(appStore.cachedPublicSettings?.channel_monitor_hide_user_ranking)
 }

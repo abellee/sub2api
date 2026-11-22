@@ -4,51 +4,71 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { AdminGroup } from '@/types'
 import GroupsView from '@/views/admin/GroupsView.vue'
+import AnthropicThinkingCompatField from '@/components/admin/group/AnthropicThinkingCompatField.vue'
+import GroupTagsModal from '@/components/admin/group/GroupTagsModal.vue'
+import { adminAPI } from '@/api/admin'
 
 const {
   listGroups,
   duplicateGroup,
-  getModelsListCandidates,
+  updateGroup,
+  getModelAllowlistCandidates,
   getUsageSummary,
   getCapacitySummary,
   getLiveCapability,
+  getGroupCategories,
+  setDocumentation,
   showSuccess,
   showError
 } = vi.hoisted(() => ({
   listGroups: vi.fn(),
   duplicateGroup: vi.fn(),
-  getModelsListCandidates: vi.fn(),
+  updateGroup: vi.fn(),
+  getModelAllowlistCandidates: vi.fn(),
   getUsageSummary: vi.fn(),
   getCapacitySummary: vi.fn(),
   getLiveCapability: vi.fn(),
+  getGroupCategories: vi.fn(),
+  setDocumentation: vi.fn(),
   showSuccess: vi.fn(),
   showError: vi.fn()
 }))
+
+const authState = vi.hoisted(() => ({ isSimpleMode: false }))
 
 vi.mock('@/api/admin', () => ({
   adminAPI: {
     groups: {
       list: listGroups,
       duplicate: duplicateGroup,
-      getModelsListCandidates,
+      getModelAllowlistCandidates,
       getUsageSummary,
       getCapacitySummary,
       getLiveCapability,
       getAll: vi.fn(),
+      getAllIncludingInactive: vi.fn().mockResolvedValue([]),
       create: vi.fn(),
-      update: vi.fn(),
+      update: updateGroup,
       delete: vi.fn(),
       updateSortOrder: vi.fn()
     },
     accounts: {
       list: vi.fn(),
       getById: vi.fn()
+    },
+    groupCategories: {
+      list: getGroupCategories,
+      setDocumentation,
     }
   }
 }))
 
 vi.mock('@/stores/app', () => ({
   useAppStore: () => ({ showSuccess, showError })
+}))
+
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => authState
 }))
 
 vi.mock('@/stores/onboarding', () => ({
@@ -115,7 +135,7 @@ const sourceGroup: AdminGroup = {
   account_count: 1,
   active_account_count: 1,
   rate_limited_account_count: 0,
-  models_list_config: undefined,
+  model_allowlist: undefined,
   sort_order: 10
 }
 
@@ -136,6 +156,13 @@ const DataTableStub = defineComponent({
   template: '<div><div v-for="row in data" :key="row.id"><slot name="cell-actions" :row="row" /></div></div>'
 })
 
+const BaseDialogStub = defineComponent({
+  props: {
+    show: { type: Boolean, default: false }
+  },
+  template: '<div v-if="show"><slot /><slot name="footer" /></div>'
+})
+
 function mountView() {
   return mount(GroupsView, {
     global: {
@@ -144,7 +171,7 @@ function mountView() {
         TablePageLayout: TablePageLayoutStub,
         DataTable: DataTableStub,
         Pagination: true,
-        BaseDialog: true,
+        BaseDialog: BaseDialogStub,
         ConfirmDialog: true,
         EmptyState: true,
         Select: true,
@@ -161,15 +188,20 @@ function mountView() {
 
 describe('GroupsView duplicate action', () => {
   beforeEach(() => {
+    authState.isSimpleMode = false
+    vi.mocked(adminAPI.groups.getAllIncludingInactive).mockResolvedValue([])
     localStorage.clear()
     vi.spyOn(console, 'error').mockImplementation(() => {})
     for (const fn of [
       listGroups,
       duplicateGroup,
-      getModelsListCandidates,
+      updateGroup,
+      getModelAllowlistCandidates,
       getUsageSummary,
       getCapacitySummary,
       getLiveCapability,
+      getGroupCategories,
+      setDocumentation,
       showSuccess,
       showError
     ]) {
@@ -189,14 +221,118 @@ describe('GroupsView duplicate action', () => {
       name: 'Primary (Copy)',
       status: 'inactive'
     })
-    getModelsListCandidates.mockResolvedValue([])
+    getModelAllowlistCandidates.mockResolvedValue([])
     getUsageSummary.mockResolvedValue([])
     getCapacitySummary.mockResolvedValue([])
     getLiveCapability.mockResolvedValue({ supported: false })
+    getGroupCategories.mockResolvedValue({ categories: [], assignments: {}, documentation: { 42: 'banana' } })
+    setDocumentation.mockResolvedValue(undefined)
   })
 
   afterEach(() => {
     vi.restoreAllMocks()
+  })
+
+  it('opens the tag editor with saved group tags and retains updates when reopened', async () => {
+    const tags = [{ name: '快速', description: '说明' }]
+    getGroupCategories.mockResolvedValue({ categories: [], assignments: {}, group_tags: { '42': tags } })
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.get('[data-testid="group-tags"]').trigger('click')
+    const modal = wrapper.getComponent(GroupTagsModal)
+    expect(modal.props('show')).toBe(true)
+    expect(modal.props('group')?.id).toBe(42)
+    expect(modal.props('tags')).toEqual(tags)
+    const updated = [{ name: '新标签', description: '' }]
+    modal.vm.$emit('saved', 42, updated)
+    modal.vm.$emit('close')
+    await wrapper.get('[data-testid="group-tags"]').trigger('click')
+    expect(modal.props('tags')).toEqual(updated)
+    wrapper.unmount()
+  })
+
+  it('disables the tag editor when configuration could not be loaded', async () => {
+    getGroupCategories.mockRejectedValue(new Error('load failed'))
+    const wrapper = mountView()
+    await flushPromises()
+    expect(wrapper.get('[data-testid="group-tags"]').attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+  })
+
+  it.each([false, true])('creates groups with the selected protocol in simple mode %s', async (simpleMode) => {
+    authState.isSimpleMode = simpleMode
+    const wrapper = mountView()
+    await flushPromises()
+    for (const protocol of ['', 'anthropic', 'openai', 'google']) {
+      await wrapper.findAll('button').find(button => button.text().includes('admin.groups.createGroup'))!.trigger('click')
+      await flushPromises()
+      const select = wrapper.getComponent('[data-testid="create-group-required-protocol"]')
+      expect(select.props('modelValue')).toBe('')
+      expect(select.props('options').map((option: { value: string }) => option.value)).toEqual(['', 'anthropic', 'openai', 'google'])
+      select.vm.$emit('update:modelValue', protocol)
+      await wrapper.get('#create-group-form input[data-tour="group-form-name"]').setValue('Protocol group')
+      await wrapper.get('#create-group-form').trigger('submit')
+      await flushPromises()
+      expect(adminAPI.groups.create).toHaveBeenLastCalledWith(expect.objectContaining({ required_protocol: protocol }))
+    }
+    wrapper.unmount()
+  })
+
+  it.each([false, true])('loads, changes and clears the saved protocol in simple mode %s', async (simpleMode) => {
+    authState.isSimpleMode = simpleMode
+    const group = { ...sourceGroup, required_protocol: 'anthropic' }
+    listGroups.mockResolvedValue({ items: [group], total: 1, page: 1, page_size: 20, pages: 1 })
+    updateGroup.mockResolvedValue(group)
+    const wrapper = mountView()
+    await flushPromises()
+    for (const protocol of ['openai', 'google', '']) {
+      await wrapper.findAll('button').find(button => button.text() === 'common.edit')!.trigger('click')
+      await flushPromises()
+      const select = wrapper.getComponent('[data-testid="edit-group-required-protocol"]')
+      expect(select.props('modelValue')).toBe('anthropic')
+      select.vm.$emit('update:modelValue', protocol)
+      await wrapper.get('#edit-group-form').trigger('submit')
+      await flushPromises()
+      expect(updateGroup).toHaveBeenLastCalledWith(42, expect.objectContaining({ required_protocol: protocol }))
+    }
+    wrapper.unmount()
+  })
+
+  it.each([false, true])('creates and resets blocked client keywords in simple mode %s', async (simpleMode) => {
+    authState.isSimpleMode = simpleMode
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.findAll('button').find(button => button.text().includes('admin.groups.createGroup'))!.trigger('click')
+    await flushPromises()
+    expect(wrapper.get<HTMLInputElement>('#create-group-blocked-clients').element.value).toBe('')
+    await wrapper.get('#create-group-blocked-clients').setValue('Claude, cursor')
+    await wrapper.get('input[data-tour="group-form-name"]').setValue('GPT clients')
+    await wrapper.get('#create-group-form').trigger('submit')
+    await flushPromises()
+    expect(adminAPI.groups.create).toHaveBeenLastCalledWith(expect.objectContaining({ blocked_user_agents: 'Claude, cursor' }))
+    await wrapper.findAll('button').find(button => button.text().includes('admin.groups.createGroup'))!.trigger('click')
+    await flushPromises()
+    expect(wrapper.get<HTMLInputElement>('#create-group-blocked-clients').element.value).toBe('')
+    wrapper.unmount()
+  })
+
+  it.each([false, true])('loads, edits and clears blocked clients in simple mode %s', async (simpleMode) => {
+    authState.isSimpleMode = simpleMode
+    const group = { ...sourceGroup, blocked_user_agents: 'Claude,cursor' }
+    listGroups.mockResolvedValue({ items: [group], total: 1, page: 1, page_size: 20, pages: 1 })
+    updateGroup.mockResolvedValue(group)
+    const wrapper = mountView()
+    await flushPromises()
+    for (const keywords of ['Claude', '']) {
+      await wrapper.findAll('button').find(button => button.text() === 'common.edit')!.trigger('click')
+      await flushPromises()
+      expect(wrapper.get<HTMLInputElement>('#edit-group-blocked-clients').element.value).toBe('Claude,cursor')
+      await wrapper.get('#edit-group-blocked-clients').setValue(keywords)
+      await wrapper.get('#edit-group-form').trigger('submit')
+      await flushPromises()
+      expect(updateGroup).toHaveBeenLastCalledWith(42, expect.objectContaining({ blocked_user_agents: keywords }))
+    }
+    wrapper.unmount()
   })
 
   it('duplicates the selected group, reports success, and refreshes the list', async () => {
@@ -210,6 +346,142 @@ describe('GroupsView duplicate action', () => {
     expect(duplicateGroup).toHaveBeenCalledWith(42)
     expect(showSuccess).toHaveBeenCalledWith('admin.groups.duplicateSuccess')
     expect(listGroups).toHaveBeenCalledTimes(2)
+    wrapper.unmount()
+  })
+
+  it('edits groups without a documentation field or a documentation binding request', async () => {
+    updateGroup.mockResolvedValue(sourceGroup)
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.findAll('button').find(button => button.text() === 'common.edit')!.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('#edit-group-documentation').exists()).toBe(false)
+    await wrapper.get('#edit-group-form').trigger('submit')
+    await flushPromises()
+    expect(updateGroup).toHaveBeenCalledWith(42, expect.objectContaining({ name: 'Primary' }))
+    expect(setDocumentation).not.toHaveBeenCalled()
+    expect(showSuccess).toHaveBeenCalledWith('admin.groups.groupUpdated')
+    wrapper.unmount()
+  })
+
+  it.each([false, true])('loads and saves group retry when the saved switch is %s', async (enabled) => {
+    const group = { ...sourceGroup, account_error_failover_enabled: enabled }
+    listGroups.mockResolvedValue({ items: [group], total: 1, page: 1, page_size: 20, pages: 1 })
+    updateGroup.mockResolvedValue(group)
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.findAll('button').find(button => button.text() === 'common.edit')!.trigger('click')
+    await flushPromises()
+    const toggle = wrapper.get('[data-testid="edit-group-account-error-failover"]')
+    expect(toggle.attributes('aria-checked')).toBe(String(enabled))
+    await toggle.trigger('click')
+    await wrapper.get('#edit-group-form').trigger('submit')
+    await flushPromises()
+    expect(updateGroup).toHaveBeenCalledWith(42, expect.objectContaining({ account_error_failover_enabled: !enabled }))
+    wrapper.unmount()
+  })
+
+  it.each([false, true])('defaults new group retries to off and saves in simple mode %s', async (simpleMode) => {
+    authState.isSimpleMode = simpleMode
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.findAll('button').find(button => button.text().includes('admin.groups.createGroup'))!.trigger('click')
+    await flushPromises()
+    const toggle = wrapper.get('[data-testid="create-group-account-error-failover"]')
+    expect(toggle.attributes('aria-checked')).toBe('false')
+    await toggle.trigger('click')
+    const form = wrapper.get('#create-group-form')
+    await form.get('input[data-tour="group-form-name"]').setValue('Retry group')
+    await form.trigger('submit')
+    await flushPromises()
+    expect(adminAPI.groups.create).toHaveBeenCalledWith(expect.objectContaining({ account_error_failover_enabled: true }))
+    wrapper.unmount()
+  })
+
+  it.each([false, true])('loads and saves reference sizing when the saved switch is %s', async (enabled) => {
+    const group = { ...sourceGroup, allow_image_generation: true, image_auto_size_from_reference: enabled }
+    listGroups.mockResolvedValue({ items: [group], total: 1, page: 1, page_size: 20, pages: 1 })
+    updateGroup.mockResolvedValue(group)
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.findAll('button').find(button => button.text() === 'common.edit')!.trigger('click')
+    await flushPromises()
+    const checkbox = wrapper.get<HTMLInputElement>('#edit-group-image-auto-size-from-reference')
+    expect(checkbox.element.checked).toBe(enabled)
+    await checkbox.setValue(!enabled)
+    await wrapper.get('#edit-group-form').trigger('submit')
+    await flushPromises()
+    expect(updateGroup).toHaveBeenCalledWith(42, expect.objectContaining({ image_auto_size_from_reference: !enabled }))
+    wrapper.unmount()
+  })
+
+  it('hides advanced group actions in simple mode', async () => {
+    authState.isSimpleMode = true
+    const compositeGroup = { ...sourceGroup, platform: 'composite' }
+    listGroups.mockResolvedValueOnce({ items: [compositeGroup], total: 1, page: 1, page_size: 20, pages: 1 })
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="group-duplicate"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="group-composite-routes"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="group-rate-multipliers"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="group-rpm-overrides"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('loads, edits and saves Anthropic thinking conversion scope', async () => {
+    const config = { enabled: true, all_models: false, models: ['claude-sonnet-5-5'] }
+    const group: AdminGroup = { ...sourceGroup, platform: 'anthropic', anthropic_thinking_compat: config }
+    listGroups.mockResolvedValue({ items: [group], total: 1, page: 1, page_size: 20, pages: 1 })
+    updateGroup.mockResolvedValue(group)
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.findAll('button').find(button => button.text() === 'common.edit')!.trigger('click')
+    await flushPromises()
+    const field = wrapper.findComponent(AnthropicThinkingCompatField)
+    expect(field.props('modelValue')).toEqual(config)
+    await field.get('textarea').setValue('claude-sonnet-*\nclaude-opus-*')
+    await flushPromises()
+    await wrapper.get('#edit-group-form').trigger('submit')
+    await flushPromises()
+    expect(updateGroup).toHaveBeenCalledWith(42, expect.objectContaining({
+      anthropic_thinking_compat: { enabled: true, all_models: false, models: ['claude-sonnet-*', 'claude-opus-*'] },
+    }))
+    expect(config.models).toEqual(['claude-sonnet-5-5'])
+    wrapper.unmount()
+  })
+
+  it('creates an Anthropic group with conversion enabled for all models', async () => {
+    vi.mocked(adminAPI.groups.create).mockResolvedValue(sourceGroup)
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.findAll('button').find(button => button.text() === 'admin.groups.createGroup')!.trigger('click')
+    await flushPromises()
+    const field = wrapper.findComponent(AnthropicThinkingCompatField)
+    expect(field.exists()).toBe(true)
+    expect(field.props('modelValue')).toEqual({ enabled: false, all_models: true, models: [] })
+    await field.get('button[role=switch]').trigger('click')
+    await wrapper.get('#create-group-form input[data-tour="group-form-name"]').setValue('Thinking group')
+    await wrapper.get('#create-group-form').trigger('submit')
+    await flushPromises()
+    expect(adminAPI.groups.create).toHaveBeenCalledWith(expect.objectContaining({
+      anthropic_thinking_compat: { enabled: true, all_models: true, models: [] },
+    }))
+    wrapper.unmount()
+  })
+
+  it('preserves legacy Anthropic groups as conversion disabled', async () => {
+    const group: AdminGroup = { ...sourceGroup, platform: 'anthropic' }
+    listGroups.mockResolvedValue({ items: [group], total: 1, page: 1, page_size: 20, pages: 1 })
+    updateGroup.mockResolvedValue(group)
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.findAll('button').find(button => button.text() === 'common.edit')!.trigger('click')
+    await flushPromises()
+    expect(wrapper.findComponent(AnthropicThinkingCompatField).props('modelValue').enabled).toBe(false)
+    await wrapper.get('#edit-group-form').trigger('submit')
+    await flushPromises()
+    expect(updateGroup).toHaveBeenCalledWith(42, expect.objectContaining({ anthropic_thinking_compat: { enabled: false, all_models: true, models: [] } }))
     wrapper.unmount()
   })
 
@@ -270,4 +542,175 @@ describe('GroupsView duplicate action', () => {
     expect(showError).not.toHaveBeenCalledWith('admin.groups.duplicateFailed')
     wrapper.unmount()
   })
+
+  it('shows the standardized API message when updating a group fails', async () => {
+    updateGroup.mockRejectedValueOnce({
+      status: 409,
+      code: 409,
+      message: 'group name already exists',
+      reason: 'GROUP_EXISTS'
+    })
+    const wrapper = mountView()
+    await flushPromises()
+
+    const editButton = wrapper.findAll('button').find((button) => button.text() === 'common.edit')
+    expect(editButton).toBeTruthy()
+    await editButton!.trigger('click')
+    await flushPromises()
+    await wrapper.get('#edit-group-form').trigger('submit')
+    await flushPromises()
+
+    expect(updateGroup).toHaveBeenCalledTimes(1)
+    expect(showError).toHaveBeenCalledWith('group name already exists')
+    wrapper.unmount()
+  })
+
+  it('edits Gemini Google Search per-call pricing and sends the per-1000 API value', async () => {
+    const group = { ...sourceGroup, platform: 'gemini', search_price_per_1k: 19.6, rate_multiplier: 1.75 }
+    listGroups.mockResolvedValue({ items: [group], total: 1, page: 1, page_size: 20, pages: 1 })
+    updateGroup.mockResolvedValue(group)
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.findAll('button').find(button => button.text() === 'common.edit')!.trigger('click')
+    await flushPromises()
+    const price = wrapper.get<HTMLInputElement>('[data-testid="edit-google-search-price"]')
+    expect(price.element.value).toBe('0.019600')
+    expect(wrapper.text()).toContain('$0.034300')
+    await price.setValue('0.02')
+    await wrapper.get('#edit-group-form').trigger('submit')
+    await flushPromises()
+    expect(updateGroup).toHaveBeenCalledWith(42, expect.objectContaining({ search_price_per_1k: 20 }))
+    await wrapper.findAll('button').find(button => button.text() === 'common.edit')!.trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="edit-google-search-price"]').setValue('')
+    await wrapper.get('#edit-group-form').trigger('submit')
+    await flushPromises()
+    expect(updateGroup).toHaveBeenLastCalledWith(42, expect.objectContaining({ search_price_per_1k: -1 }))
+    wrapper.unmount()
+  })
+
+  it('loads, edits, and saves custom reasoning multipliers for group pricing', async () => {
+    const group = {
+      ...sourceGroup,
+      model_pricing: [{
+        platform: 'openai', models: ['example-model'], billing_mode: 'token',
+        input_price: 3e-6, output_price: 15e-6, cache_write_price: null, cache_read_price: null,
+        image_input_price: null, image_output_price: null, per_request_price: null,
+        reasoning_effort_multipliers: { high: 1.5, max: 3 }, intervals: [], time_pricing: null,
+      }],
+    }
+    listGroups.mockResolvedValue({ items: [group], total: 1, page: 1, page_size: 20, pages: 1 })
+    updateGroup.mockResolvedValue(group)
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.findAll('button').find(button => button.text() === 'common.edit')!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get<HTMLInputElement>('[data-reasoning-effort="high"]').element.value).toBe('1.5')
+    await wrapper.get('[data-reasoning-effort="high"]').setValue('0.5')
+    await wrapper.get('[data-reasoning-effort="max"]').setValue('')
+    await wrapper.get('#edit-group-form').trigger('submit')
+    await flushPromises()
+    expect(updateGroup).toHaveBeenCalledWith(42, expect.objectContaining({
+      model_pricing: [expect.objectContaining({ reasoning_effort_multipliers: { high: 0.5 } })],
+    }))
+    wrapper.unmount()
+  })
+
+  it('blocks saving an invalid group reasoning multiplier and allows clearing it', async () => {
+    const group = {
+      ...sourceGroup,
+      model_pricing: [{
+        platform: 'openai', models: ['example-model'], billing_mode: 'token',
+        input_price: 3e-6, output_price: 15e-6, cache_write_price: null, cache_read_price: null,
+        image_input_price: null, image_output_price: null, per_request_price: null,
+        reasoning_effort_multipliers: { high: 1.5 }, intervals: [], time_pricing: null,
+      }],
+    }
+    listGroups.mockResolvedValue({ items: [group], total: 1, page: 1, page_size: 20, pages: 1 })
+    updateGroup.mockResolvedValue(group)
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.findAll('button').find(button => button.text() === 'common.edit')!.trigger('click')
+    await flushPromises()
+
+    await wrapper.get('[data-reasoning-effort="high"]').setValue('0')
+    await wrapper.get('#edit-group-form').trigger('submit')
+    expect(updateGroup).not.toHaveBeenCalled()
+    expect(showError).toHaveBeenCalledWith(expect.stringContaining('reasoningEffortMultiplierPositive'))
+
+    await wrapper.get('[data-testid="reasoning-effort-multipliers"] button').trigger('click')
+    await wrapper.get('#edit-group-form').trigger('submit')
+    await flushPromises()
+    expect(updateGroup).toHaveBeenCalledWith(42, expect.objectContaining({
+      model_pricing: [expect.objectContaining({ reasoning_effort_multipliers: null })],
+    }))
+    wrapper.unmount()
+  })
+
+  it('updates manifest controls immediately and submits the displayed selection', async () => {
+    vi.useFakeTimers()
+    vi.mocked(adminAPI.accounts.list).mockResolvedValue({
+      items: [{ id: 5, name: 'Manifest account' }]
+    } as never)
+    updateGroup.mockResolvedValue(sourceGroup)
+    const wrapper = mountView()
+    try {
+      await flushPromises()
+      const editButton = wrapper.findAll('button').find((button) => button.text() === 'common.edit')!
+      await editButton.trigger('click')
+      await flushPromises()
+
+      const toggle = wrapper.get('[data-testid="codex-manifest-toggle"]')
+      await toggle.trigger('click')
+      expect(toggle.attributes('aria-checked')).toBe('true')
+      const search = wrapper.get('[data-testid="codex-manifest-search"]')
+      await search.trigger('focus')
+      await vi.advanceTimersByTimeAsync(300)
+      await flushPromises()
+      expect(adminAPI.accounts.list).toHaveBeenCalledWith(
+        1, 20, { search: '', platform: 'openai', group: '42' }, expect.anything()
+      )
+      await wrapper.get('[data-testid="codex-manifest-dropdown"] button').trigger('click')
+      expect(wrapper.get('[data-testid="codex-manifest-selected-tags"]').text()).toContain('Manifest account')
+
+      await wrapper.get('[aria-label="remove account 5"]').trigger('click')
+      expect(wrapper.find('[data-testid="codex-manifest-selected-tags"]').exists()).toBe(false)
+      await wrapper.get('#edit-group-form').trigger('submit')
+      expect(updateGroup).not.toHaveBeenCalled()
+      expect(wrapper.find('[data-testid="codex-manifest-validation-error"]').exists()).toBe(true)
+
+      await search.trigger('focus')
+      await wrapper.get('[data-testid="codex-manifest-dropdown"] button').trigger('click')
+      expect(wrapper.get('[data-testid="codex-manifest-selected-tags"]').text()).toContain('Manifest account')
+      const fallback = wrapper.get('[data-testid="codex-manifest-fallback-toggle"]')
+      await fallback.trigger('click')
+      expect(fallback.attributes('aria-checked')).toBe('true')
+      await fallback.trigger('click')
+      expect(fallback.attributes('aria-checked')).toBe('false')
+      await fallback.trigger('click')
+
+      await toggle.trigger('click')
+      expect(wrapper.find('[data-testid="codex-manifest-search"]').exists()).toBe(false)
+      await toggle.trigger('click')
+      expect(wrapper.get('[data-testid="codex-manifest-selected-tags"]').text()).toContain('Manifest account')
+      await wrapper.get('#edit-group-form').trigger('submit')
+      await flushPromises()
+      expect(updateGroup).toHaveBeenCalledWith(42, expect.objectContaining({
+        codex_models_manifest_config: {
+          enabled: true, account_ids: [5], fallback_to_scheduler: true
+        }
+      }))
+
+      // Reopening reads the saved group afresh, without retaining the prior draft.
+      await editButton.trigger('click')
+      await flushPromises()
+      expect(wrapper.get('[data-testid="codex-manifest-toggle"]').attributes('aria-checked')).toBe('false')
+      expect(wrapper.find('[data-testid="codex-manifest-search"]').exists()).toBe(false)
+    } finally {
+      wrapper.unmount()
+      vi.useRealTimers()
+    }
+  })
+
 })

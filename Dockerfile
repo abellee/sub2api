@@ -8,7 +8,7 @@
 # =============================================================================
 
 ARG NODE_IMAGE=node:24-alpine
-ARG GOLANG_IMAGE=golang:1.26.5-alpine
+ARG GOLANG_IMAGE=golang:1.27.4-alpine
 ARG ALPINE_IMAGE=alpine:3.21
 ARG POSTGRES_IMAGE=postgres:18-alpine
 ARG GOPROXY=https://goproxy.cn,direct
@@ -70,15 +70,24 @@ RUN apk add --no-cache git ca-certificates tzdata
 
 WORKDIR /app/backend
 
+# lotteryd is a sibling Go module the backend imports via a replace directive
+# (recharge callback gRPC notifications).
+COPY lotteryd/go.mod lotteryd/go.sum /app/lotteryd/
+
 # Copy go mod files first (better caching)
 COPY backend/go.mod backend/go.sum ./
+COPY backend/audit-sdk/ ./audit-sdk/
+COPY backend/audit-sdk.lock.json ./audit-sdk.lock.json
+COPY backend/scripts/audit-sdk-manifest.go ./scripts/audit-sdk-manifest.go
+COPY backend/cost-guard-sdk/ ./cost-guard-sdk/
 # Cache mount keeps the module cache across builds so a transient CDN blip on
 # retry resumes instead of re-fetching every zip from scratch.
 RUN --mount=type=cache,id=sub2api-gomod,target=/go/pkg/mod \
-    go mod download
+    go mod download && go run ./scripts/audit-sdk-manifest.go
 
 # Copy backend source first
 COPY backend/ ./
+COPY lotteryd/ /app/lotteryd/
 
 # Copy frontend dist from previous stage (must be after backend copy to avoid being overwritten)
 COPY --from=frontend-builder /app/backend/internal/web/dist ./internal/web/dist
@@ -90,9 +99,10 @@ RUN --mount=type=cache,id=sub2api-gomod,target=/go/pkg/mod \
     VERSION_VALUE="${VERSION}" && \
     if [ -z "${VERSION_VALUE}" ]; then VERSION_VALUE="$(./scripts/resolve-version.sh)"; fi && \
     DATE_VALUE="${DATE:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}" && \
+    SDK_COMMIT="$(go run ./scripts/audit-sdk-manifest.go)" && \
     CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build \
     -tags embed \
-    -ldflags="-s -w -X main.Version=${VERSION_VALUE} -X main.Commit=${COMMIT} -X main.Date=${DATE_VALUE} -X main.BuildType=release" \
+    -ldflags="-s -w -X main.Version=${VERSION_VALUE} -X main.Commit=${COMMIT} -X main.Date=${DATE_VALUE} -X main.BuildType=release -X github.com/Wei-Shaw/sub2api/audit-sdk/auditclient.Commit=${SDK_COMMIT} -X github.com/Wei-Shaw/sub2api/audit-sdk/auditclient.Dirty=false" \
     -trimpath \
     -o /app/sub2api \
     ./cmd/server

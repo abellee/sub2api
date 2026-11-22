@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -215,6 +216,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyWeChatConnectFrontendRedirectURL,
 		SettingKeyBackendModeEnabled,
 		SettingPaymentEnabled,
+		SettingBalancePayDisabled,
 		SettingKeyOIDCConnectEnabled,
 		SettingKeyOIDCConnectProviderName,
 		SettingKeyGitHubOAuthEnabled,
@@ -231,9 +233,16 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyChannelMonitorMode,
 		SettingKeyChannelMonitorDefaultIntervalSeconds,
 		SettingKeyChannelMonitorHideThroughput,
+		SettingKeyChannelMonitorShowQuota,
+		SettingKeyChannelMonitorHideUserRanking,
+		SettingKeyChannelMonitorVisibility,
 		SettingKeyAvailableChannelsEnabled,
+		SettingKeySubscriptionEnabled,
+		SettingKeyPublicTransitEnabled,
+		SettingKeyPublicTransitPageEnabled,
 		SettingKeyModelPlazaEnabled,
 		SettingKeyModelPlazaRequireAuth,
+		SettingKeyPluginManagementEnabled,
 		SettingKeyAffiliateEnabled,
 		SettingKeyRiskControlEnabled,
 		SettingKeyAllowUserViewErrorRequests,
@@ -341,7 +350,9 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		WeChatOAuthMPEnabled:                weChatMPEnabled,
 		WeChatOAuthMobileEnabled:            weChatMobileEnabled,
 		BackendModeEnabled:                  settings[SettingKeyBackendModeEnabled] == "true",
+		MCPEnabled:                          s.cfg != nil && s.cfg.MCP.Enabled(),
 		PaymentEnabled:                      settings[SettingPaymentEnabled] == "true",
+		PaymentBalanceDisabled:              settings[SettingBalancePayDisabled] == "true",
 		OIDCOAuthEnabled:                    oidcEnabled,
 		OIDCOAuthProviderName:               oidcProviderName,
 		GitHubOAuthEnabled:                  gitHubEnabled,
@@ -355,11 +366,19 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		ChannelMonitorMode:                   normalizeChannelMonitorMode(settings[SettingKeyChannelMonitorMode]),
 		ChannelMonitorDefaultIntervalSeconds: parseChannelMonitorInterval(settings[SettingKeyChannelMonitorDefaultIntervalSeconds]),
 		ChannelMonitorHideThroughput:         !isFalseSettingValue(settings[SettingKeyChannelMonitorHideThroughput]),
+		ChannelMonitorShowQuota:              settings[SettingKeyChannelMonitorShowQuota] == "true",
+		ChannelMonitorHideUserRanking:        isTrueSettingValue(settings[SettingKeyChannelMonitorHideUserRanking]),
+		ChannelMonitorVisibility:             normalizeChannelMonitorVisibility(settings[SettingKeyChannelMonitorVisibility]),
 
 		AvailableChannelsEnabled: settings[SettingKeyAvailableChannelsEnabled] == "true",
+		PublicTransitEnabled:     !isFalseSettingValue(settings[SettingKeyPublicTransitEnabled]),
+		PublicTransitPageEnabled: publicTransitPageEnabledFromSettings(settings),
 
-		ModelPlazaEnabled:     settings[SettingKeyModelPlazaEnabled] == "true",
-		ModelPlazaRequireAuth: settings[SettingKeyModelPlazaRequireAuth] == "true",
+		SubscriptionEnabled: !isFalseSettingValue(settings[SettingKeySubscriptionEnabled]),
+
+		ModelPlazaEnabled:       settings[SettingKeyModelPlazaEnabled] == "true",
+		ModelPlazaRequireAuth:   settings[SettingKeyModelPlazaRequireAuth] == "true",
+		PluginManagementEnabled: settings[SettingKeyPluginManagementEnabled] == "true",
 
 		AffiliateEnabled: settings[SettingKeyAffiliateEnabled] == "true",
 
@@ -422,6 +441,17 @@ type ChannelMonitorRuntime struct {
 	DefaultIntervalSeconds int
 	// HideThroughput: when true, user-facing V2 APIs omit RPM/TPM scale signals.
 	HideThroughput bool
+	// ShowQuota: when true, user-facing monitor views keep the quota/balance
+	// snapshots; otherwise the user handler strips them server-side.
+	// Parsed fail-closed (only literal "true" enables). Admin always sees them.
+	ShowQuota bool
+	// HideUserRanking: when true, user-facing V2 views hide the user ranking tab
+	// and the /users payload. Parsed fail-open (only literal "true" hides it).
+	HideUserRanking bool
+	// Visibility is "all" (default) or "selected". Admins ignore this.
+	Visibility string
+	// VisibleUserIDs is the allow-list used when Visibility is "selected".
+	VisibleUserIDs []int64
 }
 
 // ActiveProbesAllowed reports whether V1 active provider probes may run.
@@ -434,8 +464,83 @@ func (r ChannelMonitorRuntime) PassiveAggregationAllowed() bool {
 	return r.Enabled && r.Mode == ChannelMonitorModeV2
 }
 
+// VisibleToUser reports whether the user-facing channel status surface should
+// be shown to this caller. Admins always pass when the feature is enabled.
+func (r ChannelMonitorRuntime) VisibleToUser(userID int64, isAdmin bool) bool {
+	if !r.Enabled {
+		return false
+	}
+	if isAdmin {
+		return true
+	}
+	if r.Visibility == ChannelMonitorVisibilityAll {
+		return true
+	}
+	if userID <= 0 {
+		return false
+	}
+	for _, id := range r.VisibleUserIDs {
+		if id == userID {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeChannelMonitorVisibility(raw string) string {
+	if strings.EqualFold(strings.TrimSpace(raw), ChannelMonitorVisibilityAll) {
+		return ChannelMonitorVisibilityAll
+	}
+	return ChannelMonitorVisibilitySelected
+}
+
+func parseChannelMonitorVisibleUserIDs(raw string) []int64 {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || raw == "[]" {
+		return []int64{}
+	}
+	var ids []int64
+	if err := json.Unmarshal([]byte(raw), &ids); err != nil {
+		return []int64{}
+	}
+	return normalizeChannelMonitorVisibleUserIDs(ids)
+}
+
+func normalizeChannelMonitorVisibleUserIDs(ids []int64) []int64 {
+	if len(ids) == 0 {
+		return []int64{}
+	}
+	seen := make(map[int64]struct{}, len(ids))
+	out := make([]int64, 0, len(ids))
+	for _, id := range ids {
+		if id <= 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+		if len(out) >= ChannelMonitorVisibleUserIDsMax {
+			break
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out
+}
+
+func marshalChannelMonitorVisibleUserIDs(ids []int64) string {
+	normalized := normalizeChannelMonitorVisibleUserIDs(ids)
+	payload, err := json.Marshal(normalized)
+	if err != nil {
+		return "[]"
+	}
+	return string(payload)
+}
+
 // GetChannelMonitorRuntime reads the channel monitor feature flags directly from
-// the settings store. Fail-open: on error returns Enabled=true, Mode=v1, default interval.
+// the settings store. On error returns Enabled=true, Mode=v1, default interval,
+// and Visibility=selected so the user-facing surface stays fail-closed.
 func (s *SettingService) GetChannelMonitorRuntime(ctx context.Context) ChannelMonitorRuntime {
 	if s == nil || s.settingRepo == nil {
 		return ChannelMonitorRuntime{
@@ -443,6 +548,7 @@ func (s *SettingService) GetChannelMonitorRuntime(ctx context.Context) ChannelMo
 			Mode:                   defaultChannelMonitorMode,
 			DefaultIntervalSeconds: channelMonitorIntervalFallback,
 			HideThroughput:         true,
+			Visibility:             ChannelMonitorVisibilitySelected,
 		}
 	}
 	vals, err := s.settingRepo.GetMultiple(ctx, []string{
@@ -450,6 +556,10 @@ func (s *SettingService) GetChannelMonitorRuntime(ctx context.Context) ChannelMo
 		SettingKeyChannelMonitorMode,
 		SettingKeyChannelMonitorDefaultIntervalSeconds,
 		SettingKeyChannelMonitorHideThroughput,
+		SettingKeyChannelMonitorShowQuota,
+		SettingKeyChannelMonitorHideUserRanking,
+		SettingKeyChannelMonitorVisibility,
+		SettingKeyChannelMonitorVisibleUserIDs,
 	})
 	if err != nil {
 		return ChannelMonitorRuntime{
@@ -457,6 +567,7 @@ func (s *SettingService) GetChannelMonitorRuntime(ctx context.Context) ChannelMo
 			Mode:                   defaultChannelMonitorMode,
 			DefaultIntervalSeconds: channelMonitorIntervalFallback,
 			HideThroughput:         true,
+			Visibility:             ChannelMonitorVisibilitySelected,
 		}
 	}
 	return ChannelMonitorRuntime{
@@ -464,7 +575,21 @@ func (s *SettingService) GetChannelMonitorRuntime(ctx context.Context) ChannelMo
 		Mode:                   normalizeChannelMonitorMode(vals[SettingKeyChannelMonitorMode]),
 		DefaultIntervalSeconds: parseChannelMonitorInterval(vals[SettingKeyChannelMonitorDefaultIntervalSeconds]),
 		HideThroughput:         !isFalseSettingValue(vals[SettingKeyChannelMonitorHideThroughput]),
+		ShowQuota:              vals[SettingKeyChannelMonitorShowQuota] == "true",
+		HideUserRanking:        isTrueSettingValue(vals[SettingKeyChannelMonitorHideUserRanking]),
+		Visibility:             normalizeChannelMonitorVisibility(vals[SettingKeyChannelMonitorVisibility]),
+		VisibleUserIDs:         parseChannelMonitorVisibleUserIDs(vals[SettingKeyChannelMonitorVisibleUserIDs]),
 	}
+}
+
+// ApplyChannelMonitorPublicVisibility sets the per-caller channel_monitor_visible
+// flag. The global channel_monitor_enabled switch is left unchanged so admin
+// nav and feature-on semantics stay independent of the user allow-list.
+func (s *SettingService) ApplyChannelMonitorPublicVisibility(ctx context.Context, settings *PublicSettings, userID int64, isAdmin bool) {
+	if settings == nil {
+		return
+	}
+	settings.ChannelMonitorVisible = s.GetChannelMonitorRuntime(ctx).VisibleToUser(userID, isAdmin)
 }
 
 // AvailableChannelsRuntime is the lightweight view of the available-channels feature
@@ -587,7 +712,9 @@ type PublicSettingsInjectionPayload struct {
 	GitHubOAuthEnabled                  bool                     `json:"github_oauth_enabled"`
 	GoogleOAuthEnabled                  bool                     `json:"google_oauth_enabled"`
 	BackendModeEnabled                  bool                     `json:"backend_mode_enabled"`
+	MCPEnabled                          bool                     `json:"mcp_enabled"`
 	PaymentEnabled                      bool                     `json:"payment_enabled"`
+	PaymentBalanceDisabled              bool                     `json:"payment_balance_disabled"`
 	Version                             string                   `json:"version"`
 	// 服务器全局时区（IANA 名称与当前 UTC 偏移），高峰时段等服务端本地时间窗口的展示标注用
 	ServerTimezone              string  `json:"server_timezone"`
@@ -606,12 +733,27 @@ type PublicSettingsInjectionPayload struct {
 	// ChannelMonitorHideThroughput is public so the user UI can hide RPM/TPM
 	// without waiting for API redaction alone (defense in depth).
 	ChannelMonitorHideThroughput bool `json:"channel_monitor_hide_throughput"`
-	AvailableChannelsEnabled     bool `json:"available_channels_enabled"`
-	ModelPlazaEnabled            bool `json:"model_plaza_enabled"`
-	ModelPlazaRequireAuth        bool `json:"model_plaza_require_auth"`
-	AffiliateEnabled             bool `json:"affiliate_enabled"`
-	RiskControlEnabled           bool `json:"risk_control_enabled"`
-	AllowUserViewErrorRequests   bool `json:"allow_user_view_error_requests"`
+	// ChannelMonitorShowQuota gates the user-facing quota/balance display on
+	// monitors; fail-closed (absent/false = hidden). Admin UI always shows it.
+	// ChannelMonitorHideUserRanking hides the user ranking tab and /users payload
+	// from non-admin channel-monitor v2 viewers; default false (visible).
+	ChannelMonitorHideUserRanking bool `json:"channel_monitor_hide_user_ranking"`
+	ChannelMonitorShowQuota       bool `json:"channel_monitor_show_quota"`
+	// ChannelMonitorVisibility is the public mode without allow-list IDs.
+	ChannelMonitorVisibility string `json:"channel_monitor_visibility"`
+	// ChannelMonitorVisible is the per-caller result of VisibleToUser.
+	// SSR injection is anonymous, so selected-mode is false until /settings/public is fetched with a JWT.
+	ChannelMonitorVisible      bool `json:"channel_monitor_visible"`
+	AvailableChannelsEnabled   bool `json:"available_channels_enabled"`
+	SubscriptionEnabled        bool `json:"subscription_enabled"`
+	PublicTransitEnabled       bool `json:"public_transit_enabled"`
+	PublicTransitPageEnabled   bool `json:"public_transit_page_enabled"`
+	ModelPlazaEnabled          bool `json:"model_plaza_enabled"`
+	ModelPlazaRequireAuth      bool `json:"model_plaza_require_auth"`
+	PluginManagementEnabled    bool `json:"plugin_management_enabled"`
+	AffiliateEnabled           bool `json:"affiliate_enabled"`
+	RiskControlEnabled         bool `json:"risk_control_enabled"`
+	AllowUserViewErrorRequests bool `json:"allow_user_view_error_requests"`
 }
 
 // GetPublicSettingsForInjection returns public settings in a format suitable for HTML injection.
@@ -621,6 +763,10 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 	if err != nil {
 		return nil, err
 	}
+	// SSR HTML is anonymous and cached; selected-mode sets
+	// channel_monitor_visible=false so the user nav does not flash.
+	// channel_monitor_enabled stays the global switch.
+	s.ApplyChannelMonitorPublicVisibility(ctx, settings, 0, false)
 
 	return &PublicSettingsInjectionPayload{
 		RegistrationEnabled:                 settings.RegistrationEnabled,
@@ -672,7 +818,9 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		GitHubOAuthEnabled:                  settings.GitHubOAuthEnabled,
 		GoogleOAuthEnabled:                  settings.GoogleOAuthEnabled,
 		BackendModeEnabled:                  settings.BackendModeEnabled,
+		MCPEnabled:                          settings.MCPEnabled,
 		PaymentEnabled:                      settings.PaymentEnabled,
+		PaymentBalanceDisabled:              settings.PaymentBalanceDisabled,
 		Version:                             s.version,
 		ServerTimezone:                      timezone.Name(),
 		ServerUTCOffset:                     timezone.UTCOffset(),
@@ -685,9 +833,17 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		ChannelMonitorMode:                   settings.ChannelMonitorMode,
 		ChannelMonitorDefaultIntervalSeconds: settings.ChannelMonitorDefaultIntervalSeconds,
 		ChannelMonitorHideThroughput:         settings.ChannelMonitorHideThroughput,
+		ChannelMonitorShowQuota:              settings.ChannelMonitorShowQuota,
+		ChannelMonitorHideUserRanking:        settings.ChannelMonitorHideUserRanking,
+		ChannelMonitorVisibility:             settings.ChannelMonitorVisibility,
+		ChannelMonitorVisible:                settings.ChannelMonitorVisible,
 		AvailableChannelsEnabled:             settings.AvailableChannelsEnabled,
+		SubscriptionEnabled:                  settings.SubscriptionEnabled,
+		PublicTransitEnabled:                 settings.PublicTransitEnabled,
+		PublicTransitPageEnabled:             settings.PublicTransitPageEnabled,
 		ModelPlazaEnabled:                    settings.ModelPlazaEnabled,
 		ModelPlazaRequireAuth:                settings.ModelPlazaRequireAuth,
+		PluginManagementEnabled:              settings.PluginManagementEnabled,
 		AffiliateEnabled:                     settings.AffiliateEnabled,
 		RiskControlEnabled:                   settings.RiskControlEnabled,
 		AllowUserViewErrorRequests:           settings.AllowUserViewErrorRequests,

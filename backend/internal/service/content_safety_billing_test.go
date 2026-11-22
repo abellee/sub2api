@@ -1,0 +1,314 @@
+package service
+
+import (
+	"context"
+	"errors"
+	"math"
+	"path/filepath"
+	"sync"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
+
+type safetyBillingFake struct {
+	mu       sync.Mutex
+	commands map[string]UsageBillingCommand
+	attempts int
+	fail     bool
+	loseAck  bool
+	balance  float64
+}
+
+func (b *safetyBillingFake) Apply(_ context.Context, cmd *UsageBillingCommand) (*UsageBillingApplyResult, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.attempts++
+	if b.fail {
+		return nil, errors.New("database offline")
+	}
+	cmd.Normalize()
+	if _, exists := b.commands[cmd.RequestID]; exists {
+		return &UsageBillingApplyResult{Applied: false}, nil
+	}
+	if b.commands == nil {
+		b.commands = map[string]UsageBillingCommand{}
+	}
+	b.commands[cmd.RequestID] = *cmd
+	b.balance -= cmd.BalanceCost
+	if b.loseAck {
+		b.loseAck = false
+		return nil, errors.New("commit acknowledgement lost")
+	}
+	return &UsageBillingApplyResult{Applied: true}, nil
+}
+
+type safetyUsageFake struct {
+	mu    sync.Mutex
+	logs  []UsageLog
+	fail  bool
+	calls int
+}
+
+func (u *safetyUsageFake) Create(_ context.Context, log *UsageLog) (bool, error) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	u.calls++
+	if u.fail {
+		return false, errors.New("usage log offline")
+	}
+	for _, existing := range u.logs {
+		if existing.RequestID == log.RequestID && existing.APIKeyID == log.APIKeyID {
+			return false, nil
+		}
+	}
+	copied := *log
+	if log.BillingMode != nil {
+		mode := *log.BillingMode
+		copied.BillingMode = &mode
+	}
+	if log.UpstreamRequestID != nil {
+		upstream := *log.UpstreamRequestID
+		copied.UpstreamRequestID = &upstream
+	}
+	if log.AccountStatsCost != nil {
+		cost := *log.AccountStatsCost
+		copied.AccountStatsCost = &cost
+	}
+	u.logs = append(u.logs, copied)
+	return true, nil
+}
+
+func safetyTestConfig() ContentSafetyBillingConfig {
+	return ContentSafetyBillingConfig{Enabled: true, Amount: 0.125, MatchDescription: "Failed check: SAFETY_CHECK_TYPE_IMAGE", ClientMessage: "请求未通过内容安全检查"}
+}
+
+func newSafetyTestService(t *testing.T, billing *safetyBillingFake) *ContentSafetyBillingService {
+	t.Helper()
+	return openSafetyTestService(t, filepath.Join(t.TempDir(), "safety.sqlite"), billing, &safetyUsageFake{})
+}
+
+func openSafetyTestService(t *testing.T, path string, billing *safetyBillingFake, usage *safetyUsageFake) *ContentSafetyBillingService {
+	t.Helper()
+	s, err := OpenContentSafetyBilling(path, billing, usage, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, s.Close()) })
+	require.NoError(t, s.UpdateConfig(context.Background(), safetyTestConfig()))
+	return s
+}
+
+func TestContentSafetyBillingMatchAndValidation(t *testing.T) {
+	s := newSafetyTestService(t, &safetyBillingFake{})
+	ctx := context.Background()
+	for _, tc := range []struct {
+		name   string
+		status int
+		body   string
+		want   bool
+	}{
+		{"structured", 403, `{"error":{"message":"I'm sorry, I can't help with that request. Failed check: SAFETY_CHECK_TYPE_IMAGE"}}`, true},
+		{"escaped", 403, `{"error":{"message":"Failed check: SAFETY_CHECK_\u0054YPE_IMAGE"}}`, true},
+		{"plain text", 403, "Failed check: SAFETY_CHECK_TYPE_IMAGE", true},
+		{"native xai", 403, `{"code":"PermissionDenied","error":"I'm sorry, I can't help with that request. Failed check: SAFETY_CHECK_TYPE_IMAGE"}`, true},
+		{"json string", 403, `"Failed check: SAFETY_CHECK_TYPE_IMAGE"`, true},
+		{"different status", 400, `{"error":{"message":"Failed check: SAFETY_CHECK_TYPE_IMAGE"}}`, false},
+		{"successful", 200, `{"message":"Failed check: SAFETY_CHECK_TYPE_IMAGE"}`, false},
+		{"access denied", 403, `{"error":{"message":"permission denied"}}`, false},
+		{"unrelated metadata", 403, `{"error":{"message":"permission denied"},"metadata":"Failed check: SAFETY_CHECK_TYPE_IMAGE"}`, false},
+		{"case insensitive", 403, `{"message":"failed check: safety_check_type_image"}`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			config, err := s.Match(ctx, 33, tc.status, []byte(tc.body))
+			require.NoError(t, err)
+			require.Equal(t, tc.want, config != nil)
+		})
+	}
+	c := safetyTestConfig()
+	c.Enabled = false
+	require.NoError(t, s.UpdateConfig(ctx, c))
+	config, err := s.Match(ctx, 33, 403, []byte(c.MatchDescription))
+	require.NoError(t, err)
+	require.Nil(t, config)
+	for _, amount := range []float64{-1, 0, math.NaN(), math.Inf(1), 1000001, 0.000000001} {
+		c = safetyTestConfig()
+		c.Amount = amount
+		require.Error(t, c.Validate())
+	}
+	c = safetyTestConfig()
+	c.MatchDescription = "  "
+	require.Error(t, c.Validate())
+	c = safetyTestConfig()
+	c.ClientMessage = ""
+	require.Error(t, c.Validate())
+	c = safetyTestConfig()
+	c.Amount = 0.00000001
+	require.NoError(t, c.Validate())
+}
+
+func TestContentSafetyBillingConcurrentDebitOnceAndPagination(t *testing.T) {
+	b := &safetyBillingFake{balance: 1}
+	s := newSafetyTestService(t, b)
+	ctx := context.Background()
+	d := ContentSafetyDebit{ID: "one-request", UserID: 11, APIKeyID: 22, AccountID: 33, UpstreamRequestID: "xai-123"}
+	var wg sync.WaitGroup
+	errs := make(chan error, 20)
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func() { defer wg.Done(); errs <- s.Debit(ctx, d, safetyTestConfig()) }()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		require.NoError(t, err)
+	}
+	require.Len(t, b.commands, 1)
+	require.Equal(t, 0.875, b.balance)
+	page, err := s.Records(ctx, 1, 20)
+	require.NoError(t, err)
+	require.Equal(t, 1, page.Total)
+	require.Equal(t, "charged", page.Items[0].Status)
+	require.Equal(t, safetyTestConfig().MatchDescription, page.Items[0].Notes)
+	require.Equal(t, "xai-123", page.Items[0].UpstreamRequestID)
+	require.NotEmpty(t, page.Items[0].ChargedAt)
+	d.ID = "second-request"
+	require.NoError(t, s.Debit(ctx, d, safetyTestConfig()))
+	page, err = s.Records(ctx, 2, 1)
+	require.NoError(t, err)
+	require.Equal(t, 2, page.Total)
+	require.Len(t, page.Items, 1)
+	for _, cmd := range b.commands {
+		require.Zero(t, cmd.SubscriptionCost)
+		require.Zero(t, cmd.AccountQuotaCost)
+		require.Zero(t, cmd.APIKeyQuotaCost)
+	}
+}
+
+func TestContentSafetyBillingRecoveryAfterCommitAndRestart(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "safety.sqlite")
+	b := &safetyBillingFake{balance: 1, loseAck: true}
+	usage := &safetyUsageFake{}
+	s, err := OpenContentSafetyBilling(path, b, usage, nil)
+	require.NoError(t, err)
+	c := safetyTestConfig()
+	require.NoError(t, s.UpdateConfig(ctx, c))
+	d := ContentSafetyDebit{ID: "stable-money-event", UserID: 11, APIKeyID: 22, AccountID: 33}
+	require.Error(t, s.Debit(ctx, d, c))
+	require.Equal(t, 0.875, b.balance)
+	require.Empty(t, usage.logs)
+	page, err := s.Records(ctx, 1, 20)
+	require.NoError(t, err)
+	require.Equal(t, "pending", page.Items[0].Status)
+	require.NoError(t, s.Close())
+	s, err = OpenContentSafetyBilling(path, b, usage, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, s.Close()) })
+	persisted, err := s.Config(ctx)
+	require.NoError(t, err)
+	require.Equal(t, c, persisted)
+	// Config edits/disable cannot change the already journaled money event.
+	c.Enabled = false
+	c.Amount = 2
+	require.NoError(t, s.UpdateConfig(ctx, c))
+	require.NoError(t, s.Recover(ctx))
+	require.NoError(t, s.Recover(ctx))
+	require.Len(t, b.commands, 1)
+	require.Equal(t, 0.875, b.balance)
+	require.Equal(t, 2, b.attempts)
+	page, err = s.Records(ctx, 1, 20)
+	require.NoError(t, err)
+	require.Equal(t, "charged", page.Items[0].Status)
+	require.Equal(t, 0.125, page.Items[0].Amount)
+	require.Empty(t, page.Items[0].LastError)
+	require.Len(t, usage.logs, 1)
+	require.Equal(t, contentSafetyUsageRequestID("stable-money-event"), usage.logs[0].RequestID)
+}
+
+func TestContentSafetyBillingUsageRecordVisibleAndRetriedWithoutSecondCharge(t *testing.T) {
+	ctx := context.Background()
+	b := &safetyBillingFake{balance: 1}
+	usage := &safetyUsageFake{fail: true}
+	s := openSafetyTestService(t, filepath.Join(t.TempDir(), "safety.sqlite"), b, usage)
+	d := ContentSafetyDebit{ID: "visible-charge", UserID: 11, APIKeyID: 22, AccountID: 33, UpstreamRequestID: "xai-123"}
+	require.Error(t, s.Debit(ctx, d, safetyTestConfig()))
+	require.Equal(t, 0.875, b.balance)
+	require.Empty(t, usage.logs)
+	page, err := s.Records(ctx, 1, 20)
+	require.NoError(t, err)
+	require.Equal(t, "pending", page.Items[0].Status)
+	require.Contains(t, page.Items[0].LastError, "Usage record pending")
+
+	usage.fail = false
+	require.NoError(t, s.Recover(ctx))
+	require.NoError(t, s.Recover(ctx))
+	require.Len(t, b.commands, 1)
+	require.Equal(t, 0.875, b.balance)
+	require.Len(t, usage.logs, 1)
+	entry := usage.logs[0]
+	require.Equal(t, int64(11), entry.UserID)
+	require.Equal(t, int64(22), entry.APIKeyID)
+	require.Equal(t, ContentSafetyUsageModel, entry.Model)
+	require.Equal(t, ContentSafetyUsageModel, entry.RequestedModel)
+	require.Equal(t, ContentSafetyBillingMode, *entry.BillingMode)
+	require.Equal(t, RequestTypeCyberBlocked, entry.RequestType)
+	require.Equal(t, BillingTypeBalance, entry.BillingType)
+	require.Equal(t, 0.125, entry.ActualCost)
+	require.Equal(t, 0.125, entry.TotalCost)
+	require.Zero(t, entry.InputTokens)
+	require.Zero(t, entry.OutputTokens)
+	require.NotNil(t, entry.AccountStatsCost)
+	require.Zero(t, *entry.AccountStatsCost)
+	require.Equal(t, "xai-123", *entry.UpstreamRequestID)
+	require.Equal(t, contentSafetyUsageRequestID("visible-charge"), entry.RequestID)
+	page, err = s.Records(ctx, 1, 20)
+	require.NoError(t, err)
+	require.Equal(t, "charged", page.Items[0].Status)
+}
+
+func TestContentSafetyBillingRecoveryOnBalanceFailureAndCacheFailure(t *testing.T) {
+	ctx := context.Background()
+	b := &safetyBillingFake{balance: 0.01, fail: true}
+	s := newSafetyTestService(t, b)
+	d := ContentSafetyDebit{ID: "retry", UserID: 1, APIKeyID: 2, AccountID: 3}
+	require.Error(t, s.Debit(ctx, d, safetyTestConfig()))
+	require.Equal(t, 0.01, b.balance)
+	b.fail = false
+	s.invalidate = func(context.Context, int64) error { return errors.New("cache offline") }
+	require.NoError(t, s.Recover(ctx))
+	page, err := s.Records(ctx, 1, 20)
+	require.NoError(t, err)
+	require.Equal(t, "pending", page.Items[0].Status)
+	require.InDelta(t, -0.115, b.balance, 1e-8)
+	invalidated := int64(0)
+	s.invalidate = func(_ context.Context, id int64) error { invalidated = id; return nil }
+	require.NoError(t, s.Recover(ctx))
+	require.Equal(t, int64(1), invalidated)
+	require.Len(t, b.commands, 1)
+	require.InDelta(t, -0.115, b.balance, 1e-8)
+}
+
+func TestContentSafetyBillingRecoverLeavesAlreadyChargedRowsUntouched(t *testing.T) {
+	ctx := context.Background()
+	b := &safetyBillingFake{balance: 1}
+	usage := &safetyUsageFake{}
+	s := openSafetyTestService(t, filepath.Join(t.TempDir(), "safety.sqlite"), b, usage)
+	_, err := s.db.Exec(`INSERT INTO content_safety_debits
+		(id,user_id,api_key_id,account_id,upstream_request_id,amount_units,notes,client_message,status,created_at,charged_at)
+		VALUES('already-charged',11,22,33,'xai-old',12500000,'note','msg','charged','2026-10-24T00:00:00Z','2026-10-24T00:00:01Z')`)
+	require.NoError(t, err)
+
+	require.NoError(t, s.Recover(ctx))
+	require.Empty(t, usage.logs)
+	require.Zero(t, b.attempts)
+	require.Equal(t, float64(1), b.balance)
+}
+
+func TestContentSafetyBillingJournalFailureDoesNotDebit(t *testing.T) {
+	b := &safetyBillingFake{balance: 1}
+	s := newSafetyTestService(t, b)
+	_, err := s.db.Exec(`DROP TABLE content_safety_debits`)
+	require.NoError(t, err)
+	require.Error(t, s.Debit(context.Background(), ContentSafetyDebit{ID: "no-journal", UserID: 1, APIKeyID: 2, AccountID: 3}, safetyTestConfig()))
+	require.Zero(t, b.attempts)
+	require.Equal(t, float64(1), b.balance)
+}

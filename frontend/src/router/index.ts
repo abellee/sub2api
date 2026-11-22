@@ -13,6 +13,7 @@ import { useRoutePrefetch } from '@/composables/useRoutePrefetch'
 import { getSetupStatus } from '@/api/setup'
 import { resolveCompletedSetupRedirectPath } from './setupRedirect'
 import { resolveRouteDocumentTitle } from './title'
+import { isChannelMonitorVisibleToUser } from '@/utils/featureFlags'
 
 /**
  * Route definitions with lazy loading
@@ -33,7 +34,7 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/home',
     name: 'Home',
-    component: () => import('@/components/LlmFreeHomePage.vue'),
+    component: () => import('@/views/TokenFreeHomeView.vue'),
     meta: {
       requiresAuth: false,
       title: 'Claude、GPT、Gemini API 中转站'
@@ -42,8 +43,7 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/models',
     name: 'PublicModelPlaza',
-    component: () => import('@/components/LlmFreeHomePage.vue'),
-    props: { page: 'models' },
+    component: () => import('@/views/CustomModelPlazaView.vue'),
     meta: {
       requiresAuth: false,
       title: '模型广场 | OpenAI 与 Claude 官方 API 价格'
@@ -52,7 +52,7 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/login',
     name: 'Login',
-    component: () => import('@/views/auth/LoginView.vue'),
+    component: () => import('@/views/auth/AuthCanvasView.vue'),
     meta: {
       requiresAuth: false,
       title: 'Login',
@@ -62,7 +62,7 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/register',
     name: 'Register',
-    component: () => import('@/views/auth/RegisterView.vue'),
+    component: () => import('@/views/auth/AuthCanvasView.vue'),
     meta: {
       requiresAuth: false,
       title: 'Register',
@@ -185,6 +185,13 @@ const routes: RouteRecordRaw[] = [
       title: 'Legal Document'
     }
   },
+  {
+    path: '/public/transit',
+    name: 'PublicTransit',
+    component: () => import('@/views/public/PublicTransitView.vue'),
+    meta: { requiresAuth: false, title: 'Public Transit' }
+  },
+
   // ==================== User Routes ====================
   {
     path: '/',
@@ -193,7 +200,7 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/dashboard',
     name: 'Dashboard',
-    component: () => import('@/views/user/DashboardView.vue'),
+    component: () => import('@/views/user/DashboardStudioView.vue'),
     meta: {
       requiresAuth: true,
       requiresAdmin: false,
@@ -212,6 +219,24 @@ const routes: RouteRecordRaw[] = [
       title: 'API Keys',
       titleKey: 'keys.title',
       descriptionKey: 'keys.description'
+    }
+  },
+  {
+    path: '/media-library',
+    name: 'MediaLibrary',
+    component: () => import('@/views/user/MediaLibraryView.vue'),
+    meta: { requiresAuth: true, requiresAdmin: false, title: 'My Creations', titleKey: 'mediaLibrary.title', descriptionKey: 'mediaLibrary.description' }
+  },
+  {
+    path: '/docs/creative',
+    name: 'CreativeDocs',
+    component: () => import('@/views/user/CreativeDocsView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'Image & Video API Guide',
+      titleKey: 'creativeDocs.title',
+      descriptionKey: 'creativeDocs.description'
     }
   },
   {
@@ -237,6 +262,28 @@ const routes: RouteRecordRaw[] = [
       title: 'Usage Records',
       titleKey: 'usage.title',
       descriptionKey: 'usage.description'
+    }
+  },
+  {
+    path: '/lottery',
+    name: 'Lottery',
+    component: () => import('@/views/user/LotteryView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'Lottery',
+      titleKey: 'nav.lottery'
+    }
+  },
+  {
+    path: '/tasks',
+    name: 'TaskCenter',
+    component: () => import('@/views/user/TaskCenterView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'Task Center',
+      titleKey: 'nav.tasks'
     }
   },
   {
@@ -287,6 +334,51 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/app-center',
+    name: 'AppCenter',
+    component: () => import('@/views/user/AppCenterView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'App Center',
+      titleKey: 'nav.appCenter'
+    }
+  },
+  {
+    path: '/downgrade-radar',
+    name: 'DowngradeRadar',
+    component: () => import('@/views/user/DowngradeRadarView.vue'),
+    meta: {
+      requiresAuth: false,
+      requiresAdmin: false,
+      title: '降智雷达',
+      titleKey: 'nav.downgradeRadar'
+    }
+  },
+  {
+    path: '/settings/mcp',
+    name: 'MCP',
+    component: () => import('@/views/user/MCPView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'MCP Connection',
+      titleKey: 'mcp.title',
+      descriptionKey: 'mcp.description'
+    }
+  },
+  {
+    path: '/oauth/mcp/authorize',
+    name: 'MCPOAuthAuthorize',
+    component: () => import('@/views/auth/MCPOAuthAuthorizeView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'Authorize MCP Application',
+      titleKey: 'mcp.consentTitle'
+    }
+  },
+  {
     path: '/profile',
     name: 'Profile',
     component: () => import('@/views/user/ProfileView.vue'),
@@ -307,7 +399,8 @@ const routes: RouteRecordRaw[] = [
       requiresAdmin: false,
       title: 'My Subscriptions',
       titleKey: 'userSubscriptions.title',
-      descriptionKey: 'userSubscriptions.description'
+      descriptionKey: 'userSubscriptions.description',
+      requiresSubscription: true
     }
   },
   {
@@ -408,6 +501,24 @@ const routes: RouteRecordRaw[] = [
 
   // ==================== Admin Routes ====================
   {
+    path: '/admin/account-matching',
+    name: 'AdminAccountMatching',
+    component: () => import('@/views/admin/AccountMatchingView.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true, title: '账号匹配', titleKey: 'admin.accountMatching.title' }
+  },
+  {
+    path: '/admin/menu-management',
+    name: 'AdminMenuManagement',
+    component: () => import('@/views/admin/MenuManagementView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Menu Management',
+      titleKey: 'admin.menuManagement.title',
+      descriptionKey: 'admin.menuManagement.description'
+    }
+  },
+  {
     path: '/admin',
     redirect: '/admin/dashboard'
   },
@@ -424,6 +535,18 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/public-transit',
+    name: 'AdminPublicTransit',
+    component: () => import('@/views/admin/PublicTransitPreviewView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Public Transit Preview',
+      titleKey: 'publicTransit.title',
+      descriptionKey: 'publicTransit.subtitle'
+    }
+  },
+  {
     path: '/admin/ops',
     name: 'AdminOps',
     component: () => import('@/views/admin/ops/OpsDashboard.vue'),
@@ -434,6 +557,12 @@ const routes: RouteRecordRaw[] = [
       titleKey: 'admin.ops.title',
       descriptionKey: 'admin.ops.description'
     }
+  },
+  {
+    path: '/admin/log-collection',
+    name: 'AdminLogCollection',
+    component: () => import('@/views/admin/LogCollectionView.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true, title: 'Log collection', titleKey: 'admin.logCollection.title' }
   },
   {
     path: '/admin/audit-logs',
@@ -460,6 +589,24 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/ranking',
+    name: 'AdminRanking',
+    component: () => import('@/views/admin/RankingView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Leaderboard',
+      titleKey: 'admin.ranking.title',
+      descriptionKey: 'admin.ranking.description'
+    }
+  },
+  {
+    path: '/admin/documentation',
+    name: 'AdminDocumentation',
+    component: () => import('@/views/admin/DocumentationView.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true, title: '文档管理', titleKey: 'nav.documentation' }
+  },
+  {
     path: '/admin/groups',
     name: 'AdminGroups',
     component: () => import('@/views/admin/GroupsView.vue'),
@@ -469,6 +616,18 @@ const routes: RouteRecordRaw[] = [
       title: 'Group Management',
       titleKey: 'admin.groups.title',
       descriptionKey: 'admin.groups.description'
+    }
+  },
+  {
+    path: '/admin/group-categories',
+    name: 'AdminGroupCategories',
+    component: () => import('@/views/admin/GroupCategoriesView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Group Categories',
+      titleKey: 'admin.groups.categories.title',
+      descriptionKey: 'admin.groups.categories.description'
     }
   },
   {
@@ -500,12 +659,25 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/channels/visibility',
+    name: 'AdminChannelMonitorVisibility',
+    component: () => import('@/views/admin/ChannelMonitorVisibilityView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Channel Status Visibility',
+      titleKey: 'admin.channelMonitor.visibility.title',
+      descriptionKey: 'admin.channelMonitor.visibility.description'
+    }
+  },
+  {
     path: '/monitor',
     name: 'ChannelStatus',
     component: () => import('@/views/user/ChannelStatusView.vue'),
     meta: {
       requiresAuth: true,
       requiresAdmin: false,
+      requiresChannelMonitor: true,
       title: 'Channel Status',
       titleKey: 'nav.channelStatus'
     }
@@ -535,6 +707,54 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/plugins',
+    name: 'AdminPlugins',
+    component: () => import('@/views/admin/PluginsView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Plugin Management',
+      titleKey: 'admin.plugins.title',
+      descriptionKey: 'admin.plugins.description'
+    }
+  },
+  {
+    path: '/admin/app-catalog',
+    name: 'AdminAppCatalog',
+    component: () => import('@/views/admin/AppCatalogView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'App Catalog',
+      titleKey: 'admin.appCatalog.title',
+      descriptionKey: 'admin.appCatalog.description'
+    }
+  },
+  {
+    path: '/admin/media-service',
+    name: 'AdminMediaService',
+    component: () => import('@/views/admin/MediaServiceView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Image & Video Service',
+      titleKey: 'mediaService.title',
+      descriptionKey: 'mediaService.description'
+    }
+  },
+  {
+    path: '/admin/iq-detection',
+    name: 'AdminIQDetection',
+    component: () => import('@/views/admin/IqDetectionView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'IQ Detection',
+      titleKey: 'admin.iqDetection.title',
+      descriptionKey: 'admin.iqDetection.description'
+    }
+  },
+  {
     path: '/admin/announcements',
     name: 'AdminAnnouncements',
     component: () => import('@/views/admin/AnnouncementsView.vue'),
@@ -544,6 +764,18 @@ const routes: RouteRecordRaw[] = [
       title: 'Announcements',
       titleKey: 'admin.announcements.title',
       descriptionKey: 'admin.announcements.description'
+    }
+  },
+  {
+    path: '/admin/push-notifications',
+    name: 'AdminPushNotifications',
+    component: () => import('@/views/admin/PushNotificationsView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Push Notifications',
+      titleKey: 'admin.pushNotifications.title',
+      descriptionKey: 'admin.pushNotifications.description'
     }
   },
   {
@@ -568,6 +800,28 @@ const routes: RouteRecordRaw[] = [
       title: 'Redeem Code Management',
       titleKey: 'admin.redeem.title',
       descriptionKey: 'admin.redeem.description'
+    }
+  },
+  {
+    path: '/admin/lottery',
+    name: 'AdminLottery',
+    component: () => import('@/views/admin/LotteryAdminView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Lottery Management',
+      titleKey: 'nav.lotteryAdmin'
+    }
+  },
+  {
+    path: '/admin/tasks',
+    name: 'AdminTasks',
+    component: () => import('@/views/admin/TaskAdminView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Task Management',
+      titleKey: 'nav.tasksAdmin'
     }
   },
   {
@@ -605,6 +859,18 @@ const routes: RouteRecordRaw[] = [
       titleKey: 'admin.riskControl.title',
       descriptionKey: 'admin.riskControl.description',
       requiresRiskControl: true
+    }
+  },
+  {
+    path: '/admin/content-safety-billing',
+    name: 'AdminContentSafetyBilling',
+    component: () => import('@/views/admin/ContentSafetyBillingView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Content Safety Billing',
+      titleKey: 'admin.contentSafetyBilling.title',
+      descriptionKey: 'admin.contentSafetyBilling.description',
     }
   },
   {
@@ -748,7 +1014,7 @@ let authInitialized = false
 const navigationLoading = useNavigationLoadingState()
 // 延迟初始化预加载，传入 router 实例
 let routePrefetch: ReturnType<typeof useRoutePrefetch> | null = null
-const BACKEND_MODE_ALLOWED_PATHS = ['/login', '/key-usage', '/setup', '/payment/result', '/payment/airwallex', '/legal']
+const BACKEND_MODE_ALLOWED_PATHS = ['/login', '/key-usage', '/setup', '/payment/result', '/payment/airwallex', '/legal', '/public/transit']
 const BACKEND_MODE_CALLBACK_PATHS = [
   '/auth/callback',
   '/auth/linuxdo/callback',
@@ -828,7 +1094,7 @@ router.beforeEach(async (to, _from, next) => {
       return
     }
     // Model Plaza:公开路由但受「启用开关 + 可选强制登录」双重控制(后端同口径 fail-closed)
-    if (to.path === '/model-plaza') {
+    if (to.path === '/model-plaza' || to.path === '/downgrade-radar') {
       if (!appStore.publicSettingsLoaded) {
         try {
           await appStore.fetchPublicSettings()
@@ -855,6 +1121,23 @@ router.beforeEach(async (to, _from, next) => {
       // Backend mode:登录的非管理员也不可见(匿名由下方公共拦截处理,广场不在白名单)
       if (appStore.backendModeEnabled && authStore.isAuthenticated && !authStore.isAdmin) {
         next('/login')
+        return
+      }
+    }
+    // Public transit: keep the API and the visual page independently
+    // configurable. Administrators can still open the public route while
+    // tuning it; anonymous and regular users are redirected when the page is
+    // explicitly disabled.
+    if (to.path === '/public/transit' && !authStore.isAdmin) {
+      if (!appStore.publicSettingsLoaded) {
+        try {
+          await appStore.fetchPublicSettings()
+        } catch (error) {
+          console.warn('Failed to load public transit settings in route guard', error)
+        }
+      }
+      if (appStore.publicSettingsLoaded && appStore.cachedPublicSettings?.public_transit_page_enabled === false) {
+        next(authStore.isAuthenticated ? '/dashboard' : '/home')
         return
       }
     }
@@ -905,7 +1188,7 @@ router.beforeEach(async (to, _from, next) => {
   // 公共设置可能尚未加载（App.vue 的 onMounted 异步拉取晚于首次导航，且纯静态部署
   // 无 __APP_CONFIG__ 注入）。此时 cachedPublicSettings 为空会把 payment/risk_control
   // 误判为“未启用”而错误拦截，故这里先确保设置加载完成。
-  if ((to.meta.requiresPayment || to.meta.requiresRiskControl) && !appStore.publicSettingsLoaded) {
+  if ((to.meta.requiresPayment || to.meta.requiresRiskControl || to.meta.requiresSubscription || to.meta.requiresChannelMonitor) && !appStore.publicSettingsLoaded) {
     try {
       await appStore.fetchPublicSettings()
     } catch (error) {
@@ -933,10 +1216,28 @@ router.beforeEach(async (to, _from, next) => {
     return
   }
 
+  // 订阅功能是 opt-out 开关：只有显式 false 才拦截「我的订阅」页直达。
+  if (
+    to.meta.requiresSubscription &&
+    appStore.publicSettingsLoaded &&
+    appStore.cachedPublicSettings?.subscription_enabled === false
+  ) {
+    next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
+    return
+  }
+
+  if (
+    to.meta.requiresChannelMonitor &&
+    appStore.publicSettingsLoaded &&
+    !isChannelMonitorVisibleToUser()
+  ) {
+    next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
+    return
+  }
+
   // 简易模式下限制访问某些页面
   if (authStore.isSimpleMode) {
     const restrictedPaths = [
-      '/admin/groups',
       '/admin/subscriptions',
       '/admin/redeem',
       '/subscriptions',

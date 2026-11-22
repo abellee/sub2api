@@ -1,0 +1,85 @@
+name: Release mediad
+
+on:
+  push:
+    tags:
+      - 'mediad-v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Independent media service version, for example 0.1.0'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: mediad-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: mediad/go.mod
+          cache: false
+      - name: Test media service
+        working-directory: mediad
+        run: go test ./... -count=1 -timeout=180s
+      - name: Resolve version
+        id: meta
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          VERSION="${REQUESTED_VERSION:-${GITHUB_REF_NAME#mediad-v}}"
+          VERSION="${VERSION#v}"
+          case "$VERSION" in ''|*[!0-9A-Za-z._-]*) exit 1;; esac
+          OWNER="$(printf '%s' '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "image=ghcr.io/$OWNER/sub2api-mediad" >> "$GITHUB_OUTPUT"
+      - name: Build standalone binaries
+        working-directory: mediad
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          mkdir -p ../mediad-dist
+          for ARCH in amd64 arm64; do
+            CGO_ENABLED=0 GOOS=linux GOARCH="$ARCH" go build -trimpath \
+              -ldflags="-s -w -X main.Version=$VERSION -X main.Commit=$GITHUB_SHA" \
+              -o mediad ./cmd/mediad
+            tar -czf "../mediad-dist/mediad_${VERSION}_linux_${ARCH}.tar.gz" mediad README.md
+          done
+          cd ../mediad-dist
+          sha256sum *.tar.gz > checksums.txt
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish independent image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.mediad
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }}
+            ${{ steps.meta.outputs.image }}:latest
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+            COMMIT=${{ github.sha }}
+      - name: Publish independent release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          gh release create "mediad-v${VERSION}" mediad-dist/* --target "$GITHUB_SHA" \
+            --title "mediad v${VERSION}" --notes 'Independent media relay. Files remain on mediad; billing and user download records remain on the main site.'

@@ -21,6 +21,7 @@ func RegisterAuthRoutes(
 	redisClient *redis.Client,
 	settingService *service.SettingService,
 	panelRateLimiter *servermiddleware.PanelRateLimiter,
+	optionalJWT servermiddleware.OptionalJWTAuthMiddleware,
 ) {
 	// 创建速率限制器
 	rateLimiter := middleware.NewRateLimiter(redisClient)
@@ -243,7 +244,11 @@ func RegisterAuthRoutes(
 	settings := v1.Group("/settings")
 	settings.Use(panelRateLimiter.PublicIP())
 	{
-		settings.GET("/public", h.Setting.GetPublicSettings)
+		if optionalJWT != nil {
+			settings.GET("/public", gin.HandlerFunc(optionalJWT), h.Setting.GetPublicSettings)
+		} else {
+			settings.GET("/public", h.Setting.GetPublicSettings)
+		}
 		settings.GET("/email-unsubscribe", h.Setting.UnsubscribeNotificationEmail)
 	}
 
@@ -253,6 +258,15 @@ func RegisterAuthRoutes(
 	}
 	if h.ModelPlaza != nil {
 		v1.GET("/model-plaza/public", panelRateLimiter.PublicIP(), h.ModelPlaza.GetPublic)
+	}
+	if h.Admin != nil && h.Admin.AppCatalog != nil {
+		v1.GET("/app-catalog", panelRateLimiter.PublicIP(), h.Admin.AppCatalog.ListPublic)
+	}
+	if h.Admin != nil && h.Admin.WechatGroupQR != nil {
+		community := v1.Group("/community/wechat-group-qr")
+		community.Use(panelRateLimiter.PublicIP())
+		community.GET("", h.Admin.WechatGroupQR.Get)
+		community.GET("/image", h.Admin.WechatGroupQR.ServeImage)
 	}
 
 	// 需要认证的当前用户信息

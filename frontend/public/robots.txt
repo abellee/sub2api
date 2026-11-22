@@ -1,7 +1,7 @@
 User-agent: *
 Allow: /home
 Allow: /assets/
-Allow: /llmfree/
+Allow: /tokenfree/
 
 Disallow: /api/
 Disallow: /v1/
@@ -21,4 +21,4 @@ Disallow: /available-channels
 Disallow: /key-usage
 Disallow: /setup
 
-Sitemap: https://llmfree.work/sitemap.xml
+Sitemap: https://tokenfree.dev/sitemap.xml

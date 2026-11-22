@@ -36,6 +36,11 @@ export default {
       maxResultsTooltipBody: 'Only the newest test results are kept. Once the number of saved results exceeds this value, older records are pruned automatically so the history list and storage stay under control.',
       maxResultsTooltipExample: 'For example, 100 means keeping at most the latest 100 test results. When the 101st result is saved, the oldest one is removed.',
       maxResultsTooltipRange: 'Recommended range: usually 20 to 200. Use 20-50 when you only care about recent health status, or 100-200 if you want a longer trend history.',
+      recoveryProbeInterval: 'Confirmation probe interval (seconds)',
+      recoveryProbeIntervalHelp: 'After the first success, wait this long before each of the 3 confirmation probes. Enter 1–3600 seconds; default: 3.',
+      recoveryProbeIntervalError: 'Enter a whole number between 1 and 3600',
+      recoverScheduling: 'Re-enable scheduling after recovery',
+      recoverSchedulingHelp: 'Configure probes on one account per upstream URL and API key. After the first success and 3 more consecutive successes, enable scheduling for matching accounts across platforms and groups. Skip accounts already enabled, inactive or expired. Tests send upstream requests and may incur charges.',
       autoRecover: 'Auto Recover',
       autoRecoverHelp: 'Automatically recover account from error/rate-limited state on successful test'
     },
@@ -329,6 +334,8 @@ export default {
       customExpiry: 'Custom',
       customExpiryDays: 'Custom days',
       expiryDaysRequired: 'Please enter a valid expiry day count',
+      expiryDateRequired: 'Please enter a valid expiry date and time',
+      localTimeZoneHint: 'Custom time is interpreted in your browser time zone ({timezone}).',
       groupRequired: 'Please select a subscription group',
       days: ' days',
       status: {
@@ -375,7 +382,13 @@ export default {
     announcements: {
       title: 'Announcements',
       description: 'Create announcements and target by conditions',
+      createFirstAnnouncement: 'No announcements yet. Create your first one.',
       createAnnouncement: 'Create Announcement',
+      groupNotify: 'Group notification',
+      groupNotifyHint: 'Available for active announcements. Sends immediately to all configured groups using the bot persona; future announcements are previews. Drafts and archived announcements are not sent.',
+      groupNotifyPending: 'Announcement created; group notification is incomplete. Retry without creating another announcement. Check group messages first if delivery is uncertain.',
+      groupNotifyRetry: 'Retry group notification',
+      groupNotifyFailed: 'Announcement created; group notification incomplete: {error}',
       editAnnouncement: 'Edit Announcement',
       deleteAnnouncement: 'Delete Announcement',
       searchAnnouncements: 'Search announcements...',
@@ -433,6 +446,8 @@ export default {
       timeImmediate: 'Immediate',
       timeNever: 'Never',
       readStatus: 'Read Status',
+      read: 'Read',
+      readCount: 'Read by {count} users',
       preview: 'Preview',
       eligible: 'Eligible',
       readAt: 'Read at',
@@ -505,6 +520,19 @@ export default {
       failedToLoadUsages: 'Failed to load usage records'
     },
 
+    ranking: {
+      title: 'Leaderboard',
+      description: 'Rank every user with usage in the selected time range',
+      metricLabel: 'Ranking metric',
+      metrics: {
+        tokens: 'Token Usage',
+        cost: 'Amount Spent'
+      },
+      tokenSubtitle: 'Token usage per user for the selected time range',
+      costSubtitle: 'Amount spent per user for the selected time range',
+      rangeHint: 'Select a user to view their usage details'
+    },
+
     // Usage Records
     usage: {
       title: 'Usage Records',
@@ -518,13 +546,17 @@ export default {
       account: 'Account',
       group: 'Group',
       requestId: 'Request ID',
+      upstreamRequestId: 'Upstream ID',
       requestIdCopied: 'Request ID copied',
+      upstreamRequestIdCopied: 'Upstream ID copied',
       allModels: 'All Models',
       allAccounts: 'All Accounts',
       allGroups: 'All Groups',
       allTypes: 'All Types',
       inputCost: 'Input Cost',
       outputCost: 'Output Cost',
+      longContext: 'Long context',
+      longContextPricingTooltip: 'Long-context pricing was applied. Input and output rates depend on the pricing tier, not a uniform multiplier.',
       cacheCreationCost: 'Cache Creation Cost',
       cacheReadCost: 'Cache Read Cost',
       inputTokens: 'Input Tokens',
@@ -543,12 +575,15 @@ export default {
       billingModePerRequest: 'Per Request',
       billingModeImage: 'Image',
       billingModeVideo: 'Video',
+      billingModeContentSafety: 'Content safety',
       allBillingModes: 'All Billing Modes',
 	  upstreamModelAudit: 'Upstream model audit',
 	  allUpstreamModelAudit: 'All response model states',
 	  upstreamModelMismatchOnly: 'Mismatched only',
 	  upstreamModelMatchedOnly: 'Matched only',
       ipAddress: 'IP',
+      upstreamMultiplier: 'Upstream rate',
+      apiAddress: 'API URL',
       clickToViewBalance: 'Click to view balance history',
       failedToLoadUser: 'Failed to load user info',
       userDeletedBadge: 'Deleted',
@@ -556,6 +591,8 @@ export default {
         subtitle: 'Per-user token usage for the current filters and time range',
         rowHint: "Click to view this user's usage details",
         userCount: '{count} users',
+        totalTokens: 'Total tokens: {value}',
+        totalCost: 'Total amount consumed: {value}',
         columns: {
           user: 'User',
           requests: 'Requests',

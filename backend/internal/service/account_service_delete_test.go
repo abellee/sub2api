@@ -79,11 +79,11 @@ func (s *accountRepoStub) List(ctx context.Context, params pagination.Pagination
 	panic("unexpected List call")
 }
 
-func (s *accountRepoStub) ListAllWithFilters(context.Context, string, string, string, string, int64, string) ([]Account, error) {
+func (s *accountRepoStub) ListAllWithFilters(context.Context, string, string, string, string, int64, string, string) ([]Account, error) {
 	return nil, nil
 }
 
-func (s *accountRepoStub) ListWithFilters(ctx context.Context, params pagination.PaginationParams, platform, accountType, status, search string, groupID int64, privacyMode string) ([]Account, *pagination.PaginationResult, error) {
+func (s *accountRepoStub) ListWithFilters(ctx context.Context, params pagination.PaginationParams, platform, accountType, status, search string, groupID int64, privacyMode string, baseURL string) ([]Account, *pagination.PaginationResult, error) {
 	panic("unexpected ListWithFilters call")
 }
 
@@ -195,6 +195,10 @@ func (s *accountRepoStub) ClearModelRateLimits(ctx context.Context, id int64) er
 	panic("unexpected ClearModelRateLimits call")
 }
 
+func (s *accountRepoStub) ClearModelRateLimit(ctx context.Context, id int64, scope string) error {
+	panic("unexpected ClearModelRateLimit call")
+}
+
 func (s *accountRepoStub) UpdateSessionWindow(ctx context.Context, id int64, start, end *time.Time, status string) error {
 	panic("unexpected UpdateSessionWindow call")
 }
@@ -215,7 +219,7 @@ func (s *accountRepoStub) IncrementQuotaUsed(ctx context.Context, id int64, amou
 	return nil
 }
 
-func (s *accountRepoStub) ResetQuotaUsed(ctx context.Context, id int64) error {
+func (s *accountRepoStub) ResetQuotaUsedAndClearRateLimitCooldown(ctx context.Context, id int64) error {
 	return nil
 }
 

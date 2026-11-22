@@ -4,8 +4,10 @@
  */
 
 import { apiClient } from '../client'
+import type { OpenAIReferralRefreshResult, OpenAIReferralSendResult } from '@/types/openaiReferrals'
 import type {
   Account,
+  AccountListItem,
   CreateAccountRequest,
   UpdateAccountRequest,
   PaginatedResponse,
@@ -23,8 +25,14 @@ import type {
   CheckMixedChannelResponse,
   UpstreamBillingProbeResult,
   UpstreamBillingProbeSettings,
+  UpstreamBillingRatesResponse,
   OllamaCloudUsageSettings,
-  OllamaCloudUsageState
+  OllamaCloudUsageState,
+  GrokMediaEligibilityMode,
+  GrokMediaEligibilityState,
+  GrokModelDiagnostics,
+  OpenCodeGoUsageSettings,
+  OpenCodeGoUsageState
 } from '@/types'
 
 /**
@@ -44,6 +52,7 @@ export async function list(
     group?: string
     search?: string
     privacy_mode?: string
+    base_url?: string
     lite?: string
     include_scheduler_score?: string
     sort_by?: string
@@ -52,8 +61,8 @@ export async function list(
   options?: {
     signal?: AbortSignal
   }
-): Promise<PaginatedResponse<Account>> {
-  const { data } = await apiClient.get<PaginatedResponse<Account>>('/admin/accounts', {
+): Promise<PaginatedResponse<AccountListItem>> {
+  const { data } = await apiClient.get<PaginatedResponse<AccountListItem>>('/admin/accounts', {
     params: {
       page,
       page_size: pageSize,
@@ -67,7 +76,47 @@ export async function list(
 export interface AccountListWithEtagResult {
   notModified: boolean
   etag: string | null
-  data: PaginatedResponse<Account> | null
+  data: PaginatedResponse<AccountListItem> | null
+}
+
+export interface AccountUpstreamBillingRatesWithEtagResult {
+  notModified: boolean
+  etag: string | null
+  data: UpstreamBillingRatesResponse | null
+}
+
+export async function getUpstreamBillingRatesWithEtag(
+  page: number = 1,
+  pageSize: number = 20,
+  filters?: {
+    platform?: string
+    type?: string
+    status?: string
+    group?: string
+    search?: string
+    privacy_mode?: string
+    base_url?: string
+    sort_by?: string
+    sort_order?: 'asc' | 'desc'
+  },
+  options?: {
+    signal?: AbortSignal
+    etag?: string | null
+  }
+): Promise<AccountUpstreamBillingRatesWithEtagResult> {
+  const headers: Record<string, string> = {}
+  if (options?.etag) headers['If-None-Match'] = options.etag
+
+  const response = await apiClient.get<UpstreamBillingRatesResponse>('/admin/accounts/upstream-billing-rates', {
+    params: { page, page_size: pageSize, ...filters },
+    headers,
+    signal: options?.signal,
+    validateStatus: (status) => (status >= 200 && status < 300) || status === 304
+  })
+
+  const etagHeader = typeof response.headers?.etag === 'string' ? response.headers.etag : null
+  if (response.status === 304) return { notModified: true, etag: etagHeader, data: null }
+  return { notModified: false, etag: etagHeader, data: response.data }
 }
 
 export async function listWithEtag(
@@ -80,6 +129,7 @@ export async function listWithEtag(
     group?: string
     search?: string
     privacy_mode?: string
+    base_url?: string
     lite?: string
     include_scheduler_score?: string
     sort_by?: string
@@ -95,7 +145,7 @@ export async function listWithEtag(
     headers['If-None-Match'] = options.etag
   }
 
-  const response = await apiClient.get<PaginatedResponse<Account>>('/admin/accounts', {
+  const response = await apiClient.get<PaginatedResponse<AccountListItem>>('/admin/accounts', {
     params: {
       page,
       page_size: pageSize,
@@ -147,13 +197,13 @@ export async function create(accountData: CreateAccountRequest): Promise<Account
  * @param id - Source account ID
  * @returns Newly created account
  */
-const duplicateOperationKeys = new Map<number, string>()
+const duplicateOperationKeys = new Map<number | string, string>()
 
-function duplicateOperationStorageKey(id: number): string {
+function duplicateOperationStorageKey(id: number | string): string {
   return `sub2api:admin:account-duplicate:${id}`
 }
 
-function getStoredDuplicateOperationKey(id: number): string | null {
+function getStoredDuplicateOperationKey(id: number | string): string | null {
   try {
     return globalThis.sessionStorage?.getItem(duplicateOperationStorageKey(id)) ?? null
   } catch {
@@ -161,7 +211,7 @@ function getStoredDuplicateOperationKey(id: number): string | null {
   }
 }
 
-function storeDuplicateOperationKey(id: number, key: string | null): void {
+function storeDuplicateOperationKey(id: number | string, key: string | null): void {
   try {
     if (key) globalThis.sessionStorage?.setItem(duplicateOperationStorageKey(id), key)
     else globalThis.sessionStorage?.removeItem(duplicateOperationStorageKey(id))
@@ -171,18 +221,28 @@ function storeDuplicateOperationKey(id: number, key: string | null): void {
 }
 
 export async function duplicate(id: number): Promise<Account> {
-  let idempotencyKey = duplicateOperationKeys.get(id) ?? getStoredDuplicateOperationKey(id)
+  return duplicateAccountRequest<Account>(id)
+}
+
+export async function batchDuplicate(id: number, count: number): Promise<Account[]> {
+  return duplicateAccountRequest<Account[]>(id, count)
+}
+
+async function duplicateAccountRequest<T>(id: number, count?: number): Promise<T> {
+  const operation = count === undefined ? id : `${id}:batch:${count}`
+  let idempotencyKey = duplicateOperationKeys.get(operation) ?? getStoredDuplicateOperationKey(operation)
   if (!idempotencyKey) {
     const requestID = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
-    idempotencyKey = `account-duplicate-${id}-${requestID}`
+    idempotencyKey = `account-duplicate-${operation}-${requestID}`
   }
-  duplicateOperationKeys.set(id, idempotencyKey)
-  storeDuplicateOperationKey(id, idempotencyKey)
-  const { data } = await apiClient.post<Account>(`/admin/accounts/${id}/duplicate`, undefined, {
+  duplicateOperationKeys.set(operation, idempotencyKey)
+  storeDuplicateOperationKey(operation, idempotencyKey)
+  const path = count === undefined ? 'duplicate' : 'batch-duplicate'
+  const { data } = await apiClient.post<T>(`/admin/accounts/${id}/${path}`, count === undefined ? undefined : { count }, {
     headers: { 'Idempotency-Key': idempotencyKey }
   })
-  duplicateOperationKeys.delete(id)
-  storeDuplicateOperationKey(id, null)
+  duplicateOperationKeys.delete(operation)
+  storeDuplicateOperationKey(operation, null)
   return data
 }
 
@@ -194,6 +254,24 @@ export async function duplicate(id: number): Promise<Account> {
  */
 export async function update(id: number, updates: UpdateAccountRequest): Promise<Account> {
   const { data } = await apiClient.put<Account>(`/admin/accounts/${id}`, updates)
+  return data
+}
+
+export async function getGrokMediaEligibility(id: number): Promise<GrokMediaEligibilityState> {
+  const { data } = await apiClient.get<GrokMediaEligibilityState>(
+    `/admin/accounts/${id}/grok-media-eligibility`
+  )
+  return data
+}
+
+export async function updateGrokMediaEligibility(
+  id: number,
+  mode: GrokMediaEligibilityMode
+): Promise<GrokMediaEligibilityState> {
+  const { data } = await apiClient.put<GrokMediaEligibilityState>(
+    `/admin/accounts/${id}/grok-media-eligibility`,
+    { mode }
+  )
   return data
 }
 
@@ -250,9 +328,13 @@ export async function testAccount(id: number): Promise<{
  * @param id - Account ID
  * @returns Updated account
  */
-export async function refreshCredentials(id: number): Promise<Account> {
-  const { data } = await apiClient.post<Account>(`/admin/accounts/${id}/refresh`)
-  return data
+export type RefreshCredentialsResult =
+  | { account: Account; message: string; warning: 'missing_project_id_temporary' }
+  | { account: Account; message?: never; warning?: never }
+
+export async function refreshCredentials(id: number): Promise<RefreshCredentialsResult> {
+  const { data } = await apiClient.post<Account | RefreshCredentialsResult>(`/admin/accounts/${id}/refresh`)
+  return 'account' in data ? data : { account: data }
 }
 
 /**
@@ -470,6 +552,7 @@ export async function bulkUpdate(
   failed: number
   success_ids?: number[]
   failed_ids?: number[]
+  long_context_inherited_count?: number
   results: Array<{ account_id: number; success: boolean; error?: string }>
   }> {
   const payload = Array.isArray(accountIdsOrPayload)
@@ -483,6 +566,7 @@ export async function bulkUpdate(
     failed: number
     success_ids?: number[]
     failed_ids?: number[]
+    long_context_inherited_count?: number
     results: Array<{ account_id: number; success: boolean; error?: string }>
   }>('/admin/accounts/bulk-update', payload)
   return data
@@ -539,6 +623,28 @@ export async function getAvailableModels(id: number): Promise<ClaudeModel[]> {
 
 export interface SyncUpstreamModelsResult {
   models: string[]
+  metadata?: Record<string, UpstreamModelMetadata>
+  warnings?: UpstreamModelSyncWarning[]
+  discovery_source?: 'upstream' | 'configured_fallback'
+  grok_model_diagnostics?: GrokModelDiagnostics
+}
+
+export interface UpstreamModelSyncWarning {
+  code: string
+  message: string
+}
+
+export interface UpstreamModelMetadata {
+  id: string
+  display_name?: string
+  description?: string
+  reasoning?: boolean
+  default_reasoning_level?: string
+  supported_reasoning_levels?: string[]
+  input_modalities?: string[]
+  context_window?: number
+  max_context_window?: number
+  max_output_tokens?: number
 }
 
 /**
@@ -556,6 +662,7 @@ export interface SyncUpstreamPreviewParams {
   type: string
   base_url?: string
   api_key: string
+  model_mapping?: Record<string, string>
 }
 
 /**
@@ -635,6 +742,7 @@ export async function exportData(options?: {
     status?: string
     group?: string
     privacy_mode?: string
+    base_url?: string
     search?: string
     sort_by?: string
     sort_order?: 'asc' | 'desc'
@@ -645,13 +753,14 @@ export async function exportData(options?: {
   if (options?.ids && options.ids.length > 0) {
     params.ids = options.ids.join(',')
   } else if (options?.filters) {
-    const { platform, type, status, group, privacy_mode, search, sort_by, sort_order } = options.filters
+    const { platform, type, status, group, privacy_mode, search, sort_by, sort_order, base_url } = options.filters
     if (platform) params.platform = platform
     if (type) params.type = type
     if (status) params.status = status
     if (group) params.group = group
     if (privacy_mode) params.privacy_mode = privacy_mode
     if (search) params.search = search
+    if (base_url?.trim()) params.base_url = base_url.trim()
     if (sort_by) params.sort_by = sort_by
     if (sort_order) params.sort_order = sort_order
   }
@@ -830,7 +939,14 @@ export interface OpenAIQuotaUsage {
   rate_limit?: OpenAIRateLimit | null
   additional_rate_limits?: OpenAIAdditionalRateLimit[]
   rate_limit_reset_credits?: OpenAIRateLimitResetCredits | null
+  credits?: OpenAICredits | null
   fetched_at: number
+}
+
+export interface OpenAICredits {
+  has_credits: boolean
+  unlimited: boolean
+  balance: string | null
 }
 
 export interface OpenAIQuotaResetCredit {
@@ -860,6 +976,7 @@ export interface OpenAIQuotaResetResult {
 /** Usage payload plus whether the reset-credit snapshot was persisted. */
 export interface OpenAIQuotaRefreshResult extends OpenAIQuotaUsage {
   cache_persisted: boolean
+  credits_cache_persisted?: boolean
 }
 
 /**
@@ -874,6 +991,23 @@ export interface OpenAIQuotaRefreshResult extends OpenAIQuotaUsage {
 export async function refreshOpenAIQuota(id: number): Promise<OpenAIQuotaRefreshResult> {
   const { data } = await apiClient.post<OpenAIQuotaRefreshResult>(
     `/admin/openai/accounts/${id}/quota/refresh`
+  )
+  return data
+}
+
+export async function refreshOpenAIReferrals(id: number): Promise<OpenAIReferralRefreshResult> {
+  const { data } = await apiClient.post<OpenAIReferralRefreshResult>(
+    `/admin/openai/accounts/${id}/referrals/refresh`
+  )
+  return data
+}
+
+export async function sendOpenAIReferralInvite(
+  id: number,
+  input: { email: string; program_id: string; confirmed: boolean }
+): Promise<OpenAIReferralSendResult> {
+  const { data } = await apiClient.post<OpenAIReferralSendResult>(
+    `/admin/openai/accounts/${id}/referrals/invite`, input, { timeout: 90_000 }
   )
   return data
 }
@@ -983,13 +1117,86 @@ export async function refreshOllamaCloudUsage(id: number): Promise<OllamaCloudUs
   return data
 }
 
+export async function getOpenCodeGoUsageSettings(): Promise<OpenCodeGoUsageSettings> {
+  const { data } = await apiClient.get<OpenCodeGoUsageSettings>('/admin/accounts/opencode-go-usage/settings')
+  return data
+}
+
+export async function updateOpenCodeGoUsageSettings(
+  settings: OpenCodeGoUsageSettings
+): Promise<OpenCodeGoUsageSettings> {
+  const { data } = await apiClient.put<OpenCodeGoUsageSettings>(
+    '/admin/accounts/opencode-go-usage/settings',
+    settings
+  )
+  return data
+}
+
+export async function getOpenCodeGoUsage(id: number): Promise<OpenCodeGoUsageState> {
+  const { data } = await apiClient.get<OpenCodeGoUsageState>(`/admin/accounts/${id}/opencode-go-usage`)
+  return data
+}
+
+export async function setOpenCodeGoUsageAutoRefresh(id: number, enabled: boolean): Promise<OpenCodeGoUsageState> {
+  const { data } = await apiClient.put<OpenCodeGoUsageState>(`/admin/accounts/${id}/opencode-go-usage/auto-refresh`, {
+    enabled
+  })
+  return data
+}
+
+export async function refreshOpenCodeGoUsage(id: number): Promise<OpenCodeGoUsageState> {
+  const { data } = await apiClient.post<OpenCodeGoUsageState>(`/admin/accounts/${id}/opencode-go-usage/refresh`)
+  return data
+}
+
+export interface APIAccountTotals {
+  requests: number
+  tokens: number
+  user_cost: number
+  account_cost: number
+  standard_cost: number
+  margin: number
+}
+
+export interface APIAccountSummary {
+  base_url: string
+  start_date: string
+  end_date: string
+  timezone: string
+  granularity: string
+  summary: APIAccountTotals
+  accounts: (APIAccountTotals & { account_id: number; name: string })[]
+  periods: (APIAccountTotals & { period: string })[]
+}
+
+export interface APIAccountSummaryParams {
+  base_url: string
+  start_date: string
+  end_date: string
+  timezone: string
+  granularity: 'hour' | 'day' | 'week' | 'month'
+}
+
+export async function getAPIAccountSummary(
+  params: APIAccountSummaryParams,
+  signal?: AbortSignal
+): Promise<APIAccountSummary> {
+  const { data } = await apiClient.get<APIAccountSummary>('/admin/accounts/api-summary', { params, signal })
+  return data
+}
+
 export const accountsAPI = {
+  getAPIAccountSummary,
   list,
   listWithEtag,
+  getUpstreamBillingRatesWithEtag,
   getById,
   create,
   duplicate,
+  batchDuplicate,
   update,
+  getGrokMediaEligibility,
+  updateGrokMediaEligibility,
   checkMixedChannelRisk,
   delete: deleteAccount,
   toggleStatus,
@@ -1043,7 +1250,12 @@ export const accountsAPI = {
   saveOllamaCloudUsageSession,
   deleteOllamaCloudUsageSession,
   setOllamaCloudUsageAutoRefresh,
-  refreshOllamaCloudUsage
+  refreshOllamaCloudUsage,
+  getOpenCodeGoUsageSettings,
+  updateOpenCodeGoUsageSettings,
+  getOpenCodeGoUsage,
+  setOpenCodeGoUsageAutoRefresh,
+  refreshOpenCodeGoUsage
 }
 
 export default accountsAPI

@@ -5,6 +5,7 @@ project_name: sub2api
 
 before:
   hooks:
+    - sh -c 'cd backend && go run ./scripts/audit-sdk-manifest.go'
     - go mod tidy -C backend
 
 builds:
@@ -25,6 +26,8 @@ builds:
       - -X main.Commit={{.Commit}}
       - -X main.Date={{.Date}}
       - -X main.BuildType=release
+      - -X github.com/Wei-Shaw/sub2api/audit-sdk/auditclient.Commit={{ .Env.AUDIT_SDK_COMMIT }}
+      - -X github.com/Wei-Shaw/sub2api/audit-sdk/auditclient.Dirty=false
 
 # 跳过 archives
 archives: []
@@ -47,6 +50,8 @@ dockers:
       - "ghcr.io/{{ .Env.GITHUB_REPO_OWNER_LOWER }}/sub2api:latest"
     dockerfile: Dockerfile.goreleaser
     use: buildx
+    ids:
+      - sub2api
     extra_files:
       - deploy/docker-entrypoint.sh
       - backend/resources

@@ -62,7 +62,7 @@
             </label>
             <Input
               v-model="newPlan.cron_expression"
-              :placeholder="'*/30 * * * *'"
+              :placeholder="'*/5 * * * *'"
               :hint="t('admin.scheduledTests.cronHelp')"
             />
           </div>
@@ -99,6 +99,26 @@
           <div class="flex items-end">
             <div>
               <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                <Toggle v-model="newPlan.recover_scheduling" />
+                {{ t('admin.scheduledTests.recoverScheduling') }}
+              </label>
+              <p class="mt-0.5 text-xs text-gray-400 dark:text-gray-500">
+                {{ t('admin.scheduledTests.recoverSchedulingHelp') }}
+              </p>
+            </div>
+          </div>
+          <Input
+            v-if="newPlan.recover_scheduling"
+            id="newPlan-recovery-probe-interval"
+            v-model="newPlan.recovery_probe_interval_seconds"
+            type="number"
+            :label="t('admin.scheduledTests.recoveryProbeInterval')"
+            :hint="t('admin.scheduledTests.recoveryProbeIntervalHelp')"
+            :error="validRecoveryProbeInterval(newPlan.recovery_probe_interval_seconds) ? '' : t('admin.scheduledTests.recoveryProbeIntervalError')"
+          />
+          <div v-if="!newPlan.recover_scheduling" class="flex items-end">
+            <div>
+              <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
                 <Toggle v-model="newPlan.auto_recover" />
                 {{ t('admin.scheduledTests.autoRecover') }}
               </label>
@@ -117,7 +137,7 @@
           </button>
           <button
             @click="handleCreate"
-            :disabled="!newPlan.model_id || !newPlan.cron_expression || creating"
+            :disabled="!newPlan.model_id || !newPlan.cron_expression || (newPlan.recover_scheduling && !validRecoveryProbeInterval(newPlan.recovery_probe_interval_seconds)) || creating"
             class="flex items-center gap-1.5 rounded-lg bg-primary-500 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-primary-600 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Icon v-if="creating" name="refresh" size="sm" class="animate-spin" :stroke-width="2" />
@@ -179,10 +199,10 @@
 
               <!-- Auto Recover Badge -->
               <span
-                v-if="plan.auto_recover"
+                v-if="plan.auto_recover || plan.recover_scheduling"
                 class="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400"
               >
-                {{ t('admin.scheduledTests.autoRecover') }}
+                {{ t(plan.recover_scheduling ? 'admin.scheduledTests.recoverScheduling' : 'admin.scheduledTests.autoRecover') }}
               </span>
             </div>
 
@@ -272,7 +292,7 @@
                 </label>
                 <Input
                   v-model="editForm.cron_expression"
-                  :placeholder="'*/30 * * * *'"
+                  :placeholder="'*/5 * * * *'"
                   :hint="t('admin.scheduledTests.cronHelp')"
                 />
               </div>
@@ -309,6 +329,26 @@
               <div class="flex items-end">
                 <div>
                   <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                    <Toggle v-model="editForm.recover_scheduling" />
+                    {{ t('admin.scheduledTests.recoverScheduling') }}
+                  </label>
+                  <p class="mt-0.5 text-xs text-gray-400 dark:text-gray-500">
+                    {{ t('admin.scheduledTests.recoverSchedulingHelp') }}
+                  </p>
+                </div>
+              </div>
+              <Input
+                v-if="editForm.recover_scheduling"
+                id="editForm-recovery-probe-interval"
+                v-model="editForm.recovery_probe_interval_seconds"
+                type="number"
+                :label="t('admin.scheduledTests.recoveryProbeInterval')"
+                :hint="t('admin.scheduledTests.recoveryProbeIntervalHelp')"
+                :error="validRecoveryProbeInterval(editForm.recovery_probe_interval_seconds) ? '' : t('admin.scheduledTests.recoveryProbeIntervalError')"
+              />
+              <div v-if="!editForm.recover_scheduling" class="flex items-end">
+                <div>
+                  <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
                     <Toggle v-model="editForm.auto_recover" />
                     {{ t('admin.scheduledTests.autoRecover') }}
                   </label>
@@ -327,7 +367,7 @@
               </button>
               <button
                 @click="handleEdit"
-                :disabled="!editForm.model_id || !editForm.cron_expression || updating"
+                :disabled="!editForm.model_id || !editForm.cron_expression || (editForm.recover_scheduling && !validRecoveryProbeInterval(editForm.recovery_probe_interval_seconds)) || updating"
                 class="flex items-center gap-1.5 rounded-lg bg-primary-500 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-primary-600 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Icon v-if="updating" name="refresh" size="sm" class="animate-spin" :stroke-width="2" />
@@ -463,7 +503,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch } from 'vue'
+import { ref, reactive, watch, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
@@ -497,6 +537,13 @@ const loadingResults = ref(false)
 const plans = ref<ScheduledTestPlan[]>([])
 const results = ref<ScheduledTestResult[]>([])
 const expandedPlanId = ref<number | null>(null)
+let resultsRequestId = 0
+watch(expandedPlanId, () => {
+  resultsRequestId++
+  results.value = []
+  loadingResults.value = false
+}, { flush: 'sync' })
+onBeforeUnmount(() => { resultsRequestId++ })
 const expandedResultIds = reactive(new Set<number>())
 const showAddForm = ref(false)
 const showDeleteConfirm = ref(false)
@@ -505,26 +552,37 @@ const editingPlanId = ref<number | null>(null)
 const updating = ref(false)
 const editForm = reactive({
   model_id: '' as string,
-  cron_expression: '' as string,
+  cron_expression: '*/5 * * * *' as string,
   max_results: '100' as string,
   enabled: true,
-  auto_recover: false
+  auto_recover: false,
+  recover_scheduling: false,
+  recovery_probe_interval_seconds: '3'
 })
 
 const newPlan = reactive({
   model_id: '' as string,
-  cron_expression: '' as string,
+  cron_expression: '*/5 * * * *' as string,
   max_results: '100' as string,
   enabled: true,
-  auto_recover: false
+  auto_recover: false,
+  recover_scheduling: false,
+  recovery_probe_interval_seconds: '3'
 })
+
+const validRecoveryProbeInterval = (value: string) => {
+  const seconds = Number(value)
+  return Number.isInteger(seconds) && seconds >= 1 && seconds <= 3600
+}
 
 const resetNewPlan = () => {
   newPlan.model_id = ''
-  newPlan.cron_expression = ''
+  newPlan.cron_expression = '*/5 * * * *'
   newPlan.max_results = '100'
   newPlan.enabled = true
   newPlan.auto_recover = false
+  newPlan.recover_scheduling = false
+  newPlan.recovery_probe_interval_seconds = '3'
 }
 
 // Load plans when dialog opens
@@ -557,7 +615,7 @@ const loadPlans = async () => {
 }
 
 const handleCreate = async () => {
-  if (!props.accountId || !newPlan.model_id || !newPlan.cron_expression) return
+  if (!props.accountId || !newPlan.model_id || !newPlan.cron_expression || !validRecoveryProbeInterval(newPlan.recovery_probe_interval_seconds)) return
   creating.value = true
   try {
     const maxResults = Number(newPlan.max_results) || 100
@@ -567,7 +625,9 @@ const handleCreate = async () => {
       cron_expression: newPlan.cron_expression,
       enabled: newPlan.enabled,
       max_results: maxResults,
-      auto_recover: newPlan.auto_recover
+      auto_recover: newPlan.auto_recover,
+      recover_scheduling: newPlan.recover_scheduling,
+      recovery_probe_interval_seconds: Number(newPlan.recovery_probe_interval_seconds)
     })
     appStore.showSuccess(t('admin.scheduledTests.createSuccess'))
     showAddForm.value = false
@@ -600,6 +660,8 @@ const startEdit = (plan: ScheduledTestPlan) => {
   editForm.max_results = String(plan.max_results)
   editForm.enabled = plan.enabled
   editForm.auto_recover = plan.auto_recover
+  editForm.recover_scheduling = plan.recover_scheduling ?? false
+  editForm.recovery_probe_interval_seconds = String(plan.recovery_probe_interval_seconds ?? 3)
 }
 
 const cancelEdit = () => {
@@ -607,7 +669,7 @@ const cancelEdit = () => {
 }
 
 const handleEdit = async () => {
-  if (!editingPlanId.value || !editForm.model_id || !editForm.cron_expression) return
+  if (!editingPlanId.value || !editForm.model_id || !editForm.cron_expression || !validRecoveryProbeInterval(editForm.recovery_probe_interval_seconds)) return
   updating.value = true
   try {
     const updated = await adminAPI.scheduledTests.update(editingPlanId.value, {
@@ -615,7 +677,9 @@ const handleEdit = async () => {
       cron_expression: editForm.cron_expression,
       max_results: Number(editForm.max_results) || 100,
       enabled: editForm.enabled,
-      auto_recover: editForm.auto_recover
+      auto_recover: editForm.auto_recover,
+      recover_scheduling: editForm.recover_scheduling,
+      recovery_probe_interval_seconds: Number(editForm.recovery_probe_interval_seconds)
     })
     const index = plans.value.findIndex((p) => p.id === editingPlanId.value)
     if (index !== -1) {
@@ -664,13 +728,17 @@ const toggleExpand = async (planId: number) => {
   expandedPlanId.value = planId
   expandedResultIds.clear()
   loadingResults.value = true
+  const requestId = resultsRequestId
   try {
-    results.value = await adminAPI.scheduledTests.listResults(planId, 20)
+    const data = await adminAPI.scheduledTests.listResults(planId, 20)
+    if (requestId !== resultsRequestId) return
+    results.value = data
   } catch (error: any) {
+    if (requestId !== resultsRequestId) return
     appStore.showError(error?.message || 'Failed to load results')
     results.value = []
   } finally {
-    loadingResults.value = false
+    if (requestId === resultsRequestId) loadingResults.value = false
   }
 }
 

@@ -340,6 +340,38 @@ func TestUpstreamBillingProbeSuccessPersistsSanitizedSnapshot(t *testing.T) {
 	require.Equal(t, snapshot.Status, persisted.Status)
 }
 
+func TestUpstreamBillingProbeAdaptiveCNUsesChatProtocolBaseURL(t *testing.T) {
+	account := &Account{
+		ID:          18,
+		Platform:    PlatformKimi,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":      "sk-sensitive",
+			"api_protocol": APIProtocolAdaptive,
+			"base_url":     "https://legacy-relay.example/v1",
+			"api_base_urls": map[string]any{
+				APIProtocolChatCompletions: "https://chat-relay.example/v1",
+			},
+		},
+		Extra: map[string]any{UpstreamBillingProbeEnabledExtraKey: true},
+	}
+	repo := &upstreamBillingProbeAccountRepo{accounts: map[int64]*Account{account.ID: account}}
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       upstreamBillingProbeValidBody(),
+	}}
+	svc := newUpstreamBillingProbeTestService(repo, upstream, &upstreamBillingProbeSettingRepo{})
+
+	snapshot, err := svc.ProbeAccount(context.Background(), account.ID)
+
+	require.NoError(t, err)
+	require.Equal(t, UpstreamBillingProbeStatusOK, snapshot.Status)
+	require.Equal(t, "https://chat-relay.example/v1/sub2api/billing", upstream.lastReq.URL.String())
+}
+
 func TestUpstreamBillingProbeSyncsResolvedRateForAllAPIKeyPlatforms(t *testing.T) {
 	for _, platform := range []string{
 		PlatformOpenAI,
@@ -688,6 +720,32 @@ func TestUpstreamBillingRateAtHandlesDST(t *testing.T) {
 	require.Equal(t, 2.0, rate)
 }
 
+func TestAccount_UpstreamDeclaredRateUsesProbeNotBillingMultiplier(t *testing.T) {
+	billingRate := 0.35
+	account := &Account{
+		RateMultiplier: &billingRate,
+		Extra: map[string]any{
+			"upstream_billing_probe": map[string]any{
+				"status": "ok",
+				"data": map[string]any{
+					"billing_scope":             "token",
+					"resolved_rate_multiplier":  0.065,
+					"peak_rate_enabled":         false,
+					"effective_rate_multiplier": 0.065,
+				},
+			},
+		},
+	}
+
+	rate, ok := account.UpstreamDeclaredRate(time.Now())
+	require.True(t, ok)
+	require.InDelta(t, 0.065, rate, 1e-12)
+
+	empty := &Account{RateMultiplier: &billingRate}
+	_, ok = empty.UpstreamDeclaredRate(time.Now())
+	require.False(t, ok)
+}
+
 func TestUpstreamBillingProbeFailurePreservesLastSuccessAndRetryAfter(t *testing.T) {
 	receivedAt := time.Date(2026, time.July, 12, 12, 0, 0, 0, time.UTC)
 	initialRate := 0.35
@@ -735,13 +793,13 @@ func TestUpstreamBillingProbeFailurePreservesLastSuccessAndRetryAfter(t *testing
 	require.Equal(t, initialRate, *account.RateMultiplier)
 }
 
-func TestUpstreamBillingProbeRetryAfterIsNotShortened(t *testing.T) {
+func TestUpstreamBillingProbeRetryAfterIsCappedAtMaxDelay(t *testing.T) {
 	delay := nextProbeDelay(30, 48*time.Hour)
-	require.Equal(t, 48*time.Hour, delay)
+	require.Equal(t, upstreamBillingProbeMaxDelay, delay)
 }
 
 // unsupported 的重探间隔明显长于普通失败，但始终有上界：上游后来接入 sub2api
-// 时最迟一天内会被重新发现，且不会缩短上游 Retry-After 指令。
+// 时最迟一天内会被重新发现，且上游超长 Retry-After 亦受 24h 封顶保护。
 func TestUpstreamBillingProbeUnsupportedDelayIsStretchedAndBounded(t *testing.T) {
 	// 默认 30 分钟 interval：普通失败 24~36 分钟，unsupported 为其 8 倍。
 	stretched := unsupportedProbeDelay(30, 0)
@@ -753,8 +811,8 @@ func TestUpstreamBillingProbeUnsupportedDelayIsStretchedAndBounded(t *testing.T)
 	require.LessOrEqual(t, unsupportedProbeDelay(upstreamBillingProbeMaxIntervalMinutes, 0), upstreamBillingProbeMaxDelay)
 	require.Positive(t, unsupportedProbeDelay(upstreamBillingProbeMinIntervalMinutes, 0))
 
-	// Retry-After 更长时原样保留，不被封顶缩短；更短时至少不早于该指令。
-	require.Equal(t, 48*time.Hour, unsupportedProbeDelay(30, 48*time.Hour))
+	// Retry-After 更长时受封顶保护，不超过 upstreamBillingProbeMaxDelay；更短时至少不早于该指令。
+	require.Equal(t, upstreamBillingProbeMaxDelay, unsupportedProbeDelay(30, 48*time.Hour))
 	require.GreaterOrEqual(t, unsupportedProbeDelay(30, time.Hour), time.Hour)
 }
 

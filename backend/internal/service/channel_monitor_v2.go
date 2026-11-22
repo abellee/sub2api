@@ -77,10 +77,15 @@ type ChannelMonitorV2Filter struct {
 	Range     string
 	Platforms []string
 	GroupIDs  []int64
-	Models    []string
-	Start     time.Time
-	End       time.Time
-	Bucket    time.Duration
+	// AllowedGroupIDs is the authenticated viewer's server-derived group scope.
+	// RestrictGroups distinguishes an ordinary user with no allowed groups from
+	// the unrestricted admin/configured scope represented by an empty slice.
+	AllowedGroupIDs []int64
+	RestrictGroups  bool
+	Models          []string
+	Start           time.Time
+	End             time.Time
+	Bucket          time.Duration
 }
 
 type ChannelMonitorV2Metric struct {
@@ -400,6 +405,18 @@ func (s *ChannelMonitorV2Service) hideThroughputForViewer(ctx context.Context, a
 	return s.settings.GetChannelMonitorRuntime(ctx).HideThroughput
 }
 
+func (s *ChannelMonitorV2Service) hideUserRankingForViewer(ctx context.Context, admin bool) bool {
+	if admin {
+		return false
+	}
+	// Missing reader keeps the current ranking tab visible. Unlike throughput,
+	// ranking is already public and must stay on until an operator turns it off.
+	if s == nil || s.settings == nil {
+		return false
+	}
+	return s.settings.GetChannelMonitorRuntime(ctx).HideUserRanking
+}
+
 func (s *ChannelMonitorV2Service) GetConfig(ctx context.Context) (*ChannelMonitorV2Config, error) {
 	return s.repo.GetConfig(ctx)
 }
@@ -646,6 +663,9 @@ func (s *ChannelMonitorV2Service) Users(ctx context.Context, filter ChannelMonit
 	cfg, err := s.getEnabledConfig(ctx)
 	if err != nil {
 		return nil, err
+	}
+	if s.hideUserRankingForViewer(ctx, admin) {
+		return &ChannelMonitorV2List[ChannelMonitorV2UserRow]{Items: []ChannelMonitorV2UserRow{}}, nil
 	}
 	result, err := s.repo.GetUsers(ctx, filter, *cfg, admin)
 	if err != nil {
@@ -943,6 +963,9 @@ func ChannelMonitorV2HealthForWithThresholds(metrics ChannelMonitorV2Metric, thr
 		Overall: "unknown", ErrorRate: "unknown", TTFT: "unknown", Cache: "unknown",
 		MinimumSample: thresholds.MinimumSample, Thresholds: thresholds,
 	}
+	if metrics.RequestCount < result.MinimumSample {
+		return result
+	}
 
 	type scored struct {
 		score  float64
@@ -1059,7 +1082,7 @@ func cacheRateBand(cacheRate, warning, critical float64) string {
 // scoreBand maps continuous 0–100 scores to coarse labels for legacy consumers.
 func scoreBand(score float64) string {
 	switch {
-	case score >= 80:
+	case score >= 70:
 		return "healthy"
 	case score >= 50:
 		return "warning"

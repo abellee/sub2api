@@ -128,12 +128,12 @@
                 <td
                   class="max-w-[100px] truncate py-1.5 font-medium"
                   :class="enableBreakdown ? 'text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300' : 'text-gray-900 dark:text-white'"
-                  :title="model.model"
+                  :title="usageModelLabel(model.model, t)"
                 >
                   <span class="inline-flex items-center gap-1">
                     <svg v-if="enableBreakdown && expandedKey === `model-${model.model}`" class="h-3 w-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
                     <svg v-else-if="enableBreakdown" class="h-3 w-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
-                    {{ model.model }}
+                    {{ usageModelLabel(model.model, t) }}
                   </span>
                 </td>
                 <td class="py-1.5 text-right text-gray-600 dark:text-gray-400">
@@ -251,6 +251,7 @@ import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import UserBreakdownSubTable from './UserBreakdownSubTable.vue'
 import type { ModelStat, UserSpendingRankingItem, UserBreakdownItem } from '@/types'
 import { getUserBreakdown } from '@/api/admin/dashboard'
+import { usageModelLabel } from '@/utils/billingMode'
 
 ChartJS.register(ArcElement, Tooltip, Legend)
 
@@ -370,7 +371,7 @@ const chartData = computed(() => {
   if (!displayModelStats.value.length) return null
 
   return {
-    labels: displayModelStats.value.map((m) => m.model),
+    labels: displayModelStats.value.map((m) => usageModelLabel(m.model, t)),
     datasets: [
       {
         data: displayModelStats.value.map((m) => toFiniteNumber(props.metric === 'actual_cost' ? m.actual_cost : m.total_tokens)),

@@ -6,6 +6,7 @@
 .git
 .gitignore
 .gitattributes
+.audit-local/
 
 # Documentation
 *.md
@@ -49,6 +50,9 @@ coverage/
 .env.*
 !.env.example
 
+# 本地闭源插件目录可能包含发布签名私钥，绝不能进入 Docker 构建上下文。
+/plugins/
+
 # Local config
 config.yaml
 config.local.yaml
@@ -80,3 +84,9 @@ deploy/redis_data/
 .claude/
 issues/
 CLAUDE.md
+
+# Local workspaces and audit management data
+.codex/
+.audit-local/
+.tools/
+backend/audit-sdk/.git

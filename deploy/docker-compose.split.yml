@@ -1,0 +1,57 @@
+# Independent two-container application stack. PostgreSQL/Redis remain external.
+# No automatic deployment; see SPLIT_DEPLOYMENT_CN.md before using this file.
+name: sub2api-split
+services:
+  frontend:
+    image: ${FRONTEND_IMAGE:?Set FRONTEND_IMAGE to an explicit tag or digest}
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "${BIND_HOST:-127.0.0.1}:${FRONTEND_PORT:-8080}:8080"
+    environment:
+      BACKEND_UPSTREAM: backend:8080
+      PUBLIC_SCHEME: ${PUBLIC_SCHEME:-http}
+      TRUSTED_PROXY_CIDR: ${TRUSTED_PROXY_CIDR:-127.0.0.1/32}
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      app:
+        ipv4_address: ${SPLIT_FRONTEND_IP:-172.30.80.2}
+
+  backend:
+    image: ${BACKEND_IMAGE:?Set BACKEND_IMAGE to an explicit tag or digest}
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    ulimits:
+      nofile:
+        soft: 100000
+        hard: 100000
+    # No host port: backend is reachable only on the container network.
+    expose:
+      - '8080'
+    env_file:
+      - ${BACKEND_ENV_FILE:?Set BACKEND_ENV_FILE to the private backend env file}
+    environment:
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: '8080'
+      SERVER_TRUSTED_PROXIES: ${SPLIT_FRONTEND_IP:-172.30.80.2}/32
+      SECURITY_TRUST_FORWARDED_IP_FOR_API_KEY_ACL: 'false'
+    volumes:
+      - type: bind
+        source: ${BACKEND_DATA_DIR:?Set BACKEND_DATA_DIR to the existing backend data directory}
+        target: /app/data
+        bind:
+          create_host_path: false
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    networks:
+      - app
+
+networks:
+  app:
+    ipam:
+      config:
+        - subnet: ${SPLIT_SUBNET:-172.30.80.0/24}

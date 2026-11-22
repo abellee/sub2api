@@ -7,26 +7,43 @@
     ]"
   >
     <!-- Logo/Brand -->
-    <div class="sidebar-header" :class="{ 'sidebar-header-collapsed': sidebarCollapsed }">
-      <!-- Custom Logo or Default Logo -->
-      <router-link
-        :to="homePath"
-        class="sidebar-logo flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl shadow-glow transition-opacity hover:opacity-80"
-        @click="handleMenuItemClick(homePath)"
-      >
-        <img v-if="settingsLoaded" :src="siteLogo || '/logo.svg'" alt="Logo" class="h-full w-full object-contain" />
-      </router-link>
-      <div class="sidebar-brand" :class="{ 'sidebar-brand-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">
+    <div class="sidebar-header" :class="{ 'sidebar-header-collapsed': sidebarCollapsed, 'sidebar-header-home-brand': useHomepageBrand }">
+      <div v-if="useHomepageBrand" class="sidebar-home-brand">
         <router-link
           :to="homePath"
-          class="sidebar-brand-title text-lg font-bold text-gray-900 transition-colors hover:text-primary-600 dark:text-white dark:hover:text-primary-400"
+          class="sidebar-home-lockup"
+          aria-label="TokenFree"
           @click="handleMenuItemClick(homePath)"
         >
-          {{ siteName }}
+          <img src="/tokenfree/logo.svg" alt="" />
+          <span v-show="!sidebarCollapsed" class="sidebar-home-word">oken<span class="sidebar-home-free">Free</span></span>
         </router-link>
-        <!-- Version Badge -->
-        <VersionBadge :version="siteVersion" />
       </div>
+      <template v-else>
+        <!-- Custom Logo or Default Logo -->
+        <router-link
+          :to="homePath"
+          class="sidebar-logo flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl shadow-glow transition-opacity hover:opacity-80"
+          @click="handleMenuItemClick(homePath)"
+        >
+          <img v-if="settingsLoaded" :src="siteLogo || '/logo.svg'" alt="Logo" class="h-full w-full object-contain" />
+        </router-link>
+        <div class="sidebar-brand" :class="{ 'sidebar-brand-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">
+          <router-link
+            :to="homePath"
+            class="sidebar-brand-title text-lg font-bold text-gray-900 transition-colors hover:text-primary-600 dark:text-white dark:hover:text-primary-400"
+            @click="handleMenuItemClick(homePath)"
+          >
+            {{ siteName }}
+          </router-link>
+        </div>
+      </template>
+      <VersionBadge
+        v-show="!sidebarCollapsed"
+        class="sidebar-version"
+        :version="siteVersion"
+        icon-only
+      />
     </div>
 
     <!-- Navigation -->
@@ -97,21 +114,26 @@
               <span v-if="item.iconSvg" class="h-5 w-5 flex-shrink-0 sidebar-svg-icon" v-html="sanitizeSvg(item.iconSvg)"></span>
               <component v-else :is="item.icon" class="h-5 w-5 flex-shrink-0" />
               <span class="sidebar-label" :class="{ 'sidebar-label-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">{{ item.label }}</span>
+              <!-- 状态角标（如抽奖的进行中/待开始/已开奖） -->
+              <span
+                v-if="item.badge"
+                :class="['flex-shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none flex items-center gap-1', item.badge.cls]"
+              >
+                <i v-if="item.badge.dot" :class="['h-1.5 w-1.5 rounded-full', item.badge.dot]"></i>
+                {{ item.badge.text }}
+              </span>
             </router-link>
           </template>
         </div>
 
         <!-- Personal Section for Admin (hidden in simple mode) -->
-        <div v-if="!authStore.isSimpleMode" class="sidebar-section">
-          <div class="sidebar-section-title" :class="{ 'sidebar-section-title-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">
-            <span class="sidebar-section-title-text" :class="{ 'sidebar-section-title-text-collapsed': sidebarCollapsed }">
-              {{ t('nav.myAccount') }}
-            </span>
-          </div>
-
+        <UserNavSections
+          v-if="!authStore.isSimpleMode"
+          :sections="personalNavSections"
+          :collapsed="sidebarCollapsed"
+          v-slot="{ item }"
+        >
           <router-link
-            v-for="item in personalNavItems"
-            :key="item.path"
             :to="item.path"
             class="sidebar-link mb-1"
             :class="{ 'sidebar-link-active': isActive(item.path), 'sidebar-link-collapsed': sidebarCollapsed }"
@@ -122,16 +144,22 @@
             <span v-if="item.iconSvg" class="h-5 w-5 flex-shrink-0 sidebar-svg-icon" v-html="sanitizeSvg(item.iconSvg)"></span>
             <component v-else :is="item.icon" class="h-5 w-5 flex-shrink-0" />
             <span class="sidebar-label" :class="{ 'sidebar-label-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">{{ item.label }}</span>
+            <!-- 状态角标（如抽奖的进行中/待开始/已开奖） -->
+            <span
+              v-if="item.badge"
+              :class="['flex-shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none flex items-center gap-1', item.badge.cls]"
+            >
+              <i v-if="item.badge.dot" :class="['h-1.5 w-1.5 rounded-full', item.badge.dot]"></i>
+              {{ item.badge.text }}
+            </span>
           </router-link>
-        </div>
+        </UserNavSections>
       </template>
 
       <!-- Regular User View -->
       <template v-else-if="!appStore.backendModeEnabled">
-        <div class="sidebar-section">
+        <UserNavSections :sections="userNavSections" :collapsed="sidebarCollapsed" v-slot="{ item }">
           <router-link
-            v-for="item in userNavItems"
-            :key="item.path"
             :to="item.path"
             class="sidebar-link mb-1"
             :class="{ 'sidebar-link-active': isActive(item.path), 'sidebar-link-collapsed': sidebarCollapsed }"
@@ -142,13 +170,21 @@
             <span v-if="item.iconSvg" class="h-5 w-5 flex-shrink-0 sidebar-svg-icon" v-html="sanitizeSvg(item.iconSvg)"></span>
             <component v-else :is="item.icon" class="h-5 w-5 flex-shrink-0" />
             <span class="sidebar-label" :class="{ 'sidebar-label-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">{{ item.label }}</span>
+            <!-- 状态角标（如抽奖的进行中/待开始/已开奖） -->
+            <span
+              v-if="item.badge"
+              :class="['flex-shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none flex items-center gap-1', item.badge.cls]"
+            >
+              <i v-if="item.badge.dot" :class="['h-1.5 w-1.5 rounded-full', item.badge.dot]"></i>
+              {{ item.badge.text }}
+            </span>
           </router-link>
-        </div>
+        </UserNavSections>
       </template>
     </nav>
 
     <!-- Bottom Section -->
-    <div class="mt-auto border-t border-gray-100 p-3 dark:border-dark-800">
+    <div class="mt-auto shrink-0 border-t border-gray-100 p-3 dark:border-dark-800">
       <div
         v-show="sideWidgetVisible && (!sidebarCollapsed || sideWidgetHasIcon)"
         class="mb-2"
@@ -201,10 +237,16 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAdminSettingsStore, useAppStore, useAuthStore, useOnboardingStore, useRemoteWidgetsStore } from '@/stores'
 import VersionBadge from '@/components/common/VersionBadge.vue'
+import Icon from '@/components/icons/Icon.vue'
 import { sanitizeSvg } from '@/utils/sanitize'
 import { sanitizeUrl } from '@/utils/url'
-import { FeatureFlags, makeSidebarFlag } from '@/utils/featureFlags'
-import { useBatchImageAccess } from '@/composables/useBatchImageAccess'
+import { FeatureFlags, isChannelMonitorVisibleToUser, makeSidebarFlag } from '@/utils/featureFlags'
+import { resolveSiteBillingMode } from '@/utils/siteBillingMode'
+import { useMenuStatus } from '@/composables/useMenuStatus'
+import { useTheme } from '@/composables/useTheme'
+import UserNavSections from './UserNavSections.vue'
+import { useUserMenuStore } from '@/stores/userMenu'
+import { groupUserMenu } from '@/utils/userMenu'
 
 interface NavItem {
   path: string
@@ -225,6 +267,8 @@ interface NavItem {
    * 开关切换时菜单自动更新。
    */
   featureFlag?: () => boolean | undefined
+  /** 可选的状态角标（如抽奖的「进行中/待开始/已开奖」），为 null/undefined 时不显示。 */
+  badge?: { text: string; cls: string; dot?: string } | null
 }
 
 // applyFeatureFlags 递归过滤掉 featureFlag() === false 的节点（含子节点）。
@@ -251,25 +295,28 @@ const authStore = useAuthStore()
 const onboardingStore = useOnboardingStore()
 const adminSettingsStore = useAdminSettingsStore()
 const remoteWidgetsStore = useRemoteWidgetsStore()
-const { canUseBatchImage, refreshBatchImageAccess } = useBatchImageAccess()
-
+const userMenuStore = useUserMenuStore()
 const sidebarCollapsed = computed(() => appStore.sidebarCollapsed)
 const mobileOpen = computed(() => appStore.mobileOpen)
 const isAdmin = computed(() => authStore.isAdmin)
 const sidebarNavRef = ref<HTMLElement | null>(null)
 const { sideVisible: sideWidgetVisible, sideHasIcon: sideWidgetHasIcon } = storeToRefs(remoteWidgetsStore)
-const isDark = ref(document.documentElement.classList.contains('dark'))
+const { isDark, setTheme } = useTheme()
 
 const homePath = computed(() => (isAdmin.value ? '/admin/dashboard' : '/dashboard'))
 
-// Track which parent nav groups are expanded
-const expandedGroups = ref<Set<string>>(new Set())
+// Per-group expand/collapse overrides. A group with no entry follows the
+// automatic behavior (expanded while the active route is one of its children);
+// a chevron click records the user's choice, which wins over the automatic
+// state so an active group can still be collapsed manually.
+const groupExpandOverrides = ref<Map<string, boolean>>(new Map())
 
 // Site settings from appStore (cached, no flicker)
 const siteName = computed(() => appStore.siteName)
 const siteLogo = computed(() => sanitizeUrl(appStore.siteLogo || '', { allowRelative: true, allowDataUrl: true }))
 const siteVersion = computed(() => appStore.siteVersion)
 const settingsLoaded = computed(() => appStore.publicSettingsLoaded)
+const useHomepageBrand = computed(() => settingsLoaded.value && siteName.value.trim() !== 'LLM Free')
 
 // SVG Icon Components
 const DashboardIcon = {
@@ -297,26 +344,6 @@ const KeyIcon = {
           'stroke-linecap': 'round',
           'stroke-linejoin': 'round',
           d: 'M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z'
-        })
-      ]
-    )
-}
-
-const BatchImageIcon = {
-  render: () =>
-    h(
-      'svg',
-      { fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', 'stroke-width': '1.5' },
-      [
-        h('path', {
-          'stroke-linecap': 'round',
-          'stroke-linejoin': 'round',
-          d: 'M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.25 2.25 0 00-1.906-1.059H9.554a2.25 2.25 0 00-1.906 1.059l-.821 1.316z'
-        }),
-        h('path', {
-          'stroke-linecap': 'round',
-          'stroke-linejoin': 'round',
-          d: 'M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0zM18.75 10.5h.008v.008h-.008V10.5z'
         })
       ]
     )
@@ -367,6 +394,30 @@ const UserIcon = {
     )
 }
 
+// 摩天轮图标：抽奖入口专用（轮盘 + 六辐条 + 三个吊舱 + A 字支架）
+const LotteryIcon = {
+  render: () =>
+    h('svg', { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.8', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }, [
+      h('circle', { cx: '12', cy: '10', r: '7' }),
+      h('path', { d: 'M12 3v14M5.94 6.5l12.12 7M18.06 6.5l-12.12 7' }),
+      h('circle', { cx: '12', cy: '17', r: '1.3' }),
+      h('circle', { cx: '5.94', cy: '13.5', r: '1.3' }),
+      h('circle', { cx: '18.06', cy: '13.5', r: '1.3' }),
+      h('path', { d: 'M12 10L9 21M12 10l3 11M7 21h10' })
+    ])
+}
+
+// 任务中心图标：清单板 + 勾选项
+const TaskIcon = {
+  render: () =>
+    h('svg', { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.8', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }, [
+      h('rect', { x: '4', y: '3.5', width: '16', height: '17', rx: '2.5' }),
+      h('path', { d: 'M8.5 8.5l1.6 1.6 3-3.2' }),
+      h('path', { d: 'M8.5 15.5h7' }),
+      h('path', { d: 'M8.5 12h7' })
+    ])
+}
+
 const UsersIcon = {
   render: () =>
     h(
@@ -377,6 +428,26 @@ const UsersIcon = {
           'stroke-linecap': 'round',
           'stroke-linejoin': 'round',
           d: 'M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z'
+        })
+      ]
+    )
+}
+
+const TagIcon = {
+  render: () =>
+    h(
+      'svg',
+      { fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', 'stroke-width': '1.5' },
+      [
+        h('path', {
+          'stroke-linecap': 'round',
+          'stroke-linejoin': 'round',
+          d: 'M9.568 3H5.25A2.25 2.25 0 003 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.698 2.48 0l4.318-4.318a1.875 1.875 0 000-2.48l-9.581-9.581A2.25 2.25 0 009.568 3z'
+        }),
+        h('path', {
+          'stroke-linecap': 'round',
+          'stroke-linejoin': 'round',
+          d: 'M6 6h.008v.008H6V6z'
         })
       ]
     )
@@ -480,6 +551,33 @@ const ServerIcon = {
         })
       ]
     )
+}
+
+const PluginIcon = {
+  render: () => h(Icon, { name: 'cube' })
+}
+
+const AppsIcon = {
+  render: () =>
+    h(
+      'svg',
+      { fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', 'stroke-width': '1.5' },
+      [
+        h('path', {
+          'stroke-linecap': 'round',
+          'stroke-linejoin': 'round',
+          d: 'M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z'
+        })
+      ]
+    )
+}
+
+const IQDetectIcon = {
+  render: () => h(Icon, { name: 'lightbulb' })
+}
+
+const MCPIcon = {
+  render: () => h(Icon, { name: 'mcp' })
 }
 
 const BellIcon = {
@@ -691,16 +789,30 @@ const ChevronDownIcon = {
 // which handles the opt-in vs opt-out fallback when settings haven't loaded
 // yet. Admin-only flags (not in public settings) stay inline below.
 const flagChannelMonitor = makeSidebarFlag(FeatureFlags.channelMonitor)
+const flagChannelMonitorUser = () => isChannelMonitorVisibleToUser()
 const flagPayment = makeSidebarFlag(FeatureFlags.payment)
 const flagAvailableChannels = makeSidebarFlag(FeatureFlags.availableChannels)
+const flagSubscription = makeSidebarFlag(FeatureFlags.subscription)
+
+// 购买入口文案随站点计费模式切换：仅充值 → 「充值」，仅订阅 → 「订阅」，否则「充值/订阅」。
+const purchaseNavLabel = computed(() => {
+  switch (resolveSiteBillingMode(appStore.cachedPublicSettings)) {
+    case 'recharge_only':
+      return t('nav.recharge')
+    case 'subscription_only':
+      return t('nav.subscribe')
+    default:
+      return t('nav.buySubscription')
+  }
+})
 const flagAffiliate = makeSidebarFlag(FeatureFlags.affiliate)
 const flagRiskControl = makeSidebarFlag(FeatureFlags.riskControl)
+const flagPluginManagement = makeSidebarFlag(FeatureFlags.pluginManagement)
+const flagMCP = makeSidebarFlag(FeatureFlags.mcp)
 const flagOpsMonitoring = () => adminSettingsStore.opsMonitoringEnabled
 const flagAdminPayment = () => adminSettingsStore.paymentEnabled
-const flagBatchImageAccess = () => canUseBatchImage.value
-
 // buildSelfNavItems 构造用户自己的导航项（用户端主菜单和管理员的"我的账户"子菜单共享这组声明）。
-// withDashboard=true 时包含仪表盘（用户端），false 时不含（管理员的个人区已经有独立仪表盘入口）。
+// 用户端和管理员的个人区都包含用户仪表盘，管理仪表盘保持独立。
 //
 // 条目顺序：密钥 → 用量 → 可用渠道 → 渠道状态 → 订阅/支付 → 兑换/资料。
 // 可用渠道紧挨渠道状态之上，让用户"先看自己能用什么、再看对应状态"。
@@ -711,23 +823,41 @@ function buildSelfNavItems(withDashboard: boolean): NavItem[] {
   }
   items.push(
     { path: '/keys', label: t('nav.apiKeys'), icon: KeyIcon },
-    { path: '/batch-image', label: t('nav.batchImage'), icon: BatchImageIcon, hideInSimpleMode: true, featureFlag: flagBatchImageAccess },
     { path: '/usage', label: t('nav.usage'), icon: ChartIcon, hideInSimpleMode: true },
     { path: '/available-channels', label: t('nav.availableChannels'), icon: ChannelIcon, hideInSimpleMode: true, featureFlag: flagAvailableChannels },
-    { path: '/monitor', label: t('nav.channelStatus'), icon: SignalIcon, featureFlag: flagChannelMonitor },
-    { path: '/subscriptions', label: t('nav.mySubscriptions'), icon: CreditCardIcon, hideInSimpleMode: true },
-    { path: '/purchase', label: t('nav.buySubscription'), icon: RechargeSubscriptionIcon, hideInSimpleMode: true, featureFlag: flagPayment },
+    { path: '/monitor', label: t('nav.channelStatus'), icon: SignalIcon, featureFlag: flagChannelMonitorUser },
+    { path: '/subscriptions', label: t('nav.mySubscriptions'), icon: CreditCardIcon, hideInSimpleMode: true, featureFlag: flagSubscription },
+    { path: '/purchase', label: purchaseNavLabel.value, icon: RechargeSubscriptionIcon, hideInSimpleMode: true, featureFlag: flagPayment },
     { path: '/orders', label: t('nav.myOrders'), icon: OrderListIcon, hideInSimpleMode: true, featureFlag: flagPayment },
-    { path: '/redeem', label: t('nav.redeem'), icon: GiftIcon, hideInSimpleMode: true },
+    {
+      path: '/lottery',
+      label: t('nav.lottery'),
+      icon: LotteryIcon,
+      hideInSimpleMode: true,
+      featureFlag: () => lotteryMenuVisible.value,
+      badge: lotteryBadge.value
+    },
+    {
+      path: '/tasks',
+      label: t('nav.tasks'),
+      icon: TaskIcon,
+      hideInSimpleMode: true,
+      featureFlag: () => taskMenuVisible.value,
+      badge: taskBadge.value
+    },
     { path: '/affiliate', label: t('nav.affiliate'), icon: UsersIcon, hideInSimpleMode: true, featureFlag: flagAffiliate },
     { path: '/profile', label: t('nav.profile'), icon: UserIcon },
+    { path: '/model-plaza', label: t('nav.modelPlaza'), icon: ChannelIcon },
+    { path: '/media-library', label: t('nav.mediaLibrary'), icon: MediaLibraryIcon },
+    { path: '/docs/creative', label: t('nav.creativeDocs'), icon: CreativeDocsIcon },
+    { path: '/redeem', label: t('nav.redeem'), icon: GiftIcon, hideInSimpleMode: true },
+    { path: '/settings/mcp', label: t('mcp.title'), icon: MCPIcon, featureFlag: flagMCP },
     ...customMenuItemsForUser.value.map((item): NavItem => ({
       path: `/custom/${item.id}`,
       label: item.label,
       icon: null,
       iconSvg: item.icon_svg,
     })),
-    { path: '/model-plaza', label: t('nav.modelPlaza'), icon: ChannelIcon },
   )
   return items
 }
@@ -741,12 +871,17 @@ function finalizeNav(items: NavItem[]): NavItem[] {
 // User navigation items (for regular users)
 const userNavItems = computed((): NavItem[] => finalizeNav(buildSelfNavItems(true)))
 
-// Personal navigation items (for admin's "My Account" section, without Dashboard).
+// Personal navigation items (including the admin's own user dashboard).
 // Admins access 可用渠道 from this section just like regular users — there is no
 // separate admin entry, since the page is purely a user-facing view.
-const personalNavItems = computed((): NavItem[] => finalizeNav(buildSelfNavItems(false)))
+const personalNavItems = computed((): NavItem[] => finalizeNav(buildSelfNavItems(true)))
+const userNavSections = computed(() => groupUserMenu(userNavItems.value, userMenuStore.config.sections, t('nav.myAccount'), userMenuStore.config.hidden_items))
+const personalNavSections = computed(() => groupUserMenu(personalNavItems.value, userMenuStore.config.sections, t('nav.myAccount'), userMenuStore.config.hidden_items))
 
 // Custom menu items filtered by visibility
+const MediaLibraryIcon = { render: () => h(Icon, { name: 'grid', size: 'md' }) }
+const CreativeDocsIcon = { render: () => h(Icon, { name: 'book', size: 'md' }) }
+
 const customMenuItemsForUser = computed(() => {
   const items = appStore.cachedPublicSettings?.custom_menu_items ?? []
   return items
@@ -765,8 +900,19 @@ const adminNavItems = computed((): NavItem[] => {
   const baseItems: NavItem[] = [
     { path: '/admin/dashboard', label: t('nav.dashboard'), icon: DashboardIcon },
     { path: '/admin/ops', label: t('nav.ops'), icon: ChartIcon, featureFlag: flagOpsMonitoring },
+    { path: '/admin/log-collection', label: t('admin.logCollection.title'), icon: ChartIcon },
     { path: '/admin/users', label: t('nav.users'), icon: UsersIcon, hideInSimpleMode: true },
-    { path: '/admin/groups', label: t('nav.groups'), icon: FolderIcon, hideInSimpleMode: true },
+    { path: '/admin/ranking', label: t('nav.ranking'), icon: ChartIcon },
+    {
+      path: '/admin/groups-section',
+      label: t('nav.groups'),
+      icon: FolderIcon,
+      expandOnly: true,
+      children: [
+        { path: '/admin/groups', label: t('nav.groupList'), icon: FolderIcon },
+        { path: '/admin/group-categories', label: t('nav.groupCategories'), icon: TagIcon },
+      ],
+    },
     {
       path: '/admin/channels',
       label: t('nav.channelManagement'),
@@ -776,12 +922,23 @@ const adminNavItems = computed((): NavItem[] => {
       children: [
         { path: '/admin/channels/pricing', label: t('nav.channelPricing'), icon: PriceTagIcon },
         { path: '/admin/channels/monitor', label: t('nav.channelMonitor'), icon: SignalIcon, featureFlag: flagChannelMonitor },
+        { path: '/admin/channels/visibility', label: t('nav.channelStatusVisibility'), icon: UsersIcon },
       ],
     },
-    { path: '/admin/subscriptions', label: t('nav.subscriptions'), icon: CreditCardIcon, hideInSimpleMode: true },
+    // 「仅充值」站点连管理端的「订阅管理」入口也一并收起（路由本身不拦截）。
+    { path: '/admin/subscriptions', label: t('nav.subscriptions'), icon: CreditCardIcon, hideInSimpleMode: true, featureFlag: flagSubscription },
     { path: '/admin/accounts', label: t('nav.accounts'), icon: GlobeIcon },
+    { path: '/admin/account-matching', label: t('admin.accountMatching.title'), icon: UsersIcon },
+    { path: '/admin/plugins', label: t('nav.plugins'), icon: PluginIcon, featureFlag: flagPluginManagement },
+    { path: '/admin/app-catalog', label: t('nav.appCatalog'), icon: AppsIcon },
+    { path: '/admin/media-service', label: t('mediaService.title'), icon: ServerIcon },
+    { path: '/admin/iq-detection', label: t('nav.iqDetection'), icon: IQDetectIcon },
+    { path: '/admin/menu-management', label: t('nav.menuManagement'), icon: FolderIcon },
+    { path: '/admin/documentation', label: t('nav.documentation'), icon: FolderIcon },
     { path: '/admin/announcements', label: t('nav.announcements'), icon: BellIcon },
+    { path: '/admin/push-notifications', label: t('nav.pushNotifications'), icon: BellIcon },
     { path: '/admin/proxies', label: t('nav.proxies'), icon: ServerIcon },
+    { path: '/admin/content-safety-billing', label: t('admin.contentSafetyBilling.title'), icon: ShieldIcon },
     {
       path: '/admin/security-audit',
       label: t('nav.securityAudit'),
@@ -795,6 +952,8 @@ const adminNavItems = computed((): NavItem[] => {
     },
     { path: '/admin/redeem', label: t('nav.redeemCodes'), icon: TicketIcon, hideInSimpleMode: true },
     { path: '/admin/promo-codes', label: t('nav.promoCodes'), icon: GiftIcon, hideInSimpleMode: true },
+      { path: '/admin/lottery', label: t('nav.lotteryAdmin'), icon: LotteryIcon, hideInSimpleMode: true },
+      { path: '/admin/tasks', label: t('nav.tasksAdmin'), icon: TaskIcon, hideInSimpleMode: true },
     {
       path: '/admin/affiliates',
       label: t('nav.affiliateManagement'),
@@ -831,6 +990,7 @@ const adminNavItems = computed((): NavItem[] => {
   if (authStore.isSimpleMode) {
     const filtered = visible.filter(item => !item.hideInSimpleMode)
     filtered.push({ path: '/keys', label: t('nav.apiKeys'), icon: KeyIcon })
+    if (flagMCP()) filtered.push({ path: '/settings/mcp', label: t('mcp.title'), icon: MCPIcon })
     filtered.push({ path: '/admin/settings', label: t('nav.settings'), icon: CogIcon })
     for (const cm of customMenuItemsForAdmin.value) {
       filtered.push({ path: `/custom/${cm.id}`, label: cm.label, icon: null, iconSvg: cm.icon_svg })
@@ -850,9 +1010,7 @@ function toggleSidebar() {
 }
 
 function toggleTheme() {
-  isDark.value = !isDark.value
-  document.documentElement.classList.toggle('dark', isDark.value)
-  localStorage.setItem('theme', isDark.value ? 'dark' : 'light')
+  setTheme(isDark.value ? 'light' : 'dark')
 }
 
 function closeMobile() {
@@ -889,15 +1047,13 @@ function isGroupActive(item: NavItem): boolean {
 }
 
 function isGroupExpanded(item: NavItem): boolean {
-  return expandedGroups.value.has(item.path) || isGroupActive(item)
+  const override = groupExpandOverrides.value.get(item.path)
+  if (override !== undefined) return override
+  return isGroupActive(item)
 }
 
 function toggleGroup(item: NavItem) {
-  if (expandedGroups.value.has(item.path)) {
-    expandedGroups.value.delete(item.path)
-  } else {
-    expandedGroups.value.add(item.path)
-  }
+  groupExpandOverrides.value.set(item.path, !isGroupExpanded(item))
 }
 
 /**
@@ -917,19 +1073,7 @@ function handleGroupClick(item: NavItem) {
   if (route.path !== item.path) {
     router.push(item.path)
   }
-  if (!expandedGroups.value.has(item.path)) {
-    expandedGroups.value.add(item.path)
-  }
-}
-
-// Initialize theme
-const savedTheme = localStorage.getItem('theme')
-if (
-  savedTheme === 'dark' ||
-  (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)
-) {
-  isDark.value = true
-  document.documentElement.classList.add('dark')
+  groupExpandOverrides.value.set(item.path, true)
 }
 
 // Fetch admin settings (for feature-gated nav items like Ops).
@@ -943,8 +1087,37 @@ watch(
   { immediate: true }
 )
 
+// 抽奖和任务菜单默认隐藏，显隐和角标来自全局轮询。
+const { lotteryVisible: lotteryMenuVisible, lotteryPhase, taskVisible: taskMenuVisible, taskPhase } = useMenuStatus()
+const lotteryStatus = computed(() => {
+  if (!lotteryMenuVisible.value) return null
+  if (lotteryPhase.value === 'joining') {
+    return { text: '进行中', cls: 'bg-emerald-500 text-white', dot: 'bg-white animate-pulse' }
+  }
+  if (lotteryPhase.value === 'upcoming') {
+    return { text: '待开始', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300', dot: '' }
+  }
+  if (lotteryPhase.value === 'drawn') {
+    return { text: '已开奖', cls: 'bg-gray-100 text-gray-500 dark:bg-dark-700 dark:text-dark-400', dot: '' }
+  }
+  return null
+})
+// 角标所有页面都显示；但「已开奖」只在用户侧页面显示（管理员侧只显示进行中/待开始）
+const lotteryBadge = computed(() => {
+  if (!lotteryStatus.value) return null
+  if (route.path.startsWith('/admin') && lotteryStatus.value.text === '已开奖') return null
+  return lotteryStatus.value
+})
+
+// 任务中心角标：菜单可见且存在进行中任务时显示「进行中」。
+const taskBadge = computed(() =>
+  taskMenuVisible.value && taskPhase.value === 'active'
+    ? { text: '进行中', cls: 'bg-emerald-500 text-white', dot: 'bg-white animate-pulse' }
+    : null
+)
+
 onMounted(() => {
-  void refreshBatchImageAccess()
+  void userMenuStore.load(false, isAdmin.value).catch(() => { /* Keep the default navigation if unavailable. */ })
   if (isAdmin.value) {
     adminSettingsStore.fetch()
   }
@@ -966,6 +1139,64 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.sidebar-header {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.sidebar-version {
+  position: static;
+  flex: none;
+  margin-left: auto;
+}
+
+.sidebar-home-brand {
+  min-width: 0;
+}
+
+.sidebar-home-lockup {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 0;
+  color: #16213b;
+  font-family: "TokenFree Console Mono", "Segoe UI", "Microsoft YaHei", sans-serif;
+  font-weight: 750;
+  letter-spacing: -1.1px;
+  line-height: 1;
+  white-space: nowrap;
+  transition: opacity 160ms ease;
+}
+
+.sidebar-home-lockup:hover {
+  opacity: 0.8;
+}
+
+.dark .sidebar-home-lockup {
+  color: #f4f6ff;
+}
+
+.sidebar-home-lockup img {
+  width: 36px;
+  height: 36px;
+  flex: none;
+  margin-right: -6px;
+  transform: translateY(1px);
+}
+
+.sidebar-home-word {
+  font-size: 24px;
+  line-height: 1;
+  transform: translateY(-1px);
+}
+
+.sidebar-home-free {
+  color: #e8590c;
+}
+
+.sidebar-header-home-brand.sidebar-header-collapsed .sidebar-home-lockup img {
+  margin-right: 0;
+}
+
 .sidebar-logo {
   flex: 0 0 2.25rem;
   min-width: 2.25rem;
@@ -1007,52 +1238,6 @@ onBeforeUnmount(() => {
   gap: 0;
   padding-left: 0.875rem;
   padding-right: 0.875rem;
-}
-
-.sidebar-section-title {
-  position: relative;
-  display: flex;
-  align-items: center;
-  min-height: 1.25rem;
-  overflow: hidden;
-  white-space: nowrap;
-}
-
-.sidebar-section-title-text {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  transition:
-    opacity 0.16s ease,
-    transform 0.16s ease;
-}
-
-.sidebar-section-title::after {
-  content: '';
-  position: absolute;
-  left: 0.75rem;
-  right: 0.75rem;
-  top: 50%;
-  height: 1px;
-  background: rgb(229 231 235);
-  opacity: 0;
-  transform: translateY(-50%);
-  transition: opacity 0.18s ease;
-}
-
-.dark .sidebar-section-title::after {
-  background: rgb(55 65 81);
-}
-
-.sidebar-section-title-text-collapsed {
-  opacity: 0;
-  transform: translateX(-4px);
-}
-
-.sidebar-section-title-collapsed::after {
-  opacity: 1;
-  transition-delay: 0.08s;
 }
 
 .sidebar-label {

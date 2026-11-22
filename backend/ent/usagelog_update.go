@@ -309,6 +309,18 @@ func (_u *UsageLogUpdate) ClearSubscriptionID() *UsageLogUpdate {
 	return _u
 }
 
+// SetInputTokenEstimate sets the "input_token_estimate" field.
+func (_u *UsageLogUpdate) SetInputTokenEstimate(v map[string]interface{}) *UsageLogUpdate {
+	_u.mutation.SetInputTokenEstimate(v)
+	return _u
+}
+
+// ClearInputTokenEstimate clears the value of the "input_token_estimate" field.
+func (_u *UsageLogUpdate) ClearInputTokenEstimate() *UsageLogUpdate {
+	_u.mutation.ClearInputTokenEstimate()
+	return _u
+}
+
 // SetInputTokens sets the "input_tokens" field.
 func (_u *UsageLogUpdate) SetInputTokens(v int) *UsageLogUpdate {
 	_u.mutation.ResetInputTokens()
@@ -432,6 +444,48 @@ func (_u *UsageLogUpdate) SetNillableCacheCreation1hTokens(v *int) *UsageLogUpda
 // AddCacheCreation1hTokens adds value to the "cache_creation_1h_tokens" field.
 func (_u *UsageLogUpdate) AddCacheCreation1hTokens(v int) *UsageLogUpdate {
 	_u.mutation.AddCacheCreation1hTokens(v)
+	return _u
+}
+
+// SetCacheCreation30mTokens sets the "cache_creation_30m_tokens" field.
+func (_u *UsageLogUpdate) SetCacheCreation30mTokens(v int) *UsageLogUpdate {
+	_u.mutation.ResetCacheCreation30mTokens()
+	_u.mutation.SetCacheCreation30mTokens(v)
+	return _u
+}
+
+// SetNillableCacheCreation30mTokens sets the "cache_creation_30m_tokens" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableCacheCreation30mTokens(v *int) *UsageLogUpdate {
+	if v != nil {
+		_u.SetCacheCreation30mTokens(*v)
+	}
+	return _u
+}
+
+// AddCacheCreation30mTokens adds value to the "cache_creation_30m_tokens" field.
+func (_u *UsageLogUpdate) AddCacheCreation30mTokens(v int) *UsageLogUpdate {
+	_u.mutation.AddCacheCreation30mTokens(v)
+	return _u
+}
+
+// SetCacheCreation12hTokens sets the "cache_creation_12h_tokens" field.
+func (_u *UsageLogUpdate) SetCacheCreation12hTokens(v int) *UsageLogUpdate {
+	_u.mutation.ResetCacheCreation12hTokens()
+	_u.mutation.SetCacheCreation12hTokens(v)
+	return _u
+}
+
+// SetNillableCacheCreation12hTokens sets the "cache_creation_12h_tokens" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableCacheCreation12hTokens(v *int) *UsageLogUpdate {
+	if v != nil {
+		_u.SetCacheCreation12hTokens(*v)
+	}
+	return _u
+}
+
+// AddCacheCreation12hTokens adds value to the "cache_creation_12h_tokens" field.
+func (_u *UsageLogUpdate) AddCacheCreation12hTokens(v int) *UsageLogUpdate {
+	_u.mutation.AddCacheCreation12hTokens(v)
 	return _u
 }
 
@@ -620,6 +674,48 @@ func (_u *UsageLogUpdate) AddAccountRateMultiplier(v float64) *UsageLogUpdate {
 // ClearAccountRateMultiplier clears the value of the "account_rate_multiplier" field.
 func (_u *UsageLogUpdate) ClearAccountRateMultiplier() *UsageLogUpdate {
 	_u.mutation.ClearAccountRateMultiplier()
+	return _u
+}
+
+// SetSearchCount sets the "search_count" field.
+func (_u *UsageLogUpdate) SetSearchCount(v int) *UsageLogUpdate {
+	_u.mutation.ResetSearchCount()
+	_u.mutation.SetSearchCount(v)
+	return _u
+}
+
+// SetNillableSearchCount sets the "search_count" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableSearchCount(v *int) *UsageLogUpdate {
+	if v != nil {
+		_u.SetSearchCount(*v)
+	}
+	return _u
+}
+
+// AddSearchCount adds value to the "search_count" field.
+func (_u *UsageLogUpdate) AddSearchCount(v int) *UsageLogUpdate {
+	_u.mutation.AddSearchCount(v)
+	return _u
+}
+
+// SetSearchCost sets the "search_cost" field.
+func (_u *UsageLogUpdate) SetSearchCost(v float64) *UsageLogUpdate {
+	_u.mutation.ResetSearchCost()
+	_u.mutation.SetSearchCost(v)
+	return _u
+}
+
+// SetNillableSearchCost sets the "search_cost" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableSearchCost(v *float64) *UsageLogUpdate {
+	if v != nil {
+		_u.SetSearchCost(*v)
+	}
+	return _u
+}
+
+// AddSearchCost adds value to the "search_cost" field.
+func (_u *UsageLogUpdate) AddSearchCost(v float64) *UsageLogUpdate {
+	_u.mutation.AddSearchCost(v)
 	return _u
 }
 
@@ -1192,6 +1288,12 @@ func (_u *UsageLogUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if _u.mutation.BillingModeCleared() {
 		_spec.ClearField(usagelog.FieldBillingMode, field.TypeString)
 	}
+	if value, ok := _u.mutation.InputTokenEstimate(); ok {
+		_spec.SetField(usagelog.FieldInputTokenEstimate, field.TypeJSON, value)
+	}
+	if _u.mutation.InputTokenEstimateCleared() {
+		_spec.ClearField(usagelog.FieldInputTokenEstimate, field.TypeJSON)
+	}
 	if value, ok := _u.mutation.InputTokens(); ok {
 		_spec.SetField(usagelog.FieldInputTokens, field.TypeInt, value)
 	}
@@ -1227,6 +1329,18 @@ func (_u *UsageLogUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.AddedCacheCreation1hTokens(); ok {
 		_spec.AddField(usagelog.FieldCacheCreation1hTokens, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.CacheCreation30mTokens(); ok {
+		_spec.SetField(usagelog.FieldCacheCreation30mTokens, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedCacheCreation30mTokens(); ok {
+		_spec.AddField(usagelog.FieldCacheCreation30mTokens, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.CacheCreation12hTokens(); ok {
+		_spec.SetField(usagelog.FieldCacheCreation12hTokens, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedCacheCreation12hTokens(); ok {
+		_spec.AddField(usagelog.FieldCacheCreation12hTokens, field.TypeInt, value)
 	}
 	if value, ok := _u.mutation.InputCost(); ok {
 		_spec.SetField(usagelog.FieldInputCost, field.TypeFloat64, value)
@@ -1281,6 +1395,18 @@ func (_u *UsageLogUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.AccountRateMultiplierCleared() {
 		_spec.ClearField(usagelog.FieldAccountRateMultiplier, field.TypeFloat64)
+	}
+	if value, ok := _u.mutation.SearchCount(); ok {
+		_spec.SetField(usagelog.FieldSearchCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedSearchCount(); ok {
+		_spec.AddField(usagelog.FieldSearchCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.SearchCost(); ok {
+		_spec.SetField(usagelog.FieldSearchCost, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedSearchCost(); ok {
+		_spec.AddField(usagelog.FieldSearchCost, field.TypeFloat64, value)
 	}
 	if value, ok := _u.mutation.BillingType(); ok {
 		_spec.SetField(usagelog.FieldBillingType, field.TypeInt8, value)
@@ -1823,6 +1949,18 @@ func (_u *UsageLogUpdateOne) ClearSubscriptionID() *UsageLogUpdateOne {
 	return _u
 }
 
+// SetInputTokenEstimate sets the "input_token_estimate" field.
+func (_u *UsageLogUpdateOne) SetInputTokenEstimate(v map[string]interface{}) *UsageLogUpdateOne {
+	_u.mutation.SetInputTokenEstimate(v)
+	return _u
+}
+
+// ClearInputTokenEstimate clears the value of the "input_token_estimate" field.
+func (_u *UsageLogUpdateOne) ClearInputTokenEstimate() *UsageLogUpdateOne {
+	_u.mutation.ClearInputTokenEstimate()
+	return _u
+}
+
 // SetInputTokens sets the "input_tokens" field.
 func (_u *UsageLogUpdateOne) SetInputTokens(v int) *UsageLogUpdateOne {
 	_u.mutation.ResetInputTokens()
@@ -1946,6 +2084,48 @@ func (_u *UsageLogUpdateOne) SetNillableCacheCreation1hTokens(v *int) *UsageLogU
 // AddCacheCreation1hTokens adds value to the "cache_creation_1h_tokens" field.
 func (_u *UsageLogUpdateOne) AddCacheCreation1hTokens(v int) *UsageLogUpdateOne {
 	_u.mutation.AddCacheCreation1hTokens(v)
+	return _u
+}
+
+// SetCacheCreation30mTokens sets the "cache_creation_30m_tokens" field.
+func (_u *UsageLogUpdateOne) SetCacheCreation30mTokens(v int) *UsageLogUpdateOne {
+	_u.mutation.ResetCacheCreation30mTokens()
+	_u.mutation.SetCacheCreation30mTokens(v)
+	return _u
+}
+
+// SetNillableCacheCreation30mTokens sets the "cache_creation_30m_tokens" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableCacheCreation30mTokens(v *int) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetCacheCreation30mTokens(*v)
+	}
+	return _u
+}
+
+// AddCacheCreation30mTokens adds value to the "cache_creation_30m_tokens" field.
+func (_u *UsageLogUpdateOne) AddCacheCreation30mTokens(v int) *UsageLogUpdateOne {
+	_u.mutation.AddCacheCreation30mTokens(v)
+	return _u
+}
+
+// SetCacheCreation12hTokens sets the "cache_creation_12h_tokens" field.
+func (_u *UsageLogUpdateOne) SetCacheCreation12hTokens(v int) *UsageLogUpdateOne {
+	_u.mutation.ResetCacheCreation12hTokens()
+	_u.mutation.SetCacheCreation12hTokens(v)
+	return _u
+}
+
+// SetNillableCacheCreation12hTokens sets the "cache_creation_12h_tokens" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableCacheCreation12hTokens(v *int) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetCacheCreation12hTokens(*v)
+	}
+	return _u
+}
+
+// AddCacheCreation12hTokens adds value to the "cache_creation_12h_tokens" field.
+func (_u *UsageLogUpdateOne) AddCacheCreation12hTokens(v int) *UsageLogUpdateOne {
+	_u.mutation.AddCacheCreation12hTokens(v)
 	return _u
 }
 
@@ -2134,6 +2314,48 @@ func (_u *UsageLogUpdateOne) AddAccountRateMultiplier(v float64) *UsageLogUpdate
 // ClearAccountRateMultiplier clears the value of the "account_rate_multiplier" field.
 func (_u *UsageLogUpdateOne) ClearAccountRateMultiplier() *UsageLogUpdateOne {
 	_u.mutation.ClearAccountRateMultiplier()
+	return _u
+}
+
+// SetSearchCount sets the "search_count" field.
+func (_u *UsageLogUpdateOne) SetSearchCount(v int) *UsageLogUpdateOne {
+	_u.mutation.ResetSearchCount()
+	_u.mutation.SetSearchCount(v)
+	return _u
+}
+
+// SetNillableSearchCount sets the "search_count" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableSearchCount(v *int) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetSearchCount(*v)
+	}
+	return _u
+}
+
+// AddSearchCount adds value to the "search_count" field.
+func (_u *UsageLogUpdateOne) AddSearchCount(v int) *UsageLogUpdateOne {
+	_u.mutation.AddSearchCount(v)
+	return _u
+}
+
+// SetSearchCost sets the "search_cost" field.
+func (_u *UsageLogUpdateOne) SetSearchCost(v float64) *UsageLogUpdateOne {
+	_u.mutation.ResetSearchCost()
+	_u.mutation.SetSearchCost(v)
+	return _u
+}
+
+// SetNillableSearchCost sets the "search_cost" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableSearchCost(v *float64) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetSearchCost(*v)
+	}
+	return _u
+}
+
+// AddSearchCost adds value to the "search_cost" field.
+func (_u *UsageLogUpdateOne) AddSearchCost(v float64) *UsageLogUpdateOne {
+	_u.mutation.AddSearchCost(v)
 	return _u
 }
 
@@ -2736,6 +2958,12 @@ func (_u *UsageLogUpdateOne) sqlSave(ctx context.Context) (_node *UsageLog, err 
 	if _u.mutation.BillingModeCleared() {
 		_spec.ClearField(usagelog.FieldBillingMode, field.TypeString)
 	}
+	if value, ok := _u.mutation.InputTokenEstimate(); ok {
+		_spec.SetField(usagelog.FieldInputTokenEstimate, field.TypeJSON, value)
+	}
+	if _u.mutation.InputTokenEstimateCleared() {
+		_spec.ClearField(usagelog.FieldInputTokenEstimate, field.TypeJSON)
+	}
 	if value, ok := _u.mutation.InputTokens(); ok {
 		_spec.SetField(usagelog.FieldInputTokens, field.TypeInt, value)
 	}
@@ -2771,6 +2999,18 @@ func (_u *UsageLogUpdateOne) sqlSave(ctx context.Context) (_node *UsageLog, err 
 	}
 	if value, ok := _u.mutation.AddedCacheCreation1hTokens(); ok {
 		_spec.AddField(usagelog.FieldCacheCreation1hTokens, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.CacheCreation30mTokens(); ok {
+		_spec.SetField(usagelog.FieldCacheCreation30mTokens, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedCacheCreation30mTokens(); ok {
+		_spec.AddField(usagelog.FieldCacheCreation30mTokens, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.CacheCreation12hTokens(); ok {
+		_spec.SetField(usagelog.FieldCacheCreation12hTokens, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedCacheCreation12hTokens(); ok {
+		_spec.AddField(usagelog.FieldCacheCreation12hTokens, field.TypeInt, value)
 	}
 	if value, ok := _u.mutation.InputCost(); ok {
 		_spec.SetField(usagelog.FieldInputCost, field.TypeFloat64, value)
@@ -2825,6 +3065,18 @@ func (_u *UsageLogUpdateOne) sqlSave(ctx context.Context) (_node *UsageLog, err 
 	}
 	if _u.mutation.AccountRateMultiplierCleared() {
 		_spec.ClearField(usagelog.FieldAccountRateMultiplier, field.TypeFloat64)
+	}
+	if value, ok := _u.mutation.SearchCount(); ok {
+		_spec.SetField(usagelog.FieldSearchCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedSearchCount(); ok {
+		_spec.AddField(usagelog.FieldSearchCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.SearchCost(); ok {
+		_spec.SetField(usagelog.FieldSearchCost, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedSearchCost(); ok {
+		_spec.AddField(usagelog.FieldSearchCost, field.TypeFloat64, value)
 	}
 	if value, ok := _u.mutation.BillingType(); ok {
 		_spec.SetField(usagelog.FieldBillingType, field.TypeInt8, value)

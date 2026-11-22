@@ -127,6 +127,12 @@
           <Select v-model="filters.request_type" :options="requestTypeOptions" @change="emitChange" />
         </div>
 
+        <!-- Native compaction is independent of the transport request type. -->
+        <div v-if="mode !== 'errors'" class="w-full sm:w-auto sm:min-w-[180px]">
+          <label class="input-label">{{ t('usage.compactionFilter') }}</label>
+          <Select v-model="filters.native_compaction_v2" :options="compactionOptions" @change="emitChange" />
+        </div>
+
         <!-- Billing Type Filter (usage only) -->
         <div v-if="mode !== 'errors'" class="w-full sm:w-auto sm:min-w-[200px]">
           <label class="input-label">{{ t('admin.usage.billingType') }}</label>
@@ -172,20 +178,44 @@
 
       <!-- Right: actions -->
       <div v-if="showActions" class="flex w-full flex-wrap items-center justify-end gap-3 sm:w-auto">
+        <label
+          v-if="mode === 'usage' && autoRefresh !== undefined"
+          class="inline-flex cursor-pointer items-start gap-2 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300"
+        >
+          <input
+            type="checkbox"
+            class="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-600 dark:bg-dark-800"
+            :checked="autoRefresh"
+            :aria-label="t('common.autoRefresh.enable')"
+            @change="handleAutoRefreshChange"
+          />
+          <span class="flex min-h-[2.25rem] flex-col gap-0.5">
+            <span class="leading-5">{{ t('common.autoRefresh.enable') }}</span>
+            <span class="min-h-4 text-xs text-primary-600 dark:text-primary-400">
+              <span v-if="autoRefresh && autoRefreshPending">{{ t('common.loading') }}</span>
+              <span v-else-if="autoRefresh && autoRefreshCountdown !== undefined" class="font-mono">
+                {{ t('common.autoRefresh.countdown', { seconds: autoRefreshCountdown }) }}
+              </span>
+            </span>
+          </span>
+        </label>
         <button type="button" @click="$emit('refresh')" class="btn btn-secondary">
           {{ t('common.refresh') }}
         </button>
-        <button type="button" @click="$emit('reset')" class="btn btn-secondary">
-          {{ t('common.reset') }}
-        </button>
-        <slot name="after-reset" />
-        <template v-if="mode === 'usage'">
-          <button type="button" @click="$emit('cleanup')" class="btn btn-danger">
-            {{ t('admin.usage.cleanup.button') }}
+        <slot name="after-refresh" />
+        <template v-if="showSecondaryActions">
+          <button type="button" @click="$emit('reset')" class="btn btn-secondary">
+            {{ t('common.reset') }}
           </button>
-          <button type="button" @click="$emit('export')" :disabled="exporting" class="btn btn-primary">
-            {{ t('usage.exportExcel') }}
-          </button>
+          <slot name="after-reset" />
+          <template v-if="mode === 'usage'">
+            <button type="button" @click="$emit('cleanup')" class="btn btn-danger">
+              {{ t('admin.usage.cleanup.button') }}
+            </button>
+            <button type="button" @click="$emit('export')" :disabled="exporting" class="btn btn-primary">
+              {{ t('usage.exportExcel') }}
+            </button>
+          </template>
         </template>
       </div>
     </div>
@@ -209,6 +239,14 @@ interface Props {
   endDate: string
   showActions?: boolean
   modelOptions?: string[]
+  /** 使用记录页的自动刷新开关；未传入时不显示复选框。 */
+  autoRefresh?: boolean
+  /** 自动刷新剩余秒数。 */
+  autoRefreshCountdown?: number
+  /** 自动刷新请求正在执行。 */
+  autoRefreshPending?: boolean
+  /** 将重置、列设置、清理和导出移动到外部工具栏时隐藏这些操作。 */
+  showSecondaryActions?: boolean
   /**
    * errors 模式:隐藏用量专属字段/按钮,显示错误类型+状态码(错误请求 tab 用)
    * ranking 模式:同 usage 但隐藏计费模式筛选与清理/导出按钮(用户排行 tab 用)
@@ -221,10 +259,12 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
   showActions: true,
   mode: 'usage',
-  flat: false
+  flat: false,
+  showSecondaryActions: true
 })
 const emit = defineEmits([
   'update:modelValue',
+  'update:autoRefresh',
   'change',
   'refresh',
   'reset',
@@ -274,6 +314,11 @@ const requestTypeOptions = ref<SelectOption[]>([
   { value: 'cyber', label: t('usage.cyber') }
 ])
 
+const compactionOptions = ref<SelectOption[]>([
+  { value: null, label: t('usage.allCompactionTypes') },
+  { value: true, label: t('usage.compactionOnly') }
+])
+
 const billingTypeOptions = ref<SelectOption[]>([
   { value: null, label: t('admin.usage.allBillingTypes') },
   { value: 0, label: t('admin.usage.billingTypeBalance') },
@@ -309,7 +354,8 @@ const billingModeOptions = ref<SelectOption[]>([
   { value: 'token', label: t('admin.usage.billingModeToken') },
   { value: 'per_request', label: t('admin.usage.billingModePerRequest') },
   { value: 'image', label: t('admin.usage.billingModeImage') },
-  { value: 'video', label: t('admin.usage.billingModeVideo') }
+  { value: 'video', label: t('admin.usage.billingModeVideo') },
+  { value: 'content_safety', label: t('admin.usage.billingModeContentSafety') }
 ])
 
 const upstreamModelMismatchOptions = ref<SelectOption[]>([
@@ -319,6 +365,10 @@ const upstreamModelMismatchOptions = ref<SelectOption[]>([
 ])
 
 const emitChange = () => emit('change')
+
+const handleAutoRefreshChange = (event: Event) => {
+  emit('update:autoRefresh', (event.target as HTMLInputElement).checked)
+}
 
 const clearPendingUserSearch = () => {
   if (userSearchTimeout) {
@@ -534,7 +584,13 @@ const setUserKeyword = (email: string) => {
   showUserDropdown.value = false
 }
 
+const setAccountKeyword = (name: string) => {
+  accountKeyword.value = name
+  accountResults.value = []
+  showAccountDropdown.value = false
+}
+
 const getUserSearchRevision = () => userSearchSequence
 
-defineExpose({ getUserSearchRevision, setUserKeyword })
+defineExpose({ getUserSearchRevision, setUserKeyword, setAccountKeyword })
 </script>

@@ -104,7 +104,9 @@ func (p *AntigravityTokenProvider) GetAccessToken(ctx context.Context, account *
 		result, err := p.refreshAPI.RefreshIfNeeded(refreshCtx, account, p.executor, antigravityTokenRefreshSkew)
 		if err != nil {
 			// 标记账号临时不可调度，避免后续请求继续命中
-			p.markTempUnschedulable(account, err)
+			if !RequestAccountFailoverEnabled(ctx) {
+				p.markTempUnschedulable(account, err)
+			}
 			if p.refreshPolicy.OnRefreshError == ProviderRefreshErrorReturn {
 				return "", err
 			}
@@ -231,9 +233,5 @@ func (p *AntigravityTokenProvider) markBackfillAttempted(accountID int64) {
 }
 
 func AntigravityTokenCacheKey(account *Account) string {
-	projectID := strings.TrimSpace(account.GetCredential("project_id"))
-	if projectID != "" {
-		return "ag:" + projectID
-	}
 	return "ag:account:" + strconv.FormatInt(account.ID, 10)
 }

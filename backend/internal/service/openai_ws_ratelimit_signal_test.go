@@ -73,7 +73,7 @@ func (r *openAICodexExtraListRepo) SetRateLimited(_ context.Context, _ int64, re
 	return nil
 }
 
-func (r *openAICodexExtraListRepo) ListWithFilters(_ context.Context, params pagination.PaginationParams, platform, accountType, status, search string, groupID int64, privacyMode string) ([]Account, *pagination.PaginationResult, error) {
+func (r *openAICodexExtraListRepo) ListWithFilters(_ context.Context, params pagination.PaginationParams, platform, accountType, status, search string, groupID int64, privacyMode string, baseURL string) ([]Account, *pagination.PaginationResult, error) {
 	_ = platform
 	_ = accountType
 	_ = status
@@ -536,7 +536,7 @@ func TestAdminService_ListAccounts_ExhaustedCodexExtraDoesNotSetRateLimit(t *tes
 	}
 	svc := &adminServiceImpl{accountRepo: repo}
 
-	accounts, total, err := svc.ListAccounts(context.Background(), 1, 20, PlatformOpenAI, AccountTypeOAuth, "", "", 0, "", "", "")
+	accounts, total, err := svc.ListAccounts(context.Background(), 1, 20, PlatformOpenAI, AccountTypeOAuth, "", "", 0, "", "", "", "")
 	require.NoError(t, err)
 	require.Equal(t, int64(1), total)
 	require.Len(t, accounts, 1)
@@ -551,4 +551,31 @@ func TestAdminService_ListAccounts_ExhaustedCodexExtraDoesNotSetRateLimit(t *tes
 func TestOpenAIWSErrorHTTPStatusFromRaw_UsageLimitReachedIs429(t *testing.T) {
 	require.Equal(t, http.StatusTooManyRequests, openAIWSErrorHTTPStatusFromRaw("", "usage_limit_reached"))
 	require.Equal(t, http.StatusTooManyRequests, openAIWSErrorHTTPStatusFromRaw("rate_limit_exceeded", ""))
+}
+
+func TestOpenAIWSRateLimitFailoverError_OAuthKeepsSameAccountDeadline(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+	headers := http.Header{"Retry-After": []string{"30"}}
+	body := []byte(`{"error":{"type":"rate_limit_error","message":"limited"}}`)
+
+	oauthErr := svc.newOpenAIWSRateLimitFailoverError(&Account{
+		ID:       904,
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+	}, headers, body, "limited")
+	require.True(t, oauthErr.RetryableOnSameAccount)
+	require.False(t, oauthErr.SameAccountRetryDeadline.IsZero())
+	require.Positive(t, oauthErr.SameAccountRetryDelay)
+	require.LessOrEqual(t, oauthErr.SameAccountRetryDelay, openAIOAuth429MaxRetryDelay)
+	require.Equal(t, body, oauthErr.ResponseBody)
+	require.Equal(t, "30", oauthErr.ResponseHeaders.Get("Retry-After"))
+
+	apiKeyErr := svc.newOpenAIWSRateLimitFailoverError(&Account{
+		ID:       905,
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+	}, headers, body, "limited")
+	require.False(t, apiKeyErr.RetryableOnSameAccount)
+	require.True(t, apiKeyErr.SameAccountRetryDeadline.IsZero())
+	require.Zero(t, apiKeyErr.SameAccountRetryDelay)
 }

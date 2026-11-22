@@ -1,0 +1,22 @@
+export default {
+  contentSafetyBilling: {
+    title: '内容安全扣费',
+    description: 'Grok 上游命中内置违规规则时，按配置金额扣除用户余额，并向客户端返回统一错误信息。',
+    enabled: '启用内容安全扣费',
+    amount: '每次扣款金额（USD）',
+    amountHint: '直接从用户余额扣除固定金额，不乘分组倍率；订阅用户同样扣除余额。',
+    match: '违规识别规则',
+    matchHint: '2xx：英文拒绝句式后接 that、this、you、your、the request、the prompt 或 it。400：生成图片或视频被内容审核拒绝。403：违规、安全检查、内容审核或策略提示，以及上述拒绝句式。忽略大小写，先规范化弯引号；后缀不要求单词边界。所有 Grok 账号统一检测，扣款备注记录命中内容。',
+    clientMessage: '标准化错误信息',
+    clientMessageHint: '命中后返回 HTTP 403 和此标准化信息，并停止换号重试；已开始的流式响应通过错误事件返回。',
+    records: '扣款记录',
+    recordsHint: '处理中记录会自动重试；每条记录使用固定扣款编号，避免重复扣款。',
+    refresh: '刷新记录', retry: '重试',
+    time: '时间 / 扣款编号', identity: '用户 / API Key / 上游账号', debit: '扣款金额（USD）',
+    note: '扣款备注', status: '状态', charged: '已扣款', pending: '处理中', empty: '暂无扣款记录',
+    pagination: '第 {page} 页 · 共 {total} 条', previous: '上一页', next: '下一页',
+    loadError: '配置加载失败，请重试。',
+    saveError: '未能确认保存成功，请检查金额和文本后重试。',
+    recordsError: '扣款记录加载失败，请刷新重试。',
+  },
+}

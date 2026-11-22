@@ -160,6 +160,16 @@ func CacheCreation1hTokens(v int) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldCacheCreation1hTokens, v))
 }
 
+// CacheCreation30mTokens applies equality check predicate on the "cache_creation_30m_tokens" field. It's identical to CacheCreation30mTokensEQ.
+func CacheCreation30mTokens(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldCacheCreation30mTokens, v))
+}
+
+// CacheCreation12hTokens applies equality check predicate on the "cache_creation_12h_tokens" field. It's identical to CacheCreation12hTokensEQ.
+func CacheCreation12hTokens(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldCacheCreation12hTokens, v))
+}
+
 // InputCost applies equality check predicate on the "input_cost" field. It's identical to InputCostEQ.
 func InputCost(v float64) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldInputCost, v))
@@ -203,6 +213,16 @@ func LongContextBillingApplied(v bool) predicate.UsageLog {
 // AccountRateMultiplier applies equality check predicate on the "account_rate_multiplier" field. It's identical to AccountRateMultiplierEQ.
 func AccountRateMultiplier(v float64) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldAccountRateMultiplier, v))
+}
+
+// SearchCount applies equality check predicate on the "search_count" field. It's identical to SearchCountEQ.
+func SearchCount(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldSearchCount, v))
+}
+
+// SearchCost applies equality check predicate on the "search_cost" field. It's identical to SearchCostEQ.
+func SearchCost(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldSearchCost, v))
 }
 
 // BillingType applies equality check predicate on the "billing_type" field. It's identical to BillingTypeEQ.
@@ -1055,6 +1075,16 @@ func SubscriptionIDNotNil() predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldNotNull(FieldSubscriptionID))
 }
 
+// InputTokenEstimateIsNil applies the IsNil predicate on the "input_token_estimate" field.
+func InputTokenEstimateIsNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIsNull(FieldInputTokenEstimate))
+}
+
+// InputTokenEstimateNotNil applies the NotNil predicate on the "input_token_estimate" field.
+func InputTokenEstimateNotNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotNull(FieldInputTokenEstimate))
+}
+
 // InputTokensEQ applies the EQ predicate on the "input_tokens" field.
 func InputTokensEQ(v int) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldInputTokens, v))
@@ -1293,6 +1323,86 @@ func CacheCreation1hTokensLT(v int) predicate.UsageLog {
 // CacheCreation1hTokensLTE applies the LTE predicate on the "cache_creation_1h_tokens" field.
 func CacheCreation1hTokensLTE(v int) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldLTE(FieldCacheCreation1hTokens, v))
+}
+
+// CacheCreation30mTokensEQ applies the EQ predicate on the "cache_creation_30m_tokens" field.
+func CacheCreation30mTokensEQ(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldCacheCreation30mTokens, v))
+}
+
+// CacheCreation30mTokensNEQ applies the NEQ predicate on the "cache_creation_30m_tokens" field.
+func CacheCreation30mTokensNEQ(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldCacheCreation30mTokens, v))
+}
+
+// CacheCreation30mTokensIn applies the In predicate on the "cache_creation_30m_tokens" field.
+func CacheCreation30mTokensIn(vs ...int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldCacheCreation30mTokens, vs...))
+}
+
+// CacheCreation30mTokensNotIn applies the NotIn predicate on the "cache_creation_30m_tokens" field.
+func CacheCreation30mTokensNotIn(vs ...int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldCacheCreation30mTokens, vs...))
+}
+
+// CacheCreation30mTokensGT applies the GT predicate on the "cache_creation_30m_tokens" field.
+func CacheCreation30mTokensGT(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldCacheCreation30mTokens, v))
+}
+
+// CacheCreation30mTokensGTE applies the GTE predicate on the "cache_creation_30m_tokens" field.
+func CacheCreation30mTokensGTE(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldCacheCreation30mTokens, v))
+}
+
+// CacheCreation30mTokensLT applies the LT predicate on the "cache_creation_30m_tokens" field.
+func CacheCreation30mTokensLT(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldCacheCreation30mTokens, v))
+}
+
+// CacheCreation30mTokensLTE applies the LTE predicate on the "cache_creation_30m_tokens" field.
+func CacheCreation30mTokensLTE(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldCacheCreation30mTokens, v))
+}
+
+// CacheCreation12hTokensEQ applies the EQ predicate on the "cache_creation_12h_tokens" field.
+func CacheCreation12hTokensEQ(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldCacheCreation12hTokens, v))
+}
+
+// CacheCreation12hTokensNEQ applies the NEQ predicate on the "cache_creation_12h_tokens" field.
+func CacheCreation12hTokensNEQ(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldCacheCreation12hTokens, v))
+}
+
+// CacheCreation12hTokensIn applies the In predicate on the "cache_creation_12h_tokens" field.
+func CacheCreation12hTokensIn(vs ...int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldCacheCreation12hTokens, vs...))
+}
+
+// CacheCreation12hTokensNotIn applies the NotIn predicate on the "cache_creation_12h_tokens" field.
+func CacheCreation12hTokensNotIn(vs ...int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldCacheCreation12hTokens, vs...))
+}
+
+// CacheCreation12hTokensGT applies the GT predicate on the "cache_creation_12h_tokens" field.
+func CacheCreation12hTokensGT(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldCacheCreation12hTokens, v))
+}
+
+// CacheCreation12hTokensGTE applies the GTE predicate on the "cache_creation_12h_tokens" field.
+func CacheCreation12hTokensGTE(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldCacheCreation12hTokens, v))
+}
+
+// CacheCreation12hTokensLT applies the LT predicate on the "cache_creation_12h_tokens" field.
+func CacheCreation12hTokensLT(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldCacheCreation12hTokens, v))
+}
+
+// CacheCreation12hTokensLTE applies the LTE predicate on the "cache_creation_12h_tokens" field.
+func CacheCreation12hTokensLTE(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldCacheCreation12hTokens, v))
 }
 
 // InputCostEQ applies the EQ predicate on the "input_cost" field.
@@ -1633,6 +1743,86 @@ func AccountRateMultiplierIsNil() predicate.UsageLog {
 // AccountRateMultiplierNotNil applies the NotNil predicate on the "account_rate_multiplier" field.
 func AccountRateMultiplierNotNil() predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldNotNull(FieldAccountRateMultiplier))
+}
+
+// SearchCountEQ applies the EQ predicate on the "search_count" field.
+func SearchCountEQ(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldSearchCount, v))
+}
+
+// SearchCountNEQ applies the NEQ predicate on the "search_count" field.
+func SearchCountNEQ(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldSearchCount, v))
+}
+
+// SearchCountIn applies the In predicate on the "search_count" field.
+func SearchCountIn(vs ...int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldSearchCount, vs...))
+}
+
+// SearchCountNotIn applies the NotIn predicate on the "search_count" field.
+func SearchCountNotIn(vs ...int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldSearchCount, vs...))
+}
+
+// SearchCountGT applies the GT predicate on the "search_count" field.
+func SearchCountGT(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldSearchCount, v))
+}
+
+// SearchCountGTE applies the GTE predicate on the "search_count" field.
+func SearchCountGTE(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldSearchCount, v))
+}
+
+// SearchCountLT applies the LT predicate on the "search_count" field.
+func SearchCountLT(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldSearchCount, v))
+}
+
+// SearchCountLTE applies the LTE predicate on the "search_count" field.
+func SearchCountLTE(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldSearchCount, v))
+}
+
+// SearchCostEQ applies the EQ predicate on the "search_cost" field.
+func SearchCostEQ(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldSearchCost, v))
+}
+
+// SearchCostNEQ applies the NEQ predicate on the "search_cost" field.
+func SearchCostNEQ(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldSearchCost, v))
+}
+
+// SearchCostIn applies the In predicate on the "search_cost" field.
+func SearchCostIn(vs ...float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldSearchCost, vs...))
+}
+
+// SearchCostNotIn applies the NotIn predicate on the "search_cost" field.
+func SearchCostNotIn(vs ...float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldSearchCost, vs...))
+}
+
+// SearchCostGT applies the GT predicate on the "search_cost" field.
+func SearchCostGT(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldSearchCost, v))
+}
+
+// SearchCostGTE applies the GTE predicate on the "search_cost" field.
+func SearchCostGTE(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldSearchCost, v))
+}
+
+// SearchCostLT applies the LT predicate on the "search_cost" field.
+func SearchCostLT(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldSearchCost, v))
+}
+
+// SearchCostLTE applies the LTE predicate on the "search_cost" field.
+func SearchCostLTE(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldSearchCost, v))
 }
 
 // BillingTypeEQ applies the EQ predicate on the "billing_type" field.

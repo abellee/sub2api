@@ -89,6 +89,24 @@
           <p class="mt-0.5 text-xs text-gray-500 dark:text-dark-400">
             {{ t('channelMonitorV2.settings.platformsHint') }}
           </p>
+          <div v-if="availablePlatforms.length" class="mt-3 flex flex-wrap items-center gap-2">
+            <Select
+              v-model="selectedPlatform"
+              class="min-w-48"
+              :options="availablePlatforms"
+              :aria-label="t('channelMonitorV2.settings.selectPlatform')"
+              :placeholder="t('channelMonitorV2.settings.selectPlatform')"
+              :disabled="saving"
+            />
+            <button
+              type="button"
+              class="btn btn-secondary btn-sm"
+              :disabled="saving || !selectedPlatform"
+              @click="addPlatform"
+            >
+              {{ t('channelMonitorV2.settings.addPlatform') }}
+            </button>
+          </div>
         </div>
         <div class="divide-y divide-gray-100 dark:divide-dark-700">
           <div
@@ -136,21 +154,21 @@
             {{ t('channelMonitorV2.settings.groupsAll') }}
           </button>
         </div>
-        <div class="max-h-[min(40vh,280px)] overflow-y-auto px-3 py-2 sm:px-4">
-          <div class="grid grid-cols-1 gap-1 sm:grid-cols-2">
+        <div class="max-h-[min(70vh,36rem)] overflow-y-auto px-3 py-2 sm:px-4">
+          <div class="grid grid-cols-1 gap-1 xl:grid-cols-2">
             <label
               v-for="group in groups"
               :key="group.id"
-              class="flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition hover:bg-gray-50 dark:hover:bg-dark-800/60"
+              class="flex cursor-pointer items-start gap-3 rounded-xl px-3 py-2.5 text-sm transition hover:bg-gray-50 dark:hover:bg-dark-800/60"
             >
               <input
                 type="checkbox"
-                class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500/40"
+                class="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 text-primary-600 focus:ring-primary-500/40"
                 :checked="draft.group_ids.includes(group.id)"
                 @change="toggleGroup(group.id)"
               />
-              <span class="min-w-0 flex-1 truncate font-medium text-gray-800 dark:text-gray-100">{{ group.name }}</span>
-              <small class="shrink-0 text-xs text-gray-400">{{ platformLabel(group.platform) }} · #{{ group.id }}</small>
+              <span class="min-w-0 flex-1 whitespace-normal break-words font-medium text-gray-800 dark:text-gray-100">{{ group.name }}</span>
+              <small class="shrink-0 pt-0.5 text-xs text-gray-400">{{ platformLabel(group.platform) }} · #{{ group.id }}</small>
             </label>
           </div>
           <p v-if="groups.length === 0" class="empty-state py-8 text-sm text-gray-400">{{ t('channelMonitorV2.settings.groupsEmpty') }}</p>
@@ -263,6 +281,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import Select from '@/components/common/Select.vue'
+import { CONCRETE_PLATFORM_OPTIONS } from '@/constants/platforms'
 import Toggle from '@/components/common/Toggle.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { useAppStore } from '@/stores/app'
@@ -284,6 +304,18 @@ const saving = ref(false)
 const draft = ref<MonitorConfig | null>(null)
 const original = ref('')
 const groups = ref<AdminGroup[]>([])
+const selectedPlatform = ref('')
+const availablePlatforms = computed(() =>
+  CONCRETE_PLATFORM_OPTIONS.filter(
+    (option) => !draft.value?.platforms.some((platform) => platform.platform === option.value)
+  )
+)
+
+function addPlatform() {
+  if (!draft.value || !availablePlatforms.value.some((option) => option.value === selectedPlatform.value)) return
+  draft.value.platforms.push({ platform: selectedPlatform.value, enabled: true, models: [] })
+  selectedPlatform.value = ''
+}
 
 const dirty = computed(() => (draft.value ? JSON.stringify(draft.value) !== original.value : false))
 const namedModelCount = computed(
@@ -387,6 +419,10 @@ function platformLabel(value: string) {
       kiro: 'Kiro',
       gemini: 'Gemini',
       antigravity: 'Antigravity',
+      kimi: 'Kimi',
+      zhipu: 'Zhipu GLM',
+      deepseek: 'DeepSeek',
+      minimax: 'MiniMax',
       composite: 'Composite',
     } as Record<string, string>
   )[value] || value
@@ -409,6 +445,8 @@ async function load() {
   try {
     const [value, groupRows] = await Promise.all([getConfig(), adminAPI.groups.getAllIncludingInactive()])
     const normalized = normalizeConfig(value)
+    const existingGroupIds = new Set(groupRows.map((group) => group.id))
+    normalized.group_ids = normalized.group_ids.filter((id) => existingGroupIds.has(id))
     draft.value = structuredClone(normalized)
     groups.value = groupRows
     original.value = JSON.stringify(normalized)
