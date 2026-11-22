@@ -105,6 +105,14 @@ CREATE UNIQUE INDEX daily_dim ON ops_metrics_daily(bucket_date,COALESCE(platform
 	for i := 0; i < 2; i++ {
 		insert(start.Add(time.Hour), 1213, "/v1/images/generations", failure, 400, false, false)
 	}
+	// The CPU fix must preserve every row's classification, not just totals.
+	_, err = db.ExecContext(ctx, `CREATE TEMP TABLE original_sla AS SELECT id,is_sla_sample FROM ops_error_log_metrics`)
+	require.NoError(t, err)
+	migrate("266_ops_media_task_sla_cpu.sql", true)
+	var changed int
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT count(*) FROM original_sla a JOIN ops_error_log_metrics b USING(id)
+WHERE a.is_sla_sample IS DISTINCT FROM b.is_sla_sample`).Scan(&changed))
+	require.Zero(t, changed)
 	repo := &opsRepository{db: db}
 	filter := &service.OpsDashboardFilter{StartTime: start, EndTime: end}
 	total, limited, sla, upstream, _, _, err := repo.queryErrorCounts(ctx, filter, start, end)
@@ -155,4 +163,24 @@ UPDATE ops_metrics_daily SET error_count_sla=error_count_total-business_limited_
 	var logs int
 	require.NoError(t, db.QueryRowContext(ctx, "SELECT count(*) FROM ops_error_logs").Scan(&logs))
 	require.Equal(t, 112, logs)
+	// NULL owners still deduplicate, separately from an authenticated user.
+	_, err = db.ExecContext(ctx, `INSERT INTO ops_error_logs(created_at,user_id,request_path,error_body,status_code)
+VALUES (now(),NULL,'/media/tasks/mtask_null','{"status":"failed"}',502),
+       (now(),NULL,'/media/tasks/mtask_null','{"status":"failed"}',502),
+       (now(),2,'/media/tasks/mtask_null','{"status":"failed"}',502)`)
+	require.NoError(t, err)
+	var samples int
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT count(*) FROM ops_error_log_metrics
+WHERE request_path='/media/tasks/mtask_null' AND is_sla_sample`).Scan(&samples))
+	require.Equal(t, 2, samples)
+	// Many polling errors must stay cheap when all four SLA metrics use the view.
+	_, err = db.ExecContext(ctx, `INSERT INTO ops_error_logs(created_at,user_id,request_path,error_body,status_code)
+SELECT now(),2,'/media/tasks/mtask_load_'||(n%100),'{"status":"failed"}',502
+FROM generate_series(1,10000) n; ANALYZE ops_error_logs;`)
+	require.NoError(t, err)
+	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	_, _, loadSLA, _, _, _, err := repo.queryErrorCounts(queryCtx, filter, time.Now().Add(-time.Hour), time.Now().Add(time.Hour))
+	require.NoError(t, err)
+	require.EqualValues(t, 102, loadSLA)
 }
