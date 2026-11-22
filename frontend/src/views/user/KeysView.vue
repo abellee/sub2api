@@ -177,11 +177,18 @@
                 class="key-group-trigger"
                 :title="row.group ? `${row.group.name} · ${t('keys.clickToChangeGroup')}` : t('keys.clickToChangeGroup')"
               >
+                <PlatformIcon
+                  v-if="row.group"
+                  :platform="row.group.platform || 'composite'"
+                  size="md"
+                  class="key-group-icon"
+                />
                 <GroupBadge
                   v-if="row.group"
                   class="key-group-badge"
                   :name="row.group.name"
                   :platform="row.group.platform || 'composite'"
+                  :show-icon="false"
                   :subscription-type="row.group.subscription_type"
                   :rate-multiplier="row.group.rate_multiplier"
                   :user-rate-multiplier="userGroupRates[row.group.id]"
@@ -193,13 +200,32 @@
                 <span v-else class="key-group-empty">{{ t('keys.noGroup') }}</span>
                 <Icon name="chevronDown" size="xs" class="shrink-0 text-gray-400" />
               </button>
-              <span
-                v-if="row.group && capFor(row.group.id) != null"
-                class="keys-group-cap-tag mt-1"
-                :title="t('keys.capRateHint')"
-              >
-                {{ t('keys.capRateTag', { rate: formatCapRate(capFor(row.group.id)!) }) }}
-              </span>
+              <div v-if="row.group" class="key-group-tags">
+                <span
+                  v-if="capFor(row.group.id) != null"
+                  class="keys-group-cap-tag"
+                  :title="t('keys.capRateHint')"
+                >
+                  {{ t('keys.capRateTag', { rate: formatCapRate(capFor(row.group.id)!) }) }}
+                </span>
+                <span
+                  v-for="(tag, index) in groupTags[String(row.group.id)] ?? []"
+                  :key="index"
+                  class="key-group-custom-tag"
+                  :title="tag.description || undefined"
+                >{{ tag.name }}</span>
+                <span
+                  v-if="row.group.required_protocol"
+                  class="key-group-protocol-tag"
+                  :title="t('keys.requiredProtocolTagHint', { protocol: protocolNames[row.group.required_protocol] })"
+                >{{ t('keys.requiredProtocolTag', { protocol: protocolNames[row.group.required_protocol] }) }}</span>
+                <span
+                  v-for="client in blockedClientsFor(row.group)"
+                  :key="client"
+                  class="key-group-client-tag"
+                  :title="t('keys.blockedClientTagHint', { client })"
+                >{{ t('keys.blockedClientTag', { client }) }}</span>
+              </div>
             </div>
           </template>
 
@@ -1647,6 +1673,10 @@ const onStatusFilterChange = (value: string | number | boolean | null) => {
 }
 
 // Convert groups to Select options format with rate multiplier and subscription type
+const protocolNames: Record<string, string> = { anthropic: 'Anthropic', openai: 'OpenAI', google: 'Google' }
+const blockedClientsFor = (group: Group): string[] =>
+  [...new Set((group.blocked_user_agents ?? '').split(',').map((client) => client.trim().toLowerCase()).filter(Boolean))]
+
 const groupOptions = computed(() =>
   groups.value.map((group) => ({
     value: group.id,
@@ -1661,7 +1691,7 @@ const groupOptions = computed(() =>
     subscriptionType: group.subscription_type,
     platform: group.platform,
     requiredProtocol: group.required_protocol,
-    blockedClients: [...new Set((group.blocked_user_agents ?? '').split(',').map((client) => client.trim().toLowerCase()).filter(Boolean))]
+    blockedClients: blockedClientsFor(group)
   }))
 )
 
@@ -2638,11 +2668,18 @@ onUnmounted(() => {
 .key-group-trigger{display:flex;align-items:center;gap:6px;width:100%;min-width:0;padding:0;border-radius:6px;text-align:left}
 .key-group-trigger:hover{background:var(--tf-console-hover)}
 .key-group-trigger:focus-visible{outline:2px solid var(--tf-console-active-ink);outline-offset:3px}
-.key-group-badge{display:grid;grid-template-columns:14px minmax(0,1fr) auto;align-items:center;flex:1;min-width:0;max-width:100%;gap:6px}
-.key-group-badge :deep(>svg){grid-column:1;grid-row:1}
-.key-group-badge :deep(.group-badge-name){grid-column:2;grid-row:1;min-width:0}
-.key-group-badge :deep(.group-badge-rate){grid-column:3;grid-row:1;white-space:nowrap}
-.key-group-badge :deep(.group-badge-peak){grid-column:2 / -1;justify-self:start;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.key-group-icon{align-self:flex-start;flex-shrink:0;margin-top:4px;color:var(--studio-ink)}
+.key-group-badge{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;flex:1;min-width:0;max-width:100%;gap:6px}
+.key-group-badge :deep(.group-badge-name){grid-column:1;grid-row:1;min-width:0}
+.key-group-badge :deep(.group-badge-rate){grid-column:2;grid-row:1;white-space:nowrap}
+.key-group-badge :deep(.group-badge-peak){grid-column:1 / -1;justify-self:start;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.key-group-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.key-group-tags:empty{display:none}
+.key-group-tags>span{max-width:100%;white-space:normal;overflow-wrap:anywhere}
+.key-group-custom-tag,.key-group-protocol-tag,.key-group-client-tag{display:inline-flex;align-items:center;padding:2px 7px;border-radius:6px;font-size:10px;font-weight:500;cursor:help}
+.key-group-custom-tag{background:var(--studio-haze);color:var(--studio-muted)}
+.key-group-protocol-tag{@apply bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300}
+.key-group-client-tag{@apply bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300}
 .key-group-empty{flex:1;min-width:0;color:var(--studio-muted);font-size:12px}
 .recommended-group-name{display:flex;align-items:center;gap:6px;min-width:0}
 

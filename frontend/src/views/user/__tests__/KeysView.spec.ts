@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { nextTick } from 'vue'
 
-import type { ApiKey } from '@/types'
+import type { ApiKey, Group } from '@/types'
 import { keysAPI } from '@/api'
 import KeysView from '../KeysView.vue'
 
@@ -178,6 +178,9 @@ const KeyCardGridStub = {
           <slot name="cell-id" :value="row.id" :row="row" />
         </div>
         <slot name="cell-name" :value="row.name" :row="row" />
+        <div v-if="columns.some((col) => col.key === 'group')" data-test="key-group">
+          <slot name="cell-group" :row="row" />
+        </div>
         <slot name="cell-actions" :row="row" />
         <div data-test="current-concurrency">
           <slot name="cell-current_concurrency" :value="row.current_concurrency" :row="row" />
@@ -301,6 +304,45 @@ describe('user KeysView column settings', () => {
     getGroupRecommendations.mockResolvedValue([])
     getGroupCategories.mockResolvedValue({ categories: [], assignments: {} })
     isCurrentStep.mockReturnValue(false)
+  })
+
+  it('shows the group model icon and all tags below the group name on key cards', async () => {
+    const group = {
+      id: 1, name: 'OpenAI group', platform: 'openai', rate_multiplier: 0.3,
+      required_protocol: 'openai', blocked_user_agents: ' Claude, , cursor, CLAUDE ',
+    } as Group
+    getAvailableGroups.mockResolvedValue([group])
+    getGroupCategories.mockResolvedValue({
+      categories: [], assignments: {}, group_caps: { '1': 0.8 },
+      group_tags: { '1': [
+        { name: '快速', description: '优先处理请求' },
+        { name: '稳定', description: '' },
+        { name: '支持长上下文', description: '' },
+        { name: '完整显示的第四个标签', description: '' },
+      ] },
+    })
+    listKeys.mockResolvedValue({
+      items: [{ ...createApiKey(), group_id: 1, group }, createApiKey()], total: 2,
+      page: 1, page_size: 20, pages: 1,
+    })
+    const wrapper = await mountView()
+    const cards = wrapper.findAll('[data-test="key-group"]')
+    const trigger = cards[0].get('.key-group-trigger')
+    expect(trigger.findComponent({ name: 'PlatformIcon' }).props('platform')).toBe('openai')
+    expect(trigger.element.firstElementChild?.classList.contains('key-group-icon')).toBe(true)
+    expect(trigger.findComponent({ name: 'GroupBadge' }).props('showIcon')).toBe(false)
+    const tags = cards[0].get('.key-group-tags')
+    expect(tags.find('.keys-group-cap-tag').exists()).toBe(true)
+    expect(tags.findAll('.key-group-custom-tag').map(tag => tag.text()))
+      .toEqual(['快速', '稳定', '支持长上下文', '完整显示的第四个标签'])
+    expect(tags.get('.key-group-custom-tag').attributes('title')).toBe('优先处理请求')
+    expect(tags.get('.key-group-protocol-tag').text()).toBe('仅限OpenAI协议')
+    expect(tags.findAll('.key-group-client-tag').map(tag => tag.text()))
+      .toEqual(['排除客户端：claude', '排除客户端：cursor'])
+    expect(cards[0].get('.key-group-trigger').element.nextElementSibling).toBe(tags.element)
+    expect(cards[1].find('.key-group-tags').exists()).toBe(false)
+    expect(cards[1].find('.key-group-icon').exists()).toBe(false)
+    wrapper.unmount()
   })
 
   it.each([
