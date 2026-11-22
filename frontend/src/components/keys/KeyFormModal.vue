@@ -1,10 +1,11 @@
 <template>
   <BaseDialog :show="show" :title="title" width="medium-wide" @close="emit('close')">
-    <form id="key-form" class="space-y-5" @submit.prevent="emit('submit')">
+    <form id="key-form" class="key-form space-y-5" @submit.prevent="emit('submit')">
       <!-- 第一行：名称 -->
       <div>
-        <label class="input-label">{{ t('keys.nameLabel') }}</label>
+        <label for="key-form-name" class="input-label">{{ t('keys.nameLabel') }}</label>
         <input
+          id="key-form-name"
           v-model="formData.name"
           type="text"
           required
@@ -19,7 +20,7 @@
       <div class="space-y-2">
         <label class="input-label">{{ t('keys.groupLabel') }}</label>
         <!-- 全局搜索：置于分组区域最上方，过滤所有分类下的分组 -->
-        <div class="relative shrink-0">
+        <div class="key-group-search relative shrink-0">
           <Icon name="search" size="sm" class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
             v-model="groupSearch"
@@ -80,8 +81,10 @@
                       class="group-row"
                       :data-group-id="option.value"
                       :class="{ 'group-row-selected': formData.group_id === option.value }"
+                      :aria-pressed="formData.group_id === option.value"
                       @click="selectGroup(option)"
                       @keydown.enter.prevent="selectGroup(option)"
+                      @keydown.space.prevent="selectGroup(option)"
                     >
                       <GroupOptionItem
                         class="w-full"
@@ -183,20 +186,30 @@
           v-model="formData.status"
           :options="statusOptions"
           :placeholder="t('keys.selectStatus')"
-        />
+          :aria-label="t('keys.statusLabel')"
+        >
+          <template #option="{ option, selected }">
+            <span class="key-status-option">{{ option.label }}</span>
+            <Icon v-if="selected" name="check" size="sm" />
+          </template>
+        </Select>
       </div>
 
-      <template v-if="showMore">
+      <div v-if="showMore" id="key-more-settings" class="key-more-settings">
         <div class="more-settings-divider" role="separator" :aria-label="t('keys.moreSettings')">
           <span class="more-settings-divider-text">{{ t('keys.moreSettings') }}</span>
         </div>
 
         <!-- Custom Key Section（仅创建模式） -->
-          <div v-if="!isEdit" class="space-y-3">
+          <div v-if="!isEdit" class="key-setting space-y-3">
             <div class="flex items-center justify-between">
               <label class="input-label mb-0">{{ t('keys.customKeyLabel') }}</label>
               <button
                 type="button"
+                class="key-setting-switch"
+                role="switch"
+                :aria-checked="formData.use_custom_key"
+                :aria-label="t('keys.customKeyLabel')"
                 @click="formData.use_custom_key = !formData.use_custom_key"
                 :class="[
                   'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none',
@@ -225,11 +238,15 @@
           </div>
 
           <!-- IP Restriction Section -->
-          <div class="space-y-3">
+          <div class="key-setting space-y-3">
             <div class="flex items-center justify-between">
               <label class="input-label mb-0">{{ t('keys.ipRestriction') }}</label>
               <button
                 type="button"
+                class="key-setting-switch"
+                role="switch"
+                :aria-checked="formData.enable_ip_restriction"
+                :aria-label="t('keys.ipRestriction')"
                 @click="formData.enable_ip_restriction = !formData.enable_ip_restriction"
                 :class="[
                   'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none',
@@ -271,7 +288,7 @@
           </div>
 
           <!-- Quota Limit Section -->
-          <div class="space-y-3">
+          <div class="key-setting space-y-3">
             <label class="input-label">{{ t('keys.quotaLimit') }}</label>
             <div class="relative">
               <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">$</span>
@@ -290,7 +307,7 @@
             <div v-if="selectedKey && selectedKey.quota > 0">
               <label class="input-label">{{ t('keys.quotaUsed') }}</label>
               <div class="flex items-center gap-2">
-                <div class="flex-1 rounded-lg bg-gray-100 px-3 py-2 dark:bg-dark-700">
+                <div class="key-usage-summary flex-1 rounded-lg px-3 py-2">
                   <span class="font-medium text-gray-900 dark:text-white">
                     ${{ selectedKey.quota_used?.toFixed(4) || '0.0000' }}
                   </span>
@@ -312,11 +329,15 @@
           </div>
 
           <!-- Rate Limit Section -->
-          <div class="space-y-3">
+          <div class="key-setting space-y-3">
             <div class="flex items-center justify-between">
               <label class="input-label mb-0">{{ t('keys.rateLimitSection') }}</label>
               <button
                 type="button"
+                class="key-setting-switch"
+                role="switch"
+                :aria-checked="formData.enable_rate_limit"
+                :aria-label="t('keys.rateLimitSection')"
                 @click="formData.enable_rate_limit = !formData.enable_rate_limit"
                 :class="[
                   'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none',
@@ -351,7 +372,7 @@
                 <!-- Usage info (edit mode) -->
                 <div v-if="selectedKey && selectedKey.rate_limit_5h > 0" class="mt-2">
                   <div class="flex items-center gap-2">
-                    <div class="flex-1 rounded-lg bg-gray-100 px-3 py-2 dark:bg-dark-700 text-sm">
+                    <div class="key-usage-summary flex-1 rounded-lg px-3 py-2 text-sm">
                       <span :class="[
                         'font-medium',
                         selectedKey.usage_5h >= selectedKey.rate_limit_5h ? 'text-red-500' :
@@ -397,7 +418,7 @@
                 <!-- Usage info (edit mode) -->
                 <div v-if="selectedKey && selectedKey.rate_limit_1d > 0" class="mt-2">
                   <div class="flex items-center gap-2">
-                    <div class="flex-1 rounded-lg bg-gray-100 px-3 py-2 dark:bg-dark-700 text-sm">
+                    <div class="key-usage-summary flex-1 rounded-lg px-3 py-2 text-sm">
                       <span :class="[
                         'font-medium',
                         selectedKey.usage_1d >= selectedKey.rate_limit_1d ? 'text-red-500' :
@@ -443,7 +464,7 @@
                 <!-- Usage info (edit mode) -->
                 <div v-if="selectedKey && selectedKey.rate_limit_7d > 0" class="mt-2">
                   <div class="flex items-center gap-2">
-                    <div class="flex-1 rounded-lg bg-gray-100 px-3 py-2 dark:bg-dark-700 text-sm">
+                    <div class="key-usage-summary flex-1 rounded-lg px-3 py-2 text-sm">
                       <span :class="[
                         'font-medium',
                         selectedKey.usage_7d >= selectedKey.rate_limit_7d ? 'text-red-500' :
@@ -486,11 +507,15 @@
           </div>
 
           <!-- Expiration Section -->
-          <div class="space-y-3">
+          <div class="key-setting space-y-3">
             <div class="flex items-center justify-between">
               <label class="input-label mb-0">{{ t('keys.expiration') }}</label>
               <button
                 type="button"
+                class="key-setting-switch"
+                role="switch"
+                :aria-checked="formData.enable_expiration"
+                :aria-label="t('keys.expiration')"
                 @click="formData.enable_expiration = !formData.enable_expiration"
                 :class="[
                   'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none',
@@ -514,24 +539,16 @@
                   :key="days"
                   type="button"
                   @click="setExpirationDays(parseInt(days))"
-                  :class="[
-                    'rounded-lg px-3 py-1.5 text-sm transition-colors',
-                    formData.expiration_preset === days
-                      ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-700 dark:text-gray-400 dark:hover:bg-dark-600'
-                  ]"
+                  class="key-expiration-preset"
+                  :aria-pressed="formData.expiration_preset === days"
                 >
                   {{ t('keys.expiresInDays', { days }) }}
                 </button>
                 <button
                   type="button"
                   @click="formData.expiration_preset = 'custom'"
-                  :class="[
-                    'rounded-lg px-3 py-1.5 text-sm transition-colors',
-                    formData.expiration_preset === 'custom'
-                      ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-700 dark:text-gray-400 dark:hover:bg-dark-600'
-                  ]"
+                  class="key-expiration-preset"
+                  :aria-pressed="formData.expiration_preset === 'custom'"
                 >
                   {{ t('keys.customDate') }}
                 </button>
@@ -557,13 +574,14 @@
               </div>
             </div>
           </div>
-        </template>
+        </div>
 
         <!-- 底部「更多设置」切换按钮：text 样式，填满窗口宽度 -->
         <button
           type="button"
           class="more-settings-toggle"
           :aria-expanded="showMore"
+          aria-controls="key-more-settings"
           @click="showMore = !showMore"
         >
           <Icon :name="showMore ? 'chevronUp' : 'chevronDown'" size="sm" />
@@ -571,8 +589,8 @@
         </button>
     </form>
     <template #footer>
-      <div class="flex justify-end gap-3">
-        <button @click="emit('close')" type="button" class="btn btn-secondary">
+      <div class="key-form-actions">
+        <button @click="emit('close')" type="button" class="btn key-form-cancel">
           {{ t('common.cancel') }}
         </button>
         <button
@@ -602,6 +620,7 @@
               d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
             ></path>
           </svg>
+          <Icon v-else :name="isEdit ? 'check' : 'plus'" size="sm" />
           {{ submitting ? t('keys.saving') : (isEdit ? t('common.save') : t('common.create')) }}
         </button>
       </div>
@@ -701,7 +720,7 @@ const protocolNames: Record<string, string> = { anthropic: 'Anthropic', openai: 
 const UNCATEGORIZED_TAB = '__uncategorized__'
 const RECOMMENDED_TAB = '__recommended__'
 
-// 更多设置折叠区（仅创建模式展示切换按钮）
+// 创建和编辑共用更多设置折叠区
 const showMore = ref(false)
 
 // 名称是否由用户手动输入过；未输入过则选中分组时自动用分组名填充
@@ -989,106 +1008,124 @@ const recommendationStarEmoji = (rating: number | undefined, index: number) => {
 </script>
 
 <style scoped>
-/* 底部「更多设置」切换按钮：text 样式，填满宽度 */
-.more-settings-toggle {
-  @apply flex w-full items-center justify-center gap-1.5 rounded-xl py-2 text-sm font-medium text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/30 dark:text-gray-400 dark:hover:bg-dark-700 dark:hover:text-gray-200;
+/* Teleported dialogs need their own palette; keep these rules local to this form. */
+:global(.modal-overlay:has(.key-form)),
+:global(.select-dropdown-portal:has(.key-status-option)) {
+  --key-form-surface: #fff;
+  --key-form-field: #f7f8fc;
+  --key-form-ink: #20273e;
+  --key-form-muted: #69748d;
+  --key-form-line: #dce2f0;
+  --key-form-haze: #536de512;
 }
-
-/* 分组左右布局：左侧分类 tab，右侧分组 list */
-.group-layout {
-  @apply flex min-h-0 overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-dark-600 dark:bg-dark-800;
-  height: min(460px, 56vh);
+:global(.dark .modal-overlay:has(.key-form)),
+:global(.dark .select-dropdown-portal:has(.key-status-option)) {
+  --key-form-surface: #1b1e32;
+  --key-form-field: #15192b;
+  --key-form-ink: #e9edfa;
+  --key-form-muted: #a0abc4;
+  --key-form-line: #353d58;
+  --key-form-haze: #6f84ed16;
+  color-scheme: dark;
 }
-
-.group-layout-tabs {
-  @apply flex w-36 shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-gray-200 bg-gray-50/60 p-2 dark:border-dark-700 dark:bg-dark-900/40 sm:w-44;
-  scrollbar-width: thin;
+:global(.modal-overlay:has(.key-form)) { background: #080e2399; backdrop-filter: blur(8px); }
+:global(.modal-overlay:has(.key-form) .modal-content) {
+  background: var(--key-form-surface);
+  color: var(--key-form-ink);
+  border: 1px solid var(--key-form-line);
+  border-radius: 22px;
+  box-shadow: 0 24px 80px #080e2333;
 }
-
-.group-layout-tab {
-  @apply flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-dark-700 dark:hover:text-gray-100;
+:global(.modal-overlay:has(.key-form) .modal-header) { padding: 24px 28px 16px; border: 0; }
+:global(.modal-overlay:has(.key-form) .modal-title) { color: var(--key-form-ink); font-size: 20px; font-weight: 600; letter-spacing: -.5px; }
+:global(.modal-overlay:has(.key-form) .modal-header button) { color: var(--key-form-muted); border-radius: 8px; }
+:global(.modal-overlay:has(.key-form) .modal-header button:hover) { color: var(--key-form-ink); background: var(--key-form-haze); }
+:global(.modal-overlay:has(.key-form) .modal-body) { padding: 8px 28px 20px; scrollbar-width: thin; }
+:global(.modal-overlay:has(.key-form) .modal-footer) { padding: 18px 28px; border-color: var(--key-form-line); }
+.key-form { min-width: 0; color: var(--key-form-ink); }
+.key-form .input-label { color: var(--key-form-ink); font-size: 13px; font-weight: 500; }
+.key-form .input-hint { color: var(--key-form-muted); font-size: 12px; line-height: 1.7; }
+.key-form .input,
+.key-form :deep(.select-trigger) {
+  min-height: 42px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: var(--key-form-field);
+  box-shadow: none;
+  color: var(--key-form-ink);
+  font-size: 13px;
+  --tw-ring-shadow: 0 0 #0000;
 }
-
-.group-layout-tab-active {
-  @apply bg-primary-50 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300;
-}
-
-.group-layout-tab-recommended {
-  @apply text-amber-700 dark:text-amber-300;
-}
-
-.group-layout-tab-recommended.group-layout-tab-active {
-  @apply bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300;
-}
-
-.group-layout-main {
-  @apply flex min-w-0 flex-1 flex-col gap-2 p-3;
-}
-
-.group-layout-list {
-  @apply min-h-0 flex-1 overflow-y-auto pr-1;
-  scrollbar-width: thin;
-  overscroll-behavior: contain;
-  scroll-behavior: smooth;
-}
-
-.group-row {
-  @apply flex min-h-[5.5rem] w-full flex-col rounded-lg border border-gray-100 bg-white px-3 pt-2.5 text-left transition-colors hover:border-primary-300 hover:bg-primary-50/60 dark:border-dark-700 dark:bg-dark-800 dark:hover:border-primary-500 dark:hover:bg-primary-900/20;
-}
-
-.group-row-selected {
-  @apply bg-primary-50/80 ring-1 ring-inset ring-primary-500/30 dark:bg-primary-900/30;
-}
-
-/* 条目底部：上限倍率与使用限制(左) | 模型价格入口(右) */
-.group-row-footer {
-  @apply mt-2 flex flex-1 items-center gap-2 border-t border-gray-100 py-2 dark:border-dark-700/60;
-}
-
-.group-cap-tag {
-  @apply inline-flex flex-none items-center whitespace-nowrap rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-300;
-}
-
-.group-pricing-link {
-  @apply inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-gray-400 transition-colors hover:text-primary-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/30 dark:text-dark-400 dark:hover:text-primary-400;
-}
-
-.group-custom-tag {
-  @apply inline-flex flex-none cursor-help items-center whitespace-nowrap rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-600 dark:bg-dark-700 dark:text-gray-300;
-}
-
-.recommendation-note {
-  @apply mt-2 w-full rounded-lg bg-primary-50/80 px-2.5 py-2 text-left dark:bg-primary-900/20;
-}
-
-.recommendation-note-label {
-  @apply text-[11px] font-semibold tracking-wide text-amber-800 dark:text-amber-200;
-}
-
-.recommendation-note-stars {
-  @apply flex shrink-0 items-center gap-px;
-}
-
-.recommendation-note-star {
-  @apply text-[13px] leading-none;
-}
-
-.recommendation-note-text {
-  @apply mt-1.5 w-full overflow-hidden text-left text-xs leading-relaxed text-amber-900/80 dark:text-amber-100/80 line-clamp-1;
-}
-
-/* 更多设置折叠区分隔线 */
-.more-settings-divider {
-  @apply flex items-center gap-3;
-}
-
-.more-settings-divider::before,
-.more-settings-divider::after {
-  content: '';
-  @apply h-px flex-1 bg-gray-200 dark:bg-dark-700;
-}
-
-.more-settings-divider-text {
-  @apply text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500;
+.key-form .input::placeholder { color: var(--key-form-muted); opacity: .7; }
+.key-form .input:hover,
+.key-form :deep(.select-trigger:hover) { border-color: var(--key-form-line); }
+.key-form .input:focus,
+.key-form :deep(.select-trigger:focus-visible),
+.key-form :deep(.select-trigger-open) { border-color: #8297f5; box-shadow: 0 0 0 3px #8297f51a; outline: none; }
+.key-form .input.border-red-500 { border-color: #ef4444; }
+.key-form textarea { resize: vertical; }
+.key-group-search .input { padding-left: 36px; }
+.group-layout { display: grid; grid-template-columns: 148px minmax(0, 1fr); gap: 18px; height: min(440px, 50vh); min-height: 220px; }
+.group-layout-tabs { display: flex; flex-direction: column; gap: 4px; min-width: 0; overflow-y: auto; padding: 2px; scrollbar-width: thin; }
+.group-layout-tab { display: flex; flex-shrink: 0; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 9px; color: var(--key-form-muted); font-size: 13px; text-align: left; transition: background-color .15s, color .15s; }
+.group-layout-tab:hover { background: var(--key-form-haze); color: var(--key-form-ink); }
+.group-layout-tab-active { background: var(--key-form-haze); color: var(--tf-console-active-ink); font-weight: 600; }
+.group-layout-tab :deep(.text-gray-400) { color: var(--key-form-muted); }
+.group-layout-main { display: flex; min-width: 0; min-height: 0; }
+.group-layout-list { min-width: 0; flex: 1; overflow-y: auto; padding: 2px 5px 2px 2px; scrollbar-width: thin; overscroll-behavior: contain; scroll-behavior: smooth; }
+.group-row { display: flex; flex-direction: column; gap: 0; min-width: 0; width: 100%; padding: 14px 14px 0; border: 1px solid transparent; border-radius: 14px; background: var(--key-form-field); text-align: left; cursor: pointer; transition: border-color .15s, background-color .15s; }
+.group-row:hover { border-color: var(--key-form-line); background: var(--key-form-haze); }
+.group-row-selected { border-color: #8297f5; background: var(--key-form-haze); box-shadow: 0 0 0 1px #8297f533; }
+.group-row-footer { display: flex; align-items: center; gap: 8px; margin-top: 12px; padding: 10px 0; border-top: 1px solid var(--key-form-line); }
+.group-cap-tag { display: inline-flex; flex: none; align-items: center; padding: 2px 7px; border-radius: 6px; background: var(--key-form-haze); color: var(--tf-console-active-ink); font-size: 10px; font-weight: 500; white-space: nowrap; }
+.group-pricing-link { display: inline-flex; align-items: center; gap: 4px; border-radius: 6px; padding: 4px 6px; color: var(--key-form-muted); font-size: 12px; font-weight: 500; white-space: nowrap; }
+.group-pricing-link:hover { color: var(--tf-console-active-ink); background: var(--key-form-haze); }
+.group-custom-tag { display: inline-flex; flex: none; align-items: center; padding: 2px 7px; border-radius: 6px; background: var(--key-form-haze); color: var(--key-form-muted); font-size: 10px; font-weight: 500; white-space: nowrap; cursor: help; }
+.recommendation-note { margin-top: 10px; padding: 10px 12px; border-radius: 9px; background: var(--key-form-haze); }
+.recommendation-note-label { color: var(--key-form-muted); font-size: 11px; font-weight: 500; }
+.recommendation-note-stars { display: flex; flex-shrink: 0; align-items: center; gap: 1px; }
+.recommendation-note-star { font-size: 12px; line-height: 1; }
+.recommendation-note-text { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; margin-top: 6px; color: var(--key-form-ink); font-size: 12px; line-height: 1.7; }
+.more-settings-toggle { display: flex; width: 100%; align-items: center; justify-content: center; gap: 6px; padding: 10px; border-radius: 9px; background: var(--key-form-field); color: var(--key-form-muted); font-size: 13px; transition: background-color .15s, color .15s; }
+.more-settings-toggle:hover { color: var(--tf-console-active-ink); background: var(--key-form-haze); }
+.more-settings-divider { display: flex; align-items: center; gap: 12px; margin: 4px 0; }
+.more-settings-divider::before,.more-settings-divider::after { content: ''; height: 1px; flex: 1; background: var(--key-form-line); }
+.more-settings-divider-text { color: var(--key-form-muted); font-size: 12px; font-weight: 500; }
+.key-more-settings { display: flex; flex-direction: column; gap: 16px; }
+.key-setting { padding: 18px; border-radius: 14px; background: var(--key-form-field); }
+.key-setting .input { background: var(--key-form-surface); }
+.key-setting-switch { outline: none; }
+.key-setting-switch[aria-checked=true] { background: #536eff; }
+.key-setting-switch[aria-checked=false] { background: var(--key-form-line); }
+.key-usage-summary { min-width: 0; background: var(--key-form-haze); }
+.key-expiration-preset { padding: 7px 12px; border-radius: 8px; background: var(--key-form-surface); color: var(--key-form-muted); font-size: 12px; transition: background-color .15s, color .15s; }
+.key-expiration-preset:hover,.key-expiration-preset[aria-pressed=true] { background: var(--key-form-haze); color: var(--tf-console-active-ink); }
+.key-form-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.key-form-actions .btn { min-width: 88px; border-radius: 10px; font-size: 13px; }
+.key-form-cancel { background: var(--key-form-field); color: var(--key-form-muted); box-shadow: none; }
+.key-form-cancel:hover { background: var(--key-form-haze); color: var(--key-form-ink); }
+.key-form .btn-secondary { border-color: var(--key-form-line); background: var(--key-form-surface); color: var(--key-form-ink); box-shadow: none; }
+.key-form button:focus-visible,.group-row:focus-visible,.key-form-cancel:focus-visible { outline: 2px solid #8297f5; outline-offset: 3px; }
+.key-status-option { flex: 1; }
+:global(.select-dropdown-portal:has(.key-status-option)) { padding: 6px; border: 1px solid var(--key-form-line); border-radius: 14px; background: var(--key-form-surface); color: var(--key-form-ink); box-shadow: 0 16px 40px -8px #080e2333; }
+:global(.select-dropdown-portal:has(.key-status-option) .select-options) { padding: 0; }
+:global(.select-dropdown-portal:has(.key-status-option) .select-option) { padding: 10px 12px; border-radius: 9px; color: var(--key-form-muted); font-size: 13px; }
+:global(.select-dropdown-portal:has(.key-status-option) .select-option:hover),
+:global(.select-dropdown-portal:has(.key-status-option) .select-option-selected),
+:global(.select-dropdown-portal:has(.key-status-option) .select-option-focused) { background: var(--key-form-haze); color: var(--tf-console-active-ink); }
+@media(max-width:640px) {
+  :global(.modal-overlay:has(.key-form) .modal-content) { border-radius: 18px; }
+  :global(.modal-overlay:has(.key-form) .modal-header) { padding: 20px 18px 14px; }
+  :global(.modal-overlay:has(.key-form) .modal-body) { padding: 6px 18px 18px; }
+  :global(.modal-overlay:has(.key-form) .modal-footer) { padding: 14px 18px; }
+  .group-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); gap: 14px; height: min(460px, 56vh); }
+  .group-layout-tabs { flex-direction: row; overflow-x: auto; padding: 2px 2px 6px; }
+  .group-layout-tab { padding: 8px 10px; white-space: nowrap; }
+  .group-layout-tab>span { flex: none; }
+  .group-row { padding: 12px 12px 0; }
+  .group-row-footer { flex-wrap: wrap; }
+  .key-setting { padding: 14px; }
+  .key-form-actions { width: 100%; }
+  .key-form-actions .btn { flex: 1; }
 }
 </style>
