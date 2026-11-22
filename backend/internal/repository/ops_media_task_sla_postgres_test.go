@@ -109,6 +109,8 @@ CREATE UNIQUE INDEX daily_dim ON ops_metrics_daily(bucket_date,COALESCE(platform
 	_, err = db.ExecContext(ctx, `CREATE TEMP TABLE original_sla AS SELECT id,is_sla_sample FROM ops_error_log_metrics`)
 	require.NoError(t, err)
 	migrate("266_ops_media_task_sla_cpu.sql", true)
+	migrate("268_ops_media_terminal_sla_index_notx.sql", false)
+	migrate("269_ops_sla_ordinary_path_fast_path.sql", true)
 	var changed int
 	require.NoError(t, db.QueryRowContext(ctx, `SELECT count(*) FROM original_sla a JOIN ops_error_log_metrics b USING(id)
 WHERE a.is_sla_sample IS DISTINCT FROM b.is_sla_sample`).Scan(&changed))
@@ -173,6 +175,11 @@ VALUES (now(),NULL,'/media/tasks/mtask_null','{"status":"failed"}',502),
 	require.NoError(t, db.QueryRowContext(ctx, `SELECT count(*) FROM ops_error_log_metrics
 WHERE request_path='/media/tasks/mtask_null' AND is_sla_sample`).Scan(&samples))
 	require.Equal(t, 2, samples)
+	// Earlier nonterminal polls must not be rescanned for each later terminal failure.
+	_, err = db.ExecContext(ctx, `INSERT INTO ops_error_logs(created_at,user_id,request_path,error_body,status_code)
+SELECT now()-interval '5 minutes',2,'/media/tasks/mtask_load_'||(n%100),'{"status":"pending"}',404
+FROM generate_series(1,10000) n;`)
+	require.NoError(t, err)
 	// Many polling errors must stay cheap when all four SLA metrics use the view.
 	_, err = db.ExecContext(ctx, `INSERT INTO ops_error_logs(created_at,user_id,request_path,error_body,status_code)
 SELECT now(),2,'/media/tasks/mtask_load_'||(n%100),'{"status":"failed"}',502
@@ -183,4 +190,13 @@ FROM generate_series(1,10000) n; ANALYZE ops_error_logs;`)
 	_, _, loadSLA, _, _, _, err := repo.queryErrorCounts(queryCtx, filter, time.Now().Add(-time.Hour), time.Now().Add(time.Hour))
 	require.NoError(t, err)
 	require.EqualValues(t, 102, loadSLA)
+	// Fast-path guards preserve classification for ordinary, NULL and malformed paths.
+	_, err = db.ExecContext(ctx, `INSERT INTO ops_error_logs(created_at,user_id,request_path,error_body,status_code)
+ VALUES(now(),2,'/v1/chat/completions','{"task_id":"mtask_load_1","status":"failed"}',502),
+ (now(),2,NULL,'{"status":"failed"}',502),
+ (now(),2,'/media/tasks/not-a-media-id','{"status":"failed"}',502)`)
+	require.NoError(t, err)
+	var mismatches int
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT count(*) FROM ops_error_log_metrics WHERE is_sla_sample IS DISTINCT FROM ops_media_task_sla_sample(request_path,error_body,status_code,user_id,created_at,id)`).Scan(&mismatches))
+	require.Zero(t, mismatches)
 }
