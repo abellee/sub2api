@@ -176,6 +176,35 @@
             </div>
           </template>
 
+          <template #card-tags="{ row }">
+            <div v-if="row.group" class="key-group-tags">
+              <span
+                v-if="capFor(row.group.id) != null"
+                class="keys-group-cap-tag"
+                :title="t('keys.capRateHint')"
+              >
+                {{ t('keys.capRateTag', { rate: formatCapRate(capFor(row.group.id)!) }) }}
+              </span>
+              <span
+                v-for="(tag, index) in groupTags[String(row.group.id)] ?? []"
+                :key="index"
+                class="key-group-custom-tag"
+                :title="tag.description || undefined"
+              >{{ tag.name }}</span>
+              <span
+                v-if="row.group.required_protocol"
+                class="key-group-protocol-tag"
+                :title="t('keys.requiredProtocolTagHint', { protocol: protocolNames[row.group.required_protocol] })"
+              >{{ t('keys.requiredProtocolTag', { protocol: protocolNames[row.group.required_protocol] }) }}</span>
+              <span
+                v-for="client in blockedClientsFor(row.group)"
+                :key="client"
+                class="key-group-client-tag"
+                :title="t('keys.blockedClientTagHint', { client })"
+              >{{ t('keys.blockedClientTag', { client }) }}</span>
+            </div>
+          </template>
+
           <template #cell-group="{ row }">
             <div class="key-group">
               <button
@@ -199,32 +228,6 @@
                 <span v-else class="key-group-empty">{{ t('keys.noGroup') }}</span>
                 <Icon name="chevronDown" size="xs" class="shrink-0 text-gray-400" />
               </button>
-              <div v-if="row.group" class="key-group-tags">
-                <span
-                  v-if="capFor(row.group.id) != null"
-                  class="keys-group-cap-tag"
-                  :title="t('keys.capRateHint')"
-                >
-                  {{ t('keys.capRateTag', { rate: formatCapRate(capFor(row.group.id)!) }) }}
-                </span>
-                <span
-                  v-for="(tag, index) in groupTags[String(row.group.id)] ?? []"
-                  :key="index"
-                  class="key-group-custom-tag"
-                  :title="tag.description || undefined"
-                >{{ tag.name }}</span>
-                <span
-                  v-if="row.group.required_protocol"
-                  class="key-group-protocol-tag"
-                  :title="t('keys.requiredProtocolTagHint', { protocol: protocolNames[row.group.required_protocol] })"
-                >{{ t('keys.requiredProtocolTag', { protocol: protocolNames[row.group.required_protocol] }) }}</span>
-                <span
-                  v-for="client in blockedClientsFor(row.group)"
-                  :key="client"
-                  class="key-group-client-tag"
-                  :title="t('keys.blockedClientTagHint', { client })"
-                >{{ t('keys.blockedClientTag', { client }) }}</span>
-              </div>
             </div>
           </template>
 
@@ -2674,7 +2677,7 @@ onUnmounted(() => {
 .key-group-badge :deep(.group-badge-name){grid-column:2;grid-row:1;min-width:0}
 .key-group-badge :deep(.group-badge-rate){grid-column:3;grid-row:1;white-space:nowrap}
 .key-group-badge :deep(.group-badge-peak){grid-column:2 / -1;justify-self:start;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.key-group-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.key-group-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px}
 .key-group-tags:empty{display:none}
 .key-group-tags>span{max-width:100%;white-space:normal;overflow-wrap:anywhere}
 .key-group-custom-tag,.key-group-protocol-tag,.key-group-client-tag{display:inline-flex;align-items:center;padding:2px 7px;border-radius:6px;font-size:10px;font-weight:500;cursor:help}

@@ -177,7 +177,10 @@ const KeyCardGridStub = {
         >
           <slot name="cell-id" :value="row.id" :row="row" />
         </div>
-        <slot name="cell-name" :value="row.name" :row="row" />
+        <div data-test="key-header">
+          <slot name="cell-name" :value="row.name" :row="row" />
+          <slot name="card-tags" :row="row" />
+        </div>
         <div v-if="columns.some((col) => col.key === 'group')" data-test="key-group">
           <slot name="cell-group" :row="row" />
         </div>
@@ -306,7 +309,7 @@ describe('user KeysView column settings', () => {
     isCurrentStep.mockReturnValue(false)
   })
 
-  it('shows the model icon before the card title and all tags below the group name', async () => {
+  it('shows the model icon before the card title and all tags directly below it', async () => {
     const group = {
       id: 1, name: 'OpenAI group', platform: 'openai', rate_multiplier: 0.3,
       required_protocol: 'openai', blocked_user_agents: ' Claude, , cursor, CLAUDE ',
@@ -332,7 +335,8 @@ describe('user KeysView column settings', () => {
     expect(titles[0].element.firstElementChild?.classList.contains('key-card-model-icon')).toBe(true)
     expect(titles[0].get('span').text()).toBe('test-key')
     expect(cards[0].findComponent({ name: 'PlatformIcon' }).exists()).toBe(false)
-    const tags = cards[0].get('.key-group-tags')
+    const headers = wrapper.findAll('[data-test="key-header"]')
+    const tags = headers[0].get('.key-group-tags')
     expect(tags.find('.keys-group-cap-tag').exists()).toBe(true)
     expect(tags.findAll('.key-group-custom-tag').map(tag => tag.text()))
       .toEqual(['快速', '稳定', '支持长上下文', '完整显示的第四个标签'])
@@ -340,8 +344,9 @@ describe('user KeysView column settings', () => {
     expect(tags.get('.key-group-protocol-tag').text()).toBe('仅限OpenAI协议')
     expect(tags.findAll('.key-group-client-tag').map(tag => tag.text()))
       .toEqual(['排除客户端：claude', '排除客户端：cursor'])
-    expect(cards[0].get('.key-group-trigger').element.nextElementSibling).toBe(tags.element)
-    expect(cards[1].find('.key-group-tags').exists()).toBe(false)
+    expect(titles[0].element.nextElementSibling).toBe(tags.element)
+    expect(cards[0].find('.key-group-tags').exists()).toBe(false)
+    expect(headers[1].find('.key-group-tags').exists()).toBe(false)
     expect(titles[1].find('.key-card-model-icon').exists()).toBe(false)
     wrapper.unmount()
   })
