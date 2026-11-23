@@ -90,7 +90,9 @@ func TestInflationMonitorCapturesInputAndConfiguredEffort(t *testing.T) {
 	require.Equal(t, 100, *p.result().InputTokens)
 	payload := map[string]any{"input": "hi", "reasoning": map[string]any{"effort": "high"}}
 	applyInflationPrompt(c, payload)
-	require.Equal(t, "none", payload["reasoning"].(map[string]any)["effort"])
+	reasoning, ok := payload["reasoning"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "none", reasoning["effort"])
 	payload = map[string]any{"messages": []any{}, "stream": true}
 	applyInflationPrompt(c, payload)
 	require.Equal(t, "none", payload["reasoning_effort"])

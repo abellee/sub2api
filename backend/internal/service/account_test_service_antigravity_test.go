@@ -65,7 +65,7 @@ func TestExtractContentFromSSEResponse_ExtractsTextAndInlineImages(t *testing.T)
 	t.Parallel()
 
 	sse := "data: {\"response\":{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"Here is your image\"},{\"inlineData\":{\"mimeType\":\"image/png\",\"data\":\"iVBORw0KGgo=\"}}]}}]}}\n\n"
-	text, images := extractContentFromSSEResponse([]byte(sse))
+	text, _, images := extractContentWithReasoningFromSSEResponse([]byte(sse))
 	require.Equal(t, "Here is your image", text)
 	require.Len(t, images, 1)
 	require.Equal(t, "image/png", images[0].MimeType)

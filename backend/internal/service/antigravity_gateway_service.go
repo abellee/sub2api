@@ -584,12 +584,6 @@ func antigravityTestPrompt(prompt string) string {
 	return defaultGeminiTextTestPrompt
 }
 
-// extractContentFromSSEResponse 从 SSE 流式响应中提取文本和内联图片
-func extractContentFromSSEResponse(respBody []byte) (string, []TestConnectionImage) {
-	text, _, images := extractContentWithReasoningFromSSEResponse(respBody)
-	return text, images
-}
-
 func extractContentWithReasoningFromSSEResponse(respBody []byte) (string, string, []TestConnectionImage) {
 	var thoughts []string
 	var texts []string

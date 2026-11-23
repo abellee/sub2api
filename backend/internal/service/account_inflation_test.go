@@ -189,7 +189,7 @@ func TestAccountInflationAntigravityReasoning(t *testing.T) {
 	require.Equal(t, "Answer", text)
 	require.Equal(t, "Hello world", thinking)
 	require.Empty(t, images)
-	text, images = extractContentFromSSEResponse(sse)
+	text, _, images = extractContentWithReasoningFromSSEResponse(sse)
 	require.Equal(t, "Answer", text)
 	require.Empty(t, images)
 }

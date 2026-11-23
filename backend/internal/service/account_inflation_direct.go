@@ -30,7 +30,7 @@ func accountInflationTimeout(seconds int) (time.Duration, error) {
 		seconds = 120
 	}
 	if seconds < 1 || seconds > 3600 {
-		return 0, fmt.Errorf("Timeout must be between 1 and 3600 seconds")
+		return 0, fmt.Errorf("timeout must be between 1 and 3600 seconds")
 	}
 	return time.Duration(seconds) * time.Second, nil
 }
@@ -118,7 +118,7 @@ func (s *AccountTestService) ProbeInflationDirect(c *gin.Context, input Inflatio
 		}
 		return s.sendErrorAndEnd(c, "Upstream connection failed")
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Upstream returned HTTP %d", resp.StatusCode))
 	}
