@@ -143,6 +143,7 @@ const mountView = () => mount(AccountsView, {
 
 describe('admin AccountsView select all filtered results', () => {
   beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     localStorage.clear()
     listAccounts.mockReset()
     listWithEtag.mockReset()
@@ -165,6 +166,8 @@ describe('admin AccountsView select all filtered results', () => {
   })
 
   afterEach(() => {
+    vi.clearAllTimers()
+    vi.useRealTimers()
     vi.restoreAllMocks()
   })
 
