@@ -1,6 +1,12 @@
 export default {
     accounts: {
       inflation: {
+        group: "Group",
+        loadAccounts: "Load accounts",
+        selectHint: "Choose a platform and group, then load accounts and select those to check.",
+        selectionCount: "Selected {selected} / {total} accounts",
+        noAccounts: "No accounts match these filters",
+        loadFailed: "Failed to load accounts",
         title: "Token inflation check",
         hint: "Send the same prompt to {count} selected accounts, one request per account. Upstream charges may apply.",
         model: "Test model",

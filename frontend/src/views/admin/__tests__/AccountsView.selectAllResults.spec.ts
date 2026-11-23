@@ -120,6 +120,7 @@ const mountView = () => mount(AccountsView, {
       ImportDataModal: true,
       ReAuthAccountModal: true,
       AccountTestModal: true,
+      AccountInflationModal: true,
       AccountStatsModal: true,
       ScheduledTestsPanel: true,
       SyncFromCrsModal: true,
@@ -165,6 +166,19 @@ describe('admin AccountsView select all filtered results', () => {
 
   afterEach(() => {
     vi.restoreAllMocks()
+  })
+
+  it('opens inflation detection from the top toolbar without selecting table rows', async () => {
+    listAccounts.mockResolvedValue({ items: makeAccounts(3), total: 3, page: 1, page_size: 20, pages: 1 })
+    const wrapper = mountView()
+    await flushPromises()
+    expect(wrapper.get('[data-test="selected-count"]').text()).toBe('0')
+    const button = wrapper.findAll('button').find(item => item.text() === 'admin.accounts.inflation.title')
+    expect(button).toBeDefined()
+    await button!.trigger('click')
+    expect(wrapper.findComponent({ name: 'AccountInflationModal' }).exists()).toBe(true)
+    expect(wrapper.get('[data-test="selected-count"]').text()).toBe('0')
+    wrapper.unmount()
   })
 
   it.each([

@@ -17,6 +17,10 @@
             @create="showCreate = true"
           >
             <template #after>
+              <button class="btn btn-secondary px-2 md:px-3" @click="showInflation = true">
+                <Icon name="beaker" size="sm" />
+                <span>{{ t('admin.accounts.inflation.title') }}</span>
+              </button>
               <button class="btn btn-secondary px-2 md:px-3" @click="showAPISummary = true">
                 <Icon name="chartBar" size="sm" />
                 <span>{{ t('admin.accounts.apiSummary.title') }}</span>
@@ -188,7 +192,6 @@
           @reset-status="handleBulkResetStatus"
           @refresh-token="handleBulkRefreshToken"
           @probe-upstream-billing="handleBulkProbeUpstreamBilling"
-          @detect-inflation="openInflationDetection"
           @edit-selected="openBulkEditSelected"
           @edit-filtered="openBulkEditFiltered"
           @clear="clearSelection"
@@ -462,7 +465,7 @@
     <CreateAccountModal :show="showCreate" :proxies="proxies" :groups="groups" @close="showCreate = false" @created="reload" />
     <EditAccountModal :show="showEdit" :account="edAcc" :proxies="proxies" :groups="groups" @close="showEdit = false" @updated="handleAccountUpdated" />
     <ReAuthAccountModal :show="showReAuth" :account="reAuthAcc" @close="closeReAuthModal" @reauthorized="handleAccountUpdated" />
-    <AccountInflationModal v-if="showInflation" :show="showInflation" :account-ids="inflationAccountIds" :accounts="accounts" @close="showInflation = false" />
+    <AccountInflationModal v-if="showInflation" :show="showInflation" :groups="groups" @close="showInflation = false" />
     <AccountTestModal :show="showTest" :account="testingAcc" @close="closeTestModal" />
     <AccountStatsModal :show="showStats" :account="statsAcc" @close="closeStatsModal" />
     <APIAccountSummaryModal :show="showAPISummary" @close="showAPISummary = false" />
@@ -618,11 +621,6 @@ const showDeleteDialog = ref(false)
 const showCreateShadowDialog = ref(false)
 const showReAuth = ref(false)
 const showInflation = ref(false)
-const inflationAccountIds = ref<number[]>([])
-const openInflationDetection = () => {
-  inflationAccountIds.value = [...selIds.value]
-  showInflation.value = true
-}
 const showTest = ref(false)
 const showStats = ref(false)
 const showAPISummary = ref(false)

@@ -1,6 +1,12 @@
 export default {
     accounts: {
       inflation: {
+        group: "分组",
+        loadAccounts: "加载账号",
+        selectHint: "选择平台和分组，加载账号后勾选要检测的账号。",
+        selectionCount: "已选 {selected} / 共 {total} 个账号",
+        noAccounts: "当前条件下没有账号",
+        loadFailed: "加载账号失败",
         title: "膨胀检测",
         hint: "对选中的 {count} 个账号逐个发送相同提示词，每个账号请求一次，可能产生上游费用。",
         model: "测试模型",
