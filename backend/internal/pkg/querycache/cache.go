@@ -4,6 +4,7 @@ package querycache
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"sync"
 	"time"
 
@@ -86,7 +87,10 @@ func Load[T any](ctx context.Context, c *Cache, key string, ttl time.Duration, l
 			if loaded.Err != nil {
 				return result, loaded.Err
 			}
-			data = loaded.Val.([]byte)
+			data, ok = loaded.Val.([]byte)
+			if !ok {
+				return result, errors.New("unexpected query cache result type")
+			}
 		}
 	}
 	err := json.Unmarshal(data, &result)

@@ -219,7 +219,7 @@ FROM generate_series(1,10000) n; ANALYZE ops_error_logs;`)
 	for planRows.Next() {
 		var line string
 		require.NoError(t, planRows.Scan(&line))
-		plan.WriteString(line)
+		_, _ = plan.WriteString(line)
 	}
 	require.NoError(t, planRows.Close())
 	require.Contains(t, plan.String(), "idx_ops_media_terminal_sla_fast")

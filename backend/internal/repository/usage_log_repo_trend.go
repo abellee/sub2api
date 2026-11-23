@@ -733,7 +733,7 @@ func (r *usageLogRepository) GetGroupCacheUsageSummary(ctx context.Context, sinc
 		if err != nil {
 			return nil, err
 		}
-		defer tx.Rollback()
+		defer func() { _ = tx.Rollback() }()
 		reader := &usageLogRepository{sql: tx}
 		rows, err := reader.getGroupCacheUsageSummary(ctx, since24h, since7d)
 		if err != nil {

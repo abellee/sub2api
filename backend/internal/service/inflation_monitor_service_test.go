@@ -59,13 +59,13 @@ func TestInflationMonitorSaveRetains24RoundsAndFencesStaleRuns(t *testing.T) {
 		}
 		require.NoError(t, s.saveResult(context.Background(), 27, "lease", "revision", InflationMonitorResult{MeasuredAt: time.Now()}))
 		require.NoError(t, mock.ExpectationsWereMet())
-		db.Close()
+		require.NoError(t, db.Close())
 	}
 }
 func TestInflationMonitorUserHistoryRequiresOwnedKeyAndRedactsAccounts(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	s := NewInflationMonitorService(db, nil)
 	plan := InflationMonitorPlan{GroupID: 27, Aggregation: "median", AccountIDs: []int64{233}, YellowThreshold: 10, RedThreshold: 30}
 	mock.ExpectQuery("SELECT p.group_id,p.config.*k.user_id=\\$2").WithArgs(int64(88), int64(2)).WillReturnError(sql.ErrNoRows)
@@ -100,7 +100,7 @@ func TestInflationMonitorCapturesInputAndConfiguredEffort(t *testing.T) {
 func TestInflationMonitorSummaryUsesLatestRoundAndCurrentStatistic(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	s := NewInflationMonitorService(db, nil)
 	a, b, c := 0.0, 20.0, 100.0
 	p := InflationMonitorPlan{Aggregation: "median", YellowThreshold: 5, RedThreshold: 15}
@@ -117,7 +117,7 @@ func TestInflationMonitorSummaryUsesLatestRoundAndCurrentStatistic(t *testing.T)
 func TestInflationMonitorStopCancelsRunningProbes(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	s := NewInflationMonitorService(db, nil)
 	plan := InflationMonitorPlan{GroupID: 27, Enabled: true, IntervalMinutes: 1, AccountIDs: []int64{233}}
 	mock.ExpectQuery("SELECT config FROM inflation_monitor_plans").WillReturnRows(sqlmock.NewRows([]string{"config"}).AddRow(mustInflationJSON(plan)))

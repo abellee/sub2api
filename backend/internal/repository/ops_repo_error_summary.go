@@ -59,7 +59,7 @@ FROM ops_error_log_metrics
 		if err != nil {
 			return nil, err
 		}
-		defer rows.Close()
+		defer func() { _ = rows.Close() }()
 		result := make([]opsErrorSummaryRow, 0)
 		for rows.Next() {
 			var row opsErrorSummaryRow

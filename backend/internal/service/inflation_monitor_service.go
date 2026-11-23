@@ -116,7 +116,7 @@ func (s *InflationMonitorService) Plans(ctx context.Context) ([]InflationMonitor
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	plans := []InflationMonitorPlan{}
 	for rows.Next() {
 		var raw []byte
@@ -211,7 +211,7 @@ func (s *InflationMonitorService) SavePlans(ctx context.Context, plans []Inflati
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	ids := []int64{}
 	for _, p := range plans {
 		raw, err := json.Marshal(p)
@@ -298,7 +298,7 @@ func (s *InflationMonitorService) saveResult(ctx context.Context, groupID int64,
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	var current bool
 	err = tx.QueryRowContext(ctx, `SELECT revision=$3 AND lease_token=$2 FROM inflation_monitor_plans WHERE group_id=$1 FOR UPDATE`, groupID, token, revision).Scan(&current)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -399,7 +399,7 @@ func (s *InflationMonitorService) Summaries(ctx context.Context, userID int64) (
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := []InflationMonitorSummary{}
 	for rows.Next() {
 		var id int64
@@ -440,7 +440,7 @@ func (s *InflationMonitorService) History(ctx context.Context, userID, keyID int
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		if err = rows.Scan(&raw); err != nil {
 			return nil, err

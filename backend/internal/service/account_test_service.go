@@ -3377,9 +3377,9 @@ func (s *AccountTestService) sendEvent(c *gin.Context, event TestEvent) {
 		if event.Type == "content" || event.Type == "reasoning" {
 			if p.text.Len()+p.reasoning.Len()+len(event.Text) <= 1<<20 {
 				if event.Type == "reasoning" {
-					p.reasoning.WriteString(event.Text)
+					_, _ = p.reasoning.WriteString(event.Text)
 				} else {
-					p.text.WriteString(event.Text)
+					_, _ = p.text.WriteString(event.Text)
 				}
 			} else {
 				p.tooLarge = true
