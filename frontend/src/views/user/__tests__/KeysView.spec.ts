@@ -38,6 +38,7 @@ const {
   getDashboardApiKeysUsage,
   getAvailableGroups,
   getUserGroupRates,
+  getUsageTierProgress,
   getGroupRecommendations,
   getGroupCategories,
   showError,
@@ -52,6 +53,7 @@ const {
   getDashboardApiKeysUsage: vi.fn(),
   getAvailableGroups: vi.fn(),
   getUserGroupRates: vi.fn(),
+  getUsageTierProgress: vi.fn(),
   getGroupRecommendations: vi.fn(),
   getGroupCategories: vi.fn(),
   showError: vi.fn(),
@@ -107,6 +109,7 @@ vi.mock('@/api', () => ({
   userGroupsAPI: {
     getAvailable: getAvailableGroups,
     getUserGroupRates,
+    getUsageTierProgress,
     getRecommendations: getGroupRecommendations,
     getCategories: getGroupCategories,
   },
@@ -316,6 +319,7 @@ describe('user KeysView column settings', () => {
     getDashboardApiKeysUsage.mockReset()
     getAvailableGroups.mockReset()
     getUserGroupRates.mockReset()
+    getUsageTierProgress.mockReset()
     getGroupRecommendations.mockReset()
     getGroupCategories.mockReset()
     showError.mockReset()
@@ -335,9 +339,23 @@ describe('user KeysView column settings', () => {
     getDashboardApiKeysUsage.mockResolvedValue({ stats: {} })
     getAvailableGroups.mockResolvedValue([])
     getUserGroupRates.mockResolvedValue({})
+    getUsageTierProgress.mockResolvedValue({})
     getGroupRecommendations.mockResolvedValue([])
     getGroupCategories.mockResolvedValue({ categories: [], assignments: {} })
     isCurrentStep.mockReturnValue(false)
+  })
+
+  it('shows usage tiers under the key group and in the create group card', async () => {
+    const group = { id: 27, name: 'Tier group', platform: 'openai', rate_multiplier: 1, subscription_type: 'standard', description: '' } as Group
+    listKeys.mockResolvedValue({ items: [{ ...createApiKey(), group_id: 27, group }], total: 1, page: 1, page_size: 20, pages: 1 })
+    getAvailableGroups.mockResolvedValue([group])
+    getUsageTierProgress.mockResolvedValue({ 27: [{ source_group_id: 27, source_group_name: 'Tier group', tiers: [{ daily_cost: 10, consecutive_days: 2, max_missed_days: 3, rate_multiplier: 0.8 }], excluded: false, stage: 0, streak: 1, missed: 0, today_cost: 5, today_qualified: false, promoted_today: false }] })
+    const wrapper = await mountView()
+    expect(wrapper.findAll('[data-test="tier-progress"]')).toHaveLength(1)
+    await wrapper.get('[data-tour="keys-create-btn"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('[data-test="tier-progress"]')).toHaveLength(2)
+    wrapper.unmount()
   })
 
   it('shows the group inflation statistic and opens history for the clicked key', async () => {

@@ -8,16 +8,18 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/lib/pq"
+	gocache "github.com/patrickmn/go-cache"
 )
 
 type userGroupRateRepository struct {
-	sql sqlExecutor
-	db  *sql.DB
+	sql            sqlExecutor
+	db             *sql.DB
+	tierGroupCache *gocache.Cache
 }
 
 // NewUserGroupRateRepository 创建用户专属分组倍率/RPM 仓储
 func NewUserGroupRateRepository(sqlDB *sql.DB) service.UserGroupRateRepository {
-	return &userGroupRateRepository{sql: sqlDB, db: sqlDB}
+	return &userGroupRateRepository{sql: sqlDB, db: sqlDB, tierGroupCache: gocache.New(5*time.Second, time.Minute)}
 }
 
 func (r *userGroupRateRepository) beginTx(ctx context.Context) (*sql.Tx, error) {

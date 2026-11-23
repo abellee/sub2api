@@ -105,6 +105,7 @@ func RegisterUserRoutes(
 		{
 			groups.GET("/available", h.APIKey.GetAvailableGroups)
 			groups.GET("/rates", h.APIKey.GetUserGroupRates)
+			groups.GET("/tier-progress", h.APIKey.GetUsageTierProgress)
 			groups.GET("/recommendations", h.APIKey.GetRecommendedGroups)
 			groups.GET("/categories", newGroupCategoryHandler().List)
 		}

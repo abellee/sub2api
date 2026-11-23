@@ -28,6 +28,63 @@ type GroupHandler struct {
 	groupCapacityService *service.GroupCapacityService
 	recommendationStore  *service.GroupRecommendationStore
 	cfg                  *config.Config
+	usageTierRepo        service.GroupUsageTierRepository
+}
+
+func (h *GroupHandler) SetUsageTierRepository(repo service.GroupUsageTierRepository) {
+	h.usageTierRepo = repo
+}
+
+func (h *GroupHandler) GetUsageTierConfig(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		response.BadRequest(c, "无效的分组 ID")
+		return
+	}
+	if _, err := h.adminService.GetGroup(c.Request.Context(), id); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	if h.usageTierRepo == nil {
+		response.Error(c, 503, "阶梯倍率服务不可用")
+		return
+	}
+	config, err := h.usageTierRepo.GetUsageTierConfig(c.Request.Context(), id)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, config)
+}
+
+func (h *GroupHandler) SaveUsageTierConfig(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		response.BadRequest(c, "无效的分组 ID")
+		return
+	}
+	if _, err := h.adminService.GetGroup(c.Request.Context(), id); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	var config service.GroupUsageTierConfig
+	if err := c.ShouldBindJSON(&config); err != nil {
+		response.BadRequest(c, "阶梯规则格式无效")
+		return
+	}
+	if err := config.Validate(id); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	if h.usageTierRepo == nil {
+		response.Error(c, 503, "阶梯倍率服务不可用")
+		return
+	}
+	if err := h.usageTierRepo.SaveUsageTierConfig(c.Request.Context(), id, config); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "阶梯倍率已保存"})
 }
 
 func (h *GroupHandler) SetRecommendationStore(store *service.GroupRecommendationStore) {

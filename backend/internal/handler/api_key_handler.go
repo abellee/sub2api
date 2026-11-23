@@ -371,6 +371,20 @@ type userGroupRecommendation struct {
 	Rating         float64 `json:"rating"`
 }
 
+func (h *APIKeyHandler) GetUsageTierProgress(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	progress, err := h.apiKeyService.GetGroupUsageTierProgress(c.Request.Context(), subject.UserID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, progress)
+}
+
 // GetRecommendedGroups returns curated groups that this user can actually bind.
 func (h *APIKeyHandler) GetRecommendedGroups(c *gin.Context) {
 	subject, ok := middleware2.GetAuthSubjectFromContext(c)

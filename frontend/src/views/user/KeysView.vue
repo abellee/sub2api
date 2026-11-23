@@ -228,6 +228,7 @@
                 <span v-else class="key-group-empty">{{ t('keys.noGroup') }}</span>
                 <Icon name="chevronDown" size="xs" class="shrink-0 text-gray-400" />
               </button>
+              <GroupUsageTierProgress v-if="row.group" :entries="usageTierProgress[row.group.id] ?? []" />
             </div>
           </template>
 
@@ -1388,6 +1389,8 @@ import type { MonitorRange } from '@/api/channelMonitorV2'
 	import Icon from '@/components/icons/Icon.vue'
 	import UseKeyModal from '@/components/keys/UseKeyModal.vue'
 	import KeyFormModal from '@/components/keys/KeyFormModal.vue'
+import GroupUsageTierProgress from '@/components/keys/GroupUsageTierProgress.vue'
+import type { GroupUsageTierProgress as UsageTierProgress } from '@/types/usageTiers'
 	import EndpointPopover from '@/components/keys/EndpointPopover.vue'
 	import GroupBadge from '@/components/common/GroupBadge.vue'
 	import GroupOptionItem from '@/components/common/GroupOptionItem.vue'
@@ -1592,6 +1595,7 @@ const usageStats = ref<Record<string, BatchApiKeyUsageStats>>({})
 const pendingUsageRequests = ref(0)
 const usageLoading = computed(() => pendingUsageRequests.value > 0)
 const userGroupRates = ref<Record<number, number>>({})
+const usageTierProgress = ref<Record<number, UsageTierProgress[]>>({})
 const groupRecommendations = ref<GroupRecommendation[]>([])
 const groupCategories = ref<GroupCategory[]>([])
 const groupCategoryAssignments = ref<Record<string, string>>({})
@@ -1747,6 +1751,7 @@ const groupOptions = computed(() =>
     description: group.description,
     rate: group.rate_multiplier,
     userRate: userGroupRates.value[group.id] ?? null,
+    usageTiers: usageTierProgress.value[group.id] ?? [],
     peakRateEnabled: group.peak_rate_enabled,
     peakStart: group.peak_start,
     peakEnd: group.peak_end,
@@ -2260,6 +2265,14 @@ const loadUserGroupRates = async () => {
   }
 }
 
+const loadUsageTierProgress = async () => {
+  try {
+    usageTierProgress.value = await userGroupsAPI.getUsageTierProgress()
+  } catch (error) {
+    console.error('Failed to load usage tiers:', error)
+  }
+}
+
 const loadPublicSettings = async () => {
   try {
     publicSettings.value = await authAPI.getPublicSettings()
@@ -2679,10 +2692,11 @@ onMounted(() => {
   loadGroupRecommendations()
   loadGroupCategories()
   loadUserGroupRates()
+  void loadUsageTierProgress()
   loadPublicSettings()
   void loadInflationSummaries()
   document.addEventListener('click', closeGroupSelector)
-  resetTimer = setInterval(() => { now.value = new Date(); void loadInflationSummaries() }, 60000)
+  resetTimer = setInterval(() => { now.value = new Date(); void loadInflationSummaries(); void loadUsageTierProgress(); void loadUserGroupRates() }, 60000)
 })
 
 onUnmounted(() => {

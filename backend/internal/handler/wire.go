@@ -116,9 +116,12 @@ func ProvideAPIKeyHandler(apiKeyService *service.APIKeyService, recommendationSt
 	return h
 }
 
-func ProvideAdminGroupHandler(adminService service.AdminService, dashboardService *service.DashboardService, groupCapacityService *service.GroupCapacityService, recommendationStore *service.GroupRecommendationStore, cfg *config.Config) *admin.GroupHandler {
+func ProvideAdminGroupHandler(adminService service.AdminService, dashboardService *service.DashboardService, groupCapacityService *service.GroupCapacityService, recommendationStore *service.GroupRecommendationStore, cfg *config.Config, rateRepo service.UserGroupRateRepository) *admin.GroupHandler {
 	h := admin.NewGroupHandlerWithConfig(adminService, dashboardService, groupCapacityService, cfg)
 	h.SetRecommendationStore(recommendationStore)
+	if repo, ok := rateRepo.(service.GroupUsageTierRepository); ok {
+		h.SetUsageTierRepository(repo)
+	}
 	return h
 }
 

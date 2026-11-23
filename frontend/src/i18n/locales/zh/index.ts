@@ -1,4 +1,5 @@
 import inflationMonitor from './inflationMonitor'
+import usageTiers from './usageTiers'
 import adminAccessKeys from './adminAccessKeys'
 import mcp from './mcp'
 import landing from './landing'
@@ -14,6 +15,7 @@ import mediaService from './mediaService'
 import mediaLibrary from './mediaLibrary'
 
 export default {
+  ...usageTiers,
   ...inflationMonitor,
   ...mediaService,
   ...mediaLibrary,

@@ -130,6 +130,7 @@
                         </p>
                       </div>
                       <!-- 底部：上限倍率与使用限制(左) | 模型价格入口(右) -->
+                      <GroupUsageTierProgress :entries="option.usageTiers ?? []" />
                       <div class="group-row-footer">
                         <div class="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
                           <span
@@ -647,6 +648,8 @@ import type { ApiKey, SubscriptionType, GroupPlatform } from '@/types'
 import { GROUP_PLATFORM_OPTIONS } from '@/constants/platforms'
 import type { GroupCategory, GroupRecommendation, GroupTag } from '@/api/groups'
 import GroupModelPricingModal from '@/components/keys/GroupModelPricingModal.vue'
+import GroupUsageTierProgress from '@/components/keys/GroupUsageTierProgress.vue'
+import type { GroupUsageTierProgress as UsageTierProgress } from '@/types/usageTiers'
 import { formatDateTime } from '@/utils/format'
 
 export interface KeyFormData {
@@ -670,6 +673,7 @@ export interface KeyFormData {
 }
 
 export type KeyGroupOption = {
+  usageTiers?: UsageTierProgress[]
   value: number
   label: string
   description: string | null

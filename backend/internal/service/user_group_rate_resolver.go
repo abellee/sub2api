@@ -42,6 +42,21 @@ func newUserGroupRateResolver(repo UserGroupRateRepository, cache *gocache.Cache
 }
 
 func (r *userGroupRateResolver) Resolve(ctx context.Context, userID, groupID int64, groupDefaultMultiplier float64) float64 {
+	multiplier := r.resolveBase(ctx, userID, groupID, groupDefaultMultiplier)
+	if r != nil && userID > 0 && groupID > 0 {
+		if tiers, ok := r.repo.(GroupUsageTierRepository); ok {
+			rate, err := tiers.GetUsageTierRate(ctx, userID, groupID)
+			if err != nil {
+				logger.LegacyPrintf(r.logComponent, "get usage tier rate failed: user=%d group=%d err=%v", userID, groupID, err)
+			} else if rate != nil && *rate < multiplier {
+				multiplier = *rate
+			}
+		}
+	}
+	return multiplier
+}
+
+func (r *userGroupRateResolver) resolveBase(ctx context.Context, userID, groupID int64, groupDefaultMultiplier float64) float64 {
 	if r == nil || userID <= 0 || groupID <= 0 {
 		return groupDefaultMultiplier
 	}

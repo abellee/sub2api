@@ -461,6 +461,14 @@
                 }}</span>
               </button>
               <button
+                data-testid="group-usage-tiers"
+                @click="usageTiersGroup = row; showUsageTiersModal = true"
+                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 hover:text-primary-600 dark:hover:bg-dark-700"
+              >
+                <Icon name="chart" size="sm" />
+                <span class="text-xs">{{ t('usageTiers.title') }}</span>
+              </button>
+              <button
                 @click="openRecommendationModal(row)"
                 class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-amber-50 hover:text-amber-600 dark:hover:bg-amber-900/20 dark:hover:text-amber-400"
               >
@@ -4599,6 +4607,7 @@
       @close="showRateMultipliersModal = false"
       @success="loadGroups"
     />
+    <GroupUsageTiersModal :show="showUsageTiersModal" :group="usageTiersGroup" @close="showUsageTiersModal = false" />
 
     <!-- Group RPM Overrides Modal -->
     <GroupRPMOverridesModal
@@ -4652,6 +4661,7 @@ import { platformLabel } from "@/utils/platformColors";
 import Icon from "@/components/icons/Icon.vue";
 import GroupI18nField from "@/components/admin/group/GroupI18nField.vue";
 import GroupRateMultipliersModal from "@/components/admin/group/GroupRateMultipliersModal.vue";
+import GroupUsageTiersModal from "@/components/admin/group/GroupUsageTiersModal.vue";
 import GroupSetCategoryModal from "@/components/admin/group/GroupSetCategoryModal.vue";
 import GroupTagsModal from "@/components/admin/group/GroupTagsModal.vue";
 import type { GroupTag } from "@/api/groups";
@@ -5271,6 +5281,8 @@ const editingGroup = ref<AdminGroup | null>(null);
 const deletingGroup = ref<AdminGroup | null>(null);
 const duplicatingGroupIds = reactive(new Set<number>());
 const showRateMultipliersModal = ref(false);
+const showUsageTiersModal = ref(false);
+const usageTiersGroup = ref<AdminGroup | null>(null);
 const showSetCategoryModal = ref(false);
 const setCategoryGroup = ref<AdminGroup | null>(null);
 const rateMultipliersGroup = ref<AdminGroup | null>(null);

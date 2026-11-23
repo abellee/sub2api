@@ -4,6 +4,16 @@
  */
 
 import { apiClient } from '../client'
+import type { GroupUsageTierConfig } from '@/types/usageTiers'
+
+export async function getUsageTiers(id: number): Promise<GroupUsageTierConfig> {
+  const { data } = await apiClient.get<GroupUsageTierConfig>(`/admin/groups/${id}/usage-tiers`)
+  return data
+}
+
+export async function saveUsageTiers(id: number, config: GroupUsageTierConfig): Promise<void> {
+  await apiClient.put(`/admin/groups/${id}/usage-tiers`, config)
+}
 import type {
   AdminGroup,
   GroupPlatform,
@@ -515,6 +525,8 @@ export async function getCapacitySummary(): Promise<
 }
 
 export const groupsAPI = {
+  getUsageTiers,
+  saveUsageTiers,
   list,
   getAll,
   getByPlatform,

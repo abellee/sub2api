@@ -1144,7 +1144,49 @@ func (s *APIKeyService) GetUserGroupRates(ctx context.Context, userID int64) (ma
 	if err != nil {
 		return nil, fmt.Errorf("get user group rates: %w", err)
 	}
+	if _, ok := s.userGroupRateRepo.(GroupUsageTierRepository); !ok {
+		return rates, nil
+	}
+	progress, err := s.GetGroupUsageTierProgress(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if rates == nil {
+		rates = map[int64]float64{}
+	}
+	groups, err := s.GetAvailableGroups(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	for _, group := range groups {
+		base := group.RateMultiplier
+		if rate, ok := rates[group.ID]; ok {
+			base = rate
+		}
+		for _, tier := range progress[group.ID] {
+			if tier.RateMultiplier != nil && *tier.RateMultiplier < base {
+				base = *tier.RateMultiplier
+				rates[group.ID] = base
+			}
+		}
+	}
 	return rates, nil
+}
+
+func (s *APIKeyService) GetGroupUsageTierProgress(ctx context.Context, userID int64) (map[int64][]GroupUsageTierProgress, error) {
+	repo, ok := s.userGroupRateRepo.(GroupUsageTierRepository)
+	if !ok {
+		return map[int64][]GroupUsageTierProgress{}, nil
+	}
+	groups, err := s.GetAvailableGroups(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]int64, 0, len(groups))
+	for _, group := range groups {
+		ids = append(ids, group.ID)
+	}
+	return repo.GetUsageTierProgress(ctx, userID, ids)
 }
 
 // CheckAPIKeyQuotaAndExpiry checks if the API key is valid for use (not expired, quota not exhausted)

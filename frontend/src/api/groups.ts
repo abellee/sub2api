@@ -5,6 +5,12 @@
 
 import { apiClient } from './client'
 import type { Group } from '@/types'
+import type { GroupUsageTierProgress } from '@/types/usageTiers'
+
+export async function getUsageTierProgress(): Promise<Record<number, GroupUsageTierProgress[]>> {
+  const { data } = await apiClient.get<Record<number, GroupUsageTierProgress[]>>('/groups/tier-progress')
+  return data || {}
+}
 
 export interface GroupRecommendation {
   group_id: number
@@ -71,6 +77,7 @@ export async function getCategories(): Promise<GroupCategorySnapshot> {
 }
 
 export const userGroupsAPI = {
+  getUsageTierProgress,
   getAvailable,
   getUserGroupRates,
   getRecommendations,
