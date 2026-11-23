@@ -16,7 +16,7 @@ import (
 var _ service.GroupUsageTierRepository = (*userGroupRateRepository)(nil)
 
 func emptyUsageTierConfig() service.GroupUsageTierConfig {
-	return service.GroupUsageTierConfig{Tiers: []service.UsageTier{}, LinkedGroupIDs: []int64{}, ExcludedUserIDs: []int64{}}
+	return service.GroupUsageTierConfig{Tiers: []service.UsageTier{}, Models: []string{}, LinkedGroupIDs: []int64{}, ExcludedUserIDs: []int64{}}
 }
 
 func (r *userGroupRateRepository) GetUsageTierConfig(ctx context.Context, groupID int64) (service.GroupUsageTierConfig, error) {
@@ -46,6 +46,10 @@ func (r *userGroupRateRepository) SaveUsageTierConfig(ctx context.Context, group
 	if c.ExcludedUserIDs == nil {
 		c.ExcludedUserIDs = []int64{}
 	}
+	if c.Models == nil {
+		c.Models = []string{}
+	}
+	slices.Sort(c.Models)
 	tx, err := r.beginTx(ctx)
 	if err != nil {
 		return err
@@ -84,8 +88,8 @@ func (r *userGroupRateRepository) SaveUsageTierConfig(ctx context.Context, group
 	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO group_usage_tier_rules(group_id,config) VALUES($1,$2::jsonb)
  ON CONFLICT(group_id) DO UPDATE SET config=EXCLUDED.config,
- revision=group_usage_tier_rules.revision+CASE WHEN group_usage_tier_rules.config->'tiers' IS DISTINCT FROM EXCLUDED.config->'tiers' OR group_usage_tier_rules.config->'enabled' IS DISTINCT FROM EXCLUDED.config->'enabled' THEN 1 ELSE 0 END,
- started_at=CASE WHEN group_usage_tier_rules.config->'tiers' IS DISTINCT FROM EXCLUDED.config->'tiers' OR group_usage_tier_rules.config->'enabled' IS DISTINCT FROM EXCLUDED.config->'enabled' THEN NOW() ELSE group_usage_tier_rules.started_at END
+ revision=group_usage_tier_rules.revision+CASE WHEN group_usage_tier_rules.config->'tiers' IS DISTINCT FROM EXCLUDED.config->'tiers' OR group_usage_tier_rules.config->'enabled' IS DISTINCT FROM EXCLUDED.config->'enabled' OR group_usage_tier_rules.config->'models' IS DISTINCT FROM EXCLUDED.config->'models' THEN 1 ELSE 0 END,
+ started_at=CASE WHEN group_usage_tier_rules.config->'tiers' IS DISTINCT FROM EXCLUDED.config->'tiers' OR group_usage_tier_rules.config->'enabled' IS DISTINCT FROM EXCLUDED.config->'enabled' OR group_usage_tier_rules.config->'models' IS DISTINCT FROM EXCLUDED.config->'models' THEN NOW() ELSE group_usage_tier_rules.started_at END
  WHERE group_usage_tier_rules.config IS DISTINCT FROM EXCLUDED.config`, groupID, string(raw))
 	if err != nil {
 		return err
@@ -146,19 +150,19 @@ func (r *userGroupRateRepository) GetUsageTierProgress(ctx context.Context, user
 	now := time.Now()
 	today := now.In(service.UsageTierLocation).Format(time.DateOnly)
 	for _, rule := range rules {
-		p := service.GroupUsageTierProgress{SourceGroupID: rule.id, SourceGroupName: rule.name, Tiers: rule.config.Tiers, Excluded: slices.Contains(rule.config.ExcludedUserIDs, userID)}
+		p := service.GroupUsageTierProgress{SourceGroupID: rule.id, SourceGroupName: rule.name, Tiers: rule.config.Tiers, Models: rule.config.Models, Excluded: slices.Contains(rule.config.ExcludedUserIDs, userID)}
 		if !p.Excluded {
 			// Daily totals are small and retained. Replay them so late charges are never skipped.
 			from := rule.start.In(service.UsageTierLocation).Format(time.DateOnly)
-			dailyRows, queryErr := tx.QueryContext(ctx, `SELECT day::text,actual_cost
-    FROM user_group_usage_tier_daily WHERE user_id=$1 AND group_id=$2 AND revision=$3 AND day>=$4::date AND day<=$5::date`, userID, rule.id, rule.revision, from, today)
+			dailyRows, queryErr := tx.QueryContext(ctx, `SELECT day::text,total_tokens
+    FROM user_group_usage_tier_token_daily WHERE user_id=$1 AND group_id=$2 AND revision=$3 AND day>=$4::date AND day<=$5::date`, userID, rule.id, rule.revision, from, today)
 			if queryErr != nil {
 				return nil, queryErr
 			}
-			daily := map[string]float64{}
+			daily := map[string]int64{}
 			for dailyRows.Next() {
 				var day string
-				var amount float64
+				var amount int64
 				if err = dailyRows.Scan(&day, &amount); err != nil {
 					_ = dailyRows.Close()
 					return nil, err
@@ -174,7 +178,7 @@ func (r *userGroupRateRepository) GetUsageTierProgress(ctx context.Context, user
 			p.Stage = state.Stage
 			p.Streak = state.Streak
 			p.Missed = state.Missed
-			p.TodayCost = daily[today]
+			p.TodayTokens = daily[today]
 			p.TodayQualified = state.MaintenanceHit
 			p.PromotedToday = state.Promoted
 			if state.Stage > 0 {

@@ -140,6 +140,7 @@ vi.mock('vue-i18n', async () => {
   return {
     ...actual,
     useI18n: () => ({
+      locale: { value: 'en' },
       t: (key: string, params?: Record<string, unknown>) => {
         const text = messages[key] ?? key
         return text.replace(/\{(\w+)\}/g, (_, name) => String(params?.[name] ?? ''))
@@ -350,7 +351,7 @@ describe('user KeysView column settings', () => {
     const group = { id: 27, name: 'Tier group', platform: 'openai', rate_multiplier: 1, subscription_type: 'standard', description: '' } as Group
     listKeys.mockResolvedValue({ items: [{ ...createApiKey(), group_id: 27, group }], total: 1, page: 1, page_size: 20, pages: 1 })
     getAvailableGroups.mockResolvedValue([group])
-    getUsageTierProgress.mockResolvedValue({ 27: [{ source_group_id: 27, source_group_name: 'Tier group', tiers: [{ daily_cost: 10, consecutive_days: 2, max_missed_days: 3, rate_multiplier: 0.8 }], excluded: false, stage: 0, streak: 1, missed: 0, today_cost: 5, today_qualified: false, promoted_today: false }] })
+    getUsageTierProgress.mockResolvedValue({ 27: [{ source_group_id: 27, source_group_name: 'Tier group', models: [], tiers: [{ daily_tokens: 10, consecutive_days: 2, max_missed_days: 3, rate_multiplier: 0.8 }], excluded: false, stage: 0, streak: 1, missed: 0, today_tokens: 5, today_qualified: false, promoted_today: false }] })
     const wrapper = await mountView()
     expect(wrapper.findAll('[data-test="tier-progress"]')).toHaveLength(1)
     await wrapper.get('[data-tour="keys-create-btn"]').trigger('click')

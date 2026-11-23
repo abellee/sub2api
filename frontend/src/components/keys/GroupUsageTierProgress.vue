@@ -3,8 +3,9 @@
     <details @click.stop @keydown.stop>
       <summary class="cursor-pointer font-medium">{{ t('usageTiers.title') }} · {{ progress.source_group_name }}</summary>
       <p class="mt-2 leading-relaxed">{{ t('usageTiers.userHint') }}</p>
+      <p class="mt-1 leading-relaxed">{{ t('usageTiers.modelScope') }}: {{ progress.models?.length ? progress.models.join(', ') : t('usageTiers.allModels') }}</p>
       <p v-for="(tier, index) in progress.tiers" :key="index" class="mt-1 leading-relaxed">
-        {{ t('usageTiers.rule', { stage: index + 1, cost: tier.daily_cost, days: tier.consecutive_days, rate: tier.rate_multiplier, missed: tier.max_missed_days }) }}
+        {{ t('usageTiers.rule', { stage: index + 1, tokens: count(tier.daily_tokens), days: tier.consecutive_days, rate: tier.rate_multiplier, missed: tier.max_missed_days }) }}
       </p>
       <p class="mt-1 leading-relaxed">{{ t('usageTiers.priorityHint') }}</p>
     </details>
@@ -17,7 +18,7 @@
         </svg>
         <div class="space-y-1">
           <p class="font-semibold">{{ t('usageTiers.active', { stage: progress.stage, rate: progress.rate_multiplier }) }}</p>
-          <p>{{ t('usageTiers.today', { cost: money(progress.today_cost), target: money(progress.tiers[progress.stage - 1]!.daily_cost) }) }}</p>
+          <p>{{ t('usageTiers.today', { tokens: count(progress.today_tokens), target: count(progress.tiers[progress.stage - 1]!.daily_tokens) }) }}</p>
           <p>{{ progress.today_qualified ? t('usageTiers.maintained') : t('usageTiers.remaining', { days: progress.tiers[progress.stage - 1]!.max_missed_days - progress.missed }) }}</p>
         </div>
       </div>
@@ -27,7 +28,7 @@
           <div class="h-full rounded-full bg-primary-500 transition-all" :style="{ width: `${nextPercent(progress)}%` }" />
         </div>
         <p v-if="progress.promoted_today">{{ t('usageTiers.nextTomorrow') }}</p>
-        <p v-else>{{ t('usageTiers.today', { cost: money(progress.today_cost), target: money(progress.tiers[progress.stage]!.daily_cost) }) }}</p>
+        <p v-else>{{ t('usageTiers.today', { tokens: count(progress.today_tokens), target: count(progress.tiers[progress.stage]!.daily_tokens) }) }}</p>
       </div>
       <p v-else class="font-medium" data-test="tier-locked">{{ t('usageTiers.locked') }}</p>
     </template>
@@ -39,15 +40,15 @@ import { useI18n } from 'vue-i18n'
 import type { GroupUsageTierProgress } from '@/types/usageTiers'
 
 defineProps<{ entries: GroupUsageTierProgress[] }>()
-const { t } = useI18n()
-const money = (value: number) => value.toFixed(4)
+const { t, locale } = useI18n()
+const count = (value: number) => value.toLocaleString(locale.value)
 function maintenancePercent(p: GroupUsageTierProgress) {
-  return Math.min(100, Math.max(0, p.today_cost / p.tiers[p.stage - 1]!.daily_cost * 100))
+  return Math.min(100, Math.max(0, p.today_tokens / p.tiers[p.stage - 1]!.daily_tokens * 100))
 }
 function nextPercent(p: GroupUsageTierProgress) {
   if (p.promoted_today) return 0
   const tier = p.tiers[p.stage]!
-  const partialDay = p.today_cost < tier.daily_cost ? Math.max(0, p.today_cost / tier.daily_cost) : 0
+  const partialDay = p.today_tokens < tier.daily_tokens ? Math.max(0, p.today_tokens / tier.daily_tokens) : 0
   return Math.min(100, (p.streak + partialDay) / tier.consecutive_days * 100)
 }
 </script>
