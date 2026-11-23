@@ -86,10 +86,16 @@
           <input v-model.number="timeoutSeconds" type="number" class="input w-full" min="1" max="3600" step="1" :disabled="running" />
           <span class="block text-xs text-gray-500">{{ t('admin.accounts.inflation.timeoutHint') }}</span>
         </label>
-        <label class="block space-y-1 text-sm">
-          <span>{{ t('admin.accounts.inflation.prompt') }}</span>
-          <textarea v-model="prompt" class="input w-full" rows="3" :disabled="running" maxlength="8000" />
-        </label>
+        <div class="space-y-1 text-sm">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <span>{{ t('admin.accounts.inflation.prompt') }}</span>
+            <div class="flex gap-2">
+              <button class="btn btn-secondary btn-sm" :disabled="running" @click="prompt = t('admin.accounts.inflation.defaultPrompt')">{{ t('admin.accounts.inflation.chinesePrompt') }}</button>
+              <button class="btn btn-secondary btn-sm" :disabled="running" @click="prompt = t('admin.accounts.inflation.defaultEnglishPrompt')">{{ t('admin.accounts.inflation.englishPrompt') }}</button>
+            </div>
+          </div>
+          <textarea v-model="prompt" :aria-label="t('admin.accounts.inflation.prompt')" class="input w-full" rows="3" :disabled="running" maxlength="8000" />
+        </div>
         <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.accounts.inflation.formula') }}</p>
       </section>
       <section class="flex min-w-0 flex-col gap-3" :aria-label="t('admin.accounts.inflation.output')">

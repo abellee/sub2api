@@ -61,6 +61,11 @@ describe('AccountInflationModal', () => {
     await wrapper.findAll('select')[1]!.setValue('responses')
     await wrapper.get('input[maxlength="200"]').setValue('same-model')
     await wrapper.get('input[type="number"]').setValue(45)
+    await button(wrapper, 'inflation.englishPrompt').trigger('click')
+    expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toBe('admin.accounts.inflation.defaultEnglishPrompt')
+    await button(wrapper, 'inflation.chinesePrompt').trigger('click')
+    expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toBe('admin.accounts.inflation.defaultPrompt')
+    await button(wrapper, 'inflation.englishPrompt').trigger('click')
     await button(wrapper, 'inflation.start').trigger('click')
     await flushPromises()
     expect(supportsAccountInflation).toHaveBeenCalledWith(true)
@@ -71,7 +76,7 @@ describe('AccountInflationModal', () => {
       { base_url: 'https://one.example/v1', api_key: 'test-key-one', protocol: 'anthropic' },
       { base_url: 'https://two.example/v1', api_key: 'test-key-two', protocol: 'responses' }
     ])
-    expect(calls[0]![1]).toMatchObject({ model: 'same-model', timeoutSeconds: 45 })
+    expect(calls[0]![1]).toMatchObject({ model: 'same-model', timeoutSeconds: 45, prompt: 'admin.accounts.inflation.defaultEnglishPrompt' })
     expect(calls[0]![1]).toEqual(calls[1]![1])
     expect(wrapper.get('[role="log"]').text()).not.toContain('test-key-')
     await button(wrapper, 'common.close').trigger('click')
