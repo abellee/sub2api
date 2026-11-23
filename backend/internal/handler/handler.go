@@ -52,6 +52,7 @@ type AdminHandlers struct {
 
 // Handlers contains all HTTP handlers
 type Handlers struct {
+	InflationMonitor *InflationMonitorHandler
 	MediaHub         *MediaHubController
 	MediaLinks       *mediahub.ResultLinkStore
 	Auth             *AuthHandler

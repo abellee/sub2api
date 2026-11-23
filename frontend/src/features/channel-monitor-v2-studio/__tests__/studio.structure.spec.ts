@@ -26,6 +26,7 @@ describe('channel-monitor-v2 studio structure', () => {
 
   it('studio page uses design-system chrome and omits models/errors/users tabs', () => {
     const src = read('views/user/ChannelStatusV2StudioView.vue')
+      + read('features/channel-monitor-v2-studio/StudioGroupStatusCard.vue')
     expect(src).toContain('page-header')
     expect(src).toContain('page-title')
     expect(src).toContain('class="card')

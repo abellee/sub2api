@@ -743,6 +743,12 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/inflation-monitor',
+    name: 'AdminInflationMonitor',
+    component: () => import('@/views/admin/InflationMonitorView.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true, titleKey: 'inflationMonitor.title' }
+  },
+  {
     path: '/admin/iq-detection',
     name: 'AdminIQDetection',
     component: () => import('@/views/admin/IqDetectionView.vue'),

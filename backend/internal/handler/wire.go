@@ -235,8 +235,10 @@ func ProvideHandlers(
 	_ *service.IdempotencyCoordinator,
 	_ *service.IdempotencyCleanupService,
 	_ *service.OpenAIQuotaAutoResetService,
+	inflationMonitorHandler *InflationMonitorHandler,
 ) *Handlers {
 	return &Handlers{
+		InflationMonitor: inflationMonitorHandler,
 		MediaLinks:       mediahub.NewResultLinkStore(mediaDB),
 		Auth:             authHandler,
 		User:             userHandler,
@@ -279,6 +281,7 @@ var ProviderSet = wire.NewSet(
 	NewAnnouncementHandler,
 	NewChannelMonitorUserHandler,
 	NewIQDetectPublicHandler,
+	NewInflationMonitorHandler,
 	NewChannelMonitorV2Handler,
 	ProvideGatewayHandler,
 	ProvideOpenAIGatewayHandler,

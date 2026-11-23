@@ -1,3 +1,4 @@
+import inflationMonitor from './inflationMonitor'
 import adminAccessKeys from './adminAccessKeys'
 import mcp from './mcp'
 import landing from './landing'
@@ -13,6 +14,7 @@ import mediaService from './mediaService'
 import mediaLibrary from './mediaLibrary'
 
 export default {
+  ...inflationMonitor,
   ...mediaService,
   ...mediaLibrary,
   adminAccessKeys,

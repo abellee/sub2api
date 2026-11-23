@@ -10,7 +10,10 @@ import (
 const accountInflationKey = "account_inflation"
 
 type accountInflationProbe struct {
+	model             string
 	prompt            string
+	reasoningEffort   string
+	inputTokens       *int
 	encoding          string
 	text              strings.Builder
 	reasoning         strings.Builder
@@ -22,6 +25,7 @@ type accountInflationProbe struct {
 }
 
 type accountInflationResult struct {
+	InputTokens         *int   `json:"input_tokens"`
 	TokenCount          int    `json:"token_count"`
 	OutputTokens        *int   `json:"output_tokens"`
 	OutputField         string `json:"output_field"`
@@ -109,6 +113,13 @@ func applyInflationPrompt(c *gin.Context, payload map[string]any) {
 	if p == nil {
 		return
 	}
+	if p.reasoningEffort != "" {
+		if _, ok := payload["input"]; ok {
+			payload["reasoning"] = map[string]any{"effort": p.reasoningEffort}
+		} else if _, ok := payload["messages"]; ok {
+			payload["reasoning_effort"] = p.reasoningEffort
+		}
+	}
 	if _, ok := payload["messages"]; ok {
 		payload["messages"] = []map[string]any{{"role": "user", "content": p.prompt}}
 	}
@@ -136,6 +147,13 @@ func captureInflationUsage(c *gin.Context, data map[string]any) {
 		}
 	}
 	if usage, ok := data["usage"].(map[string]any); ok {
+		for _, key := range []string{"input_tokens", "prompt_tokens"} {
+			if n, ok := usage[key].(float64); ok && n >= 0 && n == float64(int(n)) {
+				value := int(n)
+				p.inputTokens = &value
+				break
+			}
+		}
 		for _, key := range []string{"output_tokens", "completion_tokens"} {
 			if n, ok := usage[key].(float64); ok && n >= 0 && n == float64(int(n)) {
 				value := int(n)
@@ -154,6 +172,10 @@ func captureInflationUsage(c *gin.Context, data map[string]any) {
 		}
 	}
 	if usage, ok := data["usageMetadata"].(map[string]any); ok {
+		if n, ok := usage["promptTokenCount"].(float64); ok && n >= 0 {
+			value := int(n)
+			p.inputTokens = &value
+		}
 		if n, ok := usage["thoughtsTokenCount"].(float64); ok && n >= 0 {
 			value := int(n)
 			p.reasoningTokens = &value
@@ -171,7 +193,7 @@ func captureInflationUsage(c *gin.Context, data map[string]any) {
 }
 
 func (p *accountInflationProbe) result() accountInflationResult {
-	r := accountInflationResult{OutputTokens: p.outputTokens, ReasoningTokens: p.reasoningTokens, Encoding: p.encoding, OutputField: p.outputField, ReasoningRedacted: p.reasoningRedacted}
+	r := accountInflationResult{InputTokens: p.inputTokens, OutputTokens: p.outputTokens, ReasoningTokens: p.reasoningTokens, Encoding: p.encoding, OutputField: p.outputField, ReasoningRedacted: p.reasoningRedacted}
 	if p.tooLarge {
 		r.Error = "Output exceeded the 1 MiB measurement limit"
 		return r

@@ -86,6 +86,10 @@ func RegisterUserRoutes(
 			}
 		}
 
+		if h.InflationMonitor != nil {
+			authenticated.GET("/inflation-monitor", h.InflationMonitor.Summaries)
+			authenticated.GET("/keys/:id/inflation-monitor", h.InflationMonitor.History)
+		}
 		// API Key管理
 		keys := authenticated.Group("/keys")
 		{

@@ -43,6 +43,10 @@ func RegisterAdminRoutes(
 		// 部署与运营合规确认
 		registerAdminComplianceRoutes(admin, h)
 
+		if h.InflationMonitor != nil {
+			admin.GET("/inflation-monitor", h.InflationMonitor.Plans)
+			admin.PUT("/inflation-monitor", h.InflationMonitor.SavePlans)
+		}
 		// 仪表盘
 		registerDashboardRoutes(admin, h)
 

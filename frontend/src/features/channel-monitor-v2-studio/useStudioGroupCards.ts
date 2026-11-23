@@ -41,6 +41,7 @@ import {
 
 export type StudioGroupCard = {
   key: string
+  groupId?: number | null
   label: string
   platform: ReturnType<typeof studioPlatform>
   brandLabel: string
@@ -125,6 +126,7 @@ export function useStudioGroupCards(options: {
       const rate = lookupStudioGroupRate(rates, row.group_id, groupTitle(row))
       return {
         key: groupKey(row),
+        groupId: row.group_id,
         label: groupTitle(row),
         platform: studioPlatform(row.platform),
         brandLabel: studioPlatformLabel(row.platform),

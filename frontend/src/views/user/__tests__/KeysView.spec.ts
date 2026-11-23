@@ -1,10 +1,29 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
-import { nextTick } from 'vue'
+import { nextTick, ref } from 'vue'
+import type { StudioGroupCard } from '@/features/channel-monitor-v2-studio/useStudioGroupCards'
 
 import type { ApiKey, Group } from '@/types'
 import { keysAPI } from '@/api'
 import KeysView from '../KeysView.vue'
+import { inflationMonitorAPI } from '@/api/inflationMonitor'
+
+vi.mock('@/api/inflationMonitor', async importOriginal => ({ ...await importOriginal<typeof import('@/api/inflationMonitor')>(), inflationMonitorAPI: { summaries: vi.fn().mockResolvedValue([]), history: vi.fn() } }))
+const channelCards = ref<StudioGroupCard[]>([])
+const channelVisible = ref(true)
+const channelV2 = ref(true)
+vi.mock('@/features/channel-monitor-v2-studio/useStudioGroupCards', () => ({
+  useStudioGroupCards: () => ({
+    groupCards: channelCards,
+    coverage: ref(null),
+    healthThresholds: ref(null),
+    showThroughput: ref(false),
+  }),
+}))
+vi.mock('@/utils/featureFlags', () => ({
+  isChannelMonitorV2Mode: () => channelV2.value,
+  isChannelMonitorVisibleToUser: () => channelVisible.value,
+}))
 
 let intersectionCallback: IntersectionObserverCallback
 const reachEnd = async () => {
@@ -185,6 +204,7 @@ const KeyCardGridStub = {
           <slot name="cell-group" :row="row" />
         </div>
         <slot name="cell-actions" :row="row" />
+        <slot name="card-overlay" :row="row" />
         <div data-test="current-concurrency">
           <slot name="cell-current_concurrency" :value="row.current_concurrency" :row="row" />
         </div>
@@ -228,6 +248,13 @@ const mountView = async () => {
       stubs: {
         StudioLayout: StudioLayoutStub,
         KeyCardGrid: KeyCardGridStub,
+        KeyInflationHistory: { props: ['keyId'], template: '<div data-test="inflation-detail">{{ keyId }}</div>' },
+        Transition: { props: ['name'], template: '<slot />' },
+        StudioGroupStatusCard: {
+          name: 'StudioGroupStatusCard',
+          props: ['card', 'faceCoverage', 'showThroughput', 'healthThresholds'],
+          template: '<div data-test="channel-detail">{{ card.label }} {{ card.successRate }}</div>',
+        },
         BaseDialog: {
           props: ['show', 'title'],
           emits: ['close'],
@@ -272,6 +299,10 @@ const getButtonByText = (wrapper: VueWrapper, text: string) => {
 describe('user KeysView column settings', () => {
   beforeEach(() => {
     localStorage.clear()
+    vi.mocked(inflationMonitorAPI.summaries).mockResolvedValue([])
+    channelCards.value = []
+    channelVisible.value = true
+    channelV2.value = true
     vi.stubGlobal('IntersectionObserver', class {
       constructor(callback: IntersectionObserverCallback) { intersectionCallback = callback }
       observe = vi.fn()
@@ -307,6 +338,66 @@ describe('user KeysView column settings', () => {
     getGroupRecommendations.mockResolvedValue([])
     getGroupCategories.mockResolvedValue({ categories: [], assignments: {} })
     isCurrentStep.mockReturnValue(false)
+  })
+
+  it('shows the group inflation statistic and opens history for the clicked key', async () => {
+    vi.mocked(inflationMonitorAPI.summaries).mockResolvedValue([{ group_id: 27, rate: 22, aggregation: 'median', yellow_threshold: 10, red_threshold: 20, measured_at: null }])
+    listKeys.mockResolvedValue({ items: [{ ...createApiKey(), group_id: 27 }, { ...createApiKey(), id: 2, group_id: 32 }], total: 2, page: 1, page_size: 20, pages: 1 })
+    const wrapper = await mountView()
+    const button = wrapper.get('.key-inflation-status')
+    expect(button.text()).toBe('22.0%')
+    expect(button.classes()).toContain('critical')
+    expect(wrapper.findAll('.key-inflation-status')).toHaveLength(1)
+    await button.trigger('click')
+    expect(wrapper.get('[data-test="inflation-detail"]').text()).toBe('1')
+    await wrapper.get('.key-channel-overlay').trigger('click')
+    expect(wrapper.find('[data-test="inflation-detail"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('shows only values and opens the matching group inside the selected card', async () => {
+    channelCards.value = [
+      { groupId: 27, key: 'openai:27', label: 'Same name', successLabel: 'Success', successRate: '99%', ttftLabel: 'TTFT', ttft: '0.8s', cacheLabel: 'Cache', cacheRate: '80%' },
+      { groupId: 32, key: 'openai:32', label: 'Same name', successLabel: 'Success', successRate: '88%', ttftLabel: 'TTFT', ttft: '1.2s', cacheLabel: 'Cache', cacheRate: '70%' },
+    ] as StudioGroupCard[]
+    listKeys.mockResolvedValue({
+      items: [{ ...createApiKey(), group_id: 32 }, { ...createApiKey(), id: 2, group_id: 27 }, { ...createApiKey(), id: 3 }, { ...createApiKey(), id: 4, group_id: 32 }],
+      total: 4, page: 1, page_size: 20, pages: 1,
+    })
+    const wrapper = await mountView()
+    const buttons = wrapper.findAll('.key-channel-status')
+    expect(buttons).toHaveLength(3)
+    expect(buttons[0].text()).toContain('88%')
+    expect(buttons[0].text()).not.toMatch(/Success|TTFT|Cache/)
+    expect(buttons[0].attributes('title')).toBe('Success\nTTFT\nCache')
+    expect(buttons[0].findAll('strong').map(el => el.text())).toEqual(['88%', '1.2s', '70%'])
+    expect(buttons[0].element).toBe(wrapper.get('.key-actions').element.lastElementChild)
+    await buttons[0].trigger('click')
+    expect(wrapper.get('[data-test="channel-detail"]').text()).toBe('Same name 88%')
+    expect(wrapper.findAll('.key-channel-overlay')).toHaveLength(1)
+    expect(wrapper.get('.key-channel-overlay').element.parentElement).toBe(buttons[0].element.parentElement?.parentElement)
+    expect(wrapper.get('.key-channel-panel').attributes('role')).toBe('dialog')
+    expect(wrapper.find('.key-channel-panel header').exists()).toBe(false)
+    expect(wrapper.findComponent({ name: 'StudioGroupStatusCard' }).props('showThroughput')).toBe(false)
+    await wrapper.get('.key-channel-overlay').trigger('click')
+    expect(wrapper.find('[data-test="channel-detail"]').exists()).toBe(false)
+    await buttons[1].trigger('click')
+    await wrapper.get('.key-channel-overlay').trigger('click')
+    expect(wrapper.find('[data-test="channel-detail"]').exists()).toBe(false)
+    await buttons[1].trigger('click')
+    expect(wrapper.get('[data-test="channel-detail"]').text()).toBe('Same name 99%')
+    await wrapper.get('.key-channel-panel').trigger('keydown', { key: 'Escape' })
+    expect(wrapper.find('[data-test="channel-detail"]').exists()).toBe(false)
+    await buttons[1].trigger('click')
+    channelVisible.value = false
+    await nextTick()
+    expect(wrapper.find('.key-channel-status').exists()).toBe(false)
+    expect(wrapper.find('[data-test="channel-detail"]').exists()).toBe(false)
+    channelVisible.value = true
+    channelV2.value = false
+    await nextTick()
+    expect(wrapper.find('.key-channel-status').exists()).toBe(false)
+    wrapper.unmount()
   })
 
   it('shows the model icon before the card title and all tags directly below it', async () => {

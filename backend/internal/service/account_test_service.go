@@ -70,6 +70,7 @@ type TestEvent struct {
 type AccountTestOptions struct {
 	TimeoutSeconds    int
 	MeasureTokens     bool
+	ReasoningEffort   string
 	TokenizerEncoding string
 	ImageDataURL      string
 	AudioDataURL      string
@@ -399,7 +400,7 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 		if isOpenAIImageModel(mapped) || strings.Contains(mapped, "image") || strings.Contains(mapped, "video") || strings.Contains(mapped, "audio") || strings.Contains(mapped, "embedding") || strings.Contains(mapped, "tts") || account.IsSyntheticUITest() || account.IsTypeSafe() {
 			return s.sendErrorAndEnd(c, "Inflation detection requires a text model and a real account")
 		}
-		c.Set(accountInflationKey, &accountInflationProbe{prompt: prompt, encoding: testOpts.TokenizerEncoding})
+		c.Set(accountInflationKey, &accountInflationProbe{prompt: prompt, encoding: testOpts.TokenizerEncoding, reasoningEffort: testOpts.ReasoningEffort})
 		mode = "text"
 	}
 
@@ -3367,6 +3368,9 @@ func (s *AccountTestService) sendEvent(c *gin.Context, event TestEvent) {
 		}
 	}
 	if p := inflationProbe(c); p != nil {
+		if event.Type == "test_start" {
+			p.model = event.Model
+		}
 		if event.Type == "reasoning_redacted" {
 			p.reasoningRedacted = true
 		}

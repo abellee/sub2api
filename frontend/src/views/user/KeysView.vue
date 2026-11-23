@@ -436,7 +436,7 @@
           </template>
 
           <template #cell-actions="{ row }">
-            <div class="flex items-center gap-1">
+            <div class="key-actions flex items-center gap-1">
               <!-- Use Key Button -->
               <button
                 @click="openUseKeyModal(row)"
@@ -484,6 +484,16 @@
                 <Icon name="trash" size="sm" />
                 <span class="text-xs">{{ t('common.delete') }}</span>
               </button>
+              <KeyChannelStatusButton
+                v-if="channelStatusEnabled && channelCardsByGroup.has(row.group_id)"
+                :card="channelCardsByGroup.get(row.group_id)!"
+                @open="channelStatusKeyId = row.id; inflationKeyId = null"
+              />
+              <KeyInflationStatusButton
+                v-if="inflationByGroup.has(row.group_id)"
+                :summary="inflationByGroup.get(row.group_id)!"
+                @open="inflationKeyId = row.id; channelStatusKeyId = null"
+              />
             </div>
           </template>
 
@@ -494,6 +504,23 @@
               :action-text="t('keys.createKey')"
               @action="openCreateModal"
             />
+          </template>
+          <template #card-overlay="{ row }">
+            <Transition name="key-channel">
+              <KeyChannelStatusOverlay
+                v-if="channelStatusEnabled && channelStatusKeyId === row.id && channelCardsByGroup.has(row.group_id)"
+                :card="channelCardsByGroup.get(row.group_id)!"
+                :face-coverage="channelCoverage"
+                :show-throughput="channelShowThroughput"
+                :health-thresholds="channelHealthThresholds"
+                @close="channelStatusKeyId = null"
+              />
+            </Transition>
+            <Transition name="key-channel">
+              <KeyCardOverlay v-if="inflationKeyId === row.id" :label="t('inflationMonitor.title')" @close="inflationKeyId = null">
+                <KeyInflationHistory :key-id="row.id" />
+              </KeyCardOverlay>
+            </Transition>
           </template>
         </KeyCardGrid>
       </div>
@@ -1344,6 +1371,15 @@ import type { GroupCategory, GroupRecommendation, GroupTag } from '@/api/groups'
 import StudioLayout from '@/components/user/dashboard/studio/DashboardStudioLayout.vue'
 import BulkEditKeysModal from '@/components/keys/BulkEditKeysModal.vue'
 import KeyCardGrid from '@/components/keys/KeyCardGrid.vue'
+import KeyCardOverlay from '@/components/keys/KeyCardOverlay.vue'
+import KeyInflationStatusButton from '@/components/keys/KeyInflationStatusButton.vue'
+import KeyInflationHistory from '@/components/keys/KeyInflationHistory.vue'
+import { inflationMonitorAPI, type InflationSummary } from '@/api/inflationMonitor'
+import KeyChannelStatusButton from '@/components/keys/KeyChannelStatusButton.vue'
+import KeyChannelStatusOverlay from '@/components/keys/KeyChannelStatusOverlay.vue'
+import { useStudioGroupCards } from '@/features/channel-monitor-v2-studio/useStudioGroupCards'
+import { isChannelMonitorV2Mode, isChannelMonitorVisibleToUser } from '@/utils/featureFlags'
+import type { MonitorRange } from '@/api/channelMonitorV2'
 	import BaseDialog from '@/components/common/BaseDialog.vue'
 	import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 	import EmptyState from '@/components/common/EmptyState.vue'
@@ -1504,6 +1540,28 @@ const columns = computed<Column[]>(() =>
 )
 
 const apiKeys = ref<ApiKey[]>([])
+const channelStatusEnabled = computed(() =>
+  isChannelMonitorV2Mode() && isChannelMonitorVisibleToUser() && apiKeys.value.some(key => key.group_id != null)
+)
+const channelStatusRange = ref<MonitorRange>('90m')
+const channelStatusKeyId = ref<number | null>(null)
+const inflationKeyId = ref<number | null>(null)
+const inflationSummaries = ref<InflationSummary[]>([])
+const inflationByGroup = computed(() => new Map(inflationSummaries.value.map(item => [item.group_id as number | null, item])))
+const inflationController = new AbortController()
+async function loadInflationSummaries() {
+  try {
+    const items = await inflationMonitorAPI.summaries(inflationController.signal)
+    if (!inflationController.signal.aborted) inflationSummaries.value = items
+  } catch { /* keep the last summary if monitoring is temporarily unavailable */ }
+}
+const {
+  groupCards: channelCards,
+  coverage: channelCoverage,
+  healthThresholds: channelHealthThresholds,
+  showThroughput: channelShowThroughput,
+} = useStudioGroupCards({ range: channelStatusRange, enabled: channelStatusEnabled, reportError: false })
+const channelCardsByGroup = computed(() => new Map(channelCards.value.map(card => [card.groupId, card])))
 const selectedIds = ref<number[]>([])
 const showBulkEditModal = ref(false)
 const selectedApiKeys = computed(() => apiKeys.value.filter((key) => selectedIds.value.includes(key.id)))
@@ -2622,11 +2680,13 @@ onMounted(() => {
   loadGroupCategories()
   loadUserGroupRates()
   loadPublicSettings()
+  void loadInflationSummaries()
   document.addEventListener('click', closeGroupSelector)
-  resetTimer = setInterval(() => { now.value = new Date() }, 60000)
+  resetTimer = setInterval(() => { now.value = new Date(); void loadInflationSummaries() }, 60000)
 })
 
 onUnmounted(() => {
+  inflationController.abort()
   abortController?.abort()
   usageController.abort()
   loadMoreObserver?.disconnect()
@@ -2640,6 +2700,15 @@ onUnmounted(() => {
 <style scoped>
 
 .keys-studio{--keys-card-surface:var(--tf-console-surface)}
+.key-channel-enter-active, .key-channel-leave-active { transition: background-color .25s ease; }
+.key-channel-enter-active :deep(.key-channel-panel), .key-channel-leave-active :deep(.key-channel-panel) { transition: transform .25s ease; }
+.key-channel-enter-from, .key-channel-leave-to { background-color: transparent; }
+.key-channel-enter-from :deep(.key-channel-panel), .key-channel-leave-to :deep(.key-channel-panel) { transform: translateY(100%); }
+@media (prefers-reduced-motion: reduce) {
+  .key-channel-enter-active, .key-channel-leave-active, .key-channel-enter-active :deep(.key-channel-panel), .key-channel-leave-active :deep(.key-channel-panel) { transition: none; }
+}
+.keys-studio :deep(.key-actions:is(:has(.key-channel-status), :has(.key-inflation-status))) { column-gap: 0; }
+.key-actions:is(:has(.key-channel-status), :has(.key-inflation-status)) > button { flex-shrink: 0; }
 .dark .keys-studio{--keys-card-surface:var(--studio-menu-surface)}
 .keys-studio :deep(.studio-navigation){flex-wrap:wrap}
 .keys-header-controls{flex:1;min-width:0;flex-wrap:wrap;justify-content:flex-end;gap:12px}

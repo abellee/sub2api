@@ -146,46 +146,15 @@
               </h2>
             </header>
             <div class="studio-card-grid">
-              <div
+              <StudioGroupStatusCard
                 v-for="card in section.cards"
                 :key="card.key"
-                class="studio-model-row overflow-hidden rounded-3xl shadow-sm ring-1 ring-gray-900/5 dark:ring-dark-700"
-                :class="{ 'studio-model-row--critical': card.state === 'critical' }"
-              >
-                <div class="studio-model-card">
-                  <StudioKpiCard
-                    joined
-                    :label="card.label"
-                    :platform="card.platform"
-                    :brand-label="card.brandLabel"
-                    :rate-label="card.rateLabel"
-                    :success-label="card.successLabel"
-                    :success-rate="card.successRate"
-                    :ttft-label="card.ttftLabel"
-                    :ttft="card.ttft"
-                    :cache-label="card.cacheLabel"
-                    :cache-rate="card.cacheRate"
-                    :status-heading="card.statusHeading"
-                    :status-label="card.statusLabel"
-                    :title="card.title"
-                    :state="card.state"
-                    :success-state="card.successState"
-                    :ttft-state="card.ttftState"
-                    :cache-state="card.cacheState"
-                    :accent="card.accent"
-                    :buckets="card.buckets"
-                    :coverage="faceCoverage"
-                    :show-throughput="showThroughput"
-                  />
-                </div>
-                <StudioStatusFaces
-                  :buckets="card.buckets"
-                  :coverage="faceCoverage"
-                  :show-throughput="showThroughput"
-                  :thresholds="healthThresholds"
-                  :row-index="card.rowIndex"
-                />
-              </div>
+                :card="card"
+                :face-coverage="faceCoverage"
+                :show-throughput="showThroughput"
+                :health-thresholds="healthThresholds"
+                :row-index="card.rowIndex"
+              />
             </div>
           </section>
         </template>
@@ -219,8 +188,7 @@ import StudioLayout from '@/components/user/dashboard/studio/DashboardStudioLayo
 import Icon from '@/components/icons/Icon.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import StudioBrandIcon from '@/features/channel-monitor-v2-studio/StudioBrandIcon.vue'
-import StudioKpiCard from '@/features/channel-monitor-v2-studio/StudioKpiCard.vue'
-import StudioStatusFaces from '@/features/channel-monitor-v2-studio/StudioStatusFaces.vue'
+import StudioGroupStatusCard from '@/features/channel-monitor-v2-studio/StudioGroupStatusCard.vue'
 import { studioBrandFill } from '@/features/channel-monitor-v2-studio/studioBrand'
 import {
   groupStudioCardsByBrand,
@@ -329,27 +297,5 @@ watch(range, () => {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 20rem), 1fr));
   gap: 1.5rem;
-}
-.studio-model-row {
-  --studio-faces-bg: rgb(241 245 249);
-  position: relative;
-  display: flex;
-  width: 100%;
-  min-width: 0;
-  flex-direction: column;
-  align-items: stretch;
-  background: var(--studio-faces-bg);
-  contain: layout style;
-}
-.studio-model-card {
-  position: relative;
-  z-index: 2;
-  width: 100%;
-}
-.studio-model-row--critical {
-  filter: brightness(0.72);
-}
-.dark .studio-model-row {
-  --studio-faces-bg: rgb(30 41 59);
 }
 </style>
