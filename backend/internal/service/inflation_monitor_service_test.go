@@ -59,6 +59,7 @@ func TestInflationMonitorSaveRetains24RoundsAndFencesStaleRuns(t *testing.T) {
 		}
 		require.NoError(t, s.saveResult(context.Background(), 27, "lease", "revision", InflationMonitorResult{MeasuredAt: time.Now()}))
 		require.NoError(t, mock.ExpectationsWereMet())
+		mock.ExpectClose()
 		require.NoError(t, db.Close())
 	}
 }
