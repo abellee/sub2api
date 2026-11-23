@@ -74,3 +74,24 @@ func (h *InflationMonitorHandler) History(c *gin.Context) {
 	}
 	response.Success(c, item)
 }
+
+func (h *InflationMonitorHandler) RunNow(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		response.BadRequest(c, "分组 ID 无效")
+		return
+	}
+	if err = h.svc.RunNow(c.Request.Context(), id); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Accepted(c, gin.H{"started": true})
+}
+func (h *InflationMonitorHandler) Statuses(c *gin.Context) {
+	items, err := h.svc.Statuses(c.Request.Context())
+	if err != nil {
+		response.InternalError(c, "加载检测状态失败")
+		return
+	}
+	response.Success(c, items)
+}

@@ -20,7 +20,7 @@ export default {
     "thresholdHint": "Green below yellow; yellow at or above yellow; red at or above red.",
     "enabled": "Enable scheduled probes",
     "save": "Save settings",
-    "saved": "Settings saved; probes will follow the configured interval",
+    "saved": "Probe settings saved",
     "remove": "Remove group",
     "loadFailed": "Failed to load inflation data",
     "saveFailed": "Failed to save inflation settings",
@@ -48,6 +48,14 @@ export default {
     "open": "O",
     "close": "C",
     "high": "H",
-    "low": "L"
+    "low": "L",
+    "runNow": "Run now",
+    "running": "Running…",
+    "runStarted": "Probe started; results will refresh automatically",
+    "runFailed": "Failed to start probe",
+    "statusFailed": "Probe status unavailable. Refresh to retry.",
+    "scheduled": "Scheduled",
+    "paused": "Schedule off",
+    "emptyPlans": "No probe groups configured. Add one above."
   }
 }

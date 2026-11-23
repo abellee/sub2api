@@ -46,6 +46,8 @@ func RegisterAdminRoutes(
 		if h.InflationMonitor != nil {
 			admin.GET("/inflation-monitor", h.InflationMonitor.Plans)
 			admin.PUT("/inflation-monitor", h.InflationMonitor.SavePlans)
+			admin.GET("/inflation-monitor/status", h.InflationMonitor.Statuses)
+			admin.POST("/inflation-monitor/:id/run", h.InflationMonitor.RunNow)
 		}
 		// 仪表盘
 		registerDashboardRoutes(admin, h)

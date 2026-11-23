@@ -20,7 +20,7 @@ export default {
     "thresholdHint": "低于黄灯线为绿色；达到黄灯线为黄色；达到红灯线为红色。",
     "enabled": "启用定时检测",
     "save": "保存检测设置",
-    "saved": "检测设置已保存，下次按间隔执行",
+    "saved": "检测设置已保存",
     "remove": "移除分组",
     "loadFailed": "加载膨胀检测失败",
     "saveFailed": "保存膨胀检测失败",
@@ -48,6 +48,14 @@ export default {
     "open": "开",
     "close": "收",
     "high": "高",
-    "low": "低"
+    "low": "低",
+    "runNow": "立即检测",
+    "running": "检测中…",
+    "runStarted": "检测已启动，结果将自动刷新",
+    "runFailed": "启动检测失败",
+    "statusFailed": "检测状态暂时无法加载，请刷新重试",
+    "scheduled": "定时已启用",
+    "paused": "定时已停用",
+    "emptyPlans": "尚未配置检测分组，点击上方添加。"
   }
 }

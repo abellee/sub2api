@@ -37,10 +37,13 @@ export interface InflationSummary {
   red_threshold: number
   measured_at: string | null
 }
+export interface InflationStatus extends InflationSummary { running: boolean }
 export interface InflationHistory extends Omit<InflationSummary, 'rate' | 'measured_at'> {
   results: InflationResult[]
 }
 export const inflationMonitorAPI = {
+  async runNow(groupId: number) { await apiClient.post(`/admin/inflation-monitor/${groupId}/run`) },
+  async statuses(signal?: AbortSignal) { return (await apiClient.get<InflationStatus[]>('/admin/inflation-monitor/status', { signal })).data },
   async plans() { return (await apiClient.get<InflationPlan[]>('/admin/inflation-monitor')).data },
   async save(plans: InflationPlan[]) { await apiClient.put('/admin/inflation-monitor', plans) },
   async summaries(signal?: AbortSignal) { return (await apiClient.get<InflationSummary[]>('/inflation-monitor', { signal })).data },

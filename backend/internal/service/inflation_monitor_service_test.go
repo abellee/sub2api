@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -151,5 +152,91 @@ func TestInflationMonitorStopCancelsRunningProbes(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("probe was not canceled")
 	}
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestInflationMonitorRunNowUsesSavedPausedPlanAndPreventsDuplicateRun(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+	s := NewInflationMonitorService(db, nil)
+	p := InflationMonitorPlan{GroupID: 27, Enabled: false, IntervalMinutes: 60, AccountIDs: []int64{233}, Model: "gpt-test", Prompt: DefaultInflationPrompt, Encoding: "o200k_base", Aggregation: "mean", YellowThreshold: 10, RedThreshold: 30}
+	mock.ExpectQuery("SELECT config FROM inflation_monitor_plans WHERE group_id").WithArgs(int64(27)).WillReturnRows(sqlmock.NewRows([]string{"config"}).AddRow(mustInflationJSON(p)))
+	mock.ExpectQuery("UPDATE inflation_monitor_plans SET lease_token").WithArgs(int64(27), sqlmock.AnyArg(), 185, 60, mustInflationJSON(p), true).WillReturnRows(sqlmock.NewRows([]string{"revision"}).AddRow("revision"))
+	mock.ExpectQuery("SELECT EXISTS").WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+	entered := make(chan struct{})
+	finish := make(chan struct{})
+	s.probe = func(ctx context.Context, id int64, plan InflationMonitorPlan) InflationMonitorSample {
+		close(entered)
+		select {
+		case <-finish:
+		case <-ctx.Done():
+			return InflationMonitorSample{Error: "canceled"}
+		}
+		require.NoError(t, ctx.Err())
+		require.False(t, plan.Enabled)
+		require.Equal(t, int64(233), id)
+		value := 20.0
+		return InflationMonitorSample{AccountID: id, Rate: &value}
+	}
+	s.Start()
+	defer s.Stop()
+	requestCtx, cancel := context.WithCancel(context.Background())
+	require.NoError(t, s.RunNow(requestCtx, 27))
+	cancel()
+	select {
+	case <-entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("manual probe did not start")
+	}
+	mock.ExpectQuery("SELECT config FROM inflation_monitor_plans WHERE group_id").WithArgs(int64(27)).WillReturnRows(sqlmock.NewRows([]string{"config"}).AddRow(mustInflationJSON(p)))
+	mock.ExpectQuery("UPDATE inflation_monitor_plans SET lease_token").WillReturnError(sql.ErrNoRows)
+	err = s.RunNow(context.Background(), 27)
+	code, _ := infraerrors.ToHTTP(err)
+	require.Equal(t, 409, code)
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT revision").WillReturnRows(sqlmock.NewRows([]string{"current"}).AddRow(true))
+	mock.ExpectExec("INSERT INTO inflation_monitor_results").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec("DELETE FROM inflation_monitor_results.*LIMIT 24").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("UPDATE inflation_monitor_plans SET lease_until").WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+	close(finish)
+	s.jobs.Wait()
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestInflationMonitorRunNowRejectsMissingPlanOrEmptyAccounts(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+	s := NewInflationMonitorService(db, nil)
+	mock.ExpectQuery("SELECT config FROM inflation_monitor_plans WHERE group_id").WithArgs(int64(99)).WillReturnError(sql.ErrNoRows)
+	err = s.RunNow(context.Background(), 99)
+	code, _ := infraerrors.ToHTTP(err)
+	require.Equal(t, 404, code)
+	p := InflationMonitorPlan{GroupID: 27, IntervalMinutes: 1, Model: "gpt-test", Prompt: "prompt", Encoding: "o200k_base", Aggregation: "median", YellowThreshold: 10, RedThreshold: 30}
+	mock.ExpectQuery("SELECT config FROM inflation_monitor_plans WHERE group_id").WithArgs(int64(27)).WillReturnRows(sqlmock.NewRows([]string{"config"}).AddRow(mustInflationJSON(p)))
+	err = s.RunNow(context.Background(), 27)
+	code, _ = infraerrors.ToHTTP(err)
+	require.Equal(t, 400, code)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestInflationMonitorStatusesIncludeRunningAndSelectedStatistic(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+	s := NewInflationMonitorService(db, nil)
+	p := InflationMonitorPlan{GroupID: 27, Aggregation: "median", YellowThreshold: 10, RedThreshold: 30}
+	a, b, c := 0.0, 20.0, 100.0
+	r := InflationMonitorResult{MeasuredAt: time.Now(), Samples: []InflationMonitorSample{{Rate: &a}, {Rate: &b}, {Rate: &c}}}
+	mock.ExpectQuery("SELECT p.group_id,p.config,r.result,COALESCE").WillReturnRows(sqlmock.NewRows([]string{"group_id", "config", "result", "running"}).AddRow(27, mustInflationJSON(p), mustInflationJSON(r), true).AddRow(32, mustInflationJSON(p), nil, false))
+	items, err := s.Statuses(context.Background())
+	require.NoError(t, err)
+	require.True(t, items[0].Running)
+	require.Equal(t, 20.0, *items[0].Rate)
+	require.NotNil(t, items[0].MeasuredAt)
+	require.False(t, items[1].Running)
+	require.Nil(t, items[1].Rate)
 	require.NoError(t, mock.ExpectationsWereMet())
 }

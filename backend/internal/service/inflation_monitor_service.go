@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
@@ -67,28 +68,36 @@ type InflationMonitorSummary struct {
 	MeasuredAt      *time.Time `json:"measured_at"`
 }
 
+type InflationMonitorStatus struct {
+	InflationMonitorSummary
+	Running bool `json:"running"`
+}
+
 type inflationMonitorProbe func(context.Context, int64, InflationMonitorPlan) InflationMonitorSample
 
 type InflationMonitorService struct {
-	db      *sql.DB
-	tester  *AccountTestService
-	probe   inflationMonitorProbe
-	cancel  context.CancelFunc
-	done    chan struct{}
-	once    sync.Once
-	workers chan struct{}
-	jobs    sync.WaitGroup
+	db         *sql.DB
+	tester     *AccountTestService
+	probe      inflationMonitorProbe
+	cancel     context.CancelFunc
+	done       chan struct{}
+	once       sync.Once
+	workers    chan struct{}
+	jobs       sync.WaitGroup
+	runCtx     context.Context
+	dispatchMu sync.Mutex
+	stopping   bool
 }
 
 func NewInflationMonitorService(db *sql.DB, tester *AccountTestService) *InflationMonitorService {
-	s := &InflationMonitorService{db: db, tester: tester, done: make(chan struct{}), workers: make(chan struct{}, 4)}
+	ctx, cancel := context.WithCancel(context.Background())
+	s := &InflationMonitorService{runCtx: ctx, cancel: cancel, db: db, tester: tester, done: make(chan struct{}), workers: make(chan struct{}, 4)}
 	s.probe = s.probeAccount
 	return s
 }
 func (s *InflationMonitorService) Start() {
 	s.once.Do(func() {
-		ctx, cancel := context.WithCancel(context.Background())
-		s.cancel = cancel
+		ctx := s.runCtx
 		go func() {
 			defer close(s.done)
 			defer s.jobs.Wait()
@@ -107,7 +116,10 @@ func (s *InflationMonitorService) Start() {
 }
 func (s *InflationMonitorService) Stop() {
 	if s != nil && s.cancel != nil {
+		s.dispatchMu.Lock()
+		s.stopping = true
 		s.cancel()
+		s.dispatchMu.Unlock()
 		<-s.done
 	}
 }
@@ -219,7 +231,7 @@ func (s *InflationMonitorService) SavePlans(ctx context.Context, plans []Inflati
 			return err
 		}
 		ids = append(ids, p.GroupID)
-		_, err = tx.ExecContext(ctx, `INSERT INTO inflation_monitor_plans(group_id,config,revision,next_run_at) VALUES($1,$2,$3,NOW()+($4*INTERVAL '1 minute')) ON CONFLICT(group_id) DO UPDATE SET config=EXCLUDED.config,revision=EXCLUDED.revision,next_run_at=EXCLUDED.next_run_at,updated_at=NOW(),lease_until=NULL,lease_token=NULL`, p.GroupID, string(raw), uuid.NewString(), p.IntervalMinutes)
+		_, err = tx.ExecContext(ctx, `INSERT INTO inflation_monitor_plans(group_id,config,revision,next_run_at) VALUES($1,$2,$3,NOW()+($4*INTERVAL '1 minute')) ON CONFLICT(group_id) DO UPDATE SET config=EXCLUDED.config,revision=EXCLUDED.revision,next_run_at=EXCLUDED.next_run_at,updated_at=NOW(),lease_until=NULL,lease_token=NULL WHERE inflation_monitor_plans.config IS DISTINCT FROM EXCLUDED.config`, p.GroupID, string(raw), uuid.NewString(), p.IntervalMinutes)
 		if err != nil {
 			return err
 		}
@@ -242,29 +254,104 @@ func (s *InflationMonitorService) tick(ctx context.Context) {
 		if !p.Enabled {
 			continue
 		}
-		select {
-		case s.workers <- struct{}{}:
-		default:
-			return
+		if _, err := s.startGroup(ctx, p, false); err != nil {
+			slog.Error("inflation monitor claim", "error", err)
 		}
-		token := uuid.NewString()
-		var revision string
-		err = s.db.QueryRowContext(ctx, `UPDATE inflation_monitor_plans SET lease_token=$2,lease_until=NOW()+($3*INTERVAL '1 second'),next_run_at=NOW()+($4*INTERVAL '1 minute') WHERE group_id=$1 AND config=$5::jsonb AND next_run_at<=NOW() AND (lease_until IS NULL OR lease_until<NOW()) RETURNING revision`, p.GroupID, token, len(p.AccountIDs)*125+60, p.IntervalMinutes, mustInflationJSON(p)).Scan(&revision)
-		if err != nil {
-			<-s.workers
-			if !errors.Is(err, sql.ErrNoRows) {
-				slog.Error("inflation monitor claim", "error", err)
-			}
-			continue
-		}
-		s.jobs.Add(1)
-		go func(plan InflationMonitorPlan, lease, rev string) {
-			defer s.jobs.Done()
-			defer func() { <-s.workers }()
-			s.runGroup(ctx, plan, lease, rev)
-		}(p, token, revision)
 	}
 }
+
+// Manual and scheduled runs share one database lease, including across replicas.
+func (s *InflationMonitorService) startGroup(ctx context.Context, p InflationMonitorPlan, force bool) (bool, error) {
+	s.dispatchMu.Lock()
+	defer s.dispatchMu.Unlock()
+	if s.stopping {
+		return false, infraerrors.ServiceUnavailable("INFLATION_MONITOR_STOPPING", "检测服务正在停止")
+	}
+	select {
+	case s.workers <- struct{}{}:
+	default:
+		return false, nil
+	}
+	token := uuid.NewString()
+	var revision string
+	err := s.db.QueryRowContext(ctx, `UPDATE inflation_monitor_plans SET lease_token=$2,lease_until=NOW()+($3*INTERVAL '1 second'),next_run_at=NOW()+($4*INTERVAL '1 minute') WHERE group_id=$1 AND config=$5::jsonb AND ($6 OR next_run_at<=NOW()) AND (lease_until IS NULL OR lease_until<NOW()) RETURNING revision`, p.GroupID, token, len(p.AccountIDs)*125+60, p.IntervalMinutes, mustInflationJSON(p), force).Scan(&revision)
+	if err != nil {
+		<-s.workers
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	s.jobs.Add(1)
+	go func() {
+		defer s.jobs.Done()
+		defer func() { <-s.workers }()
+		s.runGroup(s.runCtx, p, token, revision)
+	}()
+	return true, nil
+}
+
+func (s *InflationMonitorService) RunNow(ctx context.Context, groupID int64) error {
+	var raw []byte
+	err := s.db.QueryRowContext(ctx, `SELECT config FROM inflation_monitor_plans WHERE group_id=$1`, groupID).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return infraerrors.NotFound("INFLATION_MONITOR_NOT_FOUND", "请先保存该分组的检测配置")
+	}
+	if err != nil {
+		return err
+	}
+	var p InflationMonitorPlan
+	if err = json.Unmarshal(raw, &p); err != nil {
+		return err
+	}
+	if err = validateInflationPlan(p); err != nil {
+		return infraerrors.BadRequest("INFLATION_MONITOR_INVALID", err.Error())
+	}
+	if len(p.AccountIDs) == 0 {
+		return infraerrors.BadRequest("INFLATION_MONITOR_NO_ACCOUNTS", "请先选择参与检测的账号")
+	}
+	started, err := s.startGroup(ctx, p, true)
+	if err != nil {
+		return err
+	}
+	if !started {
+		return infraerrors.Conflict("INFLATION_MONITOR_BUSY", "该分组正在检测或检测任务已满，请稍后再试")
+	}
+	return nil
+}
+
+func (s *InflationMonitorService) Statuses(ctx context.Context) ([]InflationMonitorStatus, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT p.group_id,p.config,r.result,COALESCE(p.lease_until>NOW(),false) FROM inflation_monitor_plans p LEFT JOIN LATERAL(SELECT result FROM inflation_monitor_results WHERE group_id=p.group_id ORDER BY id DESC LIMIT 1)r ON true ORDER BY p.group_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	items := []InflationMonitorStatus{}
+	for rows.Next() {
+		var id int64
+		var config, raw []byte
+		var running bool
+		if err = rows.Scan(&id, &config, &raw, &running); err != nil {
+			return nil, err
+		}
+		var p InflationMonitorPlan
+		if err = json.Unmarshal(config, &p); err != nil {
+			return nil, err
+		}
+		item := InflationMonitorStatus{InflationMonitorSummary: InflationMonitorSummary{GroupID: id, Aggregation: p.Aggregation, YellowThreshold: p.YellowThreshold, RedThreshold: p.RedThreshold}, Running: running}
+		if len(raw) > 0 {
+			var result InflationMonitorResult
+			if err = json.Unmarshal(raw, &result); err != nil {
+				return nil, err
+			}
+			item.Rate = InflationAggregate(result.Samples, p.Aggregation)
+			item.MeasuredAt = &result.MeasuredAt
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
 func (s *InflationMonitorService) runGroup(ctx context.Context, p InflationMonitorPlan, token, revision string) {
 	defer func() {
 		if ctx.Err() != nil {
