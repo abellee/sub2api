@@ -352,6 +352,7 @@ type TestConnectionImage struct {
 
 // TestConnectionResult 测试连接结果
 type TestConnectionResult struct {
+	Reasoning     string
 	UsageMetadata map[string]any        // Last upstream usage snapshot
 	Text          string                // 响应文本
 	Images        []TestConnectionImage // 响应图片（图片生成模型）
@@ -451,7 +452,7 @@ func (s *AntigravityGatewayService) TestConnectionWithPrompt(ctx context.Context
 		return nil, fmt.Errorf("API 返回 %d: %s", result.resp.StatusCode, string(respBody))
 	}
 
-	text, images := extractContentFromSSEResponse(respBody)
+	text, reasoning, images := extractContentWithReasoningFromSSEResponse(respBody)
 	var usage map[string]any
 	for _, line := range bytes.Split(respBody, []byte("\n")) {
 		data := bytes.TrimSpace(bytes.TrimPrefix(bytes.TrimSpace(line), []byte("data:")))
@@ -463,7 +464,7 @@ func (s *AntigravityGatewayService) TestConnectionWithPrompt(ctx context.Context
 			_ = json.Unmarshal([]byte(metadata.Raw), &usage)
 		}
 	}
-	return &TestConnectionResult{Text: text, Images: images, MappedModel: mappedModel, UsageMetadata: usage}, nil
+	return &TestConnectionResult{Text: text, Reasoning: reasoning, Images: images, MappedModel: mappedModel, UsageMetadata: usage}, nil
 }
 
 // testConnectionHandleError 是 TestConnection 使用的轻量 handleError 回调。
@@ -585,6 +586,12 @@ func antigravityTestPrompt(prompt string) string {
 
 // extractContentFromSSEResponse 从 SSE 流式响应中提取文本和内联图片
 func extractContentFromSSEResponse(respBody []byte) (string, []TestConnectionImage) {
+	text, _, images := extractContentWithReasoningFromSSEResponse(respBody)
+	return text, images
+}
+
+func extractContentWithReasoningFromSSEResponse(respBody []byte) (string, string, []TestConnectionImage) {
+	var thoughts []string
 	var texts []string
 	var images []TestConnectionImage
 	lines := bytes.Split(respBody, []byte("\n"))
@@ -641,8 +648,12 @@ func extractContentFromSSEResponse(respBody []byte) (string, []TestConnectionIma
 
 		for _, part := range parts {
 			if partMap, ok := part.(map[string]any); ok {
-				if text, ok := partMap["text"].(string); ok && text != "" && partMap["thought"] != true {
-					texts = append(texts, text)
+				if text, ok := partMap["text"].(string); ok && text != "" {
+					if partMap["thought"] == true {
+						thoughts = append(thoughts, text)
+					} else {
+						texts = append(texts, text)
+					}
 				}
 				if inlineData, ok := partMap["inlineData"].(map[string]any); ok {
 					mimeType, _ := inlineData["mimeType"].(string)
@@ -658,7 +669,7 @@ func extractContentFromSSEResponse(respBody []byte) (string, []TestConnectionIma
 		}
 	}
 
-	return strings.Join(texts, ""), images
+	return strings.Join(texts, ""), strings.Join(thoughts, ""), images
 }
 
 // injectIdentityPatchToGeminiRequest 为 Gemini 格式请求注入身份提示词

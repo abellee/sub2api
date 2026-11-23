@@ -13,6 +13,8 @@ export interface InflationMeasurement {
   output_tokens: number | null
   output_field?: string
   reasoning_tokens: number | null
+  reasoning_text_tokens?: number
+  reasoning_redacted?: boolean
   encoding: string
   error?: string
 }

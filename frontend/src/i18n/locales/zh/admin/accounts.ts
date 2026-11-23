@@ -1,6 +1,10 @@
 export default {
     accounts: {
       inflation: {
+        reasoning: "推理内容（上游返回的原文或摘要）",
+        reasoningCount: "推理文字本地分词数",
+        reasoningRedacted: "上游返回了加密或隐藏的推理块，无法显示原文。",
+        noReasoning: "上游未返回可显示的推理文字；不代表没有推理消耗。",
         group: "分组",
         loadAccounts: "加载账号",
         selectHint: "选择平台和分组，加载账号后勾选要检测的账号。",
@@ -13,7 +17,7 @@ export default {
         modelHint: "留空使用各账号默认模型",
         prompt: "统一提示词",
         defaultPrompt: "请用中文写一段约300字的短文，介绍雨天散步的感受。直接输出正文，不要思考过程，也不要调用工具。",
-        formula: "膨胀率 = (上报输出 token ÷ tokenizer 分词数 − 1) × 100%。仅统计可见正文；推理 token 单独展示，仍包含在上报总数中。非 GPT 模型使用所选分词器作参考，差异不能直接判定虚报。Chat/Gemini 用量字段会换算为输出总数。",
+        formula: "膨胀率 = (上报输出 token ÷ tokenizer 分词数 − 1) × 100%。仅统计可见正文；推理 token 单独展示，仍包含在上报总数中。非 GPT 模型使用所选分词器作参考，差异不能直接判定虚报。推理文字另行分词，仅供参考，不并入正文膨胀率；摘要可能不完整。Chat/Gemini 用量字段会换算为输出总数。",
         rate: "膨胀率",
         ready: "准备就绪，点击开始检测",
         unavailable: "无法计算",

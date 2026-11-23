@@ -56,9 +56,18 @@
         <p v-if="!results.length" class="text-gray-500">$ {{ t('admin.accounts.inflation.ready') }}</p>
         <section v-for="result in results" :key="result.id" class="space-y-1 border-b border-gray-800 pb-3">
           <p class="text-cyan-300">$ [{{ result.id }}] {{ result.name }} · {{ result.model || model || 'auto' }}</p>
+          <details v-if="result.reasoning" open class="rounded border border-purple-900/60 bg-purple-950/20 p-2 text-purple-300">
+            <summary class="cursor-pointer">{{ t('admin.accounts.inflation.reasoning') }}</summary>
+            <p class="mt-1 whitespace-pre-wrap break-words">{{ result.reasoning }}</p>
+          </details>
+          <p v-if="result.redacted || result.measurement?.reasoning_redacted" class="text-purple-300">{{ t('admin.accounts.inflation.reasoningRedacted') }}</p>
+          <p v-else-if="result.status !== 'running' && !result.reasoning" class="text-gray-500">{{ t('admin.accounts.inflation.noReasoning') }}</p>
           <p v-if="result.text" class="whitespace-pre-wrap break-words text-green-300">{{ result.text }}</p>
           <p v-if="result.measurement" class="text-yellow-200">
             tokenizer={{ result.measurement.token_count }} · {{ result.measurement.output_field || 'output_tokens' }}={{ result.measurement.output_tokens ?? '—' }} · reasoning_tokens={{ result.measurement.reasoning_tokens ?? '—' }} · {{ t('admin.accounts.inflation.rate') }}={{ formatRate(result.measurement) }}
+          </p>
+          <p v-if="result.measurement?.reasoning_text_tokens !== undefined" class="text-purple-300">
+            {{ t('admin.accounts.inflation.reasoningCount') }}={{ result.measurement.reasoning_text_tokens }}
           </p>
           <p :class="result.status === 'error' ? 'text-red-400' : 'text-gray-400'">{{ result.message }}</p>
         </section>
@@ -151,6 +160,8 @@ interface ProbeResult {
   name: string
   model: string
   text: string
+  reasoning: string
+  redacted: boolean
   status: 'running' | 'done' | 'error'
   message: string
   measurement?: InflationMeasurement
@@ -183,7 +194,7 @@ async function run() {
     }
     for (const id of ids) {
       if (stopped) break
-      results.value.push({ id, name: accounts.value.find(a => a.id === id)?.name || `#${id}`, model: '', text: '', status: 'running', message: t('admin.accounts.inflation.testing') })
+      results.value.push({ id, name: accounts.value.find(a => a.id === id)?.name || `#${id}`, model: '', text: '', reasoning: '', redacted: false, status: 'running', message: t('admin.accounts.inflation.testing') })
       const result = results.value[results.value.length - 1]!
       controller = new AbortController()
       let timedOut = false
@@ -193,6 +204,8 @@ async function run() {
         await probeAccountInflation(id, options, event => {
           if (event.type === 'test_start') result.model = event.model || ''
           if (event.type === 'content' && event.text) result.text = (result.text + event.text).slice(0, 1 << 20)
+          if (event.type === 'reasoning' && event.text) result.reasoning = (result.reasoning + event.text).slice(0, 1 << 20)
+          if (event.type === 'reasoning_redacted') result.redacted = true
           if (event.type === 'error') throw new Error(event.error || t('common.unknownError'))
           if (event.type === 'inflation_result') result.measurement = event.data
           if (event.type === 'test_complete') complete = event.success === true

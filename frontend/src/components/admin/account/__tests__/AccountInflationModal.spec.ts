@@ -116,8 +116,10 @@ describe('AccountInflationModal', () => {
     vi.mocked(probeAccountInflation)
       .mockRejectedValueOnce(new Error('upstream unavailable'))
       .mockImplementationOnce(async (_id, _options, event) => {
+        event({ type: 'reasoning', text: 'Considering ' })
+        event({ type: 'reasoning', text: '<script>plain text</script>' })
         event({ type: 'content', text: 'Hello world' })
-        event({ type: 'inflation_result', data: { token_count: 2, output_tokens: 4, reasoning_tokens: 2, encoding: 'o200k_base' } })
+        event({ type: 'inflation_result', data: { token_count: 2, output_tokens: 4, reasoning_tokens: 2, reasoning_text_tokens: 8, encoding: 'o200k_base' } })
         event({ type: 'test_complete', success: true })
       })
     const wrapper = create()
@@ -129,7 +131,26 @@ describe('AccountInflationModal', () => {
     expect(vi.mocked(probeAccountInflation).mock.calls.map(c => c[0])).toEqual([2, 3])
     for (const call of vi.mocked(probeAccountInflation).mock.calls) expect(call[1]).toEqual({ model: 'same-model', prompt: 'same prompt', encoding: 'o200k_base' })
     expect(wrapper.text()).toContain('100.00%')
+    expect(wrapper.get('details').text()).toContain('Considering <script>plain text</script>')
+    expect(wrapper.find('script').exists()).toBe(false)
+    expect(wrapper.text()).toContain('inflation.reasoningCount=8')
     expect(wrapper.text()).toContain('upstream unavailable')
+    wrapper.unmount()
+  })
+
+  it('explains missing reasoning and redacted reasoning without inventing text', async () => {
+    vi.mocked(probeAccountInflation).mockImplementation(async (id, _options, event) => {
+      if (id === 3) event({ type: 'reasoning_redacted' })
+      event({ type: 'inflation_result', data: { token_count: 2, output_tokens: 4, reasoning_tokens: null, encoding: 'o200k_base' } })
+      event({ type: 'test_complete', success: true })
+    })
+    const wrapper = create()
+    await loadAndSelect(wrapper)
+    await button(wrapper, 'inflation.start').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('inflation.noReasoning')
+    expect(wrapper.text()).toContain('inflation.reasoningRedacted')
+    expect(wrapper.find('details').exists()).toBe(false)
     wrapper.unmount()
   })
 

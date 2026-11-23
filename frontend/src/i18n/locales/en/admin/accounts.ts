@@ -1,6 +1,10 @@
 export default {
     accounts: {
       inflation: {
+        reasoning: "Reasoning (upstream text or summary)",
+        reasoningCount: "Local reasoning text token count",
+        reasoningRedacted: "The upstream returned encrypted or hidden reasoning; its text is unavailable.",
+        noReasoning: "No displayable reasoning text was returned. Reasoning tokens may still have been consumed.",
         group: "Group",
         loadAccounts: "Load accounts",
         selectHint: "Choose a platform and group, then load accounts and select those to check.",
@@ -13,7 +17,7 @@ export default {
         modelHint: "Leave blank for each account’s default model",
         prompt: "Shared prompt",
         defaultPrompt: "Write a short Chinese essay of about 300 characters describing a walk in the rain. Output only the essay, without reasoning or tool calls.",
-        formula: "Inflation = (reported output tokens / tokenizer count − 1) × 100%. Only visible answer text is tokenized; reasoning is shown separately and remains in the reported total. For non-GPT models this tokenizer is a reference, so a difference alone does not prove overreporting. Chat/Gemini usage is normalized to total output.",
+        formula: "Inflation = (reported output tokens / tokenizer count − 1) × 100%. Only visible answer text is tokenized; reasoning is shown separately and remains in the reported total. For non-GPT models this tokenizer is a reference, so a difference alone does not prove overreporting. Reasoning text is tokenized separately and does not change the answer inflation rate; summaries may be incomplete. Chat/Gemini usage is normalized to total output.",
         rate: "Inflation",
         ready: "Ready. Start the check to continue.",
         unavailable: "Unavailable",

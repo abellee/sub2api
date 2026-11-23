@@ -814,6 +814,7 @@ func (s *AccountTestService) testBedrockAccountConnection(c *gin.Context, ctx co
 	var rawResult map[string]any
 	if json.Unmarshal(body, &rawResult) == nil {
 		captureInflationUsage(c, rawResult)
+		s.captureInflationReasoning(c, rawResult)
 	}
 	var result struct {
 		Content []struct {
@@ -2551,6 +2552,9 @@ func (s *AccountTestService) testAntigravityAccountConnection(c *gin.Context, ac
 	}
 
 	captureInflationUsage(c, map[string]any{"usageMetadata": result.UsageMetadata})
+	if inflationProbe(c) != nil && result.Reasoning != "" {
+		s.sendEvent(c, TestEvent{Type: "reasoning", Text: result.Reasoning})
+	}
 	// 发送响应内容
 	if result.Text != "" {
 		s.sendEvent(c, TestEvent{Type: "content", Text: result.Text})
@@ -2783,6 +2787,7 @@ func (s *AccountTestService) processGeminiStream(c *gin.Context, body io.Reader)
 		}
 
 		captureInflationUsage(c, data)
+		s.captureInflationReasoning(c, data)
 
 		// Support two Gemini response formats:
 		// - AI Studio: {"candidates": [...]}
@@ -2916,6 +2921,7 @@ func (s *AccountTestService) processClaudeStream(c *gin.Context, body io.Reader)
 		}
 
 		captureInflationUsage(c, data)
+		s.captureInflationReasoning(c, data)
 		eventType, _ := data["type"].(string)
 
 		switch eventType {
@@ -2981,6 +2987,7 @@ func (s *AccountTestService) processOpenAIChatCompletionsStream(c *gin.Context, 
 			return s.sendErrorAndEnd(c, "Invalid Chat Completions response from /v1/chat/completions: expected JSON data")
 		}
 		captureInflationUsage(c, data)
+		s.captureInflationReasoning(c, data)
 		seenJSON = true
 
 		if errData, ok := data["error"].(map[string]any); ok {
@@ -3055,6 +3062,7 @@ func (s *AccountTestService) processOpenAIStream(c *gin.Context, body io.Reader)
 		}
 
 		captureInflationUsage(c, data)
+		s.captureInflationReasoning(c, data)
 		eventType, _ := data["type"].(string)
 
 		switch eventType {
@@ -3350,9 +3358,16 @@ func (s *AccountTestService) sendEvent(c *gin.Context, event TestEvent) {
 		}
 	}
 	if p := inflationProbe(c); p != nil {
-		if event.Type == "content" {
-			if p.text.Len()+len(event.Text) <= 1<<20 {
-				p.text.WriteString(event.Text)
+		if event.Type == "reasoning_redacted" {
+			p.reasoningRedacted = true
+		}
+		if event.Type == "content" || event.Type == "reasoning" {
+			if p.text.Len()+p.reasoning.Len()+len(event.Text) <= 1<<20 {
+				if event.Type == "reasoning" {
+					p.reasoning.WriteString(event.Text)
+				} else {
+					p.text.WriteString(event.Text)
+				}
 			} else {
 				p.tooLarge = true
 			}
