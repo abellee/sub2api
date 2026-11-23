@@ -5,6 +5,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/tidwall/gjson"
 	"io"
@@ -18,6 +19,80 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+func TestGroupThinkingCompatOpenAIBridges(t *testing.T) {
+	all := GroupAnthropicThinkingCompat{Enabled: true, AllModels: true}
+	selected := GroupAnthropicThinkingCompat{Enabled: true, Models: []string{"public-*"}}
+	for _, tt := range []struct {
+		name, requested, upstream, thinking, extra, want, effort, wantErr string
+		cfg                                                               GroupAnthropicThinkingCompat
+	}{
+		{name: "opus enabled", upstream: "claude-opus-5-5", thinking: "enabled", want: "adaptive", effort: "medium", cfg: all},
+		{name: "sonnet enabled", upstream: "claude-sonnet-5-5", thinking: "enabled", want: "adaptive", effort: "high", cfg: all},
+		{name: "selected alias", requested: "public-opus", upstream: "claude-opus-5-5", thinking: "enabled", want: "adaptive", effort: "medium", cfg: selected},
+		{name: "scope uses requested", requested: "other-alias", upstream: "claude-opus-5-5", thinking: "enabled", wantErr: "requires adaptive thinking", cfg: selected},
+		{name: "off", upstream: "claude-opus-5-5", thinking: "enabled", wantErr: "requires adaptive thinking"},
+		{name: "sonnet disabled", upstream: "claude-sonnet-5-5", thinking: "disabled", want: "between_tools", effort: "high", cfg: all},
+		{name: "opus disabled rejected", upstream: "claude-opus-5-5", thinking: "disabled", wantErr: "requires adaptive thinking", cfg: all},
+		{name: "explicit effort", upstream: "claude-opus-5-5", thinking: "enabled", extra: `,"output_config":{"effort":"low"}`, want: "adaptive", effort: "low", cfg: all},
+		{name: "openai effort", upstream: "claude-opus-5-5", thinking: "enabled", extra: `,"reasoning_effort":"xhigh","reasoning":{"effort":"xhigh"}`, want: "adaptive", effort: "xhigh", cfg: all},
+		{name: "between tools effort rejected", upstream: "claude-sonnet-5-5", thinking: "disabled", extra: `,"reasoning_effort":"xhigh","reasoning":{"effort":"xhigh"}`, wantErr: "supports only low, medium or high effort", cfg: all},
+		{name: "forced tool rejected", upstream: "claude-opus-5-5", thinking: "enabled", extra: `,"tool_choice":"required"`, wantErr: "does not support forced tool_choice", cfg: all},
+		{name: "old model", upstream: "claude-sonnet-4-6", thinking: "enabled", want: "", cfg: all},
+	} {
+		for _, chat := range []bool{false, true} {
+			for _, stream := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/chat=%t/stream=%t", tt.name, chat, stream), func(t *testing.T) {
+					requested := tt.requested
+					if requested == "" {
+						requested = tt.upstream
+					}
+					input := `"input":"hello"`
+					path := "/v1/responses"
+					if chat {
+						input = `"messages":[{"role":"user","content":"hello"}]`
+						path = "/v1/chat/completions"
+					}
+					body := []byte(fmt.Sprintf(`{"model":%q,%s,"stream":%t,"thinking":{"type":%q,"budget_tokens":4096,"display":"omitted"}%s}`, requested, input, stream, tt.thinking, tt.extra))
+					original := append([]byte(nil), body...)
+					rec := httptest.NewRecorder()
+					c, _ := gin.CreateTestContext(rec)
+					c.Set("api_key", &APIKey{Group: &Group{Platform: PlatformAnthropic, AnthropicThinkingCompat: tt.cfg}})
+					c.Request = httptest.NewRequest(http.MethodPost, path, nil)
+					// between_tools does not accept display; use only the legacy budget there.
+					if tt.thinking == "disabled" {
+						body = []byte(strings.ReplaceAll(string(body), `,"display":"omitted"`, ""))
+						original = append([]byte(nil), body...)
+					}
+					upstream := &anthropicHTTPUpstreamRecorder{resp: &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(namespaceToolAnthropicStream()))}}
+					svc := &GatewayService{cfg: &config.Config{}, httpUpstream: upstream}
+					account := &Account{ID: 1, Platform: PlatformAnthropic, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "fixture-key", "model_mapping": map[string]any{requested: tt.upstream}}}
+					var err error
+					if chat {
+						_, err = svc.ForwardAsChatCompletions(context.Background(), c, account, body, nil)
+					} else {
+						_, err = svc.ForwardAsResponses(context.Background(), c, account, body, nil)
+					}
+					require.Equal(t, original, body, "retries must retain the original request")
+					if tt.wantErr != "" {
+						require.ErrorContains(t, err, tt.wantErr)
+						require.Equal(t, http.StatusBadRequest, rec.Code)
+						require.Nil(t, upstream.lastReq)
+						return
+					}
+					require.NoError(t, err)
+					require.NotNil(t, upstream.lastReq)
+					require.Equal(t, tt.want, gjson.GetBytes(upstream.lastBody, "thinking.type").String())
+					require.Equal(t, tt.effort, gjson.GetBytes(upstream.lastBody, "output_config.effort").String())
+					require.False(t, gjson.GetBytes(upstream.lastBody, "thinking.budget_tokens").Exists())
+					if tt.want == "adaptive" {
+						require.Equal(t, "omitted", gjson.GetBytes(upstream.lastBody, "thinking.display").String())
+					}
+				})
+			}
+		}
+	}
+}
 
 func TestAdaptResponsesClientToolsForAnthropic_FlattensNamespace(t *testing.T) {
 	t.Parallel()

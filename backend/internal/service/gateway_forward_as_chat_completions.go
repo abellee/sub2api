@@ -65,7 +65,8 @@ func (s *GatewayService) ForwardAsChatCompletions(
 			mappedModel = normalized
 		}
 	}
-	if err := validateClaude55Request(body, mappedModel); err != nil {
+	compatBody := applyGroupAnthropicThinkingCompat(c, body, originalModel, mappedModel)
+	if err := validateClaude55Request(compatBody, mappedModel); err != nil {
 		writeChatCompletionsError(c, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return nil, err
 	}
@@ -93,6 +94,11 @@ func (s *GatewayService) ForwardAsChatCompletions(
 	anthropicBody, err := json.Marshal(anthropicReq)
 	if err != nil {
 		return nil, fmt.Errorf("marshal anthropic request: %w", err)
+	}
+	anthropicBody = preserveGroupConvertedThinking(body, compatBody, anthropicBody)
+	if err := validateClaude55Request(anthropicBody, mappedModel); err != nil {
+		writeChatCompletionsError(c, http.StatusBadRequest, "invalid_request_error", err.Error())
+		return nil, err
 	}
 	if !account.IsOAuth() {
 		// OAuth accounts get their id from the mimicry below.

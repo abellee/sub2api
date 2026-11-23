@@ -72,3 +72,15 @@ func applyParsedGroupAnthropicThinkingCompat(c *gin.Context, parsed *ParsedReque
 	}
 	return parsed.ReplaceBody(converted)
 }
+
+// OpenAI request structs omit Anthropic fields; retain the settings changed by group conversion.
+func preserveGroupConvertedThinking(original, converted, anthropicBody []byte) []byte {
+	if bytes.Equal(original, converted) {
+		return anthropicBody
+	}
+	anthropicBody, _ = sjson.SetRawBytes(anthropicBody, "thinking", []byte(gjson.GetBytes(converted, "thinking").Raw))
+	if effort := gjson.GetBytes(converted, "output_config.effort"); effort.Exists() {
+		anthropicBody, _ = sjson.SetRawBytes(anthropicBody, "output_config.effort", []byte(effort.Raw))
+	}
+	return anthropicBody
+}
