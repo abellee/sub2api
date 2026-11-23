@@ -201,7 +201,7 @@ func (r *userGroupRateRepository) GetUsageTierRate(ctx context.Context, userID, 
 	hit := false
 	if r.tierGroupCache != nil {
 		if value, ok := r.tierGroupCache.Get(key); ok {
-			applicable, hit = value.(bool), true
+			applicable, hit = value.(bool)
 		}
 	}
 	if !hit {
