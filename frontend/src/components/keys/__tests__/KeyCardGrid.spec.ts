@@ -40,6 +40,14 @@ describe('KeyCardGrid', () => {
     expect(wrapper.find('[data-field="id"]').exists()).toBe(false)
   })
 
+  it('places additional field rows after their matching field', () => {
+    const wrapper = mount(KeyCardGrid, {
+      props: { data: rows, loading: false, selectedKeys: [], columns: [{ key: 'group', label: 'Group' }, { key: 'status', label: 'Status' }] },
+      slots: { 'after-field-group': '<div class="key-card-field" data-field="inflation"><dt>Inflation</dt><dd>22.0%</dd></div>' }
+    })
+    expect(wrapper.get('[data-key-id="1"] .key-card-fields').findAll('[data-field]').map(field => field.attributes('data-field'))).toEqual(['group', 'inflation', 'status'])
+  })
+
   it('shows skeletons only while the first page is loading', async () => {
     const wrapper = render()
     await wrapper.setProps({ data: [], loading: true })

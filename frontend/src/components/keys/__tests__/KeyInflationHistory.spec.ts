@@ -17,6 +17,7 @@ describe('KeyInflationHistory', () => {
     expect(wrapper.get('.inflation-prompt').text()).toBe('Second prompt')
     expect(wrapper.text()).toContain('inflationMonitor.formula')
     expect(wrapper.get('.inflation-sample').text()).toContain('200')
+    expect(wrapper.text()).not.toContain('inflationMonitor.valid')
     await wrapper.findAll('g[role="button"]')[0]!.trigger('click')
     expect(wrapper.text()).toContain('first-model')
     expect(wrapper.get('.inflation-prompt').text()).toBe('First prompt')

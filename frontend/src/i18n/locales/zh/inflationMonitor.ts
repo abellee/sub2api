@@ -26,6 +26,7 @@ export default {
     "saveFailed": "保存膨胀检测失败",
     "notMeasured": "未测",
     "tooltip": "膨胀率 · {mode} · {time}",
+    "rate": "膨胀率",
     "noData": "暂无检测结果",
     "latest": "最近一次",
     "valid": "有效 {valid} / 参与 {total}",

@@ -232,6 +232,18 @@
             </div>
           </template>
 
+          <template #after-field-group="{ row }">
+            <div v-if="inflationByGroup.has(row.group_id)" class="key-card-field" data-field="inflation">
+              <dt>{{ t('inflationMonitor.rate') }}</dt>
+              <dd>
+                <KeyInflationStatusButton
+                  :summary="inflationByGroup.get(row.group_id)!"
+                  @open="inflationKeyId = row.id; channelStatusKeyId = null"
+                />
+              </dd>
+            </div>
+          </template>
+
           <template #cell-current_concurrency="{ row }">
             <span
               :class="[
@@ -490,11 +502,6 @@
                 :card="channelCardsByGroup.get(row.group_id)!"
                 @open="channelStatusKeyId = row.id; inflationKeyId = null"
               />
-              <KeyInflationStatusButton
-                v-if="inflationByGroup.has(row.group_id)"
-                :summary="inflationByGroup.get(row.group_id)!"
-                @open="inflationKeyId = row.id; channelStatusKeyId = null"
-              />
             </div>
           </template>
 
@@ -518,7 +525,7 @@
               />
             </Transition>
             <Transition name="key-channel">
-              <KeyCardOverlay v-if="inflationKeyId === row.id" :label="t('inflationMonitor.title')" @close="inflationKeyId = null">
+              <KeyCardOverlay v-if="inflationKeyId === row.id" :label="t('inflationMonitor.title')" show-close-button @close="inflationKeyId = null">
                 <KeyInflationHistory :key-id="row.id" />
               </KeyCardOverlay>
             </Transition>
@@ -2721,8 +2728,8 @@ onUnmounted(() => {
 @media (prefers-reduced-motion: reduce) {
   .key-channel-enter-active, .key-channel-leave-active, .key-channel-enter-active :deep(.key-channel-panel), .key-channel-leave-active :deep(.key-channel-panel) { transition: none; }
 }
-.keys-studio :deep(.key-actions:is(:has(.key-channel-status), :has(.key-inflation-status))) { column-gap: 0; }
-.key-actions:is(:has(.key-channel-status), :has(.key-inflation-status)) > button { flex-shrink: 0; }
+.keys-studio :deep(.key-actions:has(.key-channel-status)) { column-gap: 0; }
+.key-actions:has(.key-channel-status) > button { flex-shrink: 0; }
 .dark .keys-studio{--keys-card-surface:var(--studio-menu-surface)}
 .keys-studio :deep(.studio-navigation){flex-wrap:wrap}
 .keys-header-controls{flex:1;min-width:0;flex-wrap:wrap;justify-content:flex-end;gap:12px}

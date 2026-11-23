@@ -206,6 +206,7 @@ const KeyCardGridStub = {
         <div v-if="columns.some((col) => col.key === 'group')" data-test="key-group">
           <slot name="cell-group" :row="row" />
         </div>
+        <slot v-if="columns.some((col) => col.key === 'group')" name="after-field-group" :row="row" />
         <slot name="cell-actions" :row="row" />
         <slot name="card-overlay" :row="row" />
         <div data-test="current-concurrency">
@@ -363,12 +364,19 @@ describe('user KeysView column settings', () => {
     listKeys.mockResolvedValue({ items: [{ ...createApiKey(), group_id: 27 }, { ...createApiKey(), id: 2, group_id: 32 }], total: 2, page: 1, page_size: 20, pages: 1 })
     const wrapper = await mountView()
     const button = wrapper.get('.key-inflation-status')
-    expect(button.text()).toBe('22.0%')
+    expect(button.get('.key-inflation-value').text()).toBe('22.0%')
+    expect(button.get('[aria-hidden="true"]').text()).toBe('infoCircle')
+    expect(wrapper.get('[data-field="inflation"] dt').text()).toBe('inflationMonitor.rate')
+    expect(wrapper.get('[data-field="inflation"] dd .key-inflation-status').exists()).toBe(true)
+    expect(wrapper.get('[data-test="key-group"]').find('.key-inflation-status').exists()).toBe(false)
+    expect(wrapper.find('.key-actions .key-inflation-status').exists()).toBe(false)
     expect(button.classes()).toContain('critical')
     expect(wrapper.findAll('.key-inflation-status')).toHaveLength(1)
     await button.trigger('click')
     expect(wrapper.get('[data-test="inflation-detail"]').text()).toBe('1')
-    await wrapper.get('.key-channel-overlay').trigger('click')
+    expect(wrapper.get('.key-card-close').element.parentElement).toBe(wrapper.get('.key-channel-panel').element)
+    expect(wrapper.get('.key-card-scroll').find('.key-card-close').exists()).toBe(false)
+    await wrapper.get('.key-card-close').trigger('click')
     expect(wrapper.find('[data-test="inflation-detail"]').exists()).toBe(false)
     wrapper.unmount()
   })

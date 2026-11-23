@@ -26,6 +26,7 @@ export default {
     "saveFailed": "Failed to save inflation settings",
     "notMeasured": "Untested",
     "tooltip": "Token inflation · {mode} · {time}",
+    "rate": "Token inflation",
     "noData": "No probe results yet",
     "latest": "Latest",
     "valid": "Valid {valid} / total {total}",

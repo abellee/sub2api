@@ -20,10 +20,13 @@
           <slot name="card-tags" :row="row" />
         </div>
         <dl class="key-card-fields">
-          <div v-for="column in fields" :key="column.key" class="key-card-field" :data-field="column.key">
-            <dt>{{ column.label }}</dt>
-            <dd><slot :name="`cell-${column.key}`" :row="row" :value="row[column.key as keyof ApiKey]">{{ row[column.key as keyof ApiKey] }}</slot></dd>
-          </div>
+          <template v-for="column in fields" :key="column.key">
+            <div class="key-card-field" :data-field="column.key">
+              <dt>{{ column.label }}</dt>
+              <dd><slot :name="`cell-${column.key}`" :row="row" :value="row[column.key as keyof ApiKey]">{{ row[column.key as keyof ApiKey] }}</slot></dd>
+            </div>
+            <slot :name="`after-field-${column.key}`" :row="row" />
+          </template>
         </dl>
         <footer class="key-card-actions"><slot name="cell-actions" :row="row" /></footer>
         <slot name="card-overlay" :row="row" />
@@ -62,7 +65,7 @@ function toggleRow(id: number) { emit('update:selectedKeys', props.selectedKeys.
 .key-card{position:relative;display:flex;flex-direction:column;width:100%;height:100%;min-width:0;max-width:440px;padding:22px;border-radius:18px;background:var(--keys-card-surface,var(--tf-console-surface));box-shadow:0 6px 28px #26385d05;color:var(--studio-ink)}
 .key-card-selected{outline:2px solid var(--tf-console-active-ink);outline-offset:2px}.key-card-header{margin-bottom:20px}.key-card-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.key-card-heading h2{min-width:0;font-size:15px;font-weight:600;overflow-wrap:anywhere}.key-card-heading :deep(.flex){flex-wrap:wrap}
 input[type=checkbox]{appearance:none;width:16px;height:16px;flex-shrink:0;margin:0;border:1px solid color-mix(in srgb,var(--studio-muted) 45%,transparent);border-radius:5px;background:transparent;cursor:pointer;transition:background-color .15s,border-color .15s}input[type=checkbox]:hover{border-color:var(--tf-console-active-ink)}input[type=checkbox]:checked,input[type=checkbox]:indeterminate{border-color:var(--tf-console-active-ink);background-color:var(--tf-console-active-ink);background-position:center;background-repeat:no-repeat;background-size:12px}input[type=checkbox]:checked{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m3 8 3 3 7-7'/%3E%3C/svg%3E")}input[type=checkbox]:indeterminate{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' stroke='white' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M4 8h8'/%3E%3C/svg%3E")}input[type=checkbox]:focus-visible{outline:2px solid var(--tf-console-active-ink);outline-offset:3px}.key-card-heading input{margin-top:3px}
-.key-card-fields{display:flex;flex-direction:column;gap:15px}.key-card-field{display:grid;grid-template-columns:76px minmax(0,1fr);gap:10px;align-items:start}.key-card-field dt{font-size:12px;color:var(--studio-muted);padding-top:2px}.key-card-field dd{min-width:0;font-size:13px;overflow-wrap:anywhere}
+.key-card-fields{display:flex;flex-direction:column;gap:15px}.key-card-fields :deep(.key-card-field){display:grid;grid-template-columns:76px minmax(0,1fr);gap:10px;align-items:start}.key-card-fields :deep(.key-card-field dt){font-size:12px;color:var(--studio-muted);padding-top:2px}.key-card-fields :deep(.key-card-field dd){min-width:0;font-size:13px;overflow-wrap:anywhere}
 .key-card-field dd :deep(.code){display:block;min-width:0;overflow-wrap:anywhere}.key-card-field dd :deep(button){max-width:100%;text-align:left}
 .key-card-fields{margin-bottom:20px}.key-card-actions{margin-top:auto;padding-top:14px;border-top:1px solid var(--studio-haze)}.key-card-actions :deep(>div){flex-wrap:wrap;justify-content:space-between;gap:6px}
 .key-card-skeleton{display:flex;flex-direction:column;gap:20px;min-height:320px}.key-card-empty{padding:32px 16px;border-radius:18px;background:var(--keys-card-surface,var(--tf-console-surface))}

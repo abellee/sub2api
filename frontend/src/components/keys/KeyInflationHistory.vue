@@ -23,7 +23,7 @@
       </svg>
       <p v-else>{{ t('inflationMonitor.noData') }}</p>
       <template v-if="result">
-        <div class="inflation-selection"><span>{{ time(result.measured_at) }}</span><strong :class="tone(rate)">{{ format(rate) }}</strong><span>{{ t('inflationMonitor.valid', { valid: result.samples.filter(s => s.rate !== null && !s.error).length, total: result.samples.length }) }}</span></div>
+        <div class="inflation-selection"><span>{{ time(result.measured_at) }}</span><strong :class="tone(rate)">{{ format(rate) }}</strong></div>
         <dl class="inflation-settings">
           <dt>{{ t('inflationMonitor.effort') }}</dt><dd>{{ result.reasoning_effort || t('inflationMonitor.defaultEffort') }}</dd>
           <dt>{{ t('inflationMonitor.encoding') }}</dt><dd>{{ result.encoding }}</dd>
