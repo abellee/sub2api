@@ -1,5 +1,27 @@
 export default {
     accounts: {
+      inflation: {
+        title: "膨胀检测",
+        hint: "对选中的 {count} 个账号逐个发送相同提示词，每个账号请求一次，可能产生上游费用。",
+        model: "测试模型",
+        modelHint: "留空使用各账号默认模型",
+        prompt: "统一提示词",
+        defaultPrompt: "请用中文写一段约300字的短文，介绍雨天散步的感受。直接输出正文，不要思考过程，也不要调用工具。",
+        formula: "膨胀率 = (上报输出 token ÷ tokenizer 分词数 − 1) × 100%。仅统计可见正文；推理 token 单独展示，仍包含在上报总数中。非 GPT 模型使用所选分词器作参考，差异不能直接判定虚报。Chat/Gemini 用量字段会换算为输出总数。",
+        rate: "膨胀率",
+        ready: "准备就绪，点击开始检测",
+        unavailable: "无法计算",
+        stop: "停止",
+        start: "开始检测",
+        testing: "正在拨测…",
+        done: "检测完成",
+        stopped: "已停止，已发出的请求仍可能计费",
+        timeout: "请求超过120秒，已停止等待",
+        incomplete: "响应未完整结束，未计算膨胀率",
+        backendRequired: "当前后端尚不支持膨胀检测；更新后端后可获取真实 token 用量。",
+        missingUsage: "未返回输出用量或正文为空，无法计算膨胀率",
+        summary: "已拨测 {tested}/{total} 个账号，其中 {measured} 个可计算膨胀率。",
+      },
       apiSummary: {
         title: '统计汇总',
         address: 'API 地址',

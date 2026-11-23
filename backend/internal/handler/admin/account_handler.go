@@ -1268,11 +1268,18 @@ func (h *AccountHandler) Delete(c *gin.Context) {
 	response.Success(c, gin.H{"message": "Account deleted successfully"})
 }
 
+// InflationCapabilities lets the UI reject old backends before a paid probe.
+func (h *AccountHandler) InflationCapabilities(c *gin.Context) {
+	response.Success(c, gin.H{"version": 1})
+}
+
 // TestAccountRequest represents the request body for testing an account
 type TestAccountRequest struct {
-	ModelID string `json:"model_id"`
-	Prompt  string `json:"prompt"`
-	Mode    string `json:"mode"`
+	MeasureTokens     bool   `json:"measure_tokens"`
+	TokenizerEncoding string `json:"tokenizer_encoding"`
+	ModelID           string `json:"model_id"`
+	Prompt            string `json:"prompt"`
+	Mode              string `json:"mode"`
 	// Optional media for Grok (and future) real generation tests.
 	// ImageDataURL / AudioDataURL are data:<mime>;base64,... payloads.
 	ImageDataURL string `json:"image_data_url"`
@@ -1307,8 +1314,10 @@ func (h *AccountHandler) Test(c *gin.Context) {
 	_ = c.ShouldBindJSON(&req)
 
 	opts := service.AccountTestOptions{
-		ImageDataURL: req.ImageDataURL,
-		AudioDataURL: req.AudioDataURL,
+		MeasureTokens:     req.MeasureTokens,
+		TokenizerEncoding: req.TokenizerEncoding,
+		ImageDataURL:      req.ImageDataURL,
+		AudioDataURL:      req.AudioDataURL,
 	}
 
 	// Use AccountTestService to test the account with SSE streaming

@@ -352,9 +352,10 @@ type TestConnectionImage struct {
 
 // TestConnectionResult 测试连接结果
 type TestConnectionResult struct {
-	Text        string                // 响应文本
-	Images      []TestConnectionImage // 响应图片（图片生成模型）
-	MappedModel string                // 实际使用的模型
+	UsageMetadata map[string]any        // Last upstream usage snapshot
+	Text          string                // 响应文本
+	Images        []TestConnectionImage // 响应图片（图片生成模型）
+	MappedModel   string                // 实际使用的模型
 }
 
 func shouldUseAntigravityGeminiTestRequest(_, mappedModel string) bool {
@@ -451,7 +452,18 @@ func (s *AntigravityGatewayService) TestConnectionWithPrompt(ctx context.Context
 	}
 
 	text, images := extractContentFromSSEResponse(respBody)
-	return &TestConnectionResult{Text: text, Images: images, MappedModel: mappedModel}, nil
+	var usage map[string]any
+	for _, line := range bytes.Split(respBody, []byte("\n")) {
+		data := bytes.TrimSpace(bytes.TrimPrefix(bytes.TrimSpace(line), []byte("data:")))
+		metadata := gjson.GetBytes(data, "response.usageMetadata")
+		if !metadata.Exists() {
+			metadata = gjson.GetBytes(data, "usageMetadata")
+		}
+		if metadata.IsObject() {
+			_ = json.Unmarshal([]byte(metadata.Raw), &usage)
+		}
+	}
+	return &TestConnectionResult{Text: text, Images: images, MappedModel: mappedModel, UsageMetadata: usage}, nil
 }
 
 // testConnectionHandleError 是 TestConnection 使用的轻量 handleError 回调。
@@ -629,7 +641,7 @@ func extractContentFromSSEResponse(respBody []byte) (string, []TestConnectionIma
 
 		for _, part := range parts {
 			if partMap, ok := part.(map[string]any); ok {
-				if text, ok := partMap["text"].(string); ok && text != "" {
+				if text, ok := partMap["text"].(string); ok && text != "" && partMap["thought"] != true {
 					texts = append(texts, text)
 				}
 				if inlineData, ok := partMap["inlineData"].(map[string]any); ok {

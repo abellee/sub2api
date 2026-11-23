@@ -68,8 +68,10 @@ type TestEvent struct {
 // AccountTestOptions carries optional media for admin connectivity tests.
 // ImageDataURL / AudioDataURL are full data URLs (data:<mime>;base64,...).
 type AccountTestOptions struct {
-	ImageDataURL string
-	AudioDataURL string
+	MeasureTokens     bool
+	TokenizerEncoding string
+	ImageDataURL      string
+	AudioDataURL      string
 }
 
 func firstAccountTestOptions(opts []AccountTestOptions) AccountTestOptions {
@@ -365,6 +367,11 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 	initAccountTestLogger(c, accountID, modelID, mode)
 	ctx := c.Request.Context()
 	testOpts := firstAccountTestOptions(opts)
+	if testOpts.MeasureTokens {
+		c.Writer.Header().Set("Content-Type", "text/event-stream")
+		c.Writer.Header().Set("Cache-Control", "no-cache")
+		c.Writer.Header().Set("X-Accel-Buffering", "no")
+	}
 
 	// Get account
 	account, err := s.accountRepo.GetByID(ctx, accountID)
@@ -372,6 +379,20 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 		return s.sendErrorAndEnd(c, "Account not found")
 	}
 	bindAccountTestPlatform(c, account)
+	if testOpts.MeasureTokens {
+		if strings.TrimSpace(prompt) == "" || len(prompt) > 32000 {
+			return s.sendErrorAndEnd(c, "Prompt must contain 1 to 32000 bytes")
+		}
+		if testOpts.TokenizerEncoding != "o200k_base" && testOpts.TokenizerEncoding != "cl100k_base" {
+			return s.sendErrorAndEnd(c, "Unsupported tokenizer encoding")
+		}
+		mapped := strings.ToLower(account.GetMappedModel(modelID))
+		if isOpenAIImageModel(mapped) || strings.Contains(mapped, "image") || strings.Contains(mapped, "video") || strings.Contains(mapped, "audio") || strings.Contains(mapped, "embedding") || strings.Contains(mapped, "tts") || account.IsSyntheticUITest() || account.IsTypeSafe() {
+			return s.sendErrorAndEnd(c, "Inflation detection requires a text model and a real account")
+		}
+		c.Set(accountInflationKey, &accountInflationProbe{prompt: prompt, encoding: testOpts.TokenizerEncoding})
+		mode = "text"
+	}
 
 	// Synthetic UI load-test accounts exercise the real SSE parsing and modal
 	// interactions, but intentionally do not send their placeholder credentials
@@ -392,6 +413,9 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 	if account.RoutesProtocolByInbound() {
 		switch account.GetAPIProtocol() {
 		case APIProtocolAdaptive:
+			if testOpts.MeasureTokens {
+				return s.testCNProviderChatCompletionsConnection(c, account, modelID, prompt)
+			}
 			return s.testCNProviderAdaptiveConnection(c, account, modelID, prompt)
 		case APIProtocolResponses:
 			return s.testOpenAIAccountConnection(c, account, modelID, prompt, normalizeAccountTestMode(mode))
@@ -567,6 +591,7 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 	if err != nil {
 		return s.sendErrorAndEnd(c, "Failed to create test payload")
 	}
+	applyInflationPrompt(c, payload)
 	payloadBytes, _ := json.Marshal(payload)
 
 	// Send test_start event
@@ -645,6 +670,7 @@ func (s *AccountTestService) testClaudeVertexServiceAccountConnection(c *gin.Con
 	if err != nil {
 		return s.sendErrorAndEnd(c, "Failed to create test payload")
 	}
+	applyInflationPrompt(c, payload)
 	payloadBytes, _ := json.Marshal(payload)
 	vertexBody, err := buildVertexAnthropicRequestBody(payloadBytes)
 	if err != nil {
@@ -735,7 +761,9 @@ func (s *AccountTestService) testBedrockAccountConnection(c *gin.Context, ctx co
 	c.Writer.Flush()
 
 	// Create a minimal Bedrock-compatible payload (no stream, no cache_control)
-	bedrockBody, _ := json.Marshal(buildBedrockTestPayload(testModelID))
+	bedrockPayload := buildBedrockTestPayload(testModelID)
+	applyInflationPrompt(c, bedrockPayload)
+	bedrockBody, _ := json.Marshal(bedrockPayload)
 
 	// Use non-streaming endpoint (response is standard Claude JSON)
 	apiURL := BuildBedrockURL(region, testModelID, false)
@@ -783,6 +811,10 @@ func (s *AccountTestService) testBedrockAccountConnection(c *gin.Context, ctx co
 	}
 
 	// Bedrock non-streaming response is standard Claude JSON, extract the text
+	var rawResult map[string]any
+	if json.Unmarshal(body, &rawResult) == nil {
+		captureInflationUsage(c, rawResult)
+	}
 	var result struct {
 		Content []struct {
 			Text string `json:"text"`
@@ -793,11 +825,8 @@ func (s *AccountTestService) testBedrockAccountConnection(c *gin.Context, ctx co
 	}
 
 	text := ""
-	if len(result.Content) > 0 {
-		text = result.Content[0].Text
-	}
-	if text == "" {
-		text = "(empty response)"
+	for _, part := range result.Content {
+		text += part.Text
 	}
 
 	s.sendEvent(c, TestEvent{Type: "content", Text: text})
@@ -900,6 +929,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 		upstreamTestModelID = normalizeOpenAIModelForUpstream(credentialAccount, testModelID)
 	}
 	payload := createOpenAITestPayload(upstreamTestModelID, isOAuth)
+	applyInflationPrompt(c, payload)
 	payloadBytes, _ := json.Marshal(payload)
 
 	// Send test_start event once. A task-invalid Agent Identity response may
@@ -1267,6 +1297,14 @@ func (s *AccountTestService) testGrokResponsesConnection(c *gin.Context, ctx con
 		return s.sendErrorAndEnd(c, "Failed to create Grok test payload")
 	}
 
+	if inflationProbe(c) != nil {
+		var payload map[string]any
+		if err := json.Unmarshal(payloadBytes, &payload); err != nil {
+			return s.sendErrorAndEnd(c, "Invalid Grok payload")
+		}
+		applyInflationPrompt(c, payload)
+		payloadBytes, _ = json.Marshal(payload)
+	}
 	if !agentIdentityTaskRecoveryWasTried(ctx) {
 		s.sendEvent(c, TestEvent{Type: "test_start", Model: testModelID})
 	}
@@ -2142,6 +2180,7 @@ func (s *AccountTestService) testOpenAIChatCompletionsConnection(
 	c.Writer.Flush()
 
 	payload := createOpenAIChatCompletionsTestPayload(testModelID, prompt)
+	applyInflationPrompt(c, payload)
 	payloadBytes, _ := json.Marshal(payload)
 
 	s.sendEvent(c, TestEvent{Type: "test_start", Model: testModelID})
@@ -2511,6 +2550,7 @@ func (s *AccountTestService) testAntigravityAccountConnection(c *gin.Context, ac
 		return s.sendErrorAndEnd(c, err.Error())
 	}
 
+	captureInflationUsage(c, map[string]any{"usageMetadata": result.UsageMetadata})
 	// 发送响应内容
 	if result.Text != "" {
 		s.sendEvent(c, TestEvent{Type: "content", Text: result.Text})
@@ -2715,8 +2755,11 @@ func (s *AccountTestService) processGeminiStream(c *gin.Context, body io.Reader)
 
 	for {
 		line, err := reader.ReadString('\n')
-		if err != nil {
+		if err != nil && len(line) == 0 {
 			if err == io.EOF {
+				if inflationProbe(c) != nil {
+					return s.sendErrorAndEnd(c, "Stream ended before completion; inflation not measured")
+				}
 				s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
 				return nil
 			}
@@ -2739,6 +2782,8 @@ func (s *AccountTestService) processGeminiStream(c *gin.Context, body io.Reader)
 			continue
 		}
 
+		captureInflationUsage(c, data)
+
 		// Support two Gemini response formats:
 		// - AI Studio: {"candidates": [...]}
 		// - Gemini CLI: {"response": {"candidates": [...]}}
@@ -2752,7 +2797,7 @@ func (s *AccountTestService) processGeminiStream(c *gin.Context, body io.Reader)
 					if parts, ok := content["parts"].([]any); ok {
 						for _, part := range parts {
 							if partMap, ok := part.(map[string]any); ok {
-								if text, ok := partMap["text"].(string); ok && text != "" {
+								if text, ok := partMap["text"].(string); ok && text != "" && partMap["thought"] != true {
 									s.sendEvent(c, TestEvent{Type: "content", Text: text})
 								}
 								if inlineData, ok := partMap["inlineData"].(map[string]any); ok {
@@ -2843,8 +2888,11 @@ func (s *AccountTestService) processClaudeStream(c *gin.Context, body io.Reader)
 
 	for {
 		line, err := reader.ReadString('\n')
-		if err != nil {
+		if err != nil && len(line) == 0 {
 			if err == io.EOF {
+				if inflationProbe(c) != nil {
+					return s.sendErrorAndEnd(c, "Stream ended before completion; inflation not measured")
+				}
 				s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
 				return nil
 			}
@@ -2867,6 +2915,7 @@ func (s *AccountTestService) processClaudeStream(c *gin.Context, body io.Reader)
 			continue
 		}
 
+		captureInflationUsage(c, data)
 		eventType, _ := data["type"].(string)
 
 		switch eventType {
@@ -2900,7 +2949,7 @@ func (s *AccountTestService) processOpenAIChatCompletionsStream(c *gin.Context, 
 
 	for {
 		line, err := reader.ReadString('\n')
-		if err != nil {
+		if err != nil && len(line) == 0 {
 			if err == io.EOF {
 				if seenFinish {
 					s.sendEvent(c, TestEvent{Type: "status", Text: "已通过 /v1/chat/completions 验证"})
@@ -2931,6 +2980,7 @@ func (s *AccountTestService) processOpenAIChatCompletionsStream(c *gin.Context, 
 		if err := json.Unmarshal([]byte(jsonStr), &data); err != nil {
 			return s.sendErrorAndEnd(c, "Invalid Chat Completions response from /v1/chat/completions: expected JSON data")
 		}
+		captureInflationUsage(c, data)
 		seenJSON = true
 
 		if errData, ok := data["error"].(map[string]any); ok {
@@ -2974,7 +3024,7 @@ func (s *AccountTestService) processOpenAIStream(c *gin.Context, body io.Reader)
 
 	for {
 		line, err := reader.ReadString('\n')
-		if err != nil {
+		if err != nil && len(line) == 0 {
 			if err == io.EOF {
 				if seenCompleted {
 					s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
@@ -3004,6 +3054,7 @@ func (s *AccountTestService) processOpenAIStream(c *gin.Context, body io.Reader)
 			continue
 		}
 
+		captureInflationUsage(c, data)
 		eventType, _ := data["type"].(string)
 
 		switch eventType {
@@ -3296,6 +3347,18 @@ func (s *AccountTestService) sendEvent(c *gin.Context, event TestEvent) {
 			if suppressCompletion, _ := suppress.(bool); suppressCompletion {
 				return
 			}
+		}
+	}
+	if p := inflationProbe(c); p != nil {
+		if event.Type == "content" {
+			if p.text.Len()+len(event.Text) <= 1<<20 {
+				p.text.WriteString(event.Text)
+			} else {
+				p.tooLarge = true
+			}
+		}
+		if event.Type == "test_complete" && event.Success {
+			s.sendEvent(c, TestEvent{Type: "inflation_result", Data: p.result()})
 		}
 	}
 	eventJSON, _ := json.Marshal(event)

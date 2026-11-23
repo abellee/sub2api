@@ -1,5 +1,27 @@
 export default {
     accounts: {
+      inflation: {
+        title: "Token inflation check",
+        hint: "Send the same prompt to {count} selected accounts, one request per account. Upstream charges may apply.",
+        model: "Test model",
+        modelHint: "Leave blank for each account’s default model",
+        prompt: "Shared prompt",
+        defaultPrompt: "Write a short Chinese essay of about 300 characters describing a walk in the rain. Output only the essay, without reasoning or tool calls.",
+        formula: "Inflation = (reported output tokens / tokenizer count − 1) × 100%. Only visible answer text is tokenized; reasoning is shown separately and remains in the reported total. For non-GPT models this tokenizer is a reference, so a difference alone does not prove overreporting. Chat/Gemini usage is normalized to total output.",
+        rate: "Inflation",
+        ready: "Ready. Start the check to continue.",
+        unavailable: "Unavailable",
+        stop: "Stop",
+        start: "Start check",
+        testing: "Testing…",
+        done: "Check complete",
+        stopped: "Stopped. Requests already sent may still be billed.",
+        timeout: "Stopped waiting after 120 seconds",
+        incomplete: "Response ended before completion; no inflation rate calculated",
+        backendRequired: "This backend does not support inflation checks yet. Update the backend to obtain real token usage.",
+        missingUsage: "Missing output usage or empty answer; inflation cannot be calculated",
+        summary: "Tested {tested}/{total} accounts; {measured} have a measurable inflation rate.",
+      },
       apiSummary: {
         title: 'Usage summary',
         address: 'API address',
