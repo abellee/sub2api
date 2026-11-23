@@ -40,9 +40,12 @@ func TestGroupAnthropicThinkingCompat(t *testing.T) {
 		{"mapped old model", "claude-sonnet-5-5", "claude-sonnet-4-6", "enabled", "enabled", all},
 		{"opus47", "claude-opus-4-7", "claude-opus-4-7", "enabled", "adaptive", all},
 		{"opus55", "claude-opus-5-5", "claude-opus-5-5", "enabled", "adaptive", all},
+		{"opus55 disabled", "claude-opus-5-5", "claude-opus-5-5", "disabled", "adaptive", all},
 		{"haiku55", "claude-haiku-5-5", "claude-haiku-5-5", "enabled", "adaptive", all},
 		{"fable52", "claude-fable-5-2", "claude-fable-5-2", "enabled", "adaptive", all},
+		{"fable52 disabled", "claude-fable-5-2", "claude-fable-5-2", "disabled", "adaptive", all},
 		{"mythos52", "claude-mythos-5-2", "claude-mythos-5-2", "enabled", "adaptive", all},
+		{"mythos52 disabled", "claude-mythos-5-2", "claude-mythos-5-2", "disabled", "adaptive", all},
 		{"haiku disabled stays", "claude-haiku-5-5", "claude-haiku-5-5", "disabled", "disabled", all},
 		{"adaptive stays", "claude-sonnet-5-5", "claude-sonnet-5-5", "adaptive", "adaptive", all},
 	} {
@@ -55,6 +58,9 @@ func TestGroupAnthropicThinkingCompat(t *testing.T) {
 			require.Equal(t, gjson.GetBytes(body, "messages").Raw, gjson.GetBytes(got, "messages").Raw)
 			if tt.want != tt.thinking {
 				require.False(t, gjson.GetBytes(got, "thinking.budget_tokens").Exists())
+				if tt.thinking == "disabled" && tt.want == "adaptive" {
+					require.Equal(t, "low", gjson.GetBytes(got, "output_config.effort").String())
+				}
 			} else {
 				require.Equal(t, body, got)
 			}
@@ -85,38 +91,43 @@ func TestGroupAnthropicThinkingCompatRetainsValidation(t *testing.T) {
 
 // Exercise the actual forwarding boundaries, including model mapping and count_tokens.
 func TestGatewayService_GroupThinkingCompatForward(t *testing.T) {
-	for _, countTokens := range []bool{false, true} {
-		for _, thinking := range []string{"enabled", "disabled"} {
-			t.Run(fmt.Sprintf("count=%t/%s", countTokens, thinking), func(t *testing.T) {
-				c := thinkingCompatContext(GroupAnthropicThinkingCompat{Enabled: true, Models: []string{"friendly-*"}})
-				c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
-				body := []byte(fmt.Sprintf(`{"model":"friendly-sonnet","max_tokens":4096,"thinking":{"type":%q,"budget_tokens":1000},"messages":[{"role":"user","content":"hello"}]}`, thinking))
-				parsed, err := ParseGatewayRequest(NewRequestBodyRef(body), PlatformAnthropic)
-				require.NoError(t, err)
-				account := newAnthropicAPIKeyAccountForTest()
-				account.Credentials["model_mapping"] = map[string]any{"friendly-sonnet": "claude-sonnet-5-5"}
-				response := `{"id":"msg-1","type":"message","role":"assistant","model":"claude-sonnet-5-5","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":5,"output_tokens":1}}`
-				if countTokens {
-					response = `{"input_tokens":5}`
-				}
-				upstream := &anthropicHTTPUpstreamRecorder{resp: &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(response))}}
-				cfg := &config.Config{}
-				svc := &GatewayService{cfg: cfg, httpUpstream: upstream, responseHeaderFilter: compileResponseHeaderFilter(cfg), rateLimitService: &RateLimitService{}, deferredService: &DeferredService{}}
-				if countTokens {
-					require.NoError(t, svc.ForwardCountTokens(context.Background(), c, account, parsed))
-				} else {
-					_, err = svc.Forward(context.Background(), c, account, parsed)
+	for _, model := range []string{"claude-sonnet-5-5", "claude-opus-5-5"} {
+		for _, countTokens := range []bool{false, true} {
+			for _, thinking := range []string{"enabled", "disabled"} {
+				t.Run(fmt.Sprintf("%s/count=%t/%s", model, countTokens, thinking), func(t *testing.T) {
+					c := thinkingCompatContext(GroupAnthropicThinkingCompat{Enabled: true, Models: []string{"friendly-*"}})
+					c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+					body := []byte(fmt.Sprintf(`{"model":"friendly-sonnet","max_tokens":4096,"thinking":{"type":%q,"budget_tokens":1000},"messages":[{"role":"user","content":"hello"}]}`, thinking))
+					parsed, err := ParseGatewayRequest(NewRequestBodyRef(body), PlatformAnthropic)
 					require.NoError(t, err)
-				}
-				want := "adaptive"
-				if thinking == "disabled" {
-					want = "between_tools"
-				}
-				require.Equal(t, want, gjson.GetBytes(upstream.lastBody, "thinking.type").String())
-				require.False(t, gjson.GetBytes(upstream.lastBody, "thinking.budget_tokens").Exists())
-				require.True(t, parsed.ThinkingEnabled, "derived parsed fields must be refreshed")
-				require.Equal(t, "claude-sonnet-5-5", gjson.GetBytes(upstream.lastBody, "model").String())
-			})
+					account := newAnthropicAPIKeyAccountForTest()
+					account.Credentials["model_mapping"] = map[string]any{"friendly-sonnet": model}
+					response := fmt.Sprintf(`{"id":"msg-1","type":"message","role":"assistant","model":%q,"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":5,"output_tokens":1}}`, model)
+					if countTokens {
+						response = `{"input_tokens":5}`
+					}
+					upstream := &anthropicHTTPUpstreamRecorder{resp: &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(response))}}
+					cfg := &config.Config{}
+					svc := &GatewayService{cfg: cfg, httpUpstream: upstream, responseHeaderFilter: compileResponseHeaderFilter(cfg), rateLimitService: &RateLimitService{}, deferredService: &DeferredService{}}
+					if countTokens {
+						require.NoError(t, svc.ForwardCountTokens(context.Background(), c, account, parsed))
+					} else {
+						_, err = svc.Forward(context.Background(), c, account, parsed)
+						require.NoError(t, err)
+					}
+					want := "adaptive"
+					if thinking == "disabled" && model == "claude-sonnet-5-5" {
+						want = "between_tools"
+					}
+					require.Equal(t, want, gjson.GetBytes(upstream.lastBody, "thinking.type").String())
+					require.False(t, gjson.GetBytes(upstream.lastBody, "thinking.budget_tokens").Exists())
+					require.True(t, parsed.ThinkingEnabled, "derived parsed fields must be refreshed")
+					require.Equal(t, model, gjson.GetBytes(upstream.lastBody, "model").String())
+					if thinking == "disabled" && model == "claude-opus-5-5" {
+						require.Equal(t, "low", gjson.GetBytes(upstream.lastBody, "output_config.effort").String())
+					}
+				})
+			}
 		}
 	}
 }

@@ -33,7 +33,16 @@ func TestGroupThinkingCompatOpenAIBridges(t *testing.T) {
 		{name: "scope uses requested", requested: "other-alias", upstream: "claude-opus-5-5", thinking: "enabled", wantErr: "requires adaptive thinking", cfg: selected},
 		{name: "off", upstream: "claude-opus-5-5", thinking: "enabled", wantErr: "requires adaptive thinking"},
 		{name: "sonnet disabled", upstream: "claude-sonnet-5-5", thinking: "disabled", want: "between_tools", effort: "high", cfg: all},
-		{name: "opus disabled rejected", upstream: "claude-opus-5-5", thinking: "disabled", wantErr: "requires adaptive thinking", cfg: all},
+		{name: "opus disabled", upstream: "claude-opus-5-5", thinking: "disabled", want: "adaptive", effort: "low", cfg: all},
+		{name: "opus disabled off", upstream: "claude-opus-5-5", thinking: "disabled", wantErr: "requires adaptive thinking"},
+		{name: "opus disabled outside scope", requested: "other-alias", upstream: "claude-opus-5-5", thinking: "disabled", wantErr: "requires adaptive thinking", cfg: selected},
+		{name: "opus disabled explicit effort", upstream: "claude-opus-5-5", thinking: "disabled", extra: `,"output_config":{"effort":"high"}`, want: "adaptive", effort: "high", cfg: all},
+		{name: "opus disabled openai none", upstream: "claude-opus-5-5", thinking: "disabled", extra: `,"reasoning_effort":"none","reasoning":{"effort":"none"}`, want: "adaptive", effort: "low", cfg: all},
+		{name: "opus openai none", upstream: "claude-opus-5-5", extra: `,"reasoning_effort":"none","reasoning":{"effort":"none"}`, want: "adaptive", effort: "low", cfg: all},
+		{name: "opus openai none off", upstream: "claude-opus-5-5", extra: `,"reasoning_effort":"none","reasoning":{"effort":"none"}`, wantErr: "does not support reasoning effort"},
+		{name: "opus disabled selected alias", requested: "public-opus", upstream: "claude-opus-5-5", thinking: "disabled", want: "adaptive", effort: "low", cfg: selected},
+		{name: "fable disabled", upstream: "claude-fable-5-2", thinking: "disabled", want: "adaptive", effort: "low", cfg: all},
+		{name: "mythos disabled", upstream: "claude-mythos-5-2", thinking: "disabled", want: "adaptive", effort: "low", cfg: all},
 		{name: "explicit effort", upstream: "claude-opus-5-5", thinking: "enabled", extra: `,"output_config":{"effort":"low"}`, want: "adaptive", effort: "low", cfg: all},
 		{name: "openai effort", upstream: "claude-opus-5-5", thinking: "enabled", extra: `,"reasoning_effort":"xhigh","reasoning":{"effort":"xhigh"}`, want: "adaptive", effort: "xhigh", cfg: all},
 		{name: "between tools effort rejected", upstream: "claude-sonnet-5-5", thinking: "disabled", extra: `,"reasoning_effort":"xhigh","reasoning":{"effort":"xhigh"}`, wantErr: "supports only low, medium or high effort", cfg: all},
@@ -54,6 +63,9 @@ func TestGroupThinkingCompatOpenAIBridges(t *testing.T) {
 						path = "/v1/chat/completions"
 					}
 					body := []byte(fmt.Sprintf(`{"model":%q,%s,"stream":%t,"thinking":{"type":%q,"budget_tokens":4096,"display":"omitted"}%s}`, requested, input, stream, tt.thinking, tt.extra))
+					if tt.thinking == "" {
+						body = []byte(fmt.Sprintf(`{"model":%q,%s,"stream":%t%s}`, requested, input, stream, tt.extra))
+					}
 					original := append([]byte(nil), body...)
 					rec := httptest.NewRecorder()
 					c, _ := gin.CreateTestContext(rec)
@@ -85,7 +97,7 @@ func TestGroupThinkingCompatOpenAIBridges(t *testing.T) {
 					require.Equal(t, tt.want, gjson.GetBytes(upstream.lastBody, "thinking.type").String())
 					require.Equal(t, tt.effort, gjson.GetBytes(upstream.lastBody, "output_config.effort").String())
 					require.False(t, gjson.GetBytes(upstream.lastBody, "thinking.budget_tokens").Exists())
-					if tt.want == "adaptive" {
+					if tt.want == "adaptive" && tt.thinking == "enabled" {
 						require.Equal(t, "omitted", gjson.GetBytes(upstream.lastBody, "thinking.display").String())
 					}
 				})

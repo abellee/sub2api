@@ -82,6 +82,11 @@ func (s *GatewayService) ForwardAsResponses(
 		return nil, err
 	}
 	responsesReq.Model = mappedModel
+	if !bytes.Equal(body, compatBody) {
+		if effort := gjson.GetBytes(compatBody, "output_config.effort"); effort.Exists() {
+			responsesReq.Reasoning = &apicompat.ResponsesReasoning{Effort: effort.String()}
+		}
+	}
 	anthropicReq, err := apicompat.ResponsesToAnthropicRequest(&responsesReq)
 	if err != nil {
 		if isClaude55SignedThinkingModel(mappedModel) {

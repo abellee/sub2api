@@ -48,6 +48,17 @@ func applyGroupAnthropicThinkingCompat(c *gin.Context, body []byte, requestedMod
 		return body
 	}
 	thinking := gjson.GetBytes(body, "thinking")
+	// Models that cannot disable thinking use their lowest supported effort instead.
+	requiresAdaptive := isClaude55SignedThinkingModel(upstreamModel) && !claude.IsSonnet55(upstreamModel) && !claude.IsHaiku55(upstreamModel)
+	openAINone := !thinking.Exists() && (gjson.GetBytes(body, "reasoning_effort").String() == "none" || gjson.GetBytes(body, "reasoning.effort").String() == "none")
+	if requiresAdaptive && (thinking.Get("type").String() == "disabled" || openAINone) {
+		body, _ = sjson.SetBytes(body, "thinking.type", "adaptive")
+		body, _ = sjson.DeleteBytes(body, "thinking.budget_tokens")
+		if !gjson.GetBytes(body, "output_config.effort").Exists() {
+			body, _ = sjson.SetBytes(body, "output_config.effort", "low")
+		}
+		return body
+	}
 	if !thinking.IsObject() {
 		return body
 	}
