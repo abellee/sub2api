@@ -68,7 +68,11 @@ describe('useAuthStore', () => {
     fetchPublicSettings.mockReset().mockResolvedValue(null)
   })
 
-  afterEach(() => {
+  afterEach(async () => {
+    // Also remove the visibility listener installed by successful logins.
+    mockLogout.mockResolvedValue(undefined)
+    await useAuthStore().logout()
+    vi.restoreAllMocks()
     vi.useRealTimers()
   })
 
@@ -356,6 +360,65 @@ describe('useAuthStore', () => {
   // --- refreshUser ---
 
   describe('refreshUser', () => {
+    it('shares simultaneous requests for the same session', async () => {
+      mockLogin.mockResolvedValue(fakeAuthResponse)
+      const store = useAuthStore()
+      await store.login({ email: 'test@example.com', password: '123456' })
+      let resolve!: (value: { data: typeof fakeUser }) => void
+      mockGetCurrentUser.mockReturnValueOnce(new Promise((done) => { resolve = done }))
+      const first = store.refreshUser()
+      const second = store.refreshUser()
+      expect(mockGetCurrentUser).toHaveBeenCalledTimes(1)
+      resolve({ data: fakeUser })
+      await expect(Promise.all([first, second])).resolves.toEqual([fakeUser, fakeUser])
+    })
+
+    it('pauses background refresh and refreshes stale data when visible again', async () => {
+      let hidden = true
+      vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden)
+      mockLogin.mockResolvedValue(fakeAuthResponse)
+      mockGetCurrentUser.mockResolvedValue({ data: fakeUser })
+      const store = useAuthStore()
+      await store.login({ email: 'test@example.com', password: '123456' })
+      await vi.advanceTimersByTimeAsync(120_000)
+      expect(mockGetCurrentUser).not.toHaveBeenCalled()
+      hidden = false
+      document.dispatchEvent(new Event('visibilitychange'))
+      await vi.advanceTimersByTimeAsync(0)
+      expect(mockGetCurrentUser).toHaveBeenCalledOnce()
+      document.dispatchEvent(new Event('visibilitychange'))
+      await vi.advanceTimersByTimeAsync(0)
+      expect(mockGetCurrentUser).toHaveBeenCalledOnce()
+      await store.logout()
+    })
+
+    it('ignores an old response after changing accounts', async () => {
+      mockLogin.mockResolvedValue(fakeAuthResponse)
+      const store = useAuthStore()
+      await store.login({ email: 'test@example.com', password: '123456' })
+      let resolve!: (value: { data: typeof fakeUser }) => void
+      mockGetCurrentUser.mockReturnValueOnce(new Promise((done) => { resolve = done }))
+      const pending = store.refreshUser()
+      store.token = 'other-token'
+      store.user = { ...fakeUser, id: 2, username: 'other-user' }
+      resolve({ data: fakeUser })
+      await pending
+      expect(store.user.username).toBe('other-user')
+    })
+
+    it('does not clear a new session when an old request returns 401', async () => {
+      mockLogin.mockResolvedValue(fakeAuthResponse)
+      const store = useAuthStore()
+      await store.login({ email: 'test@example.com', password: '123456' })
+      let reject!: (error: { status: number }) => void
+      mockGetCurrentUser.mockReturnValueOnce(new Promise((_resolve, fail) => { reject = fail }))
+      const pending = store.refreshUser()
+      store.token = 'other-token'
+      reject({ status: 401 })
+      await expect(pending).rejects.toEqual({ status: 401 })
+      expect(store.token).toBe('other-token')
+    })
+
     it('刷新用户数据并更新 localStorage', async () => {
       mockLogin.mockResolvedValue(fakeAuthResponse)
       const store = useAuthStore()

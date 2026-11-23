@@ -61,6 +61,10 @@ vi.mock('@/api/setup', () => ({
   getSetupStatus: mocks.getSetupStatus,
 }))
 
+vi.mock('@/composables/useMenuStatus', () => ({
+  startMenuStatusPolling: vi.fn(), stopMenuStatusPolling: vi.fn(),
+}))
+
 vi.mock('@/router/title', () => ({
   resolveRouteDocumentTitle: () => 'Sub2API',
 }))
@@ -103,6 +107,7 @@ describe('App navigation user refresh', () => {
           Toast: true,
           AnnouncementPopup: true,
           LotteryPromptHost: true,
+          PageNotificationStack: true,
           AdminComplianceDialog: true,
         },
       },

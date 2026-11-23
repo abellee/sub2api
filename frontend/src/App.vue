@@ -161,6 +161,7 @@ const removeRouteAfterEach = router.afterEach(() => {
 })
 
 onBeforeUnmount(() => {
+  stopMenuStatusPolling()
   removeRouteAfterEach()
   document.removeEventListener('visibilitychange', onVisibilityChange)
   window.removeEventListener('admin-compliance-required', onAdminComplianceRequired)

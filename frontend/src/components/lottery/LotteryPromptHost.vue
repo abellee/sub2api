@@ -17,6 +17,7 @@ import type { ActivityView, WinnerRecord } from '../../api/lottery'
 import type { TaskPrompt } from '../../api/task'
 import { entryPopupsHeld } from '../../composables/entryPopupGate'
 import { setLotterySocketStatus } from '../../composables/useLotterySocketStatus'
+import { refreshMenuStatus } from '../../composables/useMenuStatus'
 import { LOTTERY_WIN_EVENT, useLotteryWinPrompt } from '../../composables/useLotteryWinPrompt'
 import LotteryPromptModal from './LotteryPromptModal.vue'
 import LotteryWinModal from './LotteryWinModal.vue'
@@ -36,6 +37,7 @@ type PromptItem =
   | { kind: 'task'; id: number; task: TaskPrompt }
 
 const queue = ref<PromptItem[]>([])
+let promptCheckInFlight = false
 const current = computed(() => queue.value[0] ?? null)
 const currentActivity = computed(() => (current.value?.kind === 'lottery' ? current.value.activity : null))
 const currentTask = computed(() => (current.value?.kind === 'task' ? current.value.task : null))
@@ -63,10 +65,18 @@ function drop(kind: PromptItem['kind'], id: number) {
 }
 
 async function runPromptCheck() {
-  const activity = await prompt.check()
-  if (activity) enqueue({ kind: 'lottery', id: activity.id, activity })
-  const task = await taskPrompt.check()
-  if (task) enqueue({ kind: 'task', id: task.id, task })
+  if (document.hidden || closedByUs || promptCheckInFlight) return
+  promptCheckInFlight = true
+  try {
+    const activity = await prompt.check()
+    if (closedByUs) return
+    if (activity) enqueue({ kind: 'lottery', id: activity.id, activity })
+    if (document.hidden) return
+    const task = await taskPrompt.check()
+    if (!closedByUs && task) enqueue({ kind: 'task', id: task.id, task })
+  } finally {
+    promptCheckInFlight = false
+  }
 }
 
 function onConfirm(activityId: number) {
@@ -106,8 +116,7 @@ let pollTimer = 0
 let heartbeatTimer = 0
 let pongCheckTimer = 0
 let awaitingPong = false
-let winSyncTimer = 0
-const WIN_SYNC_MS = 15_000
+let winSafetyTimer = 0
 
 function wsUrl(): string {
   const token = localStorage.getItem('auth_token') ?? ''
@@ -140,7 +149,7 @@ function reconnectNow() {
 }
 
 function wsConnect() {
-  if (closedByUs) return
+  if (closedByUs || document.hidden) return
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return
   const token = localStorage.getItem('auth_token')
   if (!token) {
@@ -156,6 +165,7 @@ function wsConnect() {
     ws = null
     setLotterySocketStatus('closed')
     scheduleReconnect()
+    schedulePolling()
     return
   }
   ws.onopen = () => {
@@ -165,6 +175,10 @@ function wsConnect() {
     stopHeartbeat()
     startHeartbeat()
     stopPolling() // WS 正常：停掉轮询，避免双通道重复请求
+    if (!document.hidden) {
+      void winPrompt.sync() // 补收连接建立前可能漏掉的中奖。
+      void refreshMenuStatus()
+    }
   }
   ws.onmessage = (ev) => {
     awaitingPong = false
@@ -181,6 +195,9 @@ function wsConnect() {
         enqueue({ kind: 'task', id: msg.task.id, task: msg.task })
       } else if (msg.type === 'lottery_win' && msg.winner) {
         winPrompt.enqueue(msg.winner)
+      }
+      if (!document.hidden && ['lottery_prompt', 'task_prompt', 'lottery_win'].includes(msg.type ?? '')) {
+        void refreshMenuStatus()
       }
     } catch {
       // 忽略非法消息
@@ -220,7 +237,7 @@ function startHeartbeat() {
       ws.send(JSON.stringify({ type: 'ping' }))
       awaitingPong = true
       pongCheckTimer = window.setTimeout(() => {
-        if (awaitingPong && ws) {
+        if (!document.hidden && awaitingPong && ws) {
           ws.close() // 无响应视为死连接，触发重连
         }
       }, WS_PONG_TIMEOUT_MS)
@@ -246,7 +263,9 @@ function stopHeartbeat() {
 function schedulePolling() {
   if (pollTimer) return
   pollTimer = window.setInterval(() => {
+    if (document.hidden) return
     if (!current.value) void runPromptCheck()
+    void winPrompt.sync()
   }, 60_000)
 }
 
@@ -261,11 +280,12 @@ function onVisibilityChange() {
   if (document.hidden) return
   // 页面重新可见：立即补偿重连/检查（后台标签页的定时器可能被浏览器节流）
   if (!ws || ws.readyState !== WebSocket.OPEN) reconnectNow()
-  if (!current.value) void runPromptCheck()
+  if ((!ws || ws.readyState !== WebSocket.OPEN) && !current.value) void runPromptCheck()
   void winPrompt.sync()
 }
 
 function onWindowFocus() {
+  if (document.hidden || ws?.readyState === WebSocket.OPEN) return
   reconnectNow()
   if (!current.value) void runPromptCheck()
 }
@@ -280,11 +300,13 @@ watch(() => winPrompt.current.value?.id, (id) => {
 
 onMounted(() => {
   void runPromptCheck()
-  void winPrompt.sync()
-  winSyncTimer = window.setInterval(() => {
-    if (!document.hidden) void winPrompt.sync()
-  }, WIN_SYNC_MS)
+  if (!document.hidden) void winPrompt.sync()
+  schedulePolling()
   wsConnect()
+  // 低频核对，补回推送建立时的竞态或偶发漏消息。
+  winSafetyTimer = window.setInterval(() => {
+    if (!document.hidden && ws?.readyState === WebSocket.OPEN) void winPrompt.sync()
+  }, 5 * 60_000)
   window.addEventListener('focus', onWindowFocus)
   window.addEventListener('online', onOnline)
   document.addEventListener('visibilitychange', onVisibilityChange)
@@ -294,7 +316,7 @@ onBeforeUnmount(() => {
   closedByUs = true
   setLotterySocketStatus('idle')
   if (reconnectTimer) window.clearTimeout(reconnectTimer)
-  if (winSyncTimer) window.clearInterval(winSyncTimer)
+  if (winSafetyTimer) window.clearInterval(winSafetyTimer)
   wsClose()
   stopPolling()
   window.removeEventListener('focus', onWindowFocus)
@@ -304,6 +326,7 @@ onBeforeUnmount(() => {
 
 // 路由切换时：WS 已连接则无需处理（服务端实时推），断线时补偿重连 + 轮询检查
 watch(() => route.path, () => {
+  if (document.hidden) return
   if (!ws || ws.readyState !== WebSocket.OPEN) {
     reconnectNow()
     if (!current.value) void runPromptCheck()

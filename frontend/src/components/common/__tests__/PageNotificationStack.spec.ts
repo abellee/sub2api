@@ -1,8 +1,11 @@
-import { afterEach, describe, expect, it } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import PageNotificationStack from '../PageNotificationStack.vue'
 import { dismissPageNotification, showPageNotification, usePageNotifications } from '@/composables/usePageNotifications'
+import { listPageNotifications } from '@/api/pushNotifications'
+
+vi.mock('@/api/pushNotifications', () => ({ listPageNotifications: vi.fn() }))
 
 function clearNotices() {
   for (const item of [...usePageNotifications().items.value]) {
@@ -11,6 +14,7 @@ function clearNotices() {
 }
 
 describe('PageNotificationStack', () => {
+  beforeEach(() => { localStorage.clear() })
   afterEach(() => {
     clearNotices()
   })
@@ -53,5 +57,86 @@ describe('PageNotificationStack', () => {
     await wrapper.vm.$nextTick()
     expect(usePageNotifications().items.value.map((item) => item.title)).toEqual(['新通知'])
     wrapper.unmount()
+  })
+})
+
+describe('page notification polling', () => {
+  let wrapper: ReturnType<typeof mount> | undefined
+  let hidden = false
+
+  async function mountStack() {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/', component: { template: '<div />' } }],
+    })
+    wrapper = mount(PageNotificationStack, { global: { plugins: [router] } })
+    await flushPromises()
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    localStorage.clear()
+    localStorage.setItem('auth_token', 'account-a')
+    hidden = false
+    vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden)
+    vi.mocked(listPageNotifications).mockReset().mockResolvedValue({ notices: [], now: 'cursor-1' })
+  })
+
+  afterEach(() => {
+    wrapper?.unmount()
+    wrapper = undefined
+    clearNotices()
+    localStorage.clear()
+    vi.restoreAllMocks()
+    vi.useRealTimers()
+  })
+
+  it('uses 30-second checks, pauses hidden pages and removes listeners on unmount', async () => {
+    await mountStack()
+    await vi.advanceTimersByTimeAsync(29_999)
+    expect(listPageNotifications).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(listPageNotifications).toHaveBeenLastCalledWith('cursor-1')
+    expect(listPageNotifications).toHaveBeenCalledTimes(2)
+    hidden = true
+    document.dispatchEvent(new Event('visibilitychange'))
+    await vi.advanceTimersByTimeAsync(90_000)
+    expect(listPageNotifications).toHaveBeenCalledTimes(2)
+    hidden = false
+    document.dispatchEvent(new Event('visibilitychange'))
+    await flushPromises()
+    expect(listPageNotifications).toHaveBeenCalledTimes(3)
+    wrapper!.unmount()
+    wrapper = undefined
+    document.dispatchEvent(new Event('visibilitychange'))
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(listPageNotifications).toHaveBeenCalledTimes(3)
+  })
+
+  it('does not overlap slow requests and retains the cursor after a failure', async () => {
+    await mountStack()
+    let reject!: (error: Error) => void
+    vi.mocked(listPageNotifications).mockReturnValueOnce(new Promise((_resolve, fail) => { reject = fail }))
+    await vi.advanceTimersByTimeAsync(30_000)
+    document.dispatchEvent(new Event('visibilitychange'))
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(listPageNotifications).toHaveBeenCalledTimes(2)
+    reject(new Error('offline'))
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(listPageNotifications).toHaveBeenCalledTimes(3)
+    expect(listPageNotifications).toHaveBeenLastCalledWith('cursor-1')
+  })
+
+  it('discards notices from a previous account and resets its cursor', async () => {
+    let resolve!: (value: Awaited<ReturnType<typeof listPageNotifications>>) => void
+    vi.mocked(listPageNotifications).mockReturnValueOnce(new Promise((done) => { resolve = done }))
+    await mountStack()
+    localStorage.setItem('auth_token', 'account-b')
+    resolve({ notices: [{ id: 'private-a', title: 'Private A', body: '', image: '', url: '', createdAt: '' }], now: 'private-cursor' })
+    await flushPromises()
+    expect(usePageNotifications().items.value).toHaveLength(0)
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(listPageNotifications).toHaveBeenLastCalledWith('')
   })
 })

@@ -1,12 +1,12 @@
 /**
- * 抽奖和任务菜单的显隐、角标。登录后全局每 5 秒拉一次，路由切换不会重新计时。
+ * 抽奖和任务菜单的显隐、角标。页面可见时每 30 秒补查，推送到达时立即更新。
  * 两个菜单默认隐藏，拿到结果后再决定是否显示。
  */
 import { ref } from 'vue'
 import { fetchMenuStatus, type MenuStatus } from '@/api/menuStatus'
 import type { LotteryPhase } from '@/api/lottery'
 
-const POLL_MS = 5000
+const POLL_MS = 30_000
 
 const lotteryVisible = ref(false)
 const lotteryPhase = ref<LotteryPhase>('')
@@ -50,15 +50,19 @@ export function refreshMenuStatus(): Promise<void> {
 export function startMenuStatusPolling() {
   if (started) return
   started = true
-  void refreshMenuStatus()
-  timer = window.setInterval(() => {
-    void refreshMenuStatus()
-  }, POLL_MS)
+  refreshVisibleMenuStatus()
+  timer = window.setInterval(refreshVisibleMenuStatus, POLL_MS)
+  document.addEventListener('visibilitychange', refreshVisibleMenuStatus)
+}
+
+function refreshVisibleMenuStatus() {
+  if (started && !document.hidden) void refreshMenuStatus()
 }
 
 export function stopMenuStatusPolling() {
   generation += 1
   started = false
+  document.removeEventListener('visibilitychange', refreshVisibleMenuStatus)
   if (timer !== undefined) {
     window.clearInterval(timer)
     timer = undefined

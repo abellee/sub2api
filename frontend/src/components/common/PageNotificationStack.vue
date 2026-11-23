@@ -12,6 +12,9 @@ const router = useRouter()
 const hiddenImages = ref<Record<number, true>>({})
 let pageCursor = ''
 let pageTimer = 0
+let cursorToken = ''
+let pulling = false
+let disposed = false
 
 function onServiceWorkerMessage(event: MessageEvent) {
   const data = event.data
@@ -40,9 +43,16 @@ function openNotice(item: PageNotification) {
 }
 
 async function pullPageNotices() {
-  if (!localStorage.getItem('auth_token')) return
+  const token = localStorage.getItem('auth_token')
+  if (!token || document.hidden || pulling || disposed) return
+  if (cursorToken !== token) {
+    cursorToken = token
+    pageCursor = ''
+  }
+  pulling = true
   try {
     const result = await listPageNotifications(pageCursor)
+    if (disposed || localStorage.getItem('auth_token') !== token) return
     pageCursor = result.now
     for (const notice of result.notices) {
       showPageNotification({
@@ -55,6 +65,8 @@ async function pullPageNotices() {
     }
   } catch {
     // 推送服务暂时不可用时，下一轮再拉。
+  } finally {
+    pulling = false
   }
 }
 
@@ -62,15 +74,13 @@ onMounted(() => {
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.addEventListener('message', onServiceWorkerMessage)
   }
-  if (import.meta.env.MODE === 'test') return
   void pullPageNotices()
-  pageTimer = window.setInterval(() => {
-    if (document.visibilityState === 'visible') void pullPageNotices()
-  }, 5000)
+  pageTimer = window.setInterval(pullPageNotices, 30_000)
   document.addEventListener('visibilitychange', pullPageNotices)
 })
 
 onBeforeUnmount(() => {
+  disposed = true
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.removeEventListener('message', onServiceWorkerMessage)
   }

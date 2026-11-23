@@ -86,6 +86,8 @@ export const useAuthStore = defineStore('auth', () => {
   const pendingAuthSession = ref<PendingAuthSessionSummary | null>(null)
   let refreshIntervalId: ReturnType<typeof setInterval> | null = null
   let tokenRefreshTimeoutId: ReturnType<typeof setTimeout> | null = null
+  let userRefreshInFlight: { token: string; promise: Promise<User> } | null = null
+  let lastUserRefreshAt = 0
 
   // ==================== Computed ====================
 
@@ -149,19 +151,22 @@ export const useAuthStore = defineStore('auth', () => {
     // Clear existing interval if any
     stopAutoRefresh()
 
-    refreshIntervalId = setInterval(() => {
-      if (token.value) {
-        refreshUser().catch((error) => {
-          console.error('Auto-refresh user failed:', error)
-        })
-      }
-    }, AUTO_REFRESH_INTERVAL)
+    refreshIntervalId = setInterval(refreshVisibleUser, AUTO_REFRESH_INTERVAL)
+    document.addEventListener('visibilitychange', refreshVisibleUser)
+  }
+
+  function refreshVisibleUser(): void {
+    if (document.hidden || !token.value || Date.now() - lastUserRefreshAt < AUTO_REFRESH_INTERVAL) return
+    refreshUser().catch((error) => {
+      console.error('Auto-refresh user failed:', error)
+    })
   }
 
   /**
    * Stop auto-refresh interval
    */
   function stopAutoRefresh(): void {
+    document.removeEventListener('visibilitychange', refreshVisibleUser)
     if (refreshIntervalId) {
       clearInterval(refreshIntervalId)
       refreshIntervalId = null
@@ -440,29 +445,37 @@ export const useAuthStore = defineStore('auth', () => {
    * @throws Error if not authenticated or request fails
    */
   async function refreshUser(): Promise<User> {
-    if (!token.value) {
+    const currentToken = token.value
+    if (!currentToken) {
       throw new Error('Not authenticated')
     }
+    if (userRefreshInFlight?.token === currentToken) return userRefreshInFlight.promise
 
-    try {
-      const response = await authAPI.getCurrentUser()
+    const request: Promise<User> = authAPI.getCurrentUser().then((response) => {
+      const { run_mode: _run_mode, ...userData } = response.data
+      // 登出或切换账号后，旧请求不能覆盖新会话。
+      if (token.value !== currentToken) return userData
       if (response.data.run_mode) {
         runMode.value = response.data.run_mode
       }
-      const { run_mode: _run_mode, ...userData } = response.data
       user.value = userData
+      lastUserRefreshAt = Date.now()
 
       // Update localStorage
       localStorage.setItem(AUTH_USER_KEY, JSON.stringify(userData))
 
       return userData
-    } catch (error) {
+    }).catch((error) => {
       // If refresh fails with 401, clear auth state
-      if ((error as { status?: number }).status === 401) {
+      if (token.value === currentToken && (error as { status?: number }).status === 401) {
         clearAuth({ preservePendingAuthSession: pendingAuthSession.value !== null })
       }
       throw error
-    }
+    }).finally(() => {
+      if (userRefreshInFlight?.promise === request) userRefreshInFlight = null
+    })
+    userRefreshInFlight = { token: currentToken, promise: request }
+    return request
   }
 
   /**
