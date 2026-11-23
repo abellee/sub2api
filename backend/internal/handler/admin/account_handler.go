@@ -1270,11 +1270,25 @@ func (h *AccountHandler) Delete(c *gin.Context) {
 
 // InflationCapabilities lets the UI reject old backends before a paid probe.
 func (h *AccountHandler) InflationCapabilities(c *gin.Context) {
-	response.Success(c, gin.H{"version": 1})
+	response.Success(c, gin.H{"version": 1, "direct_probe": true, "custom_timeout": true})
+}
+
+func (h *AccountHandler) ProbeInflationDirect(c *gin.Context) {
+	var req service.InflationDirectRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid probe request")
+		return
+	}
+	if h.accountTestService == nil {
+		response.InternalError(c, "Account test service is not configured")
+		return
+	}
+	_ = h.accountTestService.ProbeInflationDirect(c, req)
 }
 
 // TestAccountRequest represents the request body for testing an account
 type TestAccountRequest struct {
+	TimeoutSeconds    int    `json:"timeout_seconds"`
 	MeasureTokens     bool   `json:"measure_tokens"`
 	TokenizerEncoding string `json:"tokenizer_encoding"`
 	ModelID           string `json:"model_id"`
@@ -1314,6 +1328,7 @@ func (h *AccountHandler) Test(c *gin.Context) {
 	_ = c.ShouldBindJSON(&req)
 
 	opts := service.AccountTestOptions{
+		TimeoutSeconds:    req.TimeoutSeconds,
 		MeasureTokens:     req.MeasureTokens,
 		TokenizerEncoding: req.TokenizerEncoding,
 		ImageDataURL:      req.ImageDataURL,

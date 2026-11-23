@@ -1,10 +1,10 @@
 import { apiClient, buildApiUrl } from '@/api/client'
 import { ADMIN_UI_REQUEST_HEADER } from '@/api/adminUIRequest'
 
-export async function supportsAccountInflation(): Promise<boolean> {
+export async function supportsAccountInflation(direct = false): Promise<boolean> {
   try {
-    const { data } = await apiClient.get<{ version: number }>('/admin/accounts/inflation-capabilities')
-    return data.version === 1
+    const { data } = await apiClient.get<{ version: number; direct_probe?: boolean }>('/admin/accounts/inflation-capabilities')
+    return data.version === 1 && (!direct || data.direct_probe === true)
   } catch { return false }
 }
 
@@ -33,26 +33,64 @@ export function inflationRate(measurement: InflationMeasurement): number | null 
   return (measurement.output_tokens / measurement.token_count - 1) * 100
 }
 
-export async function probeAccountInflation(
-  id: number,
-  options: { model: string; prompt: string; encoding: string },
+export interface InflationProbeOptions {
+  model: string
+  prompt: string
+  encoding: string
+  timeoutSeconds?: number
+}
+
+export interface DirectInflationTarget {
+  base_url: string
+  api_key: string
+  protocol: 'anthropic' | 'chat_completions' | 'responses'
+}
+
+export async function probeDirectInflation(
+  target: DirectInflationTarget,
+  options: InflationProbeOptions,
   onEvent: (event: InflationEvent) => void,
   signal: AbortSignal
 ): Promise<void> {
-  const response = await fetch(buildApiUrl(`/admin/accounts/${id}/test`), {
+  return streamInflation('/admin/accounts/inflation-probe', {
+    ...target,
+    model_id: options.model,
+    prompt: options.prompt,
+    tokenizer_encoding: options.encoding,
+    timeout_seconds: options.timeoutSeconds ?? 120
+  }, onEvent, signal)
+}
+
+export async function probeAccountInflation(
+  id: number,
+  options: InflationProbeOptions,
+  onEvent: (event: InflationEvent) => void,
+  signal: AbortSignal
+): Promise<void> {
+  return streamInflation(`/admin/accounts/${id}/test`, {
+    model_id: options.model,
+    prompt: options.prompt,
+    mode: 'text',
+    measure_tokens: true,
+    tokenizer_encoding: options.encoding,
+    timeout_seconds: options.timeoutSeconds ?? 120
+  }, onEvent, signal)
+}
+
+async function streamInflation(
+  path: string,
+  body: Record<string, unknown>,
+  onEvent: (event: InflationEvent) => void,
+  signal: AbortSignal
+): Promise<void> {
+  const response = await fetch(buildApiUrl(path), {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${localStorage.getItem('auth_token') || ''}`,
       'Content-Type': 'application/json',
       [ADMIN_UI_REQUEST_HEADER]: '1'
     },
-    body: JSON.stringify({
-      model_id: options.model,
-      prompt: options.prompt,
-      mode: 'text',
-      measure_tokens: true,
-      tokenizer_encoding: options.encoding
-    }),
+    body: JSON.stringify(body),
     signal
   })
   if (!response.ok) throw new Error(`HTTP ${response.status}`)

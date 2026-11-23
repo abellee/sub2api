@@ -68,6 +68,7 @@ type TestEvent struct {
 // AccountTestOptions carries optional media for admin connectivity tests.
 // ImageDataURL / AudioDataURL are full data URLs (data:<mime>;base64,...).
 type AccountTestOptions struct {
+	TimeoutSeconds    int
 	MeasureTokens     bool
 	TokenizerEncoding string
 	ImageDataURL      string
@@ -371,6 +372,14 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 		c.Writer.Header().Set("Content-Type", "text/event-stream")
 		c.Writer.Header().Set("Cache-Control", "no-cache")
 		c.Writer.Header().Set("X-Accel-Buffering", "no")
+		duration, err := accountInflationTimeout(testOpts.TimeoutSeconds)
+		if err != nil {
+			return s.sendErrorAndEnd(c, err.Error())
+		}
+		probeCtx, cancel := context.WithTimeout(ctx, duration)
+		defer cancel()
+		ctx = probeCtx
+		c.Request = c.Request.WithContext(ctx)
 	}
 
 	// Get account
@@ -3386,6 +3395,9 @@ func (s *AccountTestService) sendEvent(c *gin.Context, event TestEvent) {
 
 // sendErrorAndEnd sends an error event and ends the stream
 func (s *AccountTestService) sendErrorAndEnd(c *gin.Context, errorMsg string) error {
+	if key := c.GetString(accountInflationSecretKey); key != "" {
+		errorMsg = strings.ReplaceAll(errorMsg, key, "[REDACTED]")
+	}
 	logAccountTestError(c, errorMsg)
 	s.sendEvent(c, TestEvent{Type: "error", Error: errorMsg})
 	return fmt.Errorf("%s", errorMsg)

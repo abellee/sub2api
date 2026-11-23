@@ -3,14 +3,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AccountInflationModal from '../AccountInflationModal.vue'
 import { list as listAccounts } from '@/api/admin/accounts'
 import type { AccountListItem } from '@/types'
-import { probeAccountInflation, supportsAccountInflation } from '@/api/admin/accountInflation'
+import { probeAccountInflation, probeDirectInflation, supportsAccountInflation } from '@/api/admin/accountInflation'
 
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string, params?: unknown) => key + (params ? JSON.stringify(params) : '') }) }))
 vi.mock('@/api/admin/accounts', () => ({ list: vi.fn() }))
 vi.mock('@/api/client', () => ({ buildApiUrl: (path: string) => `/api/v1${path}`, apiClient: {} }))
 vi.mock('@/api/admin/accountInflation', async importOriginal => ({
   ...await importOriginal<typeof import('@/api/admin/accountInflation')>(),
-  probeAccountInflation: vi.fn(), supportsAccountInflation: vi.fn()
+  probeAccountInflation: vi.fn(), probeDirectInflation: vi.fn(), supportsAccountInflation: vi.fn()
 }))
 
 function create() {
@@ -41,9 +41,85 @@ beforeEach(() => {
   vi.mocked(supportsAccountInflation).mockResolvedValue(true)
   vi.mocked(listAccounts).mockResolvedValue(page())
 })
-afterEach(() => vi.resetAllMocks())
+afterEach(() => { vi.useRealTimers(); vi.resetAllMocks() })
 
 describe('AccountInflationModal', () => {
+  it('checks multiple manually entered APIs without loading or saving accounts', async () => {
+    vi.mocked(probeDirectInflation).mockImplementation(async (_target, _options, event) => {
+      event({ type: 'content', text: 'Hello world' })
+      event({ type: 'inflation_result', data: { token_count: 2, output_tokens: 4, reasoning_tokens: null, encoding: 'o200k_base' } })
+      event({ type: 'test_complete', success: true })
+    })
+    const wrapper = create()
+    await button(wrapper, 'inflation.manualAPI').trigger('click')
+    expect(button(wrapper, 'inflation.start').attributes('disabled')).toBeDefined()
+    await wrapper.get('input[type="url"]').setValue('https://one.example/v1')
+    await wrapper.get('input[type="password"]').setValue('test-key-one')
+    await button(wrapper, 'inflation.addTarget').trigger('click')
+    await wrapper.findAll('input[type="url"]')[1]!.setValue('https://two.example/v1')
+    await wrapper.findAll('input[type="password"]')[1]!.setValue('test-key-two')
+    await wrapper.findAll('select')[1]!.setValue('responses')
+    await wrapper.get('input[maxlength="200"]').setValue('same-model')
+    await wrapper.get('input[type="number"]').setValue(45)
+    await button(wrapper, 'inflation.start').trigger('click')
+    await flushPromises()
+    expect(supportsAccountInflation).toHaveBeenCalledWith(true)
+    expect(listAccounts).not.toHaveBeenCalled()
+    expect(probeAccountInflation).not.toHaveBeenCalled()
+    const calls = vi.mocked(probeDirectInflation).mock.calls
+    expect(calls.map(c => c[0])).toEqual([
+      { base_url: 'https://one.example/v1', api_key: 'test-key-one', protocol: 'anthropic' },
+      { base_url: 'https://two.example/v1', api_key: 'test-key-two', protocol: 'responses' }
+    ])
+    expect(calls[0]![1]).toMatchObject({ model: 'same-model', timeoutSeconds: 45 })
+    expect(calls[0]![1]).toEqual(calls[1]![1])
+    expect(wrapper.get('[role="log"]').text()).not.toContain('test-key-')
+    await button(wrapper, 'common.close').trigger('click')
+    expect((wrapper.get('input[type="password"]').element as HTMLInputElement).value).toBe('')
+    wrapper.unmount()
+  })
+
+  it('validates timeout and removes manually added targets', async () => {
+    const wrapper = create()
+    await loadAndSelect(wrapper)
+    for (const invalid of [0, 3601, 1.5]) {
+      await wrapper.get('input[type="number"]').setValue(invalid)
+      expect(button(wrapper, 'inflation.start').attributes('disabled')).toBeDefined()
+    }
+    await wrapper.get('input[type="number"]').setValue(60)
+    expect(button(wrapper, 'inflation.start').attributes('disabled')).toBeUndefined()
+    await button(wrapper, 'inflation.manualAPI').trigger('click')
+    await button(wrapper, 'inflation.addTarget').trigger('click')
+    expect(wrapper.findAll('input[type="url"]')).toHaveLength(2)
+    await button(wrapper, 'common.remove').trigger('click')
+    expect(wrapper.findAll('input[type="url"]')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('aborts at the configured timeout and continues to the next target', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    vi.mocked(probeAccountInflation)
+      .mockImplementationOnce(async (_id, _options, _event, signal) => {
+        await new Promise((_, reject) => signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError'))))
+      })
+      .mockImplementationOnce(async (_id, _options, event) => {
+        event({ type: 'inflation_result', data: { token_count: 2, output_tokens: 4, reasoning_tokens: null, encoding: 'o200k_base' } })
+        event({ type: 'test_complete', success: true })
+      })
+    const wrapper = create()
+    await loadAndSelect(wrapper)
+    await wrapper.get('input[type="number"]').setValue(1)
+    await button(wrapper, 'inflation.start').trigger('click')
+    await flushPromises()
+    expect(probeAccountInflation).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1000)
+    await flushPromises()
+    expect(probeAccountInflation).toHaveBeenCalledTimes(2)
+    expect(wrapper.text()).toContain('inflation.timeout{"seconds":1}')
+    expect(wrapper.text()).toContain('100.00%')
+    wrapper.unmount()
+  })
+
   it('loads every matching page with both filters and checks only the accounts selected inside the modal', async () => {
     vi.mocked(listAccounts)
       .mockResolvedValueOnce(page([sampleAccounts[0]!], 2, 2))
@@ -129,7 +205,7 @@ describe('AccountInflationModal', () => {
     await wrapper.findAll('button').find(b => b.text().includes('inflation.start'))!.trigger('click')
     await flushPromises()
     expect(vi.mocked(probeAccountInflation).mock.calls.map(c => c[0])).toEqual([2, 3])
-    for (const call of vi.mocked(probeAccountInflation).mock.calls) expect(call[1]).toEqual({ model: 'same-model', prompt: 'same prompt', encoding: 'o200k_base' })
+    for (const call of vi.mocked(probeAccountInflation).mock.calls) expect(call[1]).toEqual({ model: 'same-model', prompt: 'same prompt', encoding: 'o200k_base', timeoutSeconds: 120 })
     expect(wrapper.text()).toContain('100.00%')
     expect(wrapper.get('details').text()).toContain('Considering <script>plain text</script>')
     expect(wrapper.find('script').exists()).toBe(false)
