@@ -299,6 +299,18 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/points-shop',
+    name: 'PointsShop',
+    component: () => import('@/views/user/ResourceComingSoonView.vue'),
+    meta: { requiresAuth: true, requiresAdmin: false, title: 'Points Shop', titleKey: 'nav.pointsShop' }
+  },
+  {
+    path: '/item-center',
+    name: 'ItemCenter',
+    component: () => import('@/views/user/ResourceComingSoonView.vue'),
+    meta: { requiresAuth: true, requiresAdmin: false, title: 'Item Center', titleKey: 'nav.itemCenter' }
+  },
+  {
     path: '/affiliate',
     name: 'Affiliate',
     component: () => import('@/views/user/AffiliateView.vue'),

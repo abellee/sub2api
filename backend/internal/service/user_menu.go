@@ -32,6 +32,7 @@ var userMenuBuiltinPaths = map[string]bool{
 	"/purchase": true, "/orders": true, "/lottery": true, "/tasks": true,
 	"/affiliate": true, "/profile": true, "/model-plaza": true, "/redeem": true,
 	"/docs/creative": true, "/media-library": true,
+	"/points-shop": true, "/item-center": true,
 }
 
 func normalizeUserMenu(input UserMenuConfig) (*UserMenuConfig, error) {

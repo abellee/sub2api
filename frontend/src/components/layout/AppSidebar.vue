@@ -845,6 +845,8 @@ function buildSelfNavItems(withDashboard: boolean): NavItem[] {
       featureFlag: () => taskMenuVisible.value,
       badge: taskBadge.value
     },
+    { path: '/points-shop', label: t('nav.pointsShop'), icon: PriceTagIcon, hideInSimpleMode: true },
+    { path: '/item-center', label: t('nav.itemCenter'), icon: GiftIcon, hideInSimpleMode: true },
     { path: '/affiliate', label: t('nav.affiliate'), icon: UsersIcon, hideInSimpleMode: true, featureFlag: flagAffiliate },
     { path: '/profile', label: t('nav.profile'), icon: UserIcon },
     { path: '/model-plaza', label: t('nav.modelPlaza'), icon: ChannelIcon },

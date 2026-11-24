@@ -293,6 +293,42 @@ func (s *Store) GetPointsBalance(userID int64) (PointsBalance, error) {
 	return b, err
 }
 
+// ListPointsTransactions returns only this user's records, newest first.
+func (s *Store) ListPointsTransactions(userID int64, kind string, limit, offset int) ([]PointsTransaction, int64, error) {
+	where := " WHERE user_id = $1"
+	switch kind {
+	case "all":
+	case "spend":
+		where += " AND delta < 0"
+	case "grant":
+		where += " AND delta > 0"
+	default:
+		return nil, 0, fmt.Errorf("invalid points filter")
+	}
+	if limit < 1 || limit > 50 || offset < 0 {
+		return nil, 0, fmt.Errorf("invalid points pagination")
+	}
+	var total int64
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM points_transactions`+where, userID).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	rows, err := s.db.Query(`SELECT id, delta, balance_after, kind, note, created_at FROM points_transactions`+
+		where+` ORDER BY id DESC LIMIT $2 OFFSET $3`, userID, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	items := make([]PointsTransaction, 0)
+	for rows.Next() {
+		var item PointsTransaction
+		if err := rows.Scan(&item.ID, &item.Delta, &item.BalanceAfter, &item.Kind, &item.Note, &item.CreatedAt); err != nil {
+			return nil, 0, err
+		}
+		items = append(items, item)
+	}
+	return items, total, rows.Err()
+}
+
 // UpsertItem 创建或更新道具定义（按 code），返回道具 ID。
 func (s *Store) UpsertItem(code, name, description, kind, paramsJSON string) (int64, error) {
 	now := fmtTime(time.Now().UTC())

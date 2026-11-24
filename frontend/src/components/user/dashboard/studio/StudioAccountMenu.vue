@@ -12,13 +12,17 @@
         <div class="wallet-available"><div class="wallet-heading"><span class="wallet-label">{{ t('common.availableBalance') }}</span><router-link v-if="!authStore.isSimpleMode && availableBalance < 10" to="/purchase" class="wallet-recharge" @click="dismissPanels(); appStore.setMobileOpen(false)">{{ t('nav.recharge') }}</router-link></div><strong :class="{ 'balance-warning': availableBalance >= 5 && availableBalance < 10, 'balance-critical': availableBalance < 5 }"><StudioRollingBalance :value="availableBalance" /></strong></div>
         <div class="wallet-frozen"><span class="wallet-label">{{ t('common.frozenBalance') }}</span><strong>{{ formatMoney(frozenBalance) }}</strong></div>
       </div>
-      <div class="studio-points" :inert="expanded ? undefined : true" :aria-hidden="!expanded"><span><img :src="pointsIcon" alt="" />{{ t('common.points') }}</span><strong>—</strong></div>
+      <div class="studio-points" :inert="expanded ? undefined : true" :aria-hidden="!expanded">
+        <button type="button" class="studio-resource-button" :title="t('common.points')" :aria-label="`${t('common.points')}: ${pointsBalance ?? '—'}`" aria-haspopup="dialog" @click="openUserResource('points')"><img :src="pointsIcon" alt="" aria-hidden="true" /><strong>{{ pointsBalance ?? '—' }}</strong></button>
+        <button type="button" class="studio-resource-button" :title="t('common.items')" :aria-label="`${t('common.items')}: —`" @click="openUserResource('items')"><img class="studio-items-icon" :src="itemsIcon" alt="" aria-hidden="true" /><strong>—</strong></button>
+      </div>
       <div class="studio-identity">
         <button ref="avatarButton" type="button" class="studio-avatar" :aria-label="expanded ? t('nav.profile') : t('common.userMenu')" :aria-expanded="expanded ? undefined : dropdownOpen" @mouseenter="!expanded && openOnHover('settings', $event)" @click="expanded ? router.push('/profile') : toggleDropdown($event)"><img v-if="avatarUrl" :src="avatarUrl" alt="" /><span v-else>{{ userInitials }}</span><i v-if="lotterySocketStatus !== 'idle'" class="studio-socket" :class="socketDotClass" role="status" :title="socketDotTitle" :aria-label="socketDotTitle"></i></button>
         <div class="studio-account-label" :inert="expanded ? undefined : true" :aria-hidden="!expanded"><strong>{{ displayName }}</strong><small>{{ t('admin.users.roles.' + (user?.role || 'user')) }}</small></div>
         <button ref="settingsButton" type="button" class="studio-settings utility-button" :inert="expanded ? undefined : true" :aria-hidden="!expanded" :aria-label="t('nav.settings')" :title="t('nav.settings')" :aria-expanded="dropdownOpen" aria-controls="studio-account-menu" @mouseenter="openOnHover('settings', $event)" @click="toggleDropdown"><Icon name="cog" size="md" /></button>
       </div>
     </section>
+    <PointsModal v-if="user" :show="pointsOpen" :user-id="user.id" @close="pointsOpen = false" @loaded="updateUserPoints($event, user.id)" />
     <StudioPopover v-show="dropdownOpen" :anchor="panelAnchor" side="right" id="studio-account-menu" class="studio-flyout studio-settings-menu" :aria-label="t('common.userMenu')" @mouseenter="cancelHoverClose">
       <div class="studio-menu-section">
         <router-link to="/profile" class="studio-menu-item" @click="closeDropdown"><Icon name="user" size="sm" />{{ t('nav.profile') }}</router-link>
@@ -51,6 +55,8 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { CLOSE_QQ_GROUP_EVENT, OPEN_QQ_GROUP_EVENT, OPEN_USER_MENU_EVENT, PUSH_TOUR_UNLOCK_EVENT } from '@/composables/usePushNotificationTour'
 import { useLotterySocketStatus } from '@/composables/useLotterySocketStatus'
+import { OPEN_USER_RESOURCE_EVENT, openUserResource } from '@/composables/userResourceEvents'
+import { updateUserPoints, useUserPoints } from '@/composables/useUserPoints'
 import { useAppStore, useAuthStore, useOnboardingStore, useRemoteWidgetsStore } from '@/stores'
 import { useTheme } from '@/composables/useTheme'
 import { useClipboard } from '@/composables/useClipboard'
@@ -62,6 +68,8 @@ import PushNotificationToggle from '@/components/common/PushNotificationToggle.v
 import Icon from '@/components/icons/Icon.vue'
 import QqBrandIcon from '@/components/icons/QqBrandIcon.vue'
 import pointsIcon from '@/assets/icons/points-image-color.svg'
+import itemsIcon from '@/assets/icons/props-icon.svg'
+import PointsModal from '@/components/user/PointsModal.vue'
 import StudioRollingBalance from './StudioRollingBalance.vue'
 import StudioLocaleMenu from './StudioLocaleMenu.vue'
 import StudioPopover from './StudioPopover.vue'
@@ -85,10 +93,13 @@ const avatarButton = ref<HTMLButtonElement | null>(null)
 const qqTrigger = ref<HTMLAnchorElement | null>(null)
 const panelAnchor = ref<HTMLElement | null>(null)
 const dropdownOpen = ref(false)
+const pointsOpen = ref(false)
+const { balance: pointsBalance } = useUserPoints()
 const dropdownLocked = ref(false)
 const communityOpen = ref<'qq' | 'telegram' | null>(null)
 let hoverCloseTimer: ReturnType<typeof setTimeout> | undefined
 const user = computed(() => authStore.user)
+watch(() => user.value?.id, () => { pointsOpen.value = false })
 const toolCount = computed(() => 2 + Number(!!headerWidgetConfig.value) + Number(!!headerWidgetConfig.value?.telegram) + Number(!!user.value))
 const avatarUrl = computed(() => user.value?.avatar_url?.trim() || '')
 const displayName = computed(() => user.value?.username || user.value?.email?.split('@')[0] || '')
@@ -101,6 +112,15 @@ const modelPlazaEnabled = computed(() => isFeatureFlagEnabled(FeatureFlags.model
 const subscriptionFeatureEnabled = computed(() => isFeatureFlagEnabled(FeatureFlags.subscription))
 const showOnboardingButton = computed(() => !authStore.isSimpleMode && authStore.isAdmin)
 function formatMoney(value: number) { return `$${(Number.isFinite(value) ? value : 0).toFixed(2)}` }
+function handleResourceOpen(event: Event) {
+  if (!user.value) return
+  if ((event as CustomEvent).detail === 'points') {
+    dismissPanels()
+    pointsOpen.value = true
+  } else if ((event as CustomEvent).detail === 'items') {
+    appStore.showInfo(t('common.itemsComingSoon'))
+  }
+}
 function toggleDropdown(event?: Event) {
   cancelHoverClose()
   if (dropdownLocked.value) return
@@ -180,6 +200,7 @@ function handleClickOutside(event: MouseEvent) {
   }
 }
 onMounted(() => {
+  window.addEventListener(OPEN_USER_RESOURCE_EVENT, handleResourceOpen)
   document.addEventListener('click', handleClickOutside)
   window.addEventListener(OPEN_USER_MENU_EVENT, openUserMenuForTour)
   window.addEventListener(PUSH_TOUR_UNLOCK_EVENT, unlockUserMenu)
@@ -187,6 +208,7 @@ onMounted(() => {
   window.addEventListener(CLOSE_QQ_GROUP_EVENT, closeQqGroupForTour)
 })
 onBeforeUnmount(() => {
+  window.removeEventListener(OPEN_USER_RESOURCE_EVENT, handleResourceOpen)
   cancelHoverClose()
   document.removeEventListener('click', handleClickOutside)
   window.removeEventListener(OPEN_USER_MENU_EVENT, openUserMenuForTour)
@@ -214,7 +236,8 @@ onBeforeUnmount(() => {
 .wallet-available{flex:1;min-width:0;text-align:left}.wallet-frozen{flex-shrink:0;text-align:right}.wallet-label{display:block;margin-bottom:4px;line-height:20px;font-size:12px;color:var(--studio-muted);white-space:nowrap}
 .studio-wallet strong{display:block;font-size:16px;font-weight:500;line-height:24px;letter-spacing:normal;white-space:nowrap}
 .studio-points{position:absolute;top:66px;left:12px;width:calc(var(--studio-account-width) - 24px);display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--studio-muted)}
-.studio-points>span{display:flex;align-items:center;gap:6px}.studio-points img{width:15px;height:15px}
+.studio-resource-button{display:inline-flex;align-items:center;gap:6px;min-width:0;padding:3px 6px;border:0;border-radius:8px;background:transparent;color:inherit;font:inherit;white-space:nowrap;font-variant-numeric:tabular-nums;cursor:pointer;transition:background-color .15s,color .15s}.studio-resource-button:hover{color:var(--tf-console-active-ink);background:var(--tf-console-hover)}.studio-resource-button:focus-visible{outline:2px solid #8796db;outline-offset:3px}.studio-points img{width:18px;height:18px;flex-shrink:0}
+.studio-points .studio-items-icon{width:20px;height:20px}
 .studio-identity{position:absolute;bottom:2px;left:8px;width:calc(var(--studio-account-width) - 24px);display:flex;align-items:center;gap:10px;height:36px;transition:left var(--studio-motion,240ms) var(--studio-ease,ease),bottom var(--studio-motion,240ms) var(--studio-ease,ease)}
 .studio-identity::before{content:'';position:absolute;top:-11px;left:0;right:0;height:1px;background:color-mix(in srgb,var(--studio-muted) 12%,transparent);opacity:0;transition:opacity .15s}
 .studio-wallet,.studio-points,.studio-account-label,.studio-settings{visibility:hidden;opacity:0;pointer-events:none;transition:opacity .12s,visibility .12s}

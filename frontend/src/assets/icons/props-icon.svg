@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="38 36 180 208" width="180" height="208">
+  <title>道具</title>
+  <defs>
+    <linearGradient id="wood" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#9a78f5"/>
+      <stop offset="0.5" stop-color="#6d49d6"/>
+      <stop offset="1" stop-color="#432a95"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fff3c8"/>
+      <stop offset="0.5" stop-color="#f4b94f"/>
+      <stop offset="1" stop-color="#b9732a"/>
+    </linearGradient>
+    <linearGradient id="gem" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#b8fbff"/>
+      <stop offset="0.55" stop-color="#2fd0e0"/>
+      <stop offset="1" stop-color="#0a6f93"/>
+    </linearGradient>
+    <filter id="blur" x="-30%" y="-100%" width="160%" height="300%"><feGaussianBlur stdDeviation="4"/></filter>
+    <path id="chest" d="M40 108 C40 78 72 58 128 58 C184 58 216 78 216 108 V192 C216 202 208 210 198 210 H58 C48 210 40 202 40 192 Z"/>
+    <clipPath id="inside"><use href="#chest"/></clipPath>
+  </defs>
+
+  <!-- shadow -->
+  <ellipse cx="128" cy="228" rx="72" ry="8" fill="#000" opacity="0.3" filter="url(#blur)"/>
+
+  <!-- extrude -->
+  <use href="#chest" transform="translate(0 8)" fill="#2b1a66"/>
+  <!-- body -->
+  <use href="#chest" fill="url(#wood)"/>
+
+  <g clip-path="url(#inside)">
+    <!-- lower box shading -->
+    <rect x="30" y="134" width="196" height="84" fill="#1a0f4a" opacity="0.22"/>
+    <!-- lid gloss -->
+    <ellipse cx="104" cy="76" rx="76" ry="26" fill="#fff" opacity="0.22"/>
+    <!-- straps -->
+    <g fill="url(#gold)" stroke="#8a5420" stroke-width="2.5">
+      <rect x="62" y="50" width="28" height="170"/>
+      <rect x="166" y="50" width="28" height="170"/>
+    </g>
+    <!-- middle band -->
+    <rect x="30" y="116" width="196" height="18" fill="url(#gold)" stroke="#8a5420" stroke-width="2.5"/>
+    <rect x="30" y="119" width="196" height="3" fill="#fff" opacity="0.6"/>
+    <!-- rivets -->
+    <g fill="#fff3c8" stroke="#8a5420" stroke-width="1.5">
+      <circle cx="76" cy="90" r="3.5"/><circle cx="180" cy="90" r="3.5"/>
+      <circle cx="76" cy="184" r="3.5"/><circle cx="180" cy="184" r="3.5"/>
+    </g>
+  </g>
+
+  <!-- lid highlight -->
+  <path d="M50 108 C52 88 70 72 96 66" fill="none" stroke="#fff" stroke-opacity="0.65" stroke-width="5" stroke-linecap="round"/>
+
+  <!-- outline -->
+  <use href="#chest" fill="none" stroke="#2a1660" stroke-width="4" stroke-linejoin="round"/>
+
+  <!-- lock plate -->
+  <rect x="106" y="110" width="44" height="46" rx="11" fill="url(#gold)" stroke="#8a5420" stroke-width="3"/>
+  <rect x="112" y="115" width="20" height="3.5" rx="1.75" fill="#fff" opacity="0.7"/>
+  <polygon points="137.24,135.83 131.83,141.24 124.17,141.24 118.76,135.83 118.76,128.17 124.17,122.76 131.83,122.76 137.24,128.17" transform="translate(0 1)" fill="url(#gem)" stroke="#07465e" stroke-width="2" stroke-linejoin="round"/>
+  <polygon points="132.62,134.91 129.91,137.62 126.09,137.62 123.38,134.91 123.38,131.09 126.09,128.38 129.91,128.38 132.62,131.09" transform="translate(0 1)" fill="#d6fdff" opacity="0.55"/>
+  <ellipse cx="124.5" cy="127.5" rx="3.2" ry="1.8" transform="rotate(-35 124.5 127.5)" fill="#fff"/>
+
+  <!-- sparkle -->
+  <path d="M206 36 L209 45 L218 48 L209 51 L206 60 L203 51 L194 48 L203 45 Z" fill="#fff" opacity="0.95"/>
+  <path d="M52 40 L53.8 45.2 L59 47 L53.8 48.8 L52 54 L50.2 48.8 L45 47 L50.2 45.2 Z" fill="#fff" opacity="0.7"/>
+</svg>

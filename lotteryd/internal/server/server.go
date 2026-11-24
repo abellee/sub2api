@@ -180,6 +180,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /v1/ws", http.HandlerFunc(s.ServeWS))
 	mux.Handle("GET /lotteryd/v1/ws", http.HandlerFunc(s.ServeWS))
 	mux.Handle("GET /v1/me/menu", s.requireUser(s.handleMyMenu))
+	mux.Handle("GET /v1/me/points", s.requireUser(s.handleMyPoints))
+	mux.Handle("GET /v1/me/points/transactions", s.requireUser(s.handleMyPointsTransactions))
 
 	// 任务模块（用户侧）。
 	mux.Handle("GET /v1/tasks", s.requireUser(s.handleListTasks))

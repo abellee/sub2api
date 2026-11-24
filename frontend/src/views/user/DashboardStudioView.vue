@@ -94,6 +94,7 @@ import DashboardStudioLayout from '@/components/user/dashboard/studio/DashboardS
 import StudioFilters from '@/components/user/dashboard/studio/StudioFilters.vue'
 import StudioRollingBalance from '@/components/user/dashboard/studio/StudioRollingBalance.vue'
 import StudioMetricChart from '@/components/user/dashboard/studio/StudioMetricChart.vue'
+import { refreshUserPoints } from '@/composables/useUserPoints'
 import Icon from '@/components/icons/Icon.vue'
 import Skeleton from '@/components/common/Skeleton.vue'
 import StudioChartSkeleton from '@/components/user/dashboard/studio/StudioChartSkeleton.vue'
@@ -204,7 +205,7 @@ async function loadRequestTrend() {
     if (version === requestVersion) { liveRequestTrend.value = null; requestError.value = true }
   }
 }
-function refreshAll() { void loadStats(); void loadCharts(); void loadRequestTrend() }
+function refreshAll() { void loadStats(); void loadCharts(); void loadRequestTrend(); void refreshUserPoints(true) }
 onMounted(async () => {
   if (previewRequested) {
     previewFactory.value = (await import('@/components/user/dashboard/studio/studioPreview')).createStudioPreview

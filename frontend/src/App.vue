@@ -15,6 +15,7 @@ import { updateFavicon } from '@/utils/branding'
 import { FeatureFlags, isFeatureFlagEnabled } from '@/utils/featureFlags'
 import { resolveSiteBillingMode } from '@/utils/siteBillingMode'
 import { startMenuStatusPolling, stopMenuStatusPolling } from '@/composables/useMenuStatus'
+import { refreshUserPoints, setUserPointsIdentity } from '@/composables/useUserPoints'
 
 const router = useRouter()
 const route = useRoute()
@@ -27,6 +28,8 @@ const adminSettingsStore = useAdminSettingsStore()
 const USER_REFRESH_MIN_INTERVAL_MS = 5000
 let lastUserRefreshAt = 0
 let userRefreshInFlight: Promise<unknown> | null = null
+
+watch(() => authStore.isAuthenticated ? authStore.user?.id ?? null : null, setUserPointsIdentity, { immediate: true, flush: 'sync' })
 
 function updateDocumentTitle() {
   const customMenuItems = [
@@ -69,6 +72,7 @@ watch(
 function onVisibilityChange() {
   if (document.visibilityState === 'visible' && authStore.isAuthenticated) {
     announcementStore.fetchAnnouncements()
+    void refreshUserPoints()
   }
 }
 
@@ -78,6 +82,7 @@ function refreshCurrentUserAfterNavigation() {
   const now = Date.now()
   if (now - lastUserRefreshAt < USER_REFRESH_MIN_INTERVAL_MS) return
   lastUserRefreshAt = now
+  void refreshUserPoints()
 
   userRefreshInFlight = authStore.refreshUser()
     .catch((error) => {
@@ -161,6 +166,7 @@ const removeRouteAfterEach = router.afterEach(() => {
 })
 
 onBeforeUnmount(() => {
+  setUserPointsIdentity(null)
   stopMenuStatusPolling()
   removeRouteAfterEach()
   document.removeEventListener('visibilitychange', onVisibilityChange)

@@ -29,7 +29,7 @@ func TestUserMenuPersistence(t *testing.T) {
 
 	input := UserMenuConfig{Sections: []UserMenuSection{
 		{ID: " models ", Title: " 模型与服务 ", Items: []string{" /model-plaza ", "/keys", "/custom/docs-1", "/docs/creative", "/media-library"}},
-		{ID: "account", Title: "账户", Items: []string{"/usage", "/profile"}},
+		{ID: "account", Title: "账户", Items: []string{"/usage", "/profile", "/points-shop", "/item-center"}},
 		{ID: "empty", Title: "暂未分配"},
 	}}
 	saved, err := svc.SaveUserMenu(ctx, input)

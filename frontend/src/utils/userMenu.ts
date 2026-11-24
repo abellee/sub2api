@@ -11,6 +11,8 @@ export const USER_MENU_ITEMS = [
   { path: '/orders', labelKey: 'nav.myOrders' },
   { path: '/lottery', labelKey: 'nav.lottery' },
   { path: '/tasks', labelKey: 'nav.tasks' },
+  { path: '/points-shop', labelKey: 'nav.pointsShop' },
+  { path: '/item-center', labelKey: 'nav.itemCenter' },
   { path: '/affiliate', labelKey: 'nav.affiliate' },
   { path: '/profile', labelKey: 'nav.profile' },
   { path: '/model-plaza', labelKey: 'nav.modelPlaza' },

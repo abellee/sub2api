@@ -2,19 +2,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { ref } from 'vue'
 import StudioAccountMenu from '../StudioAccountMenu.vue'
+import StudioMetricChart from '../StudioMetricChart.vue'
 
-const mocks = vi.hoisted(() => ({ balance: 286.5, simpleMode: false, logout: vi.fn(), push: vi.fn(), copy: vi.fn(), feature: vi.fn(() => false), mobile: vi.fn(), replay: vi.fn(), setTheme: vi.fn() }))
+const mocks = vi.hoisted(() => ({ balance: 286.5, simpleMode: false, logout: vi.fn(), push: vi.fn(), copy: vi.fn(), feature: vi.fn(() => false), mobile: vi.fn(), replay: vi.fn(), setTheme: vi.fn(), info: vi.fn() }))
+vi.mock('@/components/user/PointsModal.vue', () => ({ default: { props: ['show', 'userId'], emits: ['close', 'loaded'], template: '<div v-if="show" class="points-modal-stub"><button @click="$emit(\'close\')">close</button></div>' } }))
 vi.mock('@/composables/usePushNotificationTour', () => ({ OPEN_USER_MENU_EVENT: 'open-user-menu', PUSH_TOUR_UNLOCK_EVENT: 'push-tour-unlock', OPEN_QQ_GROUP_EVENT: 'open-qq-group', CLOSE_QQ_GROUP_EVENT: 'close-qq-group' }))
 vi.mock('@/components/common/AnnouncementBell.vue', () => ({ default: { template: '<button aria-label="announcements" />' } }))
 vi.mock('@/components/common/SubscriptionProgressMini.vue', () => ({ default: { template: '<div />' } }))
 vi.mock('@/components/common/PushNotificationToggle.vue', () => ({ default: { template: '<button data-tour="push-notification-toggle" />' } }))
 vi.mock('../StudioLocaleMenu.vue', () => ({ default: { template: '<button aria-label="language" />' } }))
+vi.mock('../StudioPopover.vue', () => ({ default: { props: ['anchor', 'side'], template: '<div><slot /></div>' } }))
 vi.mock('vue-router', () => ({ useRouter: () => ({ push: mocks.push }) }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
 vi.mock('pinia', () => ({ storeToRefs: (store: unknown) => store }))
 vi.mock('@/stores', () => ({
-  useAppStore: () => ({ docUrl: 'https://example.com/docs', contactInfo: 'support', setMobileOpen: mocks.mobile }),
-  useAuthStore: () => ({ user: { username: 'Demo', role: 'user', balance: mocks.balance, frozen_balance: 63.5 }, logout: mocks.logout, isAdmin: false, isSimpleMode: mocks.simpleMode }),
+  useAppStore: () => ({ docUrl: 'https://example.com/docs', contactInfo: 'support', setMobileOpen: mocks.mobile, showInfo: mocks.info }),
+  useAuthStore: () => ({ user: { id: 2, username: 'Demo', role: 'user', balance: mocks.balance, frozen_balance: 63.5 }, logout: mocks.logout, isAdmin: false, isSimpleMode: mocks.simpleMode }),
   useOnboardingStore: () => ({ replay: mocks.replay }),
   useRemoteWidgetsStore: () => ({ headerConfig: ref({ qq: { groupName: 'QQ', groupNumber: '123', qrUrl: '/qq.png' }, telegram: { groupName: 'Telegram', link: 'https://t.me/demo', qrUrl: '/tg.png' } }) })
 }))
@@ -37,6 +40,37 @@ function render(expanded = true) {
 beforeEach(() => { vi.clearAllMocks(); mocks.balance = 286.5; mocks.simpleMode = false; window.matchMedia = vi.fn().mockReturnValue({ matches: false }) })
 afterEach(() => { wrappers.forEach(wrapper => wrapper.unmount()); wrappers.length = 0 })
 describe('StudioAccountMenu', () => {
+  it('opens the same points dialog and item notice from the balance card values', async () => {
+    const sidebar = render()
+    const card = mount(StudioMetricChart, { props: { kind: 'balance', value: 75 }, global: { stubs: { RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' } } } })
+    wrappers.push(card)
+    await card.find('.balance-points button').trigger('click')
+    expect(sidebar.find('.points-modal-stub').exists()).toBe(true)
+    expect(sidebar.findAll('.points-modal-stub')).toHaveLength(1)
+    await sidebar.find('.points-modal-stub button').trigger('click')
+    await card.find('.balance-items button').trigger('click')
+    expect(mocks.info).toHaveBeenCalledWith('common.itemsComingSoon')
+    expect(sidebar.find('.points-modal-stub').exists()).toBe(false)
+    sidebar.unmount()
+    mocks.info.mockClear()
+    await card.find('.balance-items button').trigger('click')
+    expect(mocks.info).not.toHaveBeenCalled()
+  })
+  it('makes each icon and value one button and opens the points dialog from the icon', async () => {
+    const wrapper = render()
+    const buttons = wrapper.findAll('.studio-resource-button')
+    expect(buttons).toHaveLength(2)
+    expect(buttons[0].element.tagName).toBe('BUTTON')
+    expect(buttons[0].text()).toBe('—')
+    expect(buttons[0].attributes('aria-haspopup')).toBe('dialog')
+    expect(wrapper.find('.points-modal-stub').exists()).toBe(false)
+    await buttons[0].find('img').trigger('click')
+    expect(wrapper.find('.points-modal-stub').exists()).toBe(true)
+    await wrapper.find('.points-modal-stub button').trigger('click')
+    expect(wrapper.find('.points-modal-stub').exists()).toBe(false)
+    await buttons[1].trigger('click')
+    expect(mocks.info).toHaveBeenCalledWith('common.itemsComingSoon')
+  })
   it.each([0, 4.99, 5, 9.99, 10, 10.01])('colors available balance at the warning thresholds: %s', amount => {
     mocks.balance = amount
     const wrapper = render()
