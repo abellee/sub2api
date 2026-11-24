@@ -275,14 +275,9 @@
 
             <!-- Footer with Actions -->
             <div class="announcement-footer px-8 py-5 border-t">
-              <div class="flex items-center justify-between">
-                <div class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-                  <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <span>{{ selectedAnnouncement.read_at ? t('announcements.readStatus') : t('announcements.markReadHint') }}</span>
-                </div>
-                <div class="flex items-center gap-3">
+              <div class="flex items-center justify-between gap-4">
+                <AnnouncementReactions :announcement-id="selectedAnnouncement.id" class="min-w-0 flex-1" />
+                <div class="flex shrink-0 items-center gap-3">
                   <button
                     @click="closeDetail"
                     class="rounded-xl border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-700 shadow-sm transition-all hover:bg-gray-50 hover:shadow dark:border-dark-600 dark:bg-dark-700 dark:text-gray-300 dark:hover:bg-dark-600"
@@ -322,6 +317,7 @@ import { useAnnouncementStore } from '@/stores/announcements'
 import { formatRelativeTime, formatRelativeWithDateTime } from '@/utils/format'
 import type { UserAnnouncement } from '@/types'
 import Icon from '@/components/icons/Icon.vue'
+import AnnouncementReactions from './AnnouncementReactions.vue'
 import '@/styles/announcement-markdown.css'
 import '@/styles/announcement-theme.css'
 

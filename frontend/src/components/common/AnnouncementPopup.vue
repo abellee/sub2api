@@ -63,11 +63,12 @@
 
           <!-- Footer -->
           <div class="announcement-footer px-8 py-5 border-t">
-            <div class="flex items-center justify-end">
+            <div class="flex items-center justify-between gap-4">
+              <AnnouncementReactions v-if="reactionAnnouncementId" :announcement-id="reactionAnnouncementId" class="min-w-0 flex-1" />
               <button
                 @click="handleDismiss"
                 data-testid="announcement-popup-dismiss"
-                class="announcement-accent rounded-xl px-6 py-2.5 text-sm font-medium text-white transition-all"
+                class="announcement-accent ml-auto shrink-0 rounded-xl px-6 py-2.5 text-sm font-medium text-white transition-all"
               >
                 <span class="flex items-center gap-2">
                   <svg v-if="preview" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -95,10 +96,11 @@ import DOMPurify from 'dompurify'
 import { useAnnouncementStore } from '@/stores/announcements'
 import { formatRelativeWithDateTime } from '@/utils/format'
 import type { Announcement, UserAnnouncement } from '@/types'
+import AnnouncementReactions from './AnnouncementReactions.vue'
 import '@/styles/announcement-markdown.css'
 import '@/styles/announcement-theme.css'
 
-type PreviewAnnouncement = Pick<Announcement | UserAnnouncement, 'title' | 'content' | 'created_at'>
+type PreviewAnnouncement = Pick<Announcement | UserAnnouncement, 'title' | 'content' | 'created_at'> & { id?: number }
 
 const props = withDefaults(defineProps<{
   announcement?: PreviewAnnouncement | null
@@ -117,6 +119,7 @@ const announcementStore = useAnnouncementStore()
 const displayedAnnouncement = computed(() => (
   props.preview ? props.announcement : announcementStore.currentPopup
 ))
+const reactionAnnouncementId = computed(() => displayedAnnouncement.value?.id || 0)
 
 marked.setOptions({
   breaks: true,

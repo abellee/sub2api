@@ -1,0 +1,182 @@
+[
+  {
+    "name": "thumbs_up",
+    "source": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f44d/lottie.json",
+    "bytes": 40892,
+    "sha256": "a5803c4978c0760977aa08033ab0abcb5023945a47008261cd405815fc947698"
+  },
+  {
+    "name": "heart",
+    "source": "https://fonts.gstatic.com/s/e/notoemoji/latest/2764_fe0f/lottie.json",
+    "bytes": 8439,
+    "sha256": "7925790edd7ec4a4da6ccb9491c61a2e03705182e7db263f12d8e46a8fcddb79"
+  },
+  {
+    "name": "laugh",
+    "source": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f602/lottie.json",
+    "bytes": 59124,
+    "sha256": "ae479405485961c5c233d882bd2b8ddf54c24e7ddb48371e6346b04b6b57edca"
+  },
+  {
+    "name": "party",
+    "source": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f389/lottie.json",
+    "bytes": 67875,
+    "sha256": "eab1fd7070bffd2965c12a80d2d91cff76683af65019f142acf9a553ee877b5c"
+  },
+  {
+    "name": "fire",
+    "source": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f525/lottie.json",
+    "bytes": 29358,
+    "sha256": "96199d8e8fea7d90196b95b9a9e56b13af43e3817efe037bd9aa1e5215579838"
+  },
+  {
+    "name": "wow",
+    "source": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f62e/lottie.json",
+    "bytes": 18749,
+    "sha256": "daa0118bbc4f628aaabde5b0c96ebf3980c7aca265700bb0da809cb9f4d0ffbd"
+  },
+  {
+    "name": "sad",
+    "source": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f622/lottie.json",
+    "bytes": 47018,
+    "sha256": "58c4605cb7cae240597ebea1bb0cba87d592aea24b988e0f3cc48f39f045c2fb"
+  },
+  {
+    "name": "thumbs_down",
+    "source": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f44e/lottie.json",
+    "bytes": 40737,
+    "sha256": "3c491a560e58a70f20c67f506a1228b9eeb03519f72c7e5050a1f35a8deee9f4"
+  },
+  {
+    "name": "swear",
+    "source": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f92c/lottie.json",
+    "bytes": 235182,
+    "sha256": "654bafb12c2fc9382bdfbe4676477fe1cb4195f39f2035ece178fe05c78b938a"
+  },
+  {
+    "name": "clap",
+    "source": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f44f/lottie.json",
+    "bytes": 138962,
+    "sha256": "fc1d22422ac8ce686e9851ea69410d43dc7d244cc9c3a33cc768ffd2653a79e3"
+  },
+  {
+    "name": "angry",
+    "source": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f620/lottie.json",
+    "bytes": 33672,
+    "sha256": "1bc5eee628f9c2174ffb109e9b5c5033ac2d0c0d5ca54ed8a985123164649445"
+  },
+  {
+    "name": "think",
+    "source": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f914/lottie.json",
+    "bytes": 68027,
+    "sha256": "46405d972ad78a2fc917fa8e5786b0ebcdfdf644114be3c0941b98cb7e1c47c5"
+  },
+  {
+    "name": "pray",
+    "source": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f64f/lottie.json",
+    "bytes": 63630,
+    "sha256": "96c6f33baf19eb1e0fdcc2e16cd32bec25797022c66f66203721354491f0fd2f"
+  },
+  {
+    "name": "rocket",
+    "source": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f680/lottie.json",
+    "bytes": 81575,
+    "sha256": "2b6daf24cee4de340073838a7d97d07c097f2d3919b676d0e4e5fed8a2f23453"
+  },
+  {
+    "name": "eyes",
+    "source": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f440/lottie.json",
+    "bytes": 28242,
+    "sha256": "0dfcabf677099ebe20efacf98f680cf3aeac6f7b647228acda73917c65e2120f"
+  },
+  {
+    "name": "cool",
+    "source": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f60e/lottie.json",
+    "bytes": 25407,
+    "sha256": "17ca3ea161b36f64e17a55c9f92ff3aa794e3036ce799aa1b55748ed3d72a977"
+  },
+  {
+    "name": "cry",
+    "source": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f62d/lottie.json",
+    "bytes": 119550,
+    "sha256": "9f8b1a18099511d53356d870edd0e042323e0d2b023321ee144821e197f551ec"
+  },
+  {
+    "name": "hundred",
+    "source": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f4af/lottie.json",
+    "bytes": 66142,
+    "sha256": "8e48b464d7473e94e7b744a1774f4c3b7c7a6892faee8667f9e555ddf5160798"
+  },
+  {
+    "name": "sleep",
+    "source": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f634/lottie.json",
+    "bytes": 24420,
+    "sha256": "1fa14c30659503270104b54a7eefd082d7ebc039fc0bab280a6bd173fba3dcdd"
+  },
+  {
+    "name": "handshake",
+    "source": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f91d/lottie.json",
+    "bytes": 86930,
+    "sha256": "78d7d6671ec57c9aec7bca9ec81ae6ffcd9980e30c628d8ac498668d99fb7411"
+  },
+  {
+    "name": "rage",
+    "source": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f621/lottie.json",
+    "bytes": 46289,
+    "sha256": "7233c926fc3509ed33d6185be3e288beb3af037e8cd9408d1638bf7395f964ac"
+  },
+  {
+    "name": "huff",
+    "source": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f624/lottie.json",
+    "bytes": 128406,
+    "sha256": "c862cad0b93e305dd38f45c3bdd61181136214bfcf06dc63e93ae8868e7e1cc6"
+  },
+  {
+    "name": "eye_roll",
+    "source": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f644/lottie.json",
+    "bytes": 29512,
+    "sha256": "2a77c3ae12e34b66a242499e99511d29ff79ad21cea9dd5cf0f5d40a2db7d8bc"
+  },
+  {
+    "name": "exploding_head",
+    "source": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f92f/lottie.json",
+    "bytes": 143616,
+    "sha256": "553f0131420995a5f7d989fa3e243ce57fe2620a34e4866c2adf1dd000aeeecf"
+  },
+  {
+    "name": "poop",
+    "source": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f4a9/lottie.json",
+    "bytes": 257521,
+    "sha256": "6f3eb56cddd3136c26110f0008c08f07547855c69e9b59aeff4361a9a49aa4a7"
+  },
+  {
+    "name": "clown",
+    "source": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f921/lottie.json",
+    "bytes": 46553,
+    "sha256": "246c5aab976ccb17f5b7ef60ae27a1866d2a6f27bc082afc68923a55a7d83bcc"
+  },
+  {
+    "name": "unamused",
+    "source": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f612/lottie.json",
+    "bytes": 30060,
+    "sha256": "7a6416428f67ac49b7ef8685f6ee37953f104ff0495b71e2404438e90d77f812"
+  },
+  {
+    "name": "nauseated",
+    "source": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f922/lottie.json",
+    "bytes": 32940,
+    "sha256": "a3a9d75344d9c84e68ca054be1c1e4f7366e9953f286843392d923d2ab01514b"
+  },
+  {
+    "name": "vomit",
+    "source": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f92e/lottie.json",
+    "bytes": 113083,
+    "sha256": "0b4ba45155cc55f5483233f8ee6de42b53290590da8ce9fbc38605addb252c27"
+  },
+  {
+    "name": "fist",
+    "source": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f44a/lottie.json",
+    "bytes": 23995,
+    "sha256": "f1ef7cd4349b49d90a7c281368c99ba1417718284ed420022551a21ea0296683"
+  }
+]

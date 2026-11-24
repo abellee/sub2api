@@ -49,7 +49,7 @@ func (scopedContentReads) GetReadMapByUsers(context.Context, int64, []int64) (ma
 func TestScopedAdminContentHandlersResponseBoundary(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	promo := NewPromoHandler(service.NewPromoService(scopedContentPromoRepo{}, nil, nil, nil, nil))
-	announcement := NewAnnouncementHandler(service.NewAnnouncementService(&announcementRepoCapture{}, scopedContentReads{}, scopedContentUsers{}, scopedContentSubs{}))
+	announcement := NewAnnouncementHandler(service.NewAnnouncementService(&announcementRepoCapture{}, scopedContentReads{}, scopedContentUsers{}, scopedContentSubs{}, nil))
 	for _, endpoint := range []struct {
 		name, path, request string
 		handler             gin.HandlerFunc

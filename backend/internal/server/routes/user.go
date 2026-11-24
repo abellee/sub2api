@@ -138,6 +138,9 @@ func RegisterUserRoutes(
 		{
 			announcements.GET("", h.Announcement.List)
 			announcements.POST("/:id/read", h.Announcement.MarkRead)
+			announcements.GET("/:id/reactions", h.Announcement.Reactions)
+			announcements.PUT("/:id/reactions", h.Announcement.Reactions)
+			announcements.DELETE("/:id/reactions", h.Announcement.Reactions)
 		}
 
 		// 卡密兑换

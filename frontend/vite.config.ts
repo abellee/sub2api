@@ -350,7 +350,7 @@ export default defineConfig(({ mode }) => {
       // CJS packages still need explicit pre-bundling when dependency
       // discovery is disabled; otherwise the browser receives the raw UMD
       // file and named/default imports fail during route loading.
-      include: ['file-saver', 'qrcode', 'vue-i18n']
+      include: ['file-saver', 'qrcode', 'vue-i18n', 'lottie-web/build/player/lottie_light']
     },
   build: {
     outDir: '../backend/internal/web/dist',

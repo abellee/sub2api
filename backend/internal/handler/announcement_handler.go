@@ -79,3 +79,38 @@ func parseBoolQuery(v string) bool {
 		return false
 	}
 }
+
+func (h *AnnouncementHandler) Reactions(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not found in context")
+		return
+	}
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		response.BadRequest(c, "Invalid announcement ID")
+		return
+	}
+	var items []service.AnnouncementReaction
+	if c.Request.Method == "GET" {
+		items, err = h.announcementService.ListReactions(c.Request.Context(), subject.UserID, id)
+	} else {
+		var emojiID int16
+		if c.Request.Method == "PUT" {
+			var body struct {
+				EmojiID int16 `json:"emoji_id" binding:"required,min=1,max=30"`
+			}
+			if bindErr := c.ShouldBindJSON(&body); bindErr != nil {
+				response.BadRequest(c, "A reaction emoji is required")
+				return
+			}
+			emojiID = body.EmojiID
+		}
+		items, err = h.announcementService.SetReaction(c.Request.Context(), subject.UserID, id, emojiID)
+	}
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, items)
+}

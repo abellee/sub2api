@@ -9,6 +9,7 @@ vi.mock('@/api', () => ({ announcementsAPI: { markRead } }))
 vi.mock('@/stores/app', () => ({ useAppStore: () => ({ showError, showSuccess }) }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
 vi.mock('@/utils/format', () => ({ formatRelativeTime: () => 'now', formatRelativeWithDateTime: () => 'now' }))
+vi.mock('../AnnouncementReactions.vue', () => ({ default: { template: '<div />' } }))
 enableAutoUnmount(afterEach)
 beforeEach(() => {
   setActivePinia(createPinia())

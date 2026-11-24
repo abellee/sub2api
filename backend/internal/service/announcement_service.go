@@ -16,6 +16,7 @@ type AnnouncementService struct {
 	readRepo         AnnouncementReadRepository
 	userRepo         UserRepository
 	userSubRepo      UserSubscriptionRepository
+	reactionRepo     AnnouncementReactionRepository
 }
 
 func NewAnnouncementService(
@@ -23,12 +24,14 @@ func NewAnnouncementService(
 	readRepo AnnouncementReadRepository,
 	userRepo UserRepository,
 	userSubRepo UserSubscriptionRepository,
+	reactionRepo AnnouncementReactionRepository,
 ) *AnnouncementService {
 	return &AnnouncementService{
 		announcementRepo: announcementRepo,
 		readRepo:         readRepo,
 		userRepo:         userRepo,
 		userSubRepo:      userSubRepo,
+		reactionRepo:     reactionRepo,
 	}
 }
 
@@ -299,6 +302,16 @@ func (s *AnnouncementService) ListForUser(ctx context.Context, userID int64, unr
 }
 
 func (s *AnnouncementService) MarkRead(ctx context.Context, userID, announcementID int64) error {
+	if err := s.checkVisibleToUser(ctx, userID, announcementID); err != nil {
+		return err
+	}
+	if err := s.readRepo.MarkRead(ctx, announcementID, userID, time.Now()); err != nil {
+		return fmt.Errorf("mark read: %w", err)
+	}
+	return nil
+}
+
+func (s *AnnouncementService) checkVisibleToUser(ctx context.Context, userID, announcementID int64) error {
 	// 安全：仅允许标记当前用户“可见”的公告
 	user, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
@@ -328,9 +341,6 @@ func (s *AnnouncementService) MarkRead(ctx context.Context, userID, announcement
 		return ErrAnnouncementNotFound
 	}
 
-	if err := s.readRepo.MarkRead(ctx, announcementID, userID, now); err != nil {
-		return fmt.Errorf("mark read: %w", err)
-	}
 	return nil
 }
 

@@ -95,6 +95,13 @@ export default {
 
   // Announcements Page
   announcements: {
+    reactions: {
+      add: 'Add reaction', choose: 'Choose a reaction', thumbs_up: 'Like', heart: 'Love', laugh: 'Laugh', party: 'Celebrate', fire: 'Fire', wow: 'Wow', sad: 'Sad', thumbs_down: 'Dislike',
+      loadFailed: 'Could not load reactions. Choose an emoji to retry.', saveFailed: 'Could not save your reaction. Please try again.',
+      swear: 'Swearing', clap: 'Applause', angry: 'Angry', think: 'Thinking', pray: 'Thanks', rocket: 'Rocket', eyes: 'Watching', cool: 'Cool', cry: 'Crying', hundred: 'Perfect', sleep: 'Sleepy', handshake: 'Handshake',
+      rage: 'Rage', huff: 'Huffing', eye_roll: 'Eye roll', exploding_head: 'Exploding head', poop: 'Poop', clown: 'Clown',
+      unamused: 'Unamused', nauseated: 'Nauseated', vomit: 'Vomiting', fist: 'Fist',
+    },
     title: 'Announcements',
     description: 'View system announcements',
     unreadOnly: 'Show unread only',

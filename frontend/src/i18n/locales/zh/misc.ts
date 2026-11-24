@@ -93,6 +93,13 @@ export default {
 
   // Announcements Page
   announcements: {
+    reactions: {
+      add: '添加反应', choose: '选择表情', thumbs_up: '赞', heart: '喜欢', laugh: '笑哭', party: '庆祝', fire: '火热', wow: '惊讶', sad: '难过', thumbs_down: '不赞同',
+      loadFailed: '反应加载失败，点击表情可重试', saveFailed: '反应未保存，请再试一次',
+      swear: '骂人', clap: '鼓掌', angry: '生气', think: '思考', pray: '感谢', rocket: '起飞', eyes: '围观', cool: '酷', cry: '大哭', hundred: '满分', sleep: '困了', handshake: '握手',
+      rage: '暴怒', huff: '气哼哼', eye_roll: '翻白眼', exploding_head: '气炸', poop: '便便', clown: '小丑',
+      unamused: '不爽', nauseated: '恶心', vomit: '吐了', fist: '拳头',
+    },
     title: '公告',
     description: '查看系统公告',
     unreadOnly: '仅显示未读',
