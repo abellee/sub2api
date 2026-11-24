@@ -24,6 +24,15 @@ describe('usage tier progress', () => {
     expect(wrapper.text()).toContain('1,234')
     expect(wrapper.text()).not.toContain('$')
   })
+  it.each(['cost', undefined] as const)('uses actual spend for monetary rules with mode %s even when token totals are high', mode => {
+    const wrapper = mount(GroupUsageTierProgress, { props: { entries: [entry({ mode, today_cost: 0.125, today_tokens: 99999, stage: 1, streak: 0, tiers: [{ daily_tokens: 0, daily_cost: 0.25, consecutive_days: 2, max_missed_days: 3, rate_multiplier: 0.8 }, { daily_tokens: 0, daily_cost: 0.5, consecutive_days: 2, max_missed_days: 3, rate_multiplier: 0.5 }] })] } })
+    expect(wrapper.text()).toContain('usageTiers.costRule')
+    expect(wrapper.text()).toContain('usageTiers.costToday')
+    expect(wrapper.text()).toContain('0.125')
+    expect(wrapper.text()).not.toContain('99,999')
+    expect(wrapper.get('svg[role="progressbar"]').attributes('aria-valuenow')).toBe('50')
+    expect(wrapper.get('[data-test="tier-next"] [role="progressbar"]').attributes('aria-valuenow')).toBe('12.5')
+  })
   it('shows the daily circle and resets the next-tier bar after promotion', () => {
     const wrapper = mount(GroupUsageTierProgress, { props: { entries: [entry({ stage: 1, streak: 0, rate_multiplier: 0.8, today_tokens: 50, promoted_today: true, today_qualified: true })] } })
     expect(wrapper.get('svg[role="progressbar"]').attributes('aria-valuenow')).toBe('100')

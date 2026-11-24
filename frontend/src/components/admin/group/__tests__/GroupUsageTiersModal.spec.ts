@@ -10,7 +10,7 @@ vi.mock('@/api/admin', () => ({ adminAPI: { groups: { getAllIncludingInactive: m
 vi.mock('@/stores/app', () => ({ useAppStore: () => mocks }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
 
-const config = () => ({ enabled: true, models: [], tiers: [{ daily_tokens: 1000000, consecutive_days: 2, max_missed_days: 3, rate_multiplier: 0.8 }], linked_group_ids: [2], excluded_user_ids: [3] })
+const config = () => ({ mode: 'tokens', enabled: true, models: [], tiers: [{ daily_cost: 0, daily_tokens: 1000000, consecutive_days: 2, max_missed_days: 3, rate_multiplier: 0.8 }], linked_group_ids: [2], excluded_user_ids: [3] })
 const render = () => mount(GroupUsageTiersModal, {
   props: { show: true, group: { id: 1, name: 'Source', rate_multiplier: 1, platform: 'openai' } as AdminGroup },
   global: { stubs: { BaseDialog: { props: ['show'], template: '<div v-if="show"><slot /><slot name="footer" /></div>' } } },
@@ -59,6 +59,33 @@ describe('group usage tier settings', () => {
     await wrapper.get('form').trigger('submit')
     await flushPromises()
     expect(mocks.saveUsageTiers).toHaveBeenCalledWith(1, { ...config(), models: ['model-b'], tiers: [{ ...config().tiers[0], daily_tokens: 2000000 }] })
+    wrapper.unmount()
+  })
+
+  it.each(['all', 'selected'])('saves fractional monetary thresholds for %s models', async scope => {
+    const wrapper = render()
+    await flushPromises()
+    await wrapper.get('#tier-mode').setValue('cost')
+    await wrapper.get('#tier-cost-0').setValue('0.1234567891')
+    await wrapper.get('#tier-model-scope').setValue(scope)
+    if (scope === 'selected') {
+      await wrapper.findAll('label').find(label => label.text() === 'model-a')!.get('input').setValue(true)
+    }
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(mocks.saveUsageTiers).toHaveBeenCalledWith(1, { ...config(), mode: 'cost', models: scope === 'selected' ? ['model-a'] : [], tiers: [{ ...config().tiers[0], daily_tokens: 0, daily_cost: 0.1234567891 }] })
+    wrapper.unmount()
+  })
+
+  it('loads a legacy monetary rule without turning it into a token rule', async () => {
+    mocks.getUsageTiers.mockResolvedValue({ ...config(), mode: undefined, tiers: [{ daily_cost: 1.25, consecutive_days: 2, max_missed_days: 3, rate_multiplier: 0.8 }] })
+    const wrapper = render()
+    await flushPromises()
+    expect((wrapper.get('#tier-mode').element as HTMLSelectElement).value).toBe('cost')
+    expect((wrapper.get('#tier-cost-0').element as HTMLInputElement).value).toBe('1.25')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(mocks.saveUsageTiers).toHaveBeenCalledWith(1, expect.objectContaining({ mode: 'cost', tiers: [expect.objectContaining({ daily_cost: 1.25, daily_tokens: 0 })] }))
     wrapper.unmount()
   })
 

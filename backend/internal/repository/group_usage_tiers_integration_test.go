@@ -147,4 +147,37 @@ func TestGroupUsageTiersTokensLinksExclusionsAndRetention(t *testing.T) {
 	progress, err = repo.GetUsageTierProgress(ctx, user.ID, []int64{source.ID})
 	require.NoError(t, err)
 	require.Zero(t, progress[source.ID][0].TodayTokens)
+	// Switching mode restarts qualification without changing the model scope.
+	config.Mode = "cost"
+	config.Tiers = []service.UsageTier{{DailyCost: 0.125, ConsecutiveDays: 1, MaxMissedDays: 2, RateMultiplier: 0.7}}
+	require.NoError(t, repo.SaveUsageTierConfig(ctx, source.ID, config))
+	var costRevision int
+	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT revision FROM group_usage_tier_rules WHERE group_id=$1`, source.ID).Scan(&costRevision))
+	require.Equal(t, 4, costRevision)
+	progress, err = repo.GetUsageTierProgress(ctx, user.ID, []int64{source.ID})
+	require.NoError(t, err)
+	require.Zero(t, progress[source.ID][0].TodayCost)
+	require.Zero(t, progress[source.ID][0].Stage)
+	_, err = integrationDB.ExecContext(ctx, `UPDATE group_usage_tier_rules SET started_at=$2 WHERE group_id=$1`, source.ID, yesterday)
+	require.NoError(t, err)
+	insert(source.ID, key.ID, 0, now)
+	progress, err = repo.GetUsageTierProgress(ctx, user.ID, []int64{source.ID})
+	require.NoError(t, err)
+	require.Zero(t, progress[source.ID][0].TodayCost) // Unselected models never count.
+	_, err = integrationDB.ExecContext(ctx, `UPDATE usage_logs SET requested_model='client-model',actual_cost=0.125,input_tokens=0 WHERE user_id=$1 AND group_id=$2 AND requested_model IS NULL`, user.ID, source.ID)
+	require.NoError(t, err)
+	progress, err = repo.GetUsageTierProgress(ctx, user.ID, []int64{source.ID})
+	require.NoError(t, err)
+	require.Equal(t, "cost", progress[source.ID][0].Mode)
+	require.Equal(t, 0.125, progress[source.ID][0].TodayCost)
+	require.Equal(t, 1, progress[source.ID][0].Stage)
+	_, err = integrationDB.ExecContext(ctx, `UPDATE usage_logs SET actual_cost=0.1 WHERE user_id=$1 AND group_id=$2 AND requested_model='client-model'`, user.ID, source.ID)
+	require.NoError(t, err)
+	progress, err = repo.GetUsageTierProgress(ctx, user.ID, []int64{source.ID})
+	require.NoError(t, err)
+	require.Equal(t, 0.1, progress[source.ID][0].TodayCost)
+	require.Zero(t, progress[source.ID][0].Stage)
+	require.NoError(t, repo.SaveUsageTierConfig(ctx, source.ID, config))
+	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT revision FROM group_usage_tier_rules WHERE group_id=$1`, source.ID).Scan(&revision))
+	require.Equal(t, costRevision, revision)
 }

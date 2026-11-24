@@ -20,7 +20,7 @@ func tierConfig() GroupUsageTierConfig {
 func TestUsageTierAdvancementAndMaintenance(t *testing.T) {
 	c := tierConfig()
 	start := tierTime("2026-11-01 00:00")
-	daily := map[string]int64{"2026-11-01": 10, "2026-11-02": 50, "2026-11-03": 20, "2026-11-04": 20}
+	daily := map[string]UsageTierDaily{"2026-11-01": {Tokens: 10}, "2026-11-02": {Tokens: 50}, "2026-11-03": {Tokens: 20}, "2026-11-04": {Tokens: 20}}
 	s := AdvanceUsageTier(c, UsageTierState{}, start, tierTime("2026-11-01 20:00"), daily)
 	require.Equal(t, 0, s.Stage)
 	require.Equal(t, 1, s.Streak)
@@ -41,7 +41,7 @@ func TestUsageTierAdvancementAndMaintenance(t *testing.T) {
 	require.Equal(t, 1, s.Missed)
 	require.Equal(t, 2, s.Stage)
 	// A qualifying day resets the complete missed-day countdown immediately.
-	daily["2026-11-06"] = 20
+	daily["2026-11-06"] = UsageTierDaily{Tokens: 20}
 	s = AdvanceUsageTier(c, s, start, tierTime("2026-11-06 12:00"), daily)
 	require.Zero(t, s.Missed)
 	require.True(t, s.MaintenanceHit)
@@ -49,7 +49,7 @@ func TestUsageTierAdvancementAndMaintenance(t *testing.T) {
 	require.Zero(t, s.Stage)
 	require.Zero(t, s.Streak)
 	// Expiration returns to the first tier rather than the preceding tier.
-	daily["2026-11-10"] = 20
+	daily["2026-11-10"] = UsageTierDaily{Tokens: 20}
 	s = AdvanceUsageTier(c, s, start, tierTime("2026-11-10 12:00"), daily)
 	require.Zero(t, s.Stage)
 	require.Equal(t, 1, s.Streak)
@@ -58,7 +58,7 @@ func TestUsageTierAdvancementAndMaintenance(t *testing.T) {
 func TestUsageTierMissedDaysAndTimezone(t *testing.T) {
 	c := tierConfig()
 	start := tierTime("2026-11-01 00:00")
-	s := AdvanceUsageTier(c, UsageTierState{}, start, tierTime("2026-11-04 12:00"), map[string]int64{"2026-11-01": 10, "2026-11-03": 10, "2026-11-04": 10})
+	s := AdvanceUsageTier(c, UsageTierState{}, start, tierTime("2026-11-04 12:00"), map[string]UsageTierDaily{"2026-11-01": {Tokens: 10}, "2026-11-03": {Tokens: 10}, "2026-11-04": {Tokens: 10}})
 	require.Equal(t, 1, s.Stage) // Nov 2 broke the original streak.
 	s = AdvanceUsageTier(c, s, start, tierTime("2026-11-06 23:59"), nil)
 	require.Equal(t, 1, s.Stage)
@@ -76,15 +76,16 @@ func TestUsageTierExactTokenThreshold(t *testing.T) {
 	start := tierTime("2026-11-01 00:00")
 	s := AdvanceUsageTier(c, UsageTierState{}, start, start, nil)
 	require.Zero(t, s.Stage)
-	s = AdvanceUsageTier(c, s, start, start, map[string]int64{"2026-11-01": 9007199254740990})
+	s = AdvanceUsageTier(c, s, start, start, map[string]UsageTierDaily{"2026-11-01": {Tokens: 9007199254740990}})
 	require.Zero(t, s.Stage)
-	s = AdvanceUsageTier(c, s, start, start, map[string]int64{"2026-11-01": 9007199254740991})
+	s = AdvanceUsageTier(c, s, start, start, map[string]UsageTierDaily{"2026-11-01": {Tokens: 9007199254740991}})
 	require.Equal(t, 1, s.Stage)
 }
 
 func TestUsageTierValidate(t *testing.T) {
 	require.NoError(t, tierConfig().Validate(1))
 	for _, change := range []func(*GroupUsageTierConfig){
+		func(c *GroupUsageTierConfig) { c.Mode = "invalid" },
 		func(c *GroupUsageTierConfig) { c.Tiers = nil },
 		func(c *GroupUsageTierConfig) { c.Tiers[0].DailyTokens = 0 },
 		func(c *GroupUsageTierConfig) { c.Tiers[0].DailyTokens = 9007199254740992 },
@@ -136,4 +137,35 @@ func TestUsageTierBypassesBaseRateCache(t *testing.T) {
 	repo.tier = &earned
 	require.Equal(t, 0.7, resolver.Resolve(context.Background(), 2, 1, 1))
 	require.Equal(t, 1, repo.calls)
+}
+
+func TestUsageTierCostMode(t *testing.T) {
+	c := GroupUsageTierConfig{Enabled: true, Mode: "cost", Tiers: []UsageTier{{DailyCost: 0.1234567891, ConsecutiveDays: 1, MaxMissedDays: 2, RateMultiplier: 0.8}}}
+	require.NoError(t, c.Validate(1))
+	c.Mode = ""
+	require.Equal(t, "cost", c.EffectiveMode())
+	require.NoError(t, c.Validate(1))
+	c.Mode = "cost"
+	start := tierTime("2026-11-01 00:00")
+	daily := map[string]UsageTierDaily{"2026-11-01": {Tokens: 9000000, Cost: 0.1234567890}}
+	s := AdvanceUsageTier(c, UsageTierState{}, start, start, daily)
+	require.Zero(t, s.Stage)
+	daily["2026-11-01"] = UsageTierDaily{Cost: 0.1234567891}
+	s = AdvanceUsageTier(c, s, start, start, daily)
+	require.Equal(t, 1, s.Stage)
+	s = AdvanceUsageTier(c, s, start, tierTime("2026-11-04 00:00"), daily)
+	require.Zero(t, s.Stage)
+	for _, value := range []float64{0, -1, math.NaN(), math.Inf(1)} {
+		c.Tiers[0].DailyCost = value
+		require.Error(t, c.Validate(1))
+	}
+	c.Tiers[0].DailyCost = 1
+	c.Tiers = append(c.Tiers, UsageTier{DailyCost: 0.5, ConsecutiveDays: 1, MaxMissedDays: 2, RateMultiplier: 0.5})
+	require.Error(t, c.Validate(1))
+	c.Tiers[1].DailyCost = 2
+	require.NoError(t, c.Validate(1))
+	c.Mode = "tokens"
+	c.Tiers[0].DailyTokens = 10
+	s = AdvanceUsageTier(c, UsageTierState{}, start, start, map[string]UsageTierDaily{"2026-11-01": {Tokens: 9, Cost: 100}})
+	require.Zero(t, s.Stage)
 }
