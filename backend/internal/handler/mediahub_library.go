@@ -41,8 +41,9 @@ func (h *MediaHubController) libraryRetention(c *gin.Context) {
 	raw, err := client.Request(c.Request.Context(), http.MethodGet, "/management/config", nil)
 	var out struct {
 		Active struct {
-			Minutes *int64 `json:"file_retention_minutes"`
-			Hours   *int64 `json:"file_retention_hours"`
+			Minutes                   *int64 `json:"file_retention_minutes"`
+			Hours                     *int64 `json:"file_retention_hours"`
+			DiskUsageThresholdPercent int    `json:"disk_usage_threshold_percent"`
 		} `json:"active"`
 	}
 	if err != nil || json.Unmarshal(raw, &out) != nil {
@@ -54,11 +55,11 @@ func (h *MediaHubController) libraryRetention(c *gin.Context) {
 		value := *out.Active.Hours * 60
 		minutes = &value
 	}
-	if minutes == nil || *minutes < 0 {
+	if minutes == nil || *minutes < 0 || out.Active.DiskUsageThresholdPercent < 0 || out.Active.DiskUsageThresholdPercent > 100 {
 		response.Error(c, 503, "文件保留时长暂不可用")
 		return
 	}
-	response.Success(c, gin.H{"file_retention_minutes": *minutes})
+	response.Success(c, gin.H{"file_retention_minutes": *minutes, "disk_usage_threshold_percent": out.Active.DiskUsageThresholdPercent})
 }
 
 func (h *MediaHubController) libraryStates(ctx context.Context, userID int64, records []mediahub.ResultLink, remove bool) ([]libraryFileState, error) {

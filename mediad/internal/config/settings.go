@@ -14,25 +14,26 @@ import (
 
 // Settings covers all service settings. Location of this file is the only bootstrap setting.
 type Settings struct {
-	Listen                 string `json:"listen"`
-	DataDir                string `json:"data_dir"`
-	ResultDir              string `json:"result_dir"`
-	DownloadBaseURL        string `json:"download_base_url"`
-	MaxFileMiB             int    `json:"max_file_mib"`
-	MaxSyncSeconds         int    `json:"max_sync_seconds"`
-	MaxConcurrent          int    `json:"max_concurrent"`
-	MemoryLimitMiB         int64  `json:"memory_limit_mib"`
-	PollIntervalSeconds    int    `json:"poll_interval_seconds"`
-	MaxPollSeconds         int    `json:"max_poll_seconds"`
-	DownloadTimeoutSeconds int    `json:"download_timeout_seconds"`
-	DownloadAttempts       int    `json:"download_attempts"`
-	TaskRetentionHours     int    `json:"task_retention_hours"`
-	FileRetentionMinutes   int    `json:"file_retention_minutes"`
-	GCMinutes              int    `json:"gc_minutes"`
-	PersistCredentials     bool   `json:"persist_credentials"`
-	LogLevel               string `json:"log_level"`
-	RelaySecret            string `json:"relay_secret,omitempty"`
-	ManagementToken        string `json:"management_token,omitempty"`
+	Listen                    string `json:"listen"`
+	DataDir                   string `json:"data_dir"`
+	ResultDir                 string `json:"result_dir"`
+	DownloadBaseURL           string `json:"download_base_url"`
+	MaxFileMiB                int    `json:"max_file_mib"`
+	MaxSyncSeconds            int    `json:"max_sync_seconds"`
+	MaxConcurrent             int    `json:"max_concurrent"`
+	MemoryLimitMiB            int64  `json:"memory_limit_mib"`
+	PollIntervalSeconds       int    `json:"poll_interval_seconds"`
+	MaxPollSeconds            int    `json:"max_poll_seconds"`
+	DownloadTimeoutSeconds    int    `json:"download_timeout_seconds"`
+	DownloadAttempts          int    `json:"download_attempts"`
+	TaskRetentionHours        int    `json:"task_retention_hours"`
+	FileRetentionMinutes      int    `json:"file_retention_minutes"`
+	DiskUsageThresholdPercent int    `json:"disk_usage_threshold_percent"`
+	GCMinutes                 int    `json:"gc_minutes"`
+	PersistCredentials        bool   `json:"persist_credentials"`
+	LogLevel                  string `json:"log_level"`
+	RelaySecret               string `json:"relay_secret,omitempty"`
+	ManagementToken           string `json:"management_token,omitempty"`
 }
 
 // Accept saved hour-based settings without shortening existing retention periods.
@@ -110,6 +111,7 @@ func (s Settings) Validate() error {
 		name            string
 		value, min, max int
 	}{
+		{"disk_usage_threshold_percent", s.DiskUsageThresholdPercent, 0, 100},
 		{"max_file_mib", s.MaxFileMiB, 1, 10240}, {"max_sync_seconds", s.MaxSyncSeconds, 1, 86400},
 		{"poll_interval_seconds", s.PollIntervalSeconds, 1, 3600},
 		{"max_poll_seconds", s.MaxPollSeconds, 1, 604800}, {"download_timeout_seconds", s.DownloadTimeoutSeconds, 1, 86400},

@@ -29,6 +29,7 @@ func TestSettingsPersistRedactAndLiveUpdate(t *testing.T) {
 	next.TaskRetentionHours = 12
 	next.DownloadBaseURL = "https://media.example.test"
 	next.FileRetentionMinutes = 72
+	next.DiskUsageThresholdPercent = 85
 	next.ManagementToken = ""
 	next.RelaySecret = ""
 	if err = store.Update(next); err != nil {
@@ -56,7 +57,7 @@ func TestSettingsPersistRedactAndLiveUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reopened.Active().MaxConcurrent != 1000000 || reopened.Active().MemoryLimitMiB != 2048 || reopened.Active().ManagementToken != "private-management" || reopened.View()["restart_required"].(bool) {
+	if reopened.Active().MaxConcurrent != 1000000 || reopened.Active().MemoryLimitMiB != 2048 || reopened.Active().DiskUsageThresholdPercent != 85 || reopened.Active().ManagementToken != "private-management" || reopened.View()["restart_required"].(bool) {
 		t.Fatal("saved configuration was not applied at restart")
 	}
 	next = reopened.Active()
@@ -67,6 +68,19 @@ func TestSettingsPersistRedactAndLiveUpdate(t *testing.T) {
 	again, err := OpenSettings(path, defaults)
 	if err != nil || again.Active().MaxConcurrent != 1000000 {
 		t.Fatal("rejected update changed disk")
+	}
+}
+
+func TestDiskUsageThresholdValidationAndDefault(t *testing.T) {
+	s := DefaultSettings(Config{PersistCredentials: true})
+	if s.DiskUsageThresholdPercent != 0 {
+		t.Fatal("disk cleanup must be opt-in")
+	}
+	for _, n := range []int{0, 1, 85, 100, -1, 101} {
+		s.DiskUsageThresholdPercent = n
+		if err := s.Validate(); (err == nil) != (n >= 0 && n <= 100) {
+			t.Fatal(n, err)
+		}
 	}
 }
 

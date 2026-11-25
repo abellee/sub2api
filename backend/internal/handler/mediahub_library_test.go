@@ -21,14 +21,17 @@ func TestMediaLibraryRetentionUsesActiveSettingsAndHidesSecrets(t *testing.T) {
 		name, body string
 		status     int
 		minutes    int64
+		disk       int
 	}{
-		{"minutes", `{"active":{"file_retention_minutes":5,"relay_secret":"private-relay"},"settings":{"file_retention_minutes":90}}`, 200, 5},
-		{"legacy hours", `{"active":{"file_retention_hours":72}}`, 200, 4320},
-		{"forever takes precedence", `{"active":{"file_retention_minutes":0,"file_retention_hours":72}}`, 200, 0},
-		{"missing", `{"active":{}}`, 503, 0},
-		{"invalid", `{"active":{"file_retention_minutes":-1}}`, 503, 0},
-		{"overflow", `{"active":{"file_retention_hours":9223372036854775807}}`, 503, 0},
-		{"offline", ``, 503, 0},
+		{"minutes", `{"active":{"file_retention_minutes":5,"relay_secret":"private-relay"},"settings":{"file_retention_minutes":90}}`, 200, 5, 0},
+		{"legacy hours", `{"active":{"file_retention_hours":72}}`, 200, 4320, 0},
+		{"forever takes precedence", `{"active":{"file_retention_minutes":0,"file_retention_hours":72}}`, 200, 0, 0},
+		{"disk pressure", `{"active":{"file_retention_minutes":0,"disk_usage_threshold_percent":85}}`, 200, 0, 85},
+		{"invalid disk threshold", `{"active":{"file_retention_minutes":30,"disk_usage_threshold_percent":101}}`, 503, 0, 0},
+		{"missing", `{"active":{}}`, 503, 0, 0},
+		{"invalid", `{"active":{"file_retention_minutes":-1}}`, 503, 0, 0},
+		{"overflow", `{"active":{"file_retention_hours":9223372036854775807}}`, 503, 0, 0},
+		{"offline", ``, 503, 0, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			calls := 0
@@ -70,7 +73,7 @@ func TestMediaLibraryRetentionUsesActiveSettingsAndHidesSecrets(t *testing.T) {
 				var out struct {
 					Data map[string]int64 `json:"data"`
 				}
-				if json.Unmarshal(w.Body.Bytes(), &out) != nil || len(out.Data) != 1 || out.Data["file_retention_minutes"] != tc.minutes {
+				if json.Unmarshal(w.Body.Bytes(), &out) != nil || len(out.Data) != 2 || out.Data["file_retention_minutes"] != tc.minutes || out.Data["disk_usage_threshold_percent"] != int64(tc.disk) {
 					t.Fatal("incorrect retention", w.Body.String())
 				}
 			}

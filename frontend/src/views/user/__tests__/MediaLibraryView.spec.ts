@@ -45,6 +45,13 @@ function reachBottom() {
 }
 
 describe('user media library', () => {
+  it.each([0, 30])('warns about disk cleanup with retention set to %s minutes', async (minutes) => {
+    vi.mocked(mediaLibraryAPI.retention).mockResolvedValue({ file_retention_minutes: minutes, disk_usage_threshold_percent: 85 })
+    await open([])
+    expect(wrapper.get('.library-hint').text()).toContain('磁盘占用超过 85% 时，可能提前清理图片')
+    expect(wrapper.get('.library-hint').text()).not.toContain('永久保留')
+    if (minutes) expect(wrapper.get('.library-hint').text()).toContain('文件保留 30 分钟')
+  })
   it('shows current retention even when the library is empty and refreshes it', async () => {
     await open([])
     expect(wrapper.get('.library-hint').text()).toBe('文件保留 60 分钟，到期自动清理，请及时保存')

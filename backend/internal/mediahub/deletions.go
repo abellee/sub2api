@@ -30,7 +30,7 @@ func (s *ResultLinkStore) MarkDeleted(ctx context.Context, ev FileDeletionEvent)
 	}
 	userID, userErr := strconv.ParseInt(ev.UserID, 10, 64)
 	keyID, keyErr := strconv.ParseInt(ev.KeyID, 10, 64)
-	if ev.Event != "files.deleted" || len(ev.EventID) == 0 || len(ev.EventID) > 128 || !safeTaskID.MatchString(ev.TaskID) || userErr != nil || keyErr != nil || userID <= 0 || keyID <= 0 || len(ev.FileIDs) == 0 || len(ev.FileIDs) > 256 || ev.DeletedAt.Unix() <= 0 || ev.DeletedAt.After(time.Now().Add(5*time.Minute)) || (ev.Reason != "retention_expired" && ev.Reason != "files_missing") {
+	if ev.Event != "files.deleted" || len(ev.EventID) == 0 || len(ev.EventID) > 128 || !safeTaskID.MatchString(ev.TaskID) || userErr != nil || keyErr != nil || userID <= 0 || keyID <= 0 || len(ev.FileIDs) == 0 || len(ev.FileIDs) > 256 || ev.DeletedAt.Unix() <= 0 || ev.DeletedAt.After(time.Now().Add(5*time.Minute)) || (ev.Reason != "retention_expired" && ev.Reason != "files_missing" && ev.Reason != "disk_pressure") {
 		return errors.New("invalid file deletion event")
 	}
 	tx, err := s.db.BeginTx(ctx, nil)

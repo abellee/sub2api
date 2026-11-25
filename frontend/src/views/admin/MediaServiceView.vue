@@ -131,7 +131,7 @@ const mainFields: Field[] = [
 ]
 const runtimeFields: Field[] = [
   { key: 'listen' }, { key: 'data_dir' }, { key: 'result_dir' }, { key: 'download_base_url', type: 'url' }, numeric('max_file_mib', 10240), numeric('max_sync_seconds', 86400), { key: 'max_concurrent', type: 'number' }, { key: 'memory_limit_mib', type: 'number', min: 0 },
-  numeric('poll_interval_seconds', 3600), numeric('max_poll_seconds', 604800), numeric('download_timeout_seconds', 86400), numeric('download_attempts', 100), { key: 'file_retention_minutes', type: 'number', min: 0 }, numeric('task_retention_hours', 87600), numeric('gc_minutes', 1440),
+  numeric('poll_interval_seconds', 3600), numeric('max_poll_seconds', 604800), numeric('download_timeout_seconds', 86400), numeric('download_attempts', 100), { key: 'file_retention_minutes', type: 'number', min: 0 }, { key: 'disk_usage_threshold_percent', type: 'number', min: 0, max: 100 }, numeric('task_retention_hours', 87600), numeric('gc_minutes', 1440),
   { key: 'persist_credentials', type: 'checkbox' }, { key: 'log_level' }, secret('relay_secret'), secret('management_token')
 ]
 const fieldLabel = (key: string) => t(`mediaService.fields.${key}`)

@@ -13,7 +13,7 @@ export interface MediaFile {
 }
 
 export const mediaLibraryAPI = {
-  async retention(signal?: AbortSignal): Promise<{ file_retention_minutes: number }> {
+  async retention(signal?: AbortSignal): Promise<{ file_retention_minutes: number; disk_usage_threshold_percent?: number }> {
     return (await apiClient.get('/media-files/retention', { signal })).data
   },
   async list(after = '', signal?: AbortSignal, kind = 'all'): Promise<{ items: MediaFile[]; next_cursor: string }> {

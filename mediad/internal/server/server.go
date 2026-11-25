@@ -117,6 +117,12 @@ func (s *Server) runMaintenance(ctx context.Context, errCh <-chan error) error {
 			} else if n > 0 {
 				s.logger.Printf("[mediad] expired media cleaned: %d tasks", n)
 			}
+			active := s.settings.Active()
+			if n, err := s.store.GCImagesForDisk(active.DiskUsageThresholdPercent, active.ResultDir); err != nil {
+				s.logger.Printf("[mediad] disk cleanup: %v", err)
+			} else if n > 0 {
+				s.logger.Printf("[mediad] disk pressure images cleaned: %d files", n)
+			}
 		case <-gc.C:
 			s.store.GC(time.Duration(s.settings.Active().TaskRetentionHours) * time.Hour)
 		case err := <-errCh:

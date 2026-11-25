@@ -18,6 +18,14 @@ import (
 )
 
 func TestMediaDeletionCallbackKeepsBillingAndOwnershipSeparate(t *testing.T) {
+	testMediaDeletionCallback(t, "retention_expired")
+}
+
+func TestMediaDiskPressureDeletionCallback(t *testing.T) {
+	testMediaDeletionCallback(t, "disk_pressure")
+}
+
+func testMediaDeletionCallback(t *testing.T, reason string) {
 	links, db := mediaLinkFixture(t)
 	bills := 0
 	h := &MediaHubRelayHandler{links: links, cfg: MediaHubConfig{MediadBaseURL: "https://d.tokenfree.dev"}, billingSink: mediaResultSinkFunc(func(mediahub.SettleRequest) error { bills++; return nil })}
@@ -36,7 +44,7 @@ func TestMediaDeletionCallbackKeepsBillingAndOwnershipSeparate(t *testing.T) {
 	if code := post(completed, "secret"); code != 200 || bills != 1 {
 		t.Fatal(code, bills)
 	}
-	ev := mediahub.FileDeletionEvent{Event: "files.deleted", EventID: "mfd_test", TaskID: "mtask_delete", UserID: "42", KeyID: "7", FileIDs: []string{"f0000"}, DeletedAt: time.Now().UTC(), Reason: "retention_expired"}
+	ev := mediahub.FileDeletionEvent{Event: "files.deleted", EventID: "mfd_test", TaskID: "mtask_delete", UserID: "42", KeyID: "7", FileIDs: []string{"f0000"}, DeletedAt: time.Now().UTC(), Reason: reason}
 	call := func(ev mediahub.FileDeletionEvent, secret string) int {
 		body, _ := json.Marshal(ev)
 		return post(body, secret)
@@ -70,7 +78,7 @@ func TestMediaDeletionCallbackKeepsBillingAndOwnershipSeparate(t *testing.T) {
 		t.Fatal(err)
 	}
 	list, err := mediahub.NewResultLinkStore(db).List(context.Background(), 42, ev.TaskID)
-	if err != nil || len(list) != 1 || list[0].DeletedAt == nil || list[0].Status != "deleted" || list[0].DownloadURL != "" || list[0].DeleteReason != "retention_expired" {
+	if err != nil || len(list) != 1 || list[0].DeletedAt == nil || list[0].Status != "deleted" || list[0].DownloadURL != "" || list[0].DeleteReason != reason {
 		t.Fatal("deleted state lost or download link exposed", list, err)
 	}
 	if other, _ := links.List(context.Background(), 43, ev.TaskID); len(other) != 0 {
@@ -97,6 +105,7 @@ func TestMediaDeletionCallbackKeepsBillingAndOwnershipSeparate(t *testing.T) {
 			t.Fatal("deleted media still redirected or lost after task GC", path, w.Code, w.Body.String())
 		}
 	}
+
 }
 
 func TestMediaDownloadListsExcludeDeletedFilesBeforeLimit(t *testing.T) {

@@ -78,6 +78,18 @@ describe('Media service administration', () => {
     expect(api.agent).toHaveBeenCalledWith('PUT', '/config', expect.objectContaining({ file_retention_minutes: minutes }))
     expect(wrapper.get('[role="status"]').text()).toBe('mediaService.saved')
   })
+  it.each([0, 85, 100])('saves the disk usage cleanup threshold of %s percent', async (threshold) => {
+    api.agent.mockResolvedValue({ settings: { disk_usage_threshold_percent: 0 }, active: {}, restart_required: false, pending_fields: [] })
+    const wrapper = mountView(); await flushPromises()
+    await wrapper.get('[data-testid="tab-runtime"]').trigger('click'); await flushPromises()
+    const input = wrapper.get('[data-testid="runtime-disk_usage_threshold_percent"]')
+    expect(input.attributes('min')).toBe('0')
+    expect(input.attributes('max')).toBe('100')
+    await input.setValue(threshold)
+    await wrapper.get('form').trigger('submit'); await flushPromises()
+    expect(api.agent).toHaveBeenCalledWith('PUT', '/config', expect.objectContaining({ disk_usage_threshold_percent: threshold }))
+    expect(wrapper.get('[role="status"]').text()).toBe('mediaService.saved')
+  })
   it.each([0, 4096])('saves concurrency above 128 and memory budget %s online', async (memory) => {
     const runtime = { settings: { max_concurrent: 8, memory_limit_mib: 0 }, active: {}, restart_required: false, pending_fields: [], memory_status: { container_limit_mib: 4096 } }
     api.agent.mockResolvedValue(runtime)

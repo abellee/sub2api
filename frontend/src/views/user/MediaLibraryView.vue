@@ -14,6 +14,7 @@ const files = ref<MediaFile[]>([])
 const loading = ref(false)
 const loadError = ref(false)
 const retentionMinutes = ref<number | null>(null)
+const diskUsageThreshold = ref(0)
 const nextCursor = ref('')
 const hasMore = ref(true)
 const sentinel = ref<HTMLElement>()
@@ -38,17 +39,23 @@ const visible = computed(() => files.value.filter(file => filter.value === 'all'
 const selected = computed(() => visible.value.find(file => file.id === selectedID.value))
 const selectedIndex = computed(() => visible.value.findIndex(file => file.id === selectedID.value))
 const percent = computed(() => total.value ? Math.round(processed.value / total.value * 100) : deleting.value || clearLoadError.value ? 0 : 100)
-const retentionHint = computed(() => retentionMinutes.value === null
-  ? t('mediaLibrary.retentionHint')
-  : retentionMinutes.value === 0
-    ? t('mediaLibrary.retentionForever')
-    : t('mediaLibrary.retentionDurationHint', { minutes: retentionMinutes.value }))
+const retentionHint = computed(() => {
+  const hint = retentionMinutes.value === null
+    ? t('mediaLibrary.retentionHint')
+    : retentionMinutes.value === 0
+      ? t(diskUsageThreshold.value ? 'mediaLibrary.retentionNoExpiry' : 'mediaLibrary.retentionForever')
+      : t('mediaLibrary.retentionDurationHint', { minutes: retentionMinutes.value })
+  return diskUsageThreshold.value
+    ? `${hint}；${t('mediaLibrary.diskPressureHint', { percent: diskUsageThreshold.value })}`
+    : hint
+})
 
 async function loadRetention() {
   try {
-    const { file_retention_minutes } = await mediaLibraryAPI.retention(controller.signal)
+    const { file_retention_minutes, disk_usage_threshold_percent = 0 } = await mediaLibraryAPI.retention(controller.signal)
     retentionMinutes.value = Number.isInteger(file_retention_minutes) && file_retention_minutes >= 0 ? file_retention_minutes : null
-  } catch { retentionMinutes.value = null }
+    diskUsageThreshold.value = Number.isInteger(disk_usage_threshold_percent) && disk_usage_threshold_percent > 0 && disk_usage_threshold_percent <= 100 ? disk_usage_threshold_percent : 0
+  } catch { retentionMinutes.value = null; diskUsageThreshold.value = 0 }
 }
 
 async function loadMore() {
