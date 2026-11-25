@@ -44,6 +44,11 @@ func TestLibraryDeletesOnlyOwnedFilesAndSurvivesStaleUpdatesAndRestart(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
+	next := h.Settings.Active()
+	next.FileRetentionMinutes = 15
+	if err := h.Settings.Update(next); err != nil {
+		t.Fatal(err)
+	}
 	mux := http.NewServeMux()
 	h.Register(mux)
 	request := func(path, body, token string) *httptest.ResponseRecorder {
@@ -67,7 +72,7 @@ func TestLibraryDeletesOnlyOwnedFilesAndSurvivesStaleUpdatesAndRestart(t *testin
 			ExpiresAt time.Time `json:"expires_at"`
 		} `json:"files"`
 	}
-	if json.Unmarshal(w.Body.Bytes(), &status) != nil || len(status.Files) != 1 || !status.Files[0].Available || !status.Files[0].ExpiresAt.Equal(completed.Add(time.Hour)) {
+	if json.Unmarshal(w.Body.Bytes(), &status) != nil || len(status.Files) != 1 || !status.Files[0].Available || !status.Files[0].ExpiresAt.Equal(completed.Add(15*time.Minute)) {
 		t.Fatal("wrong retention", w.Body.String())
 	}
 	if w := request("/management/files/delete", body, "management"); !strings.Contains(w.Body.String(), `"deleted":true`) {

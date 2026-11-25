@@ -21,17 +21,42 @@ type Settings struct {
 	MaxFileMiB             int    `json:"max_file_mib"`
 	MaxSyncSeconds         int    `json:"max_sync_seconds"`
 	MaxConcurrent          int    `json:"max_concurrent"`
+	MemoryLimitMiB         int64  `json:"memory_limit_mib"`
 	PollIntervalSeconds    int    `json:"poll_interval_seconds"`
 	MaxPollSeconds         int    `json:"max_poll_seconds"`
 	DownloadTimeoutSeconds int    `json:"download_timeout_seconds"`
 	DownloadAttempts       int    `json:"download_attempts"`
 	TaskRetentionHours     int    `json:"task_retention_hours"`
-	FileRetentionHours     int    `json:"file_retention_hours"`
+	FileRetentionMinutes   int    `json:"file_retention_minutes"`
 	GCMinutes              int    `json:"gc_minutes"`
 	PersistCredentials     bool   `json:"persist_credentials"`
 	LogLevel               string `json:"log_level"`
 	RelaySecret            string `json:"relay_secret,omitempty"`
 	ManagementToken        string `json:"management_token,omitempty"`
+}
+
+// Accept saved hour-based settings without shortening existing retention periods.
+func (s *Settings) UnmarshalJSON(data []byte) error {
+	type plain Settings
+	next := plain(*s)
+	in := struct {
+		*plain
+		Minutes *int `json:"file_retention_minutes"`
+		Hours   *int `json:"file_retention_hours"`
+	}{plain: &next}
+	if err := json.Unmarshal(data, &in); err != nil {
+		return err
+	}
+	if in.Minutes != nil {
+		next.FileRetentionMinutes = *in.Minutes
+	} else if in.Hours != nil {
+		if *in.Hours < 0 || *in.Hours > int(^uint(0)>>1)/60 {
+			return fmt.Errorf("file_retention_hours cannot be converted to minutes")
+		}
+		next.FileRetentionMinutes = *in.Hours * 60
+	}
+	*s = Settings(next)
+	return nil
 }
 
 func DefaultSettings(cfg Config) Settings {
@@ -53,7 +78,7 @@ func DefaultSettings(cfg Config) Settings {
 	if maxSync <= 0 {
 		maxSync = 600
 	}
-	return Settings{Listen: cfg.Listen, DataDir: cfg.DataDir, ResultDir: root, DownloadBaseURL: cfg.DownloadBaseURL, MaxFileMiB: maxFile, MaxSyncSeconds: maxSync, MaxConcurrent: 8, PollIntervalSeconds: 5, MaxPollSeconds: 1800, DownloadTimeoutSeconds: 120, DownloadAttempts: 3, TaskRetentionHours: 24, FileRetentionHours: 1, GCMinutes: 30, PersistCredentials: cfg.PersistCredentials, LogLevel: cfg.LogLevel, RelaySecret: cfg.RelaySecret, ManagementToken: cfg.ManagementToken}
+	return Settings{Listen: cfg.Listen, DataDir: cfg.DataDir, ResultDir: root, DownloadBaseURL: cfg.DownloadBaseURL, MaxFileMiB: maxFile, MaxSyncSeconds: maxSync, MaxConcurrent: 8, PollIntervalSeconds: 5, MaxPollSeconds: 1800, DownloadTimeoutSeconds: 120, DownloadAttempts: 3, TaskRetentionHours: 24, FileRetentionMinutes: 60, GCMinutes: 30, PersistCredentials: cfg.PersistCredentials, LogLevel: cfg.LogLevel, RelaySecret: cfg.RelaySecret, ManagementToken: cfg.ManagementToken}
 }
 
 func (s Settings) Validate() error {
@@ -72,15 +97,21 @@ func (s Settings) Validate() error {
 	if !s.PersistCredentials {
 		return fmt.Errorf("persist_credentials must remain enabled for reliable task recovery")
 	}
-	if s.FileRetentionHours < 0 {
-		return fmt.Errorf("file_retention_hours must be non-negative")
+	if s.FileRetentionMinutes < 0 {
+		return fmt.Errorf("file_retention_minutes must be non-negative")
+	}
+	if s.MaxConcurrent < 1 {
+		return fmt.Errorf("max_concurrent must be positive")
+	}
+	if s.MemoryLimitMiB < 0 || s.MemoryLimitMiB > (1<<63-1)>>20 {
+		return fmt.Errorf("memory_limit_mib is outside the supported byte range")
 	}
 	limits := []struct {
 		name            string
 		value, min, max int
 	}{
 		{"max_file_mib", s.MaxFileMiB, 1, 10240}, {"max_sync_seconds", s.MaxSyncSeconds, 1, 86400},
-		{"max_concurrent", s.MaxConcurrent, 1, 128}, {"poll_interval_seconds", s.PollIntervalSeconds, 1, 3600},
+		{"poll_interval_seconds", s.PollIntervalSeconds, 1, 3600},
 		{"max_poll_seconds", s.MaxPollSeconds, 1, 604800}, {"download_timeout_seconds", s.DownloadTimeoutSeconds, 1, 86400},
 		{"download_attempts", s.DownloadAttempts, 1, 100}, {"task_retention_hours", s.TaskRetentionHours, 1, 87600}, {"gc_minutes", s.GCMinutes, 1, 1440},
 	}
@@ -101,6 +132,7 @@ type SettingsStore struct {
 	mu              sync.RWMutex
 	path            string
 	active, desired Settings
+	changed         chan struct{}
 }
 
 func OpenSettings(path string, cfg Config) (*SettingsStore, error) {
@@ -116,7 +148,7 @@ func OpenSettings(path string, cfg Config) (*SettingsStore, error) {
 	if err := s.Validate(); err != nil {
 		return nil, err
 	}
-	return &SettingsStore{path: path, active: s, desired: s}, nil
+	return &SettingsStore{path: path, active: s, desired: s, changed: make(chan struct{})}, nil
 }
 
 func (s *SettingsStore) Active() Settings { s.mu.RLock(); defer s.mu.RUnlock(); return s.active }
@@ -126,7 +158,7 @@ func (s *SettingsStore) StorageChangePending() bool {
 	return s.active.DataDir != s.desired.DataDir || s.active.ResultDir != s.desired.ResultDir
 }
 
-// Runtime configuration changes take effect together on restart, without mutating active workers.
+// Publish operational settings after the durable write. Listener and storage paths need a restart.
 func (s *SettingsStore) Update(next Settings) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -165,15 +197,21 @@ func (s *SettingsStore) Update(next Settings) error {
 		return err
 	}
 	s.desired = next
-	// Retention only affects completed tasks and can safely change without restarting workers.
-	s.active.FileRetentionHours = next.FileRetentionHours
+	// Never redirect existing task files or the listening socket in place.
+	previous := s.active
+	s.active = next
+	s.active.Listen = previous.Listen
+	s.active.DataDir = previous.DataDir
+	s.active.ResultDir = previous.ResultDir
+	close(s.changed)
+	s.changed = make(chan struct{})
 	return nil
 }
 
-func (s *SettingsStore) FileRetentionHours() int {
+func (s *SettingsStore) FileRetentionMinutes() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.active.FileRetentionHours
+	return s.active.FileRetentionMinutes
 }
 
 func (s *SettingsStore) View() map[string]any {
@@ -202,4 +240,11 @@ func (s *SettingsStore) View() map[string]any {
 
 func (s Settings) Config() Config {
 	return Config{Listen: s.Listen, DataDir: s.DataDir, ResultDir: s.ResultDir, DownloadBaseURL: s.DownloadBaseURL, MaxFileBytes: int64(s.MaxFileMiB) << 20, MaxSyncSeconds: s.MaxSyncSeconds, PersistCredentials: s.PersistCredentials, LogLevel: s.LogLevel, RelaySecret: s.RelaySecret, ManagementToken: s.ManagementToken}
+}
+
+// Changed broadcasts successful updates without blocking management requests.
+func (s *SettingsStore) Changed() <-chan struct{} {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.changed
 }

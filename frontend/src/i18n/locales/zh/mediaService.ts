@@ -29,7 +29,7 @@ export default {
     fields: {
       enabled: '启用媒体中转', mediad_base_url: '微服务地址', management_token: '管理令牌', relay_secret: '中转签名密钥', callback_secret: '通知签名密钥', bindings_path: '分组绑定文件路径',
       forward_timeout_seconds: '主站请求等待上限（秒）', management_timeout_seconds: '管理请求等待上限（秒）',
-      listen: '微服务监听地址', data_dir: '微服务任务状态目录', result_dir: '微服务文件存储目录', download_base_url: '对外下载地址', max_file_mib: '单个结果文件上限（MiB）', max_sync_seconds: '默认生成等待上限（秒）', max_concurrent: '同时处理任务数', memory_limit_mib: '内存预算（MiB，0 为自动）', poll_interval_seconds: '默认查询间隔（秒）', max_poll_seconds: '默认查询最长等待（秒）', download_timeout_seconds: '单次文件下载等待（秒）', download_attempts: '文件下载重试次数', file_retention_hours: '文件保留时长（小时，0 为永久）', task_retention_hours: '可清理任务记录保留（小时）', gc_minutes: '文件及任务清理间隔（分钟）', persist_credentials: '保存凭证以支持重启恢复', log_level: '日志级别'
+      listen: '微服务监听地址', data_dir: '微服务任务状态目录', result_dir: '微服务文件存储目录', download_base_url: '对外下载地址', max_file_mib: '单个结果文件上限（MiB）', max_sync_seconds: '默认生成等待上限（秒）', max_concurrent: '同时处理任务数', memory_limit_mib: '内存预算（MiB，0 为自动）', poll_interval_seconds: '默认查询间隔（秒）', max_poll_seconds: '默认查询最长等待（秒）', download_timeout_seconds: '单次文件下载等待（秒）', download_attempts: '文件下载重试次数', file_retention_minutes: '文件保留时长（分钟，0 为永久）', task_retention_hours: '可清理任务记录保留（小时）', gc_minutes: '文件及任务清理间隔（分钟）', persist_credentials: '保存凭证以支持重启恢复', log_level: '日志级别'
     }
   }
 }

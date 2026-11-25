@@ -16,6 +16,68 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+func TestMediaLibraryRetentionUsesActiveSettingsAndHidesSecrets(t *testing.T) {
+	for _, tc := range []struct {
+		name, body string
+		status     int
+		minutes    int64
+	}{
+		{"minutes", `{"active":{"file_retention_minutes":5,"relay_secret":"private-relay"},"settings":{"file_retention_minutes":90}}`, 200, 5},
+		{"legacy hours", `{"active":{"file_retention_hours":72}}`, 200, 4320},
+		{"forever takes precedence", `{"active":{"file_retention_minutes":0,"file_retention_hours":72}}`, 200, 0},
+		{"missing", `{"active":{}}`, 503, 0},
+		{"invalid", `{"active":{"file_retention_minutes":-1}}`, 503, 0},
+		{"overflow", `{"active":{"file_retention_hours":9223372036854775807}}`, 503, 0},
+		{"offline", ``, 503, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			remote := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				if r.Method != http.MethodGet || r.URL.Path != "/management/config" || r.Header.Get("Authorization") != "Bearer private-token" {
+					t.Error("incorrect management request")
+				}
+				if tc.body == "" {
+					w.WriteHeader(503)
+				}
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer remote.Close()
+			settings, err := mediahub.OpenSettings(filepath.Join(t.TempDir(), "settings.json"), mediahub.Settings{MediadBaseURL: remote.URL, ManagementToken: "private-token", StorePath: filepath.Join(t.TempDir(), "bindings.json"), ForwardSeconds: 60, ManagementSeconds: 30})
+			if err != nil {
+				t.Fatal(err)
+			}
+			h := &MediaHubController{settings: settings, links: &mediahub.ResultLinkStore{}}
+			router := gin.New()
+			h.RegisterUser(router.Group("", func(c *gin.Context) {
+				if c.GetHeader("Authorization") != "" {
+					c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 2})
+				}
+			}))
+			anonymous := httptest.NewRecorder()
+			router.ServeHTTP(anonymous, httptest.NewRequest(http.MethodGet, "/media-files/retention", nil))
+			if anonymous.Code != 401 || calls != 0 {
+				t.Fatal("anonymous request reached media service")
+			}
+			request := httptest.NewRequest(http.MethodGet, "/media-files/retention", nil)
+			request.Header.Set("Authorization", "owner")
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, request)
+			if w.Code != tc.status || strings.Contains(w.Body.String(), "private-") || strings.Contains(w.Body.String(), "relay_secret") {
+				t.Fatalf("unexpected response: %d %s", w.Code, w.Body.String())
+			}
+			if tc.status == 200 {
+				var out struct {
+					Data map[string]int64 `json:"data"`
+				}
+				if json.Unmarshal(w.Body.Bytes(), &out) != nil || len(out.Data) != 1 || out.Data["file_retention_minutes"] != tc.minutes {
+					t.Fatal("incorrect retention", w.Body.String())
+				}
+			}
+		})
+	}
+}
+
 func TestMediaLibraryIsolationPaginationAndDeletion(t *testing.T) {
 	links, db := mediaLinkFixture(t)
 	ctx := context.Background()

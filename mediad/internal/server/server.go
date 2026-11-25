@@ -37,6 +37,7 @@ func New(cfg config.Config, logger *log.Logger) (*Server, error) {
 		return nil, fmt.Errorf("load settings: %w", err)
 	}
 	cfg = settings.Active().Config()
+	relay.ConfigureMemoryLimit(settings.Active().MemoryLimitMiB)
 	if !cfg.PersistCredentials {
 		return nil, fmt.Errorf("durable recovery requires MEDIAD_PERSIST_CREDENTIALS=true; protect the data directory")
 	}
@@ -85,21 +86,30 @@ func New(cfg config.Config, logger *log.Logger) (*Server, error) {
 }
 
 func (s *Server) Run(ctx context.Context) error {
+	s.tracker.ExpireRecovery()
 	s.tracker.ResumeAll()
 	s.tracker.StartFileDeletionNotifications()
 	defer s.tracker.Stop()
 	errCh := make(chan error, 1)
 	go func() { errCh <- s.httpServer.ListenAndServe() }()
+	changed := s.settings.Changed()
 	gc := time.NewTicker(time.Duration(s.settings.Active().GCMinutes) * time.Minute)
 	defer gc.Stop()
+	expiry := time.NewTicker(time.Minute)
+	defer expiry.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			return s.httpServer.Shutdown(shutdown)
+		case <-changed:
+			changed = s.settings.Changed()
+			gc.Reset(time.Duration(s.settings.Active().GCMinutes) * time.Minute)
+		case <-expiry.C:
+			s.tracker.ExpireRecovery()
 		case <-gc.C:
-			if n, err := s.store.GCFiles(s.settings.FileRetentionHours(), s.settings.Active().ResultDir); err != nil {
+			if n, err := s.store.GCFiles(s.settings.FileRetentionMinutes(), s.settings.Active().ResultDir); err != nil {
 				s.logger.Printf("[mediad] file cleanup: %v", err)
 			} else if n > 0 {
 				s.logger.Printf("[mediad] expired media cleaned: %d tasks", n)

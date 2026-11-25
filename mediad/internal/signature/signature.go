@@ -13,11 +13,13 @@
 package signature
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 	"time"
@@ -53,12 +55,16 @@ func Canonical(timestamp, method, path string, body []byte) string {
 // Sign 计算签名值(含 "sha256=" 前缀)。
 func Sign(secret, timestamp, method, path string, body []byte) string {
 	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(Canonical(timestamp, method, path, body)))
+	mac.Write([]byte(timestamp + "\n" + strings.ToUpper(method) + "\n" + path + "\n"))
+	mac.Write(body)
 	return Prefix + hex.EncodeToString(mac.Sum(nil))
 }
 
 // Verify 校验签名值与时间戳时效。now 传入当前时间以便测试注入。
 func Verify(secret, timestamp, method, path string, body []byte, sig string, now time.Time) error {
+	return VerifyReader(secret, timestamp, method, path, bytes.NewReader(body), sig, now)
+}
+func VerifyReader(secret, timestamp, method, path string, body io.Reader, sig string, now time.Time) error {
 	if strings.TrimSpace(secret) == "" {
 		return ErrEmptySecret
 	}
@@ -81,7 +87,10 @@ func Verify(secret, timestamp, method, path string, body []byte, sig string, now
 		return fmt.Errorf("%w: bad hex", ErrBadFormat)
 	}
 	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(Canonical(timestamp, method, path, body)))
+	mac.Write([]byte(timestamp + "\n" + strings.ToUpper(method) + "\n" + path + "\n"))
+	if _, err := io.Copy(mac, body); err != nil {
+		return err
+	}
 	if !hmac.Equal(got, mac.Sum(nil)) {
 		return ErrMismatch
 	}

@@ -34,7 +34,7 @@ func TestFileDeletionNoticeSurvivesTaskGCAndRestart(t *testing.T) {
 	if err := os.WriteFile(file, []byte("image"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if n, err := store.GCFiles(1, media); n != 1 || err != nil {
+	if n, err := store.GCFiles(60, media); n != 1 || err != nil {
 		t.Fatal(n, err)
 	}
 	if _, err := os.Stat(file); !os.IsNotExist(err) {
@@ -112,7 +112,7 @@ func TestDeletionIntentPrecedesRemovalAndResumesWithRetentionDisabled(t *testing
 	// A failed journal write must prevent physical deletion.
 	store.deletions.root = filepath.Join(root, "not-a-directory")
 	_ = os.WriteFile(store.deletions.root, []byte("x"), 0600)
-	if _, err := store.GCFiles(1, media); err == nil {
+	if _, err := store.GCFiles(60, media); err == nil {
 		t.Fatal("journal failure ignored")
 	}
 	if _, err := os.Stat(file); err != nil {

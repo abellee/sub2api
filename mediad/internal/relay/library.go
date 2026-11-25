@@ -48,9 +48,9 @@ func (h *ManagementHandler) handleLibrary(w http.ResponseWriter, r *http.Request
 					_, err := os.Stat(filepath.Join(h.tracker.stager.Root, task.ID, file.ID))
 					item["available"] = err == nil
 					if h.Settings != nil && task.CompletedAt != nil {
-						hours := h.Settings.FileRetentionHours()
-						if hours > 0 && int64(hours) <= int64((1<<63-1)/time.Hour) {
-							item["expires_at"] = task.CompletedAt.Add(time.Duration(hours) * time.Hour)
+						minutes := h.Settings.FileRetentionMinutes()
+						if minutes > 0 && int64(minutes) <= int64((1<<63-1)/time.Minute) {
+							item["expires_at"] = task.CompletedAt.Add(time.Duration(minutes) * time.Minute)
 						}
 					}
 					break
@@ -92,6 +92,8 @@ func (s *MemoryStore) deleteResultFile(taskID, fileID, owner, root string) error
 		task.DeletedFileIDs = append(task.DeletedFileIDs, fileID)
 	}
 	task.Response, task.Result = nil, nil
+	task.ResponseData, task.ResultData = nil, nil
+	task.ResponseSummary = nil
 	if len(task.Files) == 0 {
 		task.FilesAcknowledged = true
 	}

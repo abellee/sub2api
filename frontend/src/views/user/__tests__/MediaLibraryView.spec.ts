@@ -6,7 +6,7 @@ import MediaLibraryView from '../MediaLibraryView.vue'
 import MediaLibraryCard from '@/components/media/MediaLibraryCard.vue'
 import { mediaLibraryAPI, type MediaFile } from '@/api/mediaLibrary'
 
-vi.mock('@/api/mediaLibrary', () => ({ mediaLibraryAPI: { list: vi.fn(), delete: vi.fn() } }))
+vi.mock('@/api/mediaLibrary', () => ({ mediaLibraryAPI: { list: vi.fn(), delete: vi.fn(), retention: vi.fn() } }))
 vi.mock('vue-router', () => ({ onBeforeRouteLeave: vi.fn() }))
 vi.mock('@/components/user/dashboard/studio/DashboardStudioLayout.vue', () => ({ default: { template: '<main><slot /></main>' } }))
 let wrapper: ReturnType<typeof mount>
@@ -26,6 +26,7 @@ async function confirm() {
 }
 beforeEach(() => {
   vi.resetAllMocks()
+  vi.mocked(mediaLibraryAPI.retention).mockResolvedValue({ file_retention_minutes: 60 })
   vi.spyOn(Date, 'now').mockReturnValue(new Date('2026-11-09T01:00:00Z').getTime())
   observers = []
   vi.stubGlobal('IntersectionObserver', class {
@@ -44,6 +45,28 @@ function reachBottom() {
 }
 
 describe('user media library', () => {
+  it('shows current retention even when the library is empty and refreshes it', async () => {
+    await open([])
+    expect(wrapper.get('.library-hint').text()).toBe('文件保留 60 分钟，到期自动清理，请及时保存')
+    vi.mocked(mediaLibraryAPI.retention).mockResolvedValue({ file_retention_minutes: 5 })
+    await wrapper.get('button[aria-label="刷新作品"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('.library-hint').text()).toBe('文件保留 5 分钟，到期自动清理，请及时保存')
+  })
+
+  it('shows permanent retention without an expiration warning', async () => {
+    vi.mocked(mediaLibraryAPI.retention).mockResolvedValue({ file_retention_minutes: 0 })
+    await open([])
+    expect(wrapper.get('.library-hint').text()).toBe('文件永久保留，不会到期自动清理')
+  })
+
+  it('keeps the existing reminder when retention cannot be read', async () => {
+    vi.mocked(mediaLibraryAPI.retention).mockRejectedValue(new Error('offline'))
+    await open([file(0)])
+    expect(wrapper.get('.library-hint').text()).toBe('到期自动清理，请及时保存')
+    expect(wrapper.findAll('.media-card')).toHaveLength(1)
+  })
+
 	 it('updates remaining time and handles expiry and indefinite retention', async () => {
 		const media = file(0)
 		wrapper = mount(MediaLibraryCard, { props: { file: media, now: Date.now(), disabled: false }, global: { plugins: [createI18n({ legacy: false, locale: 'zh', messages: { zh } })] } })

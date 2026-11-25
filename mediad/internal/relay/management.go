@@ -36,6 +36,7 @@ func (h *ManagementHandler) Register(mux *http.ServeMux) {
 	mux.Handle("POST /management/files/delete", h.auth(h.handleLibrary))
 	if h.Settings != nil {
 		h.tracker.runtimeSettings = h.Settings
+		ConfigureMemoryLimit(h.Settings.Active().MemoryLimitMiB)
 		mux.Handle("GET /management/config", h.auth(h.handleConfig))
 		mux.Handle("PUT /management/config", h.auth(h.handleConfig))
 	}
@@ -84,20 +85,24 @@ func (h *ManagementHandler) handleConfig(w http.ResponseWriter, r *http.Request)
 			writeError(w, 400, "config_rejected", err.Error())
 			return
 		}
+		h.tracker.slots.setLimit(h.Settings.Active().MaxConcurrent)
+		ConfigureMemoryLimit(h.Settings.Active().MemoryLimitMiB)
 	}
-	writeJSON(w, 200, h.Settings.View())
+	view := h.Settings.View()
+	view["memory_status"] = memoryStatus()
+	writeJSON(w, 200, view)
 }
 
 func (h *ManagementHandler) auth(next http.HandlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.TrimSpace(h.token) == "" {
+		if strings.TrimSpace(h.managementToken()) == "" {
 			writeError(w, http.StatusServiceUnavailable, "management_disabled",
 				"management token is not configured; management API is disabled")
 			return
 		}
 		auth := r.Header.Get("Authorization")
 		const prefix = "Bearer "
-		if !strings.HasPrefix(auth, prefix) || strings.TrimSpace(strings.TrimPrefix(auth, prefix)) != h.token {
+		if !strings.HasPrefix(auth, prefix) || strings.TrimSpace(strings.TrimPrefix(auth, prefix)) != h.managementToken() {
 			writeError(w, http.StatusUnauthorized, "unauthorized", "valid management bearer token required")
 			return
 		}
@@ -246,6 +251,12 @@ func (h *ManagementHandler) handleCallbackTest(w http.ResponseWriter, r *http.Re
 
 // handleDryRun 组装上游请求但不发送;带 upstream_response 时同时演示提取。
 func (h *ManagementHandler) handleDryRun(w http.ResponseWriter, r *http.Request) {
+	release, err := reserveRequest(r.ContentLength, 32<<20)
+	if err != nil {
+		writeError(w, 503, "memory_busy", err.Error())
+		return
+	}
+	defer release()
 	var in struct {
 		SchemaID         string            `json:"schema_id"`
 		Method           string            `json:"method"`
@@ -354,6 +365,12 @@ func (h *ManagementHandler) handlePending(w http.ResponseWriter, r *http.Request
 
 // 不自动重发不确定请求；管理员可补录上游任务号/原响应，或重试文件与通知交接。
 func (h *ManagementHandler) handleRecover(w http.ResponseWriter, r *http.Request) {
+	release, err := reserveRequest(r.ContentLength, 64<<20)
+	if err != nil {
+		writeError(w, 503, "memory_busy", err.Error())
+		return
+	}
+	defer release()
 	var in struct {
 		UpstreamTaskID string          `json:"upstream_task_id"`
 		Response       json.RawMessage `json:"response"`
@@ -372,6 +389,10 @@ func (h *ManagementHandler) handleRecover(w http.ResponseWriter, r *http.Request
 	task, ok := h.store.Get(id)
 	if !ok {
 		http.NotFound(w, r)
+		return
+	}
+	if task.ErrorCode == "recovery_expired" {
+		writeError(w, 409, "recovery_expired", "verification window expired")
 		return
 	}
 	if task.CallbackState == CallbackConfirmed {
@@ -412,6 +433,7 @@ func (h *ManagementHandler) handleRecover(w http.ResponseWriter, r *http.Request
 	task.CallbackAttempts = 0
 	task.CallbackState = CallbackPending
 	task.ErrorMessage = ""
+	task.ErrorCode = ""
 	if err := h.store.Update(task); err != nil {
 		writeError(w, 503, "store_failed", err.Error())
 		return

@@ -27,10 +27,14 @@ func (h *RelayHandler) waitStandardResult(w http.ResponseWriter, r *http.Request
 	defer ticker.Stop()
 	lastHeartbeat := time.Now()
 	for {
-		if task.Status == StatusFailed || (task.Status == StatusSucceeded && task.CallbackState == CallbackConfirmed) {
+		if task.Status == StatusFailed || task.Status == StatusRecoveryRequired || task.Status == StatusInterrupted || (task.Status == StatusSucceeded && task.CallbackState == CallbackConfirmed) {
 			var ok bool
 			task, ok = h.store.Get(task.ID)
 			if !ok {
+				return
+			}
+			if stream && task.Status == StatusSucceeded && task.CallbackState == CallbackConfirmed && !task.FilesAcknowledged && len(task.Files) > 0 {
+				h.handleStandardResult(w, r, task, format)
 				return
 			}
 			if stream {

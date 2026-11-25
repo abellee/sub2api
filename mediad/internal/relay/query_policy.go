@@ -22,6 +22,9 @@ type taskQueryLimits struct {
 }
 
 func (h *RelayHandler) allowTaskQuery(w http.ResponseWriter, task *Task, content bool) bool {
+	if writeStagingFailure(w, task) {
+		return false
+	}
 	now := h.now()
 	expires := task.CreatedAt.Add(taskQueryLifetime)
 	w.Header().Set("Cache-Control", "private, no-store")
@@ -59,5 +62,18 @@ func (h *RelayHandler) allowTaskQuery(w http.ResponseWriter, task *Task, content
 		return false
 	}
 	w.Header().Set("Retry-After", "3")
+	return true
+}
+
+func writeStagingFailure(w http.ResponseWriter, task *Task) bool {
+	if !task.stagingFailed() && task.ErrorCode != "recovery_expired" {
+		return false
+	}
+	w.Header().Set("Cache-Control", "private, no-store")
+	w.Header().Del("Retry-After")
+	// Existing gateways pass expired queries through without rewriting the stop signal.
+	writeJSON(w, http.StatusGone, map[string]any{"id": task.ID, "task_id": task.ID,
+		"status": "expired", "task_status": StatusFailed, "stop_polling": true, "retryable": false,
+		"error": map[string]any{"type": task.ErrorCode, "message": task.ErrorMessage}})
 	return true
 }

@@ -13,6 +13,7 @@ const { t } = useI18n()
 const files = ref<MediaFile[]>([])
 const loading = ref(false)
 const loadError = ref(false)
+const retentionMinutes = ref<number | null>(null)
 const nextCursor = ref('')
 const hasMore = ref(true)
 const sentinel = ref<HTMLElement>()
@@ -37,6 +38,18 @@ const visible = computed(() => files.value.filter(file => filter.value === 'all'
 const selected = computed(() => visible.value.find(file => file.id === selectedID.value))
 const selectedIndex = computed(() => visible.value.findIndex(file => file.id === selectedID.value))
 const percent = computed(() => total.value ? Math.round(processed.value / total.value * 100) : deleting.value || clearLoadError.value ? 0 : 100)
+const retentionHint = computed(() => retentionMinutes.value === null
+  ? t('mediaLibrary.retentionHint')
+  : retentionMinutes.value === 0
+    ? t('mediaLibrary.retentionForever')
+    : t('mediaLibrary.retentionDurationHint', { minutes: retentionMinutes.value }))
+
+async function loadRetention() {
+  try {
+    const { file_retention_minutes } = await mediaLibraryAPI.retention(controller.signal)
+    retentionMinutes.value = Number.isInteger(file_retention_minutes) && file_retention_minutes >= 0 ? file_retention_minutes : null
+  } catch { retentionMinutes.value = null }
+}
 
 async function loadMore() {
   if (loading.value || deleting.value || !hasMore.value) return
@@ -60,6 +73,7 @@ function refresh(kind = filter.value) {
   selectedID.value = null
   nextCursor.value = ''
   hasMore.value = true
+  void loadRetention()
   void loadMore()
 }
 
@@ -158,7 +172,7 @@ onUnmounted(() => { controller.abort(); observer?.disconnect(); clearInterval(ti
         <div class="library-tabs" role="group" :aria-label="t('mediaLibrary.filter')">
           <button v-for="kind in ['all', 'image', 'video']" :key="kind" :aria-pressed="filter === kind" :disabled="loading || deleting" @click="refresh(kind)">{{ t(`mediaLibrary.${kind}`) }}</button>
         </div>
-        <span class="library-hint"><Icon name="clock" size="sm" />{{ t('mediaLibrary.retentionHint') }}</span>
+        <span class="library-hint"><Icon name="clock" size="sm" />{{ retentionHint }}</span>
       </div>
 
       <div v-if="loadError && !files.length" class="library-state" role="alert"><Icon name="exclamationCircle" size="xl" /><p>{{ t('mediaLibrary.loadError') }}</p><button class="btn btn-secondary" @click="loadMore">{{ t('common.tryAgain') }}</button></div>

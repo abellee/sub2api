@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"mime"
 	"net/http"
 	"net/url"
@@ -74,7 +75,7 @@ func (t *Tracker) prepareDownloadLinks(task *Task) error {
 		task.DownloadToken = hex.EncodeToString(token[:])
 	}
 	for i := range task.Files {
-		task.Files[i].DownloadURL = strings.TrimRight(t.downloadBase, "/") + "/downloads/" + task.ID + "/" + downloadFilename(task.Files[i]) + "?token=" + downloadToken(task, task.Files[i].ID)
+		task.Files[i].DownloadURL = strings.TrimRight(t.downloadBaseURL(), "/") + "/downloads/" + task.ID + "/" + downloadFilename(task.Files[i]) + "?token=" + downloadToken(task, task.Files[i].ID)
 	}
 	if !t.saveResult(task) {
 		return fmt.Errorf("could not persist download links")
@@ -113,6 +114,7 @@ func (h *RelayHandler) handleDownload(w http.ResponseWriter, r *http.Request) {
 }
 
 type ResultStager struct {
+	store    *MemoryStore
 	Root     string
 	MaxBytes int64
 	Client   *http.Client
@@ -250,7 +252,11 @@ func (s *ResultStager) save(ctx context.Context, task *Task, id, ref string) (Re
 			return ResultFile{}, err
 		}
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			_, saveErr := s.store.recordUpstreamError(task, "download", resp, resp.Body, nil)
 			resp.Body.Close()
+			if saveErr != nil {
+				log.Printf("[mediad] persist upstream error %s (download): %v", task.ID, saveErr)
+			}
 			return ResultFile{}, fmt.Errorf("download status %d", resp.StatusCode)
 		}
 		reader = resp.Body
@@ -314,7 +320,7 @@ func (h *RelayHandler) ownedTask(r *http.Request) (*Task, bool) {
 }
 
 func (h *RelayHandler) handleFile(w http.ResponseWriter, r *http.Request) {
-	if h.secret == "" || h.verify(r, nil) != nil {
+	if h.relaySecret() == "" || h.verify(r, nil) != nil {
 		writeError(w, 401, "invalid_signature", "invalid signature")
 		return
 	}
@@ -341,7 +347,7 @@ func (h *RelayHandler) handleFilesAck(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "bad_request", "invalid body")
 		return
 	}
-	if h.secret == "" || h.verify(r, body) != nil {
+	if h.relaySecret() == "" || h.verify(r, body) != nil {
 		writeError(w, 401, "invalid_signature", "invalid signature")
 		return
 	}

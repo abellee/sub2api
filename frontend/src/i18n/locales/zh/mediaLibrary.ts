@@ -4,6 +4,7 @@ export default {
     description: '在这里查看、预览和管理你生成的图片与视频。',
     refresh: '刷新作品', clearAll: '清空全部', filter: '作品类型', all: '全部', image: '图片', video: '视频',
     retentionHint: '到期自动清理，请及时保存', noExpiry: '长期保存', expired: '已到期，等待清理',
+    retentionDurationHint: '文件保留 {minutes} 分钟，到期自动清理，请及时保存', retentionForever: '文件永久保留，不会到期自动清理',
     remaining: '剩余 {time}', days: '{count}天',
     empty: '这里还没有作品', emptyHint: '生成的图片与视频会显示在这里。',
     loadError: '作品加载失败，请重试。', deleteError: '删除未完成，文件仍保留在列表中，请重试。',

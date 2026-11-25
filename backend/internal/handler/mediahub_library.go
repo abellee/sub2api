@@ -28,7 +28,37 @@ type libraryFileState struct {
 func (h *MediaHubController) RegisterUser(user *gin.RouterGroup) {
 	g := user.Group("/media-files")
 	g.GET("", h.listLibrary)
+	g.GET("/retention", h.libraryRetention)
 	g.POST("/delete", h.deleteLibrary)
+}
+
+func (h *MediaHubController) libraryRetention(c *gin.Context) {
+	if _, ok := h.libraryOwner(c); !ok {
+		return
+	}
+	s := h.settings.Active()
+	client := &mediahub.ManagementClient{BaseURL: s.MediadBaseURL, Token: s.ManagementToken, HTTP: &http.Client{Timeout: 25 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
+	raw, err := client.Request(c.Request.Context(), http.MethodGet, "/management/config", nil)
+	var out struct {
+		Active struct {
+			Minutes *int64 `json:"file_retention_minutes"`
+			Hours   *int64 `json:"file_retention_hours"`
+		} `json:"active"`
+	}
+	if err != nil || json.Unmarshal(raw, &out) != nil {
+		response.Error(c, 503, "文件保留时长暂不可用")
+		return
+	}
+	minutes := out.Active.Minutes
+	if minutes == nil && out.Active.Hours != nil && *out.Active.Hours >= 0 && *out.Active.Hours <= (1<<63-1)/60 {
+		value := *out.Active.Hours * 60
+		minutes = &value
+	}
+	if minutes == nil || *minutes < 0 {
+		response.Error(c, 503, "文件保留时长暂不可用")
+		return
+	}
+	response.Success(c, gin.H{"file_retention_minutes": *minutes})
 }
 
 func (h *MediaHubController) libraryStates(ctx context.Context, userID int64, records []mediahub.ResultLink, remove bool) ([]libraryFileState, error) {

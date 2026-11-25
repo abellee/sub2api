@@ -47,7 +47,7 @@ type Tracker struct {
 	configPath       string
 	activeMu         sync.Mutex
 	active           map[string]bool
-	slots            chan struct{}
+	slots            taskSlots
 	wg               sync.WaitGroup
 	createTimeout    time.Duration
 	downloadAttempts int
@@ -58,7 +58,7 @@ type Tracker struct {
 
 // ConfigureRuntime is called before serving requests or resuming tasks.
 func (t *Tracker) ConfigureRuntime(concurrent, pollSeconds, maxPollSeconds, downloadSeconds, attempts int) {
-	t.slots = make(chan struct{}, concurrent)
+	t.slots.setLimit(concurrent)
 	t.interval = time.Duration(pollSeconds) * time.Second
 	t.maxPoll = time.Duration(maxPollSeconds) * time.Second
 	t.downloadAttempts = attempts
@@ -86,7 +86,7 @@ func NewTracker(store *MemoryStore, schemas func(id string) (*Schema, bool), cli
 		logger:   logger,
 		maxPoll:  30 * time.Minute,
 		interval: 5 * time.Second,
-		active:   map[string]bool{}, slots: make(chan struct{}, 8),
+		active:   map[string]bool{},
 	}
 }
 
@@ -111,7 +111,7 @@ func (t *Tracker) SetCallback(cfg CallbackConfig) error {
 }
 
 func (t *Tracker) ConfigureFiles(root string, maxBytes int64) {
-	t.stager = &ResultStager{Root: root, MaxBytes: maxBytes, Client: &http.Client{Timeout: 120 * time.Second}}
+	t.stager = &ResultStager{Root: root, MaxBytes: maxBytes, store: t.store, Client: &http.Client{Timeout: 120 * time.Second}}
 }
 
 func (t *Tracker) LoadCallback(path string) error {
@@ -147,12 +147,10 @@ func (t *Tracker) Track(task *Task) {
 	go func() {
 		defer t.wg.Done()
 		defer func() { t.activeMu.Lock(); delete(t.active, task.ID); t.activeMu.Unlock() }()
-		select {
-		case t.slots <- struct{}{}:
-		case <-t.ctx.Done():
+		if err := t.slots.acquire(t.ctx); err != nil {
 			return
 		}
-		defer func() { <-t.slots }()
+		defer t.slots.release()
 		t.run(task.ID)
 	}()
 }
@@ -174,7 +172,6 @@ func (t *Tracker) ResumeAll() int {
 }
 
 func (t *Tracker) trackLoop(taskID string) {
-	deadlineDefault := t.maxPoll
 	for {
 		if t.ctx.Err() != nil {
 			return
@@ -189,8 +186,11 @@ func (t *Tracker) trackLoop(taskID string) {
 			return
 		}
 
-		interval := t.interval
-		deadline := deadlineDefault
+		var settingsChanged <-chan struct{}
+		if t.runtimeSettings != nil {
+			settingsChanged = t.runtimeSettings.Changed()
+		}
+		interval, deadline := t.pollSettings()
 		if q := schema.Upstream.Query; q != nil {
 			if q.PollIntervalSeconds > 0 {
 				interval = time.Duration(q.PollIntervalSeconds) * time.Second
@@ -203,7 +203,7 @@ func (t *Tracker) trackLoop(taskID string) {
 		if started.IsZero() {
 			started = task.CreatedAt
 		}
-		status, body, err := t.pollOnce(task, schema)
+		status, body, release, err := t.pollOnce(task, schema)
 		if err == nil {
 			switch ClassifyStatus(schema, status) {
 			case "succeeded":
@@ -212,19 +212,31 @@ func (t *Tracker) trackLoop(taskID string) {
 				if uerr == nil {
 					usageOut = &Usage{Quantity: usage, Unit: usageUnit(schema)}
 				}
-				task.Response = append([]byte(nil), body...)
-				t.complete(task, StatusSucceeded, usageOut, ExtractResult(schema, body), "")
+				task.Response = body
+				task.Result = ExtractResult(schema, body)
+				saved := t.saveResult(task)
+				body = nil
+				release()
+				if saved {
+					t.complete(task, StatusSucceeded, usageOut, nil, "")
+				}
 				return
 			case "failed":
 				t.complete(task, StatusFailed, nil, ExtractResult(schema, body),
 					firstNonEmpty(ExtractErrorMessage(schema, body), "upstream task failed"))
+				release()
 				return
 			default:
 				// 仍在进行,继续轮询。
 			}
 		}
+		body = nil
+		release()
 		// 停机可能超过原等待上限，恢复时先查一次，不能丢掉已完成的结果。
 		if time.Since(started) > deadline {
+			if err != nil {
+				task.PrivateCause = "poll timeout; last upstream query: " + upstreamCause(err)
+			}
 			t.recovery(task, "poll_timeout: result is unknown; resume query after checking upstream")
 			return
 		}
@@ -234,22 +246,28 @@ func (t *Tracker) trackLoop(taskID string) {
 		select {
 		case <-t.ctx.Done():
 			return
+		case <-settingsChanged:
 		case <-time.After(sleep):
 		}
 	}
 }
 
 // pollOnce 查询一次上游任务状态,返回(状态串, 响应体, 错误)。
-func (t *Tracker) pollOnce(task *Task, schema *Schema) (string, []byte, error) {
+func (t *Tracker) pollOnce(task *Task, schema *Schema) (string, []byte, func(), error) {
+	return t.pollOnceContext(t.ctx, task, schema)
+}
+
+func (t *Tracker) pollOnceContext(parent context.Context, task *Task, schema *Schema) (string, []byte, func(), error) {
+	task.ErrorArchive = "-"
 	q := schema.Upstream.Query
 	if q == nil {
-		return "", nil, fmt.Errorf("schema %q has no query spec", task.SchemaID)
+		return "", nil, func() {}, fmt.Errorf("schema %q has no query spec", task.SchemaID)
 	}
 	endpoint := BuildQueryURL(task.UpstreamURL, q.Path, task.UpstreamTaskID)
 
-	req, err := http.NewRequestWithContext(t.ctx, strings.ToUpper(firstNonEmpty(q.Method, http.MethodGet)), endpoint, nil)
+	req, err := http.NewRequestWithContext(parent, strings.ToUpper(firstNonEmpty(q.Method, http.MethodGet)), endpoint, nil)
 	if err != nil {
-		return "", nil, err
+		return "", nil, func() {}, err
 	}
 	for name, tmpl := range schema.Request.Credential {
 		req.Header.Set(name, renderTaskTemplate(tmpl, task))
@@ -261,27 +279,27 @@ func (t *Tracker) pollOnce(task *Task, schema *Schema) (string, []byte, error) {
 	if q.TimeoutSeconds > 0 {
 		timeout = time.Duration(q.TimeoutSeconds) * time.Second
 	}
-	ctx, cancel := context.WithTimeout(t.ctx, timeout)
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 	req = req.WithContext(ctx)
 
 	resp, err := t.client.Do(req)
 	if err != nil {
-		return "", nil, err
+		return "", nil, func() {}, err
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 16<<20))
+	body, release, err := t.bufferedResponse(parent, task, "query", resp, 16<<20)
 	if err != nil {
-		return "", nil, err
+		return "", nil, release, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", body, fmt.Errorf("upstream query status %d", resp.StatusCode)
+		return "", body, release, fmt.Errorf("upstream query status %d", resp.StatusCode)
 	}
 	status, _, err := ExtractStatus(schema, body)
 	if err != nil {
-		return "", body, err
+		return "", body, release, err
 	}
-	return status, body, nil
+	return status, body, release, nil
 }
 
 // complete 落终态并投递回调。usage 传 nil 表示失败/不计费。
@@ -321,7 +339,13 @@ func (t *Tracker) deliver(task *Task) {
 	// Older completed jobs can be repaired without submitting generation again.
 	if task.Status == StatusSucceeded && task.Usage == nil {
 		if schema, ok := t.taskSchema(task); ok {
-			if quantity, unit, err := extractTaskUsage(schema, task, task.Response); err == nil && quantity > 0 {
+			quantity, unit, err := extractTaskUsage(schema, task, t.store.responseMetadata(task))
+			if schema.Response.Usage.Quantity == "$result_files" && len(task.Files) > 0 {
+				quantity = float64(len(task.Files))
+				unit = usageUnit(schema)
+				err = nil
+			}
+			if err == nil && quantity > 0 {
 				task.Usage = &Usage{Quantity: quantity, Unit: unit}
 				if !t.saveResult(task) {
 					return
@@ -496,20 +520,22 @@ func BuildCallbackPayload(task *Task) ([]byte, error) {
 		}
 	}
 	payload := map[string]any{
-		"event":            CallbackEventTaskCompleted,
-		"task_id":          task.ID,
-		"upstream_task_id": task.UpstreamTaskID,
-		"schema_id":        task.SchemaID,
-		"model":            task.Model,
-		"user_id":          task.UserID,
-		"key_id":           task.KeyID,
-		"group_id":         task.GroupID,
-		"status":           task.Status,
-		"files":            task.Files,
-		"parameters":       task.Parameters,
-		"result":           result,
-		"error_message":    task.ErrorMessage,
-		"created_at":       task.CreatedAt.UTC().Format(time.RFC3339Nano),
+		"event":             CallbackEventTaskCompleted,
+		"inbound_endpoint":  task.InboundEndpoint,
+		"upstream_endpoint": task.UpstreamEndpoint,
+		"task_id":           task.ID,
+		"upstream_task_id":  task.UpstreamTaskID,
+		"schema_id":         task.SchemaID,
+		"model":             task.Model,
+		"user_id":           task.UserID,
+		"key_id":            task.KeyID,
+		"group_id":          task.GroupID,
+		"status":            task.Status,
+		"files":             task.Files,
+		"parameters":        task.Parameters,
+		"result":            result,
+		"error_message":     task.ErrorMessage,
+		"created_at":        task.CreatedAt.UTC().Format(time.RFC3339Nano),
 	}
 	if task.CompletedAt != nil {
 		payload["completed_at"] = task.CompletedAt.UTC().Format(time.RFC3339Nano)

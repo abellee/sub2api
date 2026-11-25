@@ -16,7 +16,7 @@ func TestFileRetentionProtectsUnfinishedResultsAndPersistsExpiry(t *testing.T) {
 		t.Fatal(err)
 	}
 	media := filepath.Join(root, "media")
-	old, recent := time.Now().Add(-73*time.Hour), time.Now()
+	old, recent := time.Now().Add(-6*time.Minute), time.Now().Add(-4*time.Minute)
 	for _, tc := range []struct {
 		id, status, callback string
 		completed            *time.Time
@@ -45,7 +45,7 @@ func TestFileRetentionProtectsUnfinishedResultsAndPersistsExpiry(t *testing.T) {
 	if n, err := store.GCFiles(int(^uint(0)>>1), media); err != nil || n != 0 {
 		t.Fatalf("large retention overflowed: %d %v", n, err)
 	}
-	if n, err := store.GCFiles(72, media); err != nil || n != 1 {
+	if n, err := store.GCFiles(5, media); err != nil || n != 1 {
 		t.Fatalf("cleanup: %d %v", n, err)
 	}
 	if _, err := os.Stat(filepath.Join(media, "expired")); !os.IsNotExist(err) {

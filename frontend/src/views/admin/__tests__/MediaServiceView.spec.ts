@@ -64,17 +64,18 @@ describe('Media service administration', () => {
     expect(wrapper.get('[role="alert"]').text()).toBe('service offline')
     expect(wrapper.get('form button').attributes('disabled')).toBeDefined()
   })
-  it('saves zero file retention and shows changes as immediately applied', async () => {
-    const runtime = { settings: { file_retention_hours: 72 }, active: { file_retention_hours: 72 }, restart_required: false, pending_fields: [] }
+  it.each([0, 5])('saves file retention of %s minutes and applies it immediately', async (minutes) => {
+    const runtime = { settings: { file_retention_minutes: 72 }, active: { file_retention_minutes: 72 }, restart_required: false, pending_fields: [] }
     api.agent.mockResolvedValue(runtime)
     const wrapper = mountView(); await flushPromises()
     await wrapper.get('[data-testid="tab-runtime"]').trigger('click'); await flushPromises()
-    const input = wrapper.get('[data-testid="runtime-file_retention_hours"]')
-    expect(input.exists()).toBe(true)
+    const input = wrapper.get('[data-testid="runtime-file_retention_minutes"]')
+    expect((input.element as HTMLInputElement).value).toBe('72')
+    expect(input.attributes('min')).toBe('0')
     expect(input.attributes('max')).toBeUndefined()
-    await input.setValue(0)
+    await input.setValue(minutes)
     await wrapper.get('form').trigger('submit'); await flushPromises()
-    expect(api.agent).toHaveBeenCalledWith('PUT', '/config', expect.objectContaining({ file_retention_hours: 0 }))
+    expect(api.agent).toHaveBeenCalledWith('PUT', '/config', expect.objectContaining({ file_retention_minutes: minutes }))
     expect(wrapper.get('[role="status"]').text()).toBe('mediaService.saved')
   })
   it.each([0, 4096])('saves concurrency above 128 and memory budget %s online', async (memory) => {

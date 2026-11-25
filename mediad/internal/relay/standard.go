@@ -1,20 +1,24 @@
 package relay
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"net/http"
-	"os"
-	"path/filepath"
 )
 
 // Standard results become readable only after the main site confirms billing.
 func (h *RelayHandler) handleStandardResult(w http.ResponseWriter, r *http.Request, task *Task, format string) {
+	if format == "error_context" {
+		h.writeErrorContext(w, task)
+		return
+	}
+	if writeStagingFailure(w, task) {
+		return
+	}
 	if format == "state" {
 		writeJSON(w, 200, publicTaskView(task))
 		return
 	}
-	if format != "openai_url" && format != "openai_b64_json" && format != "gemini" && format != "grok_video" {
+	if format != "openai_url" && format != "openai_b64_json" && format != "gemini" && format != "grok_video" && format != "openai_sse" && format != "openai_edit_sse" {
 		writeError(w, 400, "invalid_format", "unsupported result format")
 		return
 	}
@@ -22,8 +26,18 @@ func (h *RelayHandler) handleStandardResult(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusGone, "result_expired", "media files have expired")
 		return
 	}
+	if task.Status == StatusRecoveryRequired || task.Status == StatusInterrupted {
+		writeError(w, 502, "generation_unavailable", "The media task needs verification before it can be retried.")
+		return
+	}
 	if task.Status == StatusFailed {
-		if (task.ResponseStatus >= 400 || (format == "gemini" && task.ResponseStatus == 200)) && json.Valid(task.Response) {
+		release, err := h.store.errorResponse(task)
+		if err != nil {
+			writeError(w, 503, "memory_busy", err.Error())
+			return
+		}
+		defer release()
+		if task.ResponseStatus >= 400 && json.Valid(task.Response) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(task.ResponseStatus)
 			_, _ = w.Write(task.Response)
@@ -41,7 +55,7 @@ func (h *RelayHandler) handleStandardResult(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	var out map[string]any
-	_ = json.Unmarshal(task.Response, &out)
+	_ = json.Unmarshal(h.store.responseMetadata(task), &out)
 	if out == nil {
 		out = map[string]any{}
 	}
@@ -112,18 +126,8 @@ func (h *RelayHandler) handleStandardResult(w http.ResponseWriter, r *http.Reque
 				}
 			}
 			item["url"] = formattedDownloadURL(file)
-			if format == "openai_b64_json" {
-				if h.tracker.stager == nil {
-					writeError(w, 503, "storage_unavailable", "result storage unavailable")
-					return
-				}
-				raw, err := os.ReadFile(filepath.Join(h.tracker.stager.Root, task.ID, file.ID))
-				if err != nil {
-					writeError(w, 503, "file_unavailable", "saved result unavailable")
-					return
-				}
+			if format == "openai_b64_json" || format == "openai_sse" || format == "openai_edit_sse" {
 				delete(item, "url")
-				item["b64_json"] = base64.StdEncoding.EncodeToString(raw)
 				item["download_url"] = formattedDownloadURL(file)
 			}
 			data = append(data, item)
@@ -132,6 +136,10 @@ func (h *RelayHandler) handleStandardResult(w http.ResponseWriter, r *http.Reque
 		if _, ok := out["created"]; !ok {
 			out["created"] = task.CreatedAt.Unix()
 		}
+	}
+	if format == "openai_b64_json" || format == "openai_sse" || format == "openai_edit_sse" {
+		h.streamImageResult(w, r, task, format, out)
+		return
 	}
 	writeJSON(w, 200, out)
 }
