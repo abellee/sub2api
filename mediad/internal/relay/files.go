@@ -101,12 +101,23 @@ func (h *RelayHandler) handleDownload(w http.ResponseWriter, r *http.Request) {
 				writeError(w, http.StatusGone, "result_expired", "media file has expired")
 				return
 			}
+			files, release, err := h.store.openDownloads(h.tracker.stager.Root, task, []ResultFile{meta})
+			if err != nil {
+				http.NotFound(w, r)
+				return
+			}
+			defer release()
+			info, err := files[0].Stat()
+			if err != nil {
+				http.NotFound(w, r)
+				return
+			}
 			w.Header().Set("Content-Type", meta.ContentType)
 			w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": downloadFilename(meta)}))
 			w.Header().Set("Cache-Control", "private, no-store")
 			w.Header().Set("Referrer-Policy", "no-referrer")
 			w.Header().Set("X-Content-Type-Options", "nosniff")
-			http.ServeFile(w, r, filepath.Join(h.tracker.stager.Root, task.ID, meta.ID))
+			http.ServeContent(w, r, downloadFilename(meta), info.ModTime(), files[0])
 			return
 		}
 	}
@@ -333,8 +344,19 @@ func (h *RelayHandler) handleFile(w http.ResponseWriter, r *http.Request) {
 		if meta.ID != r.PathValue("fileID") {
 			continue
 		}
+		files, release, err := h.store.openDownloads(h.tracker.stager.Root, task, []ResultFile{meta})
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		defer release()
+		info, err := files[0].Stat()
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
 		w.Header().Set("Content-Type", meta.ContentType)
-		http.ServeFile(w, r, filepath.Join(h.tracker.stager.Root, task.ID, meta.ID))
+		http.ServeContent(w, r, downloadFilename(meta), info.ModTime(), files[0])
 		return
 	}
 	http.NotFound(w, r)

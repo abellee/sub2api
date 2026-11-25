@@ -1,6 +1,7 @@
 package relay
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -21,6 +22,9 @@ func (s *MemoryStore) gcImagesForDisk(threshold int, root string, usage func(str
 		return 0, fmt.Errorf("invalid disk usage threshold")
 	}
 	removed := 0
+	s.mu.Lock()
+	s.pruneDownloads()
+	s.mu.Unlock()
 	// Finish durable deletion intents even if the setting changed or the service restarted.
 	s.deletions.mu.Lock()
 	var intents []FileDeletionEvent
@@ -32,6 +36,9 @@ func (s *MemoryStore) gcImagesForDisk(threshold int, root string, usage func(str
 	s.deletions.mu.Unlock()
 	for _, event := range intents {
 		if err := s.deleteDiskImage(root, event); err != nil {
+			if errors.Is(err, errDownloadProtected) {
+				continue
+			}
 			return removed, err
 		}
 		removed++
@@ -72,6 +79,7 @@ func (s *MemoryStore) gcImagesForDisk(threshold int, root string, usage func(str
 		return candidates[i].completed.Before(candidates[j].completed)
 	})
 	for _, candidate := range candidates {
+		attempted := make(map[string]bool)
 		for {
 			// Recheck the actual filesystem after every image; never estimate space from file sizes.
 			over, err := overLimit()
@@ -83,7 +91,7 @@ func (s *MemoryStore) gcImagesForDisk(threshold int, root string, usage func(str
 			var event FileDeletionEvent
 			if diskCleanupEligible(task) {
 				for _, file := range task.Files {
-					if imageFile(file) {
+					if imageFile(file) && !attempted[file.ID] && !s.fileDownloadProtected(task.ID, file.ID) {
 						event = newDeletionEvent(task, []string{file.ID}, time.Now(), "disk_pressure")
 						break
 					}
@@ -93,7 +101,11 @@ func (s *MemoryStore) gcImagesForDisk(threshold int, root string, usage func(str
 			if event.EventID == "" {
 				break
 			}
+			attempted[event.FileIDs[0]] = true
 			if err := s.deleteDiskImage(root, event); err != nil {
+				if errors.Is(err, errDownloadProtected) {
+					continue
+				}
 				return removed, err
 			}
 			removed++
@@ -127,6 +139,9 @@ func (s *MemoryStore) deleteDiskImage(root string, event FileDeletionEvent) erro
 		return fmt.Errorf("invalid media task directory")
 	}
 	id := event.FileIDs[0]
+	if s.fileDownloadProtected(event.TaskID, id) {
+		return errDownloadProtected
+	}
 	prev := s.tasks[event.TaskID]
 	if prev == nil {
 		// Task GC may run after metadata was saved but before the deletion notice was marked ready.

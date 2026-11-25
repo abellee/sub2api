@@ -80,6 +80,9 @@ func (s *MemoryStore) deleteResultFile(taskID, fileID, owner, root string) error
 	if fileID == "" || fileID == "." || fileID == ".." || filepath.Base(fileID) != fileID {
 		return fmt.Errorf("invalid media path")
 	}
+	if s.fileDownloadProtected(taskID, fileID) {
+		return errDownloadProtected
+	}
 	for _, name := range []string{fileID, fileID + ".json"} {
 		if err := os.Remove(filepath.Join(root, taskID, name)); err != nil && !os.IsNotExist(err) {
 			return err

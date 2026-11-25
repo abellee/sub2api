@@ -7,31 +7,12 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"sort"
 	"time"
 )
 
 // Every result image goes from the saved file to the client through a small buffer.
-func (h *RelayHandler) streamImageResult(w http.ResponseWriter, r *http.Request, task *Task, format string, out map[string]any) {
-	if h.tracker.stager == nil {
-		writeError(w, 503, "storage_unavailable", "result storage unavailable")
-		return
-	}
-	files := make([]*os.File, 0, len(task.Files))
-	defer func() {
-		for _, f := range files {
-			f.Close()
-		}
-	}()
-	for _, meta := range task.Files {
-		f, err := os.Open(filepath.Join(h.tracker.stager.Root, task.ID, meta.ID))
-		if err != nil {
-			writeError(w, 503, "file_unavailable", "saved result unavailable")
-			return
-		}
-		files = append(files, f)
-	}
+func (h *RelayHandler) streamImageResult(w http.ResponseWriter, r *http.Request, files []*os.File, format string, out map[string]any) {
 	items, _ := out["data"].([]map[string]any)
 	stream := format == "openai_sse" || format == "openai_edit_sse"
 	controller := http.NewResponseController(w)

@@ -185,6 +185,9 @@ func TestBase64ResultStreamsWithoutImageAllocation(t *testing.T) {
 	media := t.TempDir()
 	tracker.ConfigureFiles(media, 64<<20)
 	task := &Task{ID: "large", Status: StatusSucceeded, CallbackState: CallbackConfirmed, CreatedAt: time.Now(), Files: []ResultFile{{ID: "f0000", ContentType: "image/png", DownloadURL: "https://media.example/image"}}}
+	if err := store.Create(task); err != nil {
+		t.Fatal(err)
+	}
 	os.MkdirAll(filepath.Join(media, task.ID), 0700)
 	f, err := os.Create(filepath.Join(media, task.ID, "f0000"))
 	if err != nil {

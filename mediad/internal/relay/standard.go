@@ -3,6 +3,7 @@ package relay
 import (
 	"encoding/json"
 	"net/http"
+	"os"
 )
 
 // Standard results become readable only after the main site confirms billing.
@@ -53,6 +54,21 @@ func (h *RelayHandler) handleStandardResult(w http.ResponseWriter, r *http.Reque
 		}
 		writeError(w, 409, "result_pending", "result or settlement is pending")
 		return
+	}
+	var files []*os.File
+	if format == "openai_b64_json" || format == "openai_sse" || format == "openai_edit_sse" {
+		if h.tracker.stager == nil {
+			writeError(w, 503, "storage_unavailable", "result storage unavailable")
+			return
+		}
+		var release func()
+		var err error
+		files, release, err = h.store.openDownloads(h.tracker.stager.Root, task, task.Files)
+		if err != nil {
+			writeError(w, 503, "file_unavailable", "saved result unavailable")
+			return
+		}
+		defer release()
 	}
 	var out map[string]any
 	_ = json.Unmarshal(h.store.responseMetadata(task), &out)
@@ -138,7 +154,7 @@ func (h *RelayHandler) handleStandardResult(w http.ResponseWriter, r *http.Reque
 		}
 	}
 	if format == "openai_b64_json" || format == "openai_sse" || format == "openai_edit_sse" {
-		h.streamImageResult(w, r, task, format, out)
+		h.streamImageResult(w, r, files, format, out)
 		return
 	}
 	writeJSON(w, 200, out)

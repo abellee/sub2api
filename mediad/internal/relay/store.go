@@ -108,6 +108,7 @@ type MemoryStore struct {
 	onDirty   func()
 	root      string
 	deletions *deletionQueue
+	downloads map[string]map[string]*downloadProtection
 }
 
 // NewMemoryStore 创建内存任务表。
@@ -115,7 +116,7 @@ func NewMemoryStore(onDirty func()) *MemoryStore {
 	if onDirty == nil {
 		onDirty = func() {}
 	}
-	return &MemoryStore{tasks: map[string]*Task{}, onDirty: onDirty, deletions: &deletionQueue{items: map[string]deletionNotice{}}}
+	return &MemoryStore{tasks: map[string]*Task{}, onDirty: onDirty, deletions: &deletionQueue{items: map[string]deletionNotice{}}, downloads: map[string]map[string]*downloadProtection{}}
 }
 
 func (s *MemoryStore) Create(task *Task) error {
@@ -244,6 +245,9 @@ func (s *MemoryStore) ListProcessing() []*Task {
 func (s *MemoryStore) Delete(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.taskDownloadProtected(id) {
+		return errDownloadProtected
+	}
 	if s.root != "" {
 		if err := os.Remove(filepath.Join(s.root, id+".json")); err != nil && !os.IsNotExist(err) {
 			return err
@@ -261,8 +265,12 @@ func (s *MemoryStore) Delete(id string) error {
 func (s *MemoryStore) GCFiles(minutes int, root string) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.pruneDownloads()
 	removed := 0
 	for id, prev := range s.tasks {
+		if s.taskDownloadProtected(id) {
+			continue
+		}
 		if prev.CallbackState != CallbackConfirmed || prev.FilesDeletedAt != nil || prev.Status != StatusSucceeded || prev.CompletedAt == nil || (!prev.FilesAcknowledged && !s.deletions.hasRetentionTask(id) && (minutes <= 0 || time.Since(*prev.CompletedAt)/time.Minute < time.Duration(minutes))) {
 			continue
 		}
@@ -314,10 +322,11 @@ func (s *MemoryStore) GCFiles(minutes int, root string) (int, error) {
 func (s *MemoryStore) GC(ttl time.Duration) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.pruneDownloads()
 	removed := 0
 	for id, t := range s.tasks {
 		// 未交给主站的结果不能因超时被清理。
-		if t.CallbackState != CallbackConfirmed || !t.FilesAcknowledged {
+		if t.CallbackState != CallbackConfirmed || !t.FilesAcknowledged || s.taskDownloadProtected(id) {
 			continue
 		}
 		ref := t.CompletedAt
