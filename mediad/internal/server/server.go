@@ -92,6 +92,10 @@ func (s *Server) Run(ctx context.Context) error {
 	defer s.tracker.Stop()
 	errCh := make(chan error, 1)
 	go func() { errCh <- s.httpServer.ListenAndServe() }()
+	return s.runMaintenance(ctx, errCh)
+}
+
+func (s *Server) runMaintenance(ctx context.Context, errCh <-chan error) error {
 	changed := s.settings.Changed()
 	gc := time.NewTicker(time.Duration(s.settings.Active().GCMinutes) * time.Minute)
 	defer gc.Stop()
@@ -108,12 +112,12 @@ func (s *Server) Run(ctx context.Context) error {
 			gc.Reset(time.Duration(s.settings.Active().GCMinutes) * time.Minute)
 		case <-expiry.C:
 			s.tracker.ExpireRecovery()
-		case <-gc.C:
 			if n, err := s.store.GCFiles(s.settings.FileRetentionMinutes(), s.settings.Active().ResultDir); err != nil {
 				s.logger.Printf("[mediad] file cleanup: %v", err)
 			} else if n > 0 {
 				s.logger.Printf("[mediad] expired media cleaned: %d tasks", n)
 			}
+		case <-gc.C:
 			s.store.GC(time.Duration(s.settings.Active().TaskRetentionHours) * time.Hour)
 		case err := <-errCh:
 			if errors.Is(err, http.ErrServerClosed) {
