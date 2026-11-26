@@ -190,7 +190,10 @@ func (s *MemoryStore) loadPayloadFields(task *Task, response, result bool) error
 }
 func compactResponse(raw []byte) []byte { return compactResponseReader(bytes.NewReader(raw)) }
 func compactResponseReader(reader io.Reader) []byte {
-	out := &limitedJSON{limit: 64 << 10}
+	return compactResponseReaderLimit(reader, 64<<10)
+}
+func compactResponseReaderLimit(reader io.Reader, limit int) []byte {
+	out := &limitedJSON{limit: limit}
 	parser := jsonStream{r: bufio.NewReaderSize(reader, 64<<10)}
 	parser.visit = func(path []string, p *jsonStream, w io.Writer) (bool, error) {
 		if len(path) == 0 {
@@ -316,11 +319,14 @@ func (s *MemoryStore) cleanPayloads(task *Task) error {
 }
 
 func (s *MemoryStore) responseMetadata(task *Task) []byte {
+	return s.responseMetadataLimit(task, 64<<10)
+}
+func (s *MemoryStore) responseMetadataLimit(task *Task, limit int) []byte {
 	if len(task.ResponseSummary) > 0 {
 		return task.ResponseSummary
 	}
 	if len(task.Response) > 0 {
-		return compactResponse(task.Response)
+		return compactResponseReaderLimit(bytes.NewReader(task.Response), limit)
 	}
 	if task.ResponseData == nil {
 		return nil
@@ -333,7 +339,7 @@ func (s *MemoryStore) responseMetadata(task *Task) []byte {
 	if _, e = f.Seek(1, io.SeekStart); e != nil {
 		return nil
 	}
-	return compactResponseReader(base64.NewDecoder(base64.StdEncoding, io.LimitReader(f, task.ResponseData.Size-2)))
+	return compactResponseReaderLimit(base64.NewDecoder(base64.StdEncoding, io.LimitReader(f, task.ResponseData.Size-2)), limit)
 }
 func (s *MemoryStore) errorResponse(task *Task) (func(), error) {
 	if len(task.Response) > 0 || task.ResponseData == nil {

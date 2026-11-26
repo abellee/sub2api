@@ -70,8 +70,19 @@ func (h *RelayHandler) handleStandardResult(w http.ResponseWriter, r *http.Reque
 		}
 		defer release()
 	}
+	metadata := h.store.responseMetadata(task)
+	if format == "gemini" && len(metadata) == 0 {
+		// Large thought signatures must survive; only the cached summary is limited to 64 KiB.
+		release, err := reserveSavedResults(r.Context(), task, true)
+		if err != nil {
+			writeError(w, 503, "memory_busy", err.Error())
+			return
+		}
+		defer release()
+		metadata = h.store.responseMetadataLimit(task, 128<<20)
+	}
 	var out map[string]any
-	_ = json.Unmarshal(h.store.responseMetadata(task), &out)
+	_ = json.Unmarshal(metadata, &out)
 	if out == nil {
 		out = map[string]any{}
 	}
