@@ -69,6 +69,7 @@ export default {
       claim: 'Check in · +{points} points', claimed: 'Checked in today', success: 'Checked in! Earned {points} points',
       credited: 'Today’s check-in reward has been credited', encouragement: 'A little every day adds up',
       rewardHint: 'Check in for 7 consecutive days. Each day awards the points shown.',
+      multiplierLabels: { 1: '1×', 2: 'Double', 3: '3×', 4: '4×', 5: '5×', 6: '6×', 7: '7×', 8: '8×', 9: '9×', 10: '10×' },
       comeTomorrow: 'More points tomorrow', todayPoints: 'Claim {points} points today', newCycle: 'A new cycle starts tomorrow',
       rules: 'Resets at 00:00 Beijing time · Miss a day to restart · Repeats every 7 days',
       loadError: 'Check-in is temporarily unavailable. Please try again later.', claimError: 'Unable to confirm the result. Retry safely without duplicate rewards.',
@@ -92,6 +93,7 @@ export default {
     pointsAdmin: {
       description: 'Configure daily check-in rewards. Recharge points from the user management recharge dialog.',
       range: 'Set each day’s reward separately, from 1 to 2,000,000 whole points per day.',
+      multiplierLabel: 'Day {day} reward multiplier', dailyTotal: 'Final reward: {points} points',
       cycleTotal: 'A complete cycle earns {points} points', effectiveHint: 'Changes apply to future check-ins. Previously credited points stay the same.',
       loadError: 'Unable to load points settings. Please try again later.', saveError: 'Unable to save points settings. Please retry.',
       rechargeCategory: 'Recharge category', rechargeAmount: 'Points to add', newPoints: 'Points after recharge',

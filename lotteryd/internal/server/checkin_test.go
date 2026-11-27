@@ -42,6 +42,11 @@ func TestPointsRoutesAuthorizationAndInputValidation(t *testing.T) {
 		`{"daily_checkin_rewards":[10,10,10,10,10,10,1.5]}`, `{"daily_checkin_rewards":[10,10,10,10,10,10,2000001]}`,
 		`{"daily_checkin_rewards":[10,10,10,10,10,10,null]}`, `{"daily_checkin_rewards":[10,10,10,10,10,10,"10"]}`,
 		`{"daily_checkin_rewards":[10,10,10,10,10,10,10],"unknown":1}`,
+		`{"daily_checkin_rewards":[10,10,10,10,10,10,10],"daily_checkin_multipliers":[]}`,
+		`{"daily_checkin_rewards":[10,10,10,10,10,10,10],"daily_checkin_multipliers":[1,1,1,1,1,1]}`,
+		`{"daily_checkin_rewards":[10,10,10,10,10,10,10],"daily_checkin_multipliers":[1,1,1,1,1,1,0]}`,
+		`{"daily_checkin_rewards":[10,10,10,10,10,10,10],"daily_checkin_multipliers":[1,1,1,1,1,1,11]}`,
+		`{"daily_checkin_rewards":[10,10,10,10,10,10,10],"daily_checkin_multipliers":[1,1,1,1,1,1,1.5]}`,
 	} {
 		r := httptest.NewRequest("PUT", "/v1/admin/points/settings", strings.NewReader(body))
 		r.Header.Set("Authorization", "Bearer "+signJWT("checkin-test", 2, "admin"))
@@ -72,27 +77,30 @@ func TestPointsCheckInSettingsAndAdminRecharge(t *testing.T) {
 	defer upstream.Close()
 	e.app.Sub2API = sub2api.NewClient(upstream.URL, "")
 	rewards := []int64{30, 18, 50, 12, 40, 7, 9}
-	settings := mustJSON(t, e.req(t, "PUT", "/v1/admin/points/settings", admin, map[string]any{"daily_checkin_rewards": rewards}))
+	multipliers := []int{2, 1, 1, 3, 5, 9, 10}
+	settings := mustJSON(t, e.req(t, "PUT", "/v1/admin/points/settings", admin, map[string]any{"daily_checkin_rewards": rewards, "daily_checkin_multipliers": multipliers}))
 	require.Equal(t, []any{float64(30), float64(18), float64(50), float64(12), float64(40), float64(7), float64(9)}, settings["daily_checkin_rewards"])
 	settings = mustJSON(t, e.req(t, "GET", "/v1/admin/points/settings", admin, nil))
 	require.EqualValues(t, 7, settings["daily_checkin_rewards"].([]any)[5])
+	require.EqualValues(t, 10, settings["daily_checkin_multipliers"].([]any)[6])
 	status := mustJSON(t, e.req(t, "GET", "/v1/me/points/check-in?user_id=999", user, nil))
 	require.Equal(t, false, status["claimed"])
-	require.EqualValues(t, 30, status["today_reward"])
+	require.EqualValues(t, 60, status["today_reward"])
+	require.EqualValues(t, 2, status["multipliers"].([]any)[0])
 	data := mustJSON(t, e.req(t, "POST", "/v1/me/points/check-in", user, map[string]any{"user_id": 999, "day": 7, "amount": 999999}))
 	require.Equal(t, true, data["granted"])
-	require.Equal(t, "30", data["points"].(map[string]any)["balance"])
+	require.Equal(t, "60", data["points"].(map[string]any)["balance"])
 	data = mustJSON(t, e.req(t, "POST", "/v1/me/points/check-in", user, nil))
 	require.Equal(t, false, data["granted"])
-	require.Equal(t, "30", data["points"].(map[string]any)["balance"])
+	require.Equal(t, "60", data["points"].(map[string]any)["balance"])
 	body := map[string]any{"amount": "70", "notes": "support credit", "request_id": "e518279a-0ebe-4131-b2a6-85026b853bc8"}
 	for i := 0; i < 2; i++ {
 		data = mustJSON(t, e.req(t, "POST", "/v1/admin/users/2/points", admin, body))
 		require.Equal(t, i == 0, data["granted"])
-		require.Equal(t, "100", data["points"].(map[string]any)["balance"])
+		require.Equal(t, "130", data["points"].(map[string]any)["balance"])
 	}
 	data = mustJSON(t, e.req(t, "GET", "/v1/admin/users/2/points", admin, nil))
-	require.Equal(t, "100", data["balance"])
+	require.Equal(t, "130", data["balance"])
 	data = mustJSON(t, e.req(t, "GET", "/v1/me/points/transactions", user, nil))
 	require.EqualValues(t, 2, data["total"])
 	require.Contains(t, data["items"].([]any)[0].(map[string]any)["note"], "support credit")

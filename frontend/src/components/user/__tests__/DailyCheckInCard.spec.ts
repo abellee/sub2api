@@ -3,12 +3,13 @@ import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { ref } from 'vue'
 import DailyCheckInCard from '../DailyCheckInCard.vue'
 import type { CheckInStatus } from '@/api/points'
+import zh from '@/i18n/locales/zh/common'
 
 const mocks = vi.hoisted(() => ({ refresh: vi.fn(), claim: vi.fn() }))
 const status = ref<CheckInStatus | null>(null)
 const loading = ref(false), claiming = ref(false), error = ref(false)
 vi.mock('@/composables/useDailyCheckIn', () => ({ useDailyCheckIn: () => ({ status, loading, claiming, error, ...mocks }) }))
-vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string, params?: unknown) => key + (params ? JSON.stringify(params) : ''), locale: ref('zh') }) }))
+vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string, params?: unknown) => key.startsWith('common.checkIn.multiplierLabels.') ? zh.common.checkIn.multiplierLabels[Number(key.split('.').at(-1)) as keyof typeof zh.common.checkIn.multiplierLabels] : key + (params ? JSON.stringify(params) : ''), locale: ref('zh') }) }))
 enableAutoUnmount(afterEach)
 const initial = { date: '2026-11-27', day: 6, completed_days: 5, claimed: false, rewards: [10,25,12,40,15,7,9], today_reward: 7, next_reset_at: '2026-11-28T00:00:00+08:00' }
 beforeEach(() => { vi.clearAllMocks(); status.value = initial; loading.value = claiming.value = error.value = false })
@@ -39,6 +40,19 @@ it('reconciles with the server after a lost response and never invents a success
   expect(wrapper.get('[role="alert"]').text()).toContain('common.checkIn.claimError')
   expect(wrapper.emitted('claimed')).toBeUndefined()
   expect(mocks.refresh).toHaveBeenLastCalledWith(true)
+})
+
+it.each([
+  { multipliers: [1, 2, 3, 4, 5, 6, 7], labels: ['双倍', '三倍', '四倍', '五倍', '六倍', '七倍'] },
+  { multipliers: [8, 9, 10, 1, 1, 1, 1], labels: ['八倍', '九倍', '十倍'] }
+])('shows the saved multiplier labels and server-calculated final points: $labels', ({ multipliers, labels }) => {
+  const rewards = multipliers.map(value => 10 * value)
+  status.value = { ...initial, multipliers, rewards, today_reward: rewards[5] }
+  const wrapper = render()
+  expect(wrapper.findAll('.checkin-multiplier').map(badge => badge.text())).toEqual(labels)
+  expect(wrapper.findAll('.checkin-day strong').map(day => day.text())).toEqual(rewards.map(value => '+' + value))
+  expect(wrapper.get('.checkin-claim').text()).toContain(`"points":"${rewards[5]}"`)
+  expect(wrapper.text()).not.toContain('一倍')
 })
 
 it('keeps all seven styled days and a disabled claim button when the endpoint is unavailable', async () => {

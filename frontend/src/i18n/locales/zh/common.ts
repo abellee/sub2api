@@ -69,6 +69,7 @@ export default {
       claim: '立即签到 · +{points} 积分', claimed: '今日已签到', success: '签到成功，获得 {points} 积分',
       credited: '今日签到奖励已到账', encouragement: '每天一小步，积分慢慢攒',
       rewardHint: '连续签到 7 天，每日奖励以显示的积分为准',
+      multiplierLabels: { 1: '一倍', 2: '双倍', 3: '三倍', 4: '四倍', 5: '五倍', 6: '六倍', 7: '七倍', 8: '八倍', 9: '九倍', 10: '十倍' },
       comeTomorrow: '明天再来领积分', todayPoints: '今日可领 {points} 积分', newCycle: '明天开启新一轮，继续积攒积分',
       rules: '每天 00:00（北京时间）刷新 · 漏签重新开始 · 连续 7 天一轮',
       loadError: '签到暂时无法使用，请稍后重试。', claimError: '暂未确认签到结果，请重试；重复点击不会重复领取。',
@@ -92,6 +93,7 @@ export default {
     pointsAdmin: {
       description: '设置每日签到奖励，积分充值请在用户管理的充值窗口操作。',
       range: '分别设置第 1～7 天的奖励，每天为 1 至 2,000,000 的整数积分。',
+      multiplierLabel: '第 {day} 天奖励倍数', dailyTotal: '实际奖励：{points} 积分',
       cycleTotal: '连续签到一轮，共可获得 {points} 积分', effectiveHint: '保存后对后续签到生效，已发放的积分不变。',
       loadError: '积分配置暂时无法加载，请稍后重试。', saveError: '积分配置保存失败，请重试。',
       rechargeCategory: '充值类别', rechargeAmount: '充值积分数', newPoints: '充值后积分',

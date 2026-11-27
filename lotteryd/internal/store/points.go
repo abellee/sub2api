@@ -34,6 +34,7 @@ UPDATE points_settings SET daily_checkin_rewards = jsonb_build_array(
 	daily_checkin_points*2,daily_checkin_points*2) WHERE daily_checkin_rewards IS NULL;
 ALTER TABLE points_settings ALTER COLUMN daily_checkin_rewards SET DEFAULT '[10,10,10,10,10,10,10]';
 ALTER TABLE points_settings ALTER COLUMN daily_checkin_rewards SET NOT NULL;
+ALTER TABLE points_settings ADD COLUMN IF NOT EXISTS daily_checkin_multipliers JSONB NOT NULL DEFAULT '[1,1,1,1,1,1,1]';
 INSERT INTO points_settings (id) VALUES (TRUE) ON CONFLICT DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS user_checkins (

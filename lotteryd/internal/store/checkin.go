@@ -11,7 +11,14 @@ import (
 var beijing = time.FixedZone("Asia/Shanghai", 8*60*60)
 
 type PointsSettings struct {
-	DailyCheckInRewards []int64 `json:"daily_checkin_rewards"`
+	DailyCheckInRewards     []int64 `json:"daily_checkin_rewards"`
+	DailyCheckInMultipliers []int   `json:"daily_checkin_multipliers"`
+}
+
+func (settings *PointsSettings) Normalize() {
+	if settings.DailyCheckInMultipliers == nil {
+		settings.DailyCheckInMultipliers = []int{1, 1, 1, 1, 1, 1, 1}
+	}
 }
 
 func (settings PointsSettings) Validate() error {
@@ -23,6 +30,14 @@ func (settings PointsSettings) Validate() error {
 			return fmt.Errorf("each daily check-in reward must be an integer between 1 and 2000000")
 		}
 	}
+	if len(settings.DailyCheckInMultipliers) != 7 {
+		return fmt.Errorf("configure exactly seven daily check-in multipliers")
+	}
+	for _, multiplier := range settings.DailyCheckInMultipliers {
+		if multiplier < 1 || multiplier > 10 {
+			return fmt.Errorf("each daily check-in multiplier must be an integer between 1 and 10")
+		}
+	}
 	return nil
 }
 
@@ -32,6 +47,7 @@ type CheckInStatus struct {
 	CompletedDays int     `json:"completed_days"`
 	Claimed       bool    `json:"claimed"`
 	Rewards       []int64 `json:"rewards"`
+	Multipliers   []int   `json:"multipliers"`
 	TodayReward   int64   `json:"today_reward"`
 	NextResetAt   string  `json:"next_reset_at"`
 }
@@ -44,17 +60,22 @@ func getPointsSettings(q interface {
 	QueryRow(string, ...any) *sql.Row
 }) (PointsSettings, error) {
 	var settings PointsSettings
-	var raw []byte
-	if err := q.QueryRow(`SELECT daily_checkin_rewards FROM points_settings WHERE id=TRUE`).Scan(&raw); err != nil {
+	var raw, multipliers []byte
+	if err := q.QueryRow(`SELECT daily_checkin_rewards,daily_checkin_multipliers FROM points_settings WHERE id=TRUE`).Scan(&raw, &multipliers); err != nil {
 		return settings, err
 	}
 	if err := json.Unmarshal(raw, &settings.DailyCheckInRewards); err != nil {
 		return settings, err
 	}
+	if err := json.Unmarshal(multipliers, &settings.DailyCheckInMultipliers); err != nil {
+		return settings, err
+	}
+	settings.Normalize()
 	return settings, settings.Validate()
 }
 
 func (s *Store) SavePointsSettings(settings PointsSettings) error {
+	settings.Normalize()
 	if err := settings.Validate(); err != nil {
 		return err
 	}
@@ -62,14 +83,21 @@ func (s *Store) SavePointsSettings(settings PointsSettings) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec(`UPDATE points_settings SET daily_checkin_rewards=$1 WHERE id=TRUE`, string(raw))
+	multipliers, err := json.Marshal(settings.DailyCheckInMultipliers)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`UPDATE points_settings SET daily_checkin_rewards=$1,daily_checkin_multipliers=$2 WHERE id=TRUE`, string(raw), string(multipliers))
 	return err
 }
 
-func checkInStatus(lastDate string, lastDay int, now time.Time, rewards []int64) CheckInStatus {
+func checkInStatus(lastDate string, lastDay int, now time.Time, settings PointsSettings) CheckInStatus {
 	local := now.In(beijing)
 	today := local.Format(time.DateOnly)
-	status := CheckInStatus{Date: today, Day: 1, Rewards: append([]int64(nil), rewards...)}
+	status := CheckInStatus{Date: today, Day: 1, Rewards: make([]int64, 7), Multipliers: append([]int(nil), settings.DailyCheckInMultipliers...)}
+	for index, reward := range settings.DailyCheckInRewards {
+		status.Rewards[index] = reward * int64(status.Multipliers[index])
+	}
 	if lastDate == today {
 		status.Day, status.Claimed = lastDay, true
 	} else if lastDate == local.AddDate(0, 0, -1).Format(time.DateOnly) {
@@ -96,7 +124,7 @@ func (s *Store) GetDailyCheckIn(userID int64, now time.Time) (CheckInStatus, err
 	if err != nil {
 		return CheckInStatus{}, err
 	}
-	status := checkInStatus(lastDate, lastDay, now, settings.DailyCheckInRewards)
+	status := checkInStatus(lastDate, lastDay, now, settings)
 	err = loadCheckInRewards(s.db, userID, &status)
 	return status, err
 }
@@ -117,7 +145,7 @@ func loadCheckInRewards(q interface {
 	for day := 0; day < status.CompletedDays; day++ {
 		refs[fmt.Sprintf("%d:%s", userID, start.AddDate(0, 0, day).Format(time.DateOnly))] = day
 	}
-	rows, err := q.Query(`SELECT ref_id, delta FROM points_transactions WHERE user_id=$1 AND kind='grant' AND ref_type='daily_checkin' AND ref_id >= $2 AND ref_id <= $3`,
+	rows, err := q.Query(`SELECT ref_id, delta, ext_json FROM points_transactions WHERE user_id=$1 AND kind='grant' AND ref_type='daily_checkin' AND ref_id >= $2 AND ref_id <= $3`,
 		userID, fmt.Sprintf("%d:%s", userID, start.Format(time.DateOnly)), fmt.Sprintf("%d:%s", userID, status.Date))
 	if err != nil {
 		return err
@@ -126,11 +154,20 @@ func loadCheckInRewards(q interface {
 	for rows.Next() {
 		var ref string
 		var amount int64
-		if err := rows.Scan(&ref, &amount); err != nil {
+		var ext string
+		if err := rows.Scan(&ref, &amount, &ext); err != nil {
 			return err
 		}
 		if index, ok := refs[ref]; ok {
 			status.Rewards[index] = amount
+			// Old check-ins have no multiplier snapshot and retain their credited amount.
+			metadata := struct {
+				Multiplier int `json:"multiplier"`
+			}{Multiplier: 1}
+			if err := json.Unmarshal([]byte(ext), &metadata); err != nil {
+				return err
+			}
+			status.Multipliers[index] = metadata.Multiplier
 		}
 	}
 	if status.Claimed {
@@ -180,7 +217,7 @@ func (s *Store) ClaimDailyCheckIn(userID int64, now time.Time) (CheckInStatus, P
 	if err != nil {
 		return status, points, false, err
 	}
-	status = checkInStatus(lastDate, lastDay, now, settings.DailyCheckInRewards)
+	status = checkInStatus(lastDate, lastDay, now, settings)
 	if lastDate > status.Date {
 		return status, points, false, fmt.Errorf("check-in date moved backwards")
 	}
@@ -199,7 +236,7 @@ func (s *Store) ClaimDailyCheckIn(userID int64, now time.Time) (CheckInStatus, P
 		return status, points, false, err
 	}
 	note := fmt.Sprintf("每日签到 · 第 %d 天", status.Day)
-	ext, _ := json.Marshal(map[string]any{"date": status.Date, "day": status.Day, "reward_points": status.TodayReward})
+	ext, _ := json.Marshal(map[string]any{"date": status.Date, "day": status.Day, "base_points": settings.DailyCheckInRewards[status.Day-1], "multiplier": status.Multipliers[status.Day-1], "reward_points": status.TodayReward})
 	_, err = insertPointsTxn(tx, PointsTransaction{UserID: userID, Delta: status.TodayReward, BalanceAfter: points.Balance,
 		Kind: "grant", Source: "daily_checkin", RefType: "daily_checkin", RefID: fmt.Sprintf("%d:%s", userID, status.Date),
 		Note: note, ExtJSON: string(ext), CreatedAt: fmtTime(now)})

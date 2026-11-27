@@ -40,6 +40,7 @@ export interface CheckInStatus {
   completed_days: number
   claimed: boolean
   rewards: number[]
+  multipliers?: number[]
   today_reward: number
   next_reset_at: string
 }
@@ -50,7 +51,10 @@ export interface CheckInResult {
   granted: boolean
 }
 
-export interface PointsSettings { daily_checkin_rewards: number[] }
+export interface PointsSettings {
+  daily_checkin_rewards: number[]
+  daily_checkin_multipliers?: number[]
+}
 
 export function fetchCheckInStatus(): Promise<CheckInStatus> {
   return unwrap(client.http.get('/v1/me/points/check-in'))

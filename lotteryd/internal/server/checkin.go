@@ -54,6 +54,7 @@ func (s *Server) handleSavePointsSettings(w http.ResponseWriter, r *http.Request
 		fail(w, http.StatusBadRequest, 400, "invalid daily check-in rewards")
 		return
 	}
+	settings.Normalize()
 	if err := settings.Validate(); err != nil {
 		fail(w, http.StatusBadRequest, 400, err.Error())
 		return

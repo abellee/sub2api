@@ -55,6 +55,7 @@ func TestDailyCheckInCycleResetAndBeijingMidnight(t *testing.T) {
 
 func TestDailyCheckInConcurrentFirstGrant(t *testing.T) {
 	st := storetest.Open(t)
+	require.NoError(t, st.SavePointsSettings(store.PointsSettings{DailyCheckInRewards: []int64{10, 10, 10, 10, 10, 10, 10}, DailyCheckInMultipliers: []int{10, 1, 1, 1, 1, 1, 1}}))
 	now := time.Now()
 	var wg sync.WaitGroup
 	grants := make(chan bool, 24)
@@ -83,10 +84,48 @@ func TestDailyCheckInConcurrentFirstGrant(t *testing.T) {
 	require.Equal(t, 1, count)
 	balance, err := st.GetPointsBalance(2)
 	require.NoError(t, err)
-	require.EqualValues(t, 10, balance.Balance)
+	require.EqualValues(t, 100, balance.Balance)
 	_, total, err := st.ListPointsTransactions(2, "all", 10, 0)
 	require.NoError(t, err)
 	require.EqualValues(t, 1, total)
+}
+
+func TestDailyCheckInMultipliersAndHistoricalRewards(t *testing.T) {
+	st := storetest.Open(t)
+	settings := store.PointsSettings{DailyCheckInRewards: []int64{10, 25, 12, 40, 15, 7, 2000000}, DailyCheckInMultipliers: []int{1, 2, 3, 4, 5, 9, 10}}
+	for _, invalid := range [][]int{{}, {1, 1}, {1, 1, 1, 1, 1, 1, 0}, {1, 1, 1, 1, 1, 1, 11}} {
+		bad := settings
+		bad.DailyCheckInMultipliers = invalid
+		require.Error(t, st.SavePointsSettings(bad))
+	}
+	require.NoError(t, st.SavePointsSettings(settings))
+	loaded, err := st.GetPointsSettings()
+	require.NoError(t, err)
+	require.Equal(t, settings, loaded)
+	now := time.Date(2026, 11, 27, 4, 0, 0, 0, time.UTC)
+	var total int64
+	for day := 0; day < 7; day++ {
+		status, balance, granted, err := st.ClaimDailyCheckIn(2, now.AddDate(0, 0, day))
+		require.NoError(t, err)
+		require.True(t, granted)
+		reward := settings.DailyCheckInRewards[day] * int64(settings.DailyCheckInMultipliers[day])
+		total += reward
+		require.Equal(t, reward, status.TodayReward)
+		require.Equal(t, total, balance.Balance)
+		require.Equal(t, settings.DailyCheckInMultipliers, status.Multipliers)
+	}
+	changed := store.PointsSettings{DailyCheckInRewards: []int64{50, 50, 50, 50, 50, 50, 50}, DailyCheckInMultipliers: []int{3, 3, 3, 3, 3, 3, 3}}
+	require.NoError(t, st.SavePointsSettings(changed))
+	status, balance, granted, err := st.ClaimDailyCheckIn(2, now.AddDate(0, 0, 6))
+	require.NoError(t, err)
+	require.False(t, granted)
+	require.Equal(t, total, balance.Balance)
+	require.EqualValues(t, 20000000, status.TodayReward)
+	require.Equal(t, settings.DailyCheckInMultipliers, status.Multipliers)
+	status, err = st.GetDailyCheckIn(2, now.AddDate(0, 0, 7))
+	require.NoError(t, err)
+	require.Equal(t, changed.DailyCheckInMultipliers, status.Multipliers)
+	require.EqualValues(t, 150, status.TodayReward)
 }
 
 func TestCheckInSettingsAndFailedGrantRollback(t *testing.T) {

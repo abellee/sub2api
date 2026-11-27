@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { ref } from 'vue'
 import PointsSettingsView from '../PointsSettingsView.vue'
+import Select from '@/components/common/Select.vue'
 
 const api = vi.hoisted(() => ({ fetchPointsSettings: vi.fn(), savePointsSettings: vi.fn(), showSuccess: vi.fn(), showError: vi.fn(), refreshDailyCheckIn: vi.fn() }))
 vi.mock('@/components/layout/AppLayout.vue', () => ({ default: { template: '<div><slot /></div>' } }))
@@ -26,9 +27,39 @@ it('loads and saves all seven independent rewards and previews their sum', async
   expect(wrapper.text()).toContain('"points":"154"')
   await wrapper.get('form').trigger('submit')
   await flushPromises()
-  expect(api.savePointsSettings).toHaveBeenCalledWith({ daily_checkin_rewards: [15, 12, 30, 18, 50, 20, 9] })
+  expect(api.savePointsSettings).toHaveBeenCalledWith({ daily_checkin_rewards: [15, 12, 30, 18, 50, 20, 9], daily_checkin_multipliers: [1, 1, 1, 1, 1, 1, 1] })
   expect(api.showSuccess).toHaveBeenCalledWith('common.saved')
   expect(api.refreshDailyCheckIn).toHaveBeenCalledWith(true)
+})
+
+it('defaults to one and independently saves multipliers with final daily and cycle rewards', async () => {
+  const wrapper = render()
+  await flushPromises()
+  const selects = wrapper.findAllComponents(Select)
+  expect(selects).toHaveLength(7)
+  expect(selects.map(select => select.props('modelValue'))).toEqual([1, 1, 1, 1, 1, 1, 1])
+  expect(selects[0].props('options').map(option => option.value)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+  await selects[5].vm.$emit('update:modelValue', 2)
+  await selects[6].vm.$emit('update:modelValue', 10)
+  expect(wrapper.text()).toContain('common.pointsAdmin.dailyTotal{"points":"14"}')
+  expect(wrapper.text()).toContain('common.pointsAdmin.dailyTotal{"points":"90"}')
+  expect(wrapper.text()).toContain('common.pointsAdmin.cycleTotal{"points":"229"}')
+  await wrapper.get('form').trigger('submit')
+  await flushPromises()
+  expect(api.savePointsSettings).toHaveBeenCalledWith({ daily_checkin_rewards: rewards, daily_checkin_multipliers: [1, 1, 1, 1, 1, 2, 10] })
+})
+
+it('loads saved multipliers and rejects invalid values', async () => {
+  api.fetchPointsSettings.mockResolvedValueOnce({ daily_checkin_rewards: rewards, daily_checkin_multipliers: [1, 2, 3, 4, 5, 6, 10] })
+  const wrapper = render()
+  await flushPromises()
+  const selects = wrapper.findAllComponents(Select)
+  expect(selects.map(select => select.props('modelValue'))).toEqual([1, 2, 3, 4, 5, 6, 10])
+  for (const invalid of [0, 11, 1.5]) {
+    await selects[6].vm.$emit('update:modelValue', invalid)
+    await wrapper.get('form').trigger('submit')
+  }
+  expect(api.savePointsSettings).not.toHaveBeenCalled()
 })
 
 it('does not overwrite unknown production settings when the load fails', async () => {
