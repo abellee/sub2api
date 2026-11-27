@@ -479,7 +479,7 @@ async function insertImage(event: Event) {
   const end = contentInput.value?.selectionEnd ?? start
   uploadingImage.value = true
   try {
-    const url = await uploadPushImage(file)
+    const url = new URL(await uploadPushImage(file)).pathname
     if (disposed) return
     const image = `\n\n![](${url})\n\n`
     form.content = form.content.slice(0, start) + image + form.content.slice(end)

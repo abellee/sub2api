@@ -31,8 +31,8 @@ async function selectImage(wrapper: Awaited<ReturnType<typeof render>>, file: Fi
 }
 
 describe('announcement image uploads', () => {
-  it('inserts the uploaded link at the cursor and saves it as announcement content', async () => {
-    mocks.uploadPushImage.mockResolvedValue('https://example.test/push-api/v1/images/abc.png')
+  it.each(['http://127.0.0.1:3000', 'http://localhost:3000', 'https://llmfree.work'])('inserts and saves a portable image path when uploading from %s', async (origin) => {
+    mocks.uploadPushImage.mockResolvedValue(`${origin}/push-api/v1/images/abc.png`)
     const wrapper = await render()
     await wrapper.get('textarea').setValue('before after')
     const textarea = wrapper.get('textarea').element as HTMLTextAreaElement
@@ -40,7 +40,7 @@ describe('announcement image uploads', () => {
     const file = new File(['png'], 'image.png', { type: 'image/png' })
     await selectImage(wrapper, file)
     await flushPromises()
-    const content = 'before \n\n![](https://example.test/push-api/v1/images/abc.png)\n\nafter'
+    const content = 'before \n\n![](/push-api/v1/images/abc.png)\n\nafter'
     expect(mocks.uploadPushImage).toHaveBeenCalledWith(file)
     expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toBe(content)
     await wrapper.get('#announcement-form').trigger('submit')
