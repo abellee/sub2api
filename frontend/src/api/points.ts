@@ -50,7 +50,7 @@ export interface CheckInResult {
   granted: boolean
 }
 
-export interface PointsSettings { daily_checkin_points: number }
+export interface PointsSettings { daily_checkin_rewards: number[] }
 
 export function fetchCheckInStatus(): Promise<CheckInStatus> {
   return unwrap(client.http.get('/v1/me/points/check-in'))

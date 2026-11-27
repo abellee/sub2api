@@ -26,8 +26,9 @@ it('uses server-owned check-in state and admin-only points configuration and rec
   expect(client.post).toHaveBeenLastCalledWith('/v1/me/points/check-in')
   await fetchPointsSettings()
   expect(client.get).toHaveBeenLastCalledWith('/v1/admin/points/settings')
-  await savePointsSettings({ daily_checkin_points: 15 })
-  expect(client.put).toHaveBeenLastCalledWith('/v1/admin/points/settings', { daily_checkin_points: 15 })
+  const settings = { daily_checkin_rewards: [15, 12, 30, 18, 50, 7, 9] }
+  await savePointsSettings(settings)
+  expect(client.put).toHaveBeenLastCalledWith('/v1/admin/points/settings', settings)
   await fetchAdminUserPoints(2)
   expect(client.get).toHaveBeenLastCalledWith('/v1/admin/users/2/points')
   await rechargeUserPoints(2, '123', 'credit', 'uuid')

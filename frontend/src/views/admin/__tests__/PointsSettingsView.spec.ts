@@ -11,20 +11,22 @@ vi.mock('@/stores', () => ({ useAppStore: () => api }))
 vi.mock('@/composables/useDailyCheckIn', () => ({ refreshDailyCheckIn: api.refreshDailyCheckIn }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string, params?: unknown) => key + (params ? JSON.stringify(params) : ''), locale: ref('zh') }) }))
 enableAutoUnmount(afterEach)
-beforeEach(() => { vi.clearAllMocks(); api.fetchPointsSettings.mockResolvedValue({ daily_checkin_points: 15 }); api.savePointsSettings.mockResolvedValue({ daily_checkin_points: 20 }) })
+const rewards = [15, 12, 30, 18, 50, 7, 9]
+beforeEach(() => { vi.clearAllMocks(); api.fetchPointsSettings.mockResolvedValue({ daily_checkin_rewards: rewards }); api.savePointsSettings.mockResolvedValue({ daily_checkin_rewards: rewards }) })
 const render = () => mount(PointsSettingsView, { global: { stubs: { AppLayout: { template: '<div><slot /></div>' } } } })
 
-it('loads the saved base reward, previews double days and saves one integer setting', async () => {
+it('loads and saves all seven independent rewards and previews their sum', async () => {
   const wrapper = render()
   await flushPromises()
-  expect((wrapper.get('input').element as HTMLInputElement).value).toBe('15')
-  expect(wrapper.text()).toContain('"points":"30"')
-  await wrapper.get('input').setValue('20')
-  expect(wrapper.text()).toContain('"points":"40"')
-  expect(wrapper.text()).toContain('"points":"180"')
+  const inputs = wrapper.findAll('input')
+  expect(inputs.map(input => (input.element as HTMLInputElement).value)).toEqual(rewards.map(String))
+  expect(wrapper.text()).toContain('"points":"141"')
+  await inputs[5].setValue('20')
+  expect((inputs[6].element as HTMLInputElement).value).toBe('9')
+  expect(wrapper.text()).toContain('"points":"154"')
   await wrapper.get('form').trigger('submit')
   await flushPromises()
-  expect(api.savePointsSettings).toHaveBeenCalledWith({ daily_checkin_points: 20 })
+  expect(api.savePointsSettings).toHaveBeenCalledWith({ daily_checkin_rewards: [15, 12, 30, 18, 50, 20, 9] })
   expect(api.showSuccess).toHaveBeenCalledWith('common.saved')
   expect(api.refreshDailyCheckIn).toHaveBeenCalledWith(true)
 })
@@ -43,9 +45,21 @@ it('does not overwrite unknown production settings when the load fails', async (
 it('blocks fractional and out-of-range settings', async () => {
   const wrapper = render()
   await flushPromises()
-  for (const value of ['0', '1.5', '1000001']) {
-    await wrapper.get('input').setValue(value)
+  for (const value of ['', '0', '-1', '1.5', '2000001']) {
+    await wrapper.get('#daily-checkin-points-7').setValue(value)
     await wrapper.get('form').trigger('submit')
+  }
+  expect(api.savePointsSettings).not.toHaveBeenCalled()
+})
+
+it('does not allow saving an incomplete schedule or an old server response', async () => {
+  for (const settings of [{ daily_checkin_rewards: [10, 20] }, { daily_checkin_points: 10 }]) {
+    api.fetchPointsSettings.mockResolvedValueOnce(settings)
+    const wrapper = render()
+    await flushPromises()
+    expect(wrapper.find('form').exists()).toBe(false)
+    expect(wrapper.find('[role="alert"]').exists()).toBe(true)
+    wrapper.unmount()
   }
   expect(api.savePointsSettings).not.toHaveBeenCalled()
 })

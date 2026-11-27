@@ -64,14 +64,13 @@ export default {
     checkIn: {
       title: '每日签到', cycle: '7 天一轮', progress: '本轮签到进度', day: '第 {day} 天',
       unavailable: '暂不可签到',
-      double: '双倍', received: '已领取', today: '今日可领', locked: '待解锁',
+      received: '已领取', today: '今日可领', locked: '待解锁',
       streak: '已连续签到 {days} 天，今天的奖励等你领取', streakDone: '已连续签到 {days} 天，明天记得再来',
       claim: '立即签到 · +{points} 积分', claimed: '今日已签到', success: '签到成功，获得 {points} 积分',
       credited: '今日签到奖励已到账', encouragement: '每天一小步，积分慢慢攒',
-      doubleToday: '坚持有回报，今日奖励翻倍', doubleTodayShort: '今日双倍积分',
-      doubleTomorrow: '明天再来，继续领取双倍奖励', doubleHint: '连续签到第 6、7 天，奖励翻倍',
+      rewardHint: '连续签到 7 天，每日奖励以显示的积分为准',
       comeTomorrow: '明天再来领积分', todayPoints: '今日可领 {points} 积分', newCycle: '明天开启新一轮，继续积攒积分',
-      rules: '每天 00:00（北京时间）刷新 · 漏签重新开始 · 第 6、7 天双倍',
+      rules: '每天 00:00（北京时间）刷新 · 漏签重新开始 · 连续 7 天一轮',
       loadError: '签到暂时无法使用，请稍后重试。', claimError: '暂未确认签到结果，请重试；重复点击不会重复领取。',
     },
     pointsCatalog: {
@@ -92,8 +91,7 @@ export default {
     },
     pointsAdmin: {
       description: '设置每日签到奖励，积分充值请在用户管理的充值窗口操作。',
-      baseReward: '每日签到基础积分', range: '请输入 1 至 1,000,000 的整数。',
-      normalReward: '第 1 至 5 天：每天 {points} 积分', doubleReward: '第 6、7 天：每天 {points} 积分（双倍）',
+      range: '分别设置第 1～7 天的奖励，每天为 1 至 2,000,000 的整数积分。',
       cycleTotal: '连续签到一轮，共可获得 {points} 积分', effectiveHint: '保存后对后续签到生效，已发放的积分不变。',
       loadError: '积分配置暂时无法加载，请稍后重试。', saveError: '积分配置保存失败，请重试。',
       rechargeCategory: '充值类别', rechargeAmount: '充值积分数', newPoints: '充值后积分',

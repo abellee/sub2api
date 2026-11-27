@@ -24,8 +24,16 @@ var ErrInsufficientItem = errors.New("insufficient item quantity")
 const pointsSchemaSQL = `
 CREATE TABLE IF NOT EXISTS points_settings (
 	id BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (id),
-	daily_checkin_points BIGINT NOT NULL DEFAULT 10 CHECK (daily_checkin_points BETWEEN 1 AND 1000000)
+	daily_checkin_points BIGINT NOT NULL DEFAULT 10 CHECK (daily_checkin_points BETWEEN 1 AND 1000000),
+	daily_checkin_rewards JSONB NOT NULL DEFAULT '[10,10,10,10,10,10,10]'
 );
+-- Preserve the previous schedule once when upgrading an existing installation.
+ALTER TABLE points_settings ADD COLUMN IF NOT EXISTS daily_checkin_rewards JSONB;
+UPDATE points_settings SET daily_checkin_rewards = jsonb_build_array(
+	daily_checkin_points,daily_checkin_points,daily_checkin_points,daily_checkin_points,daily_checkin_points,
+	daily_checkin_points*2,daily_checkin_points*2) WHERE daily_checkin_rewards IS NULL;
+ALTER TABLE points_settings ALTER COLUMN daily_checkin_rewards SET DEFAULT '[10,10,10,10,10,10,10]';
+ALTER TABLE points_settings ALTER COLUMN daily_checkin_rewards SET NOT NULL;
 INSERT INTO points_settings (id) VALUES (TRUE) ON CONFLICT DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS user_checkins (

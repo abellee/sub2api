@@ -35,7 +35,14 @@ func TestPointsRoutesAuthorizationAndInputValidation(t *testing.T) {
 			}
 		}
 	}
-	for _, body := range []string{`{}`, `{"daily_checkin_points":0}`, `{"daily_checkin_points":1.5}`, `{"daily_checkin_points":1000001}`, `{"daily_checkin_points":10,"unknown":1}`} {
+	for _, body := range []string{
+		`{}`, `{"daily_checkin_points":10}`, `{"daily_checkin_rewards":null}`, `{"daily_checkin_rewards":[]}`,
+		`{"daily_checkin_rewards":[10,10,10,10,10,10]}`, `{"daily_checkin_rewards":[10,10,10,10,10,10,10,10]}`,
+		`{"daily_checkin_rewards":[10,10,10,10,10,10,0]}`, `{"daily_checkin_rewards":[10,10,10,10,10,10,-1]}`,
+		`{"daily_checkin_rewards":[10,10,10,10,10,10,1.5]}`, `{"daily_checkin_rewards":[10,10,10,10,10,10,2000001]}`,
+		`{"daily_checkin_rewards":[10,10,10,10,10,10,null]}`, `{"daily_checkin_rewards":[10,10,10,10,10,10,"10"]}`,
+		`{"daily_checkin_rewards":[10,10,10,10,10,10,10],"unknown":1}`,
+	} {
 		r := httptest.NewRequest("PUT", "/v1/admin/points/settings", strings.NewReader(body))
 		r.Header.Set("Authorization", "Bearer "+signJWT("checkin-test", 2, "admin"))
 		w := httptest.NewRecorder()
@@ -64,10 +71,11 @@ func TestPointsCheckInSettingsAndAdminRecharge(t *testing.T) {
 	}))
 	defer upstream.Close()
 	e.app.Sub2API = sub2api.NewClient(upstream.URL, "")
-	settings := mustJSON(t, e.req(t, "PUT", "/v1/admin/points/settings", admin, map[string]any{"daily_checkin_points": 30}))
-	require.EqualValues(t, 30, settings["daily_checkin_points"])
+	rewards := []int64{30, 18, 50, 12, 40, 7, 9}
+	settings := mustJSON(t, e.req(t, "PUT", "/v1/admin/points/settings", admin, map[string]any{"daily_checkin_rewards": rewards}))
+	require.Equal(t, []any{float64(30), float64(18), float64(50), float64(12), float64(40), float64(7), float64(9)}, settings["daily_checkin_rewards"])
 	settings = mustJSON(t, e.req(t, "GET", "/v1/admin/points/settings", admin, nil))
-	require.EqualValues(t, 30, settings["daily_checkin_points"])
+	require.EqualValues(t, 7, settings["daily_checkin_rewards"].([]any)[5])
 	status := mustJSON(t, e.req(t, "GET", "/v1/me/points/check-in?user_id=999", user, nil))
 	require.Equal(t, false, status["claimed"])
 	require.EqualValues(t, 30, status["today_reward"])

@@ -50,8 +50,12 @@ func (s *Server) handleSavePointsSettings(w http.ResponseWriter, r *http.Request
 	var settings store.PointsSettings
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&settings); err != nil || settings.DailyCheckInPoints < 1 || settings.DailyCheckInPoints > 1000000 {
-		fail(w, http.StatusBadRequest, 400, "daily_checkin_points must be an integer between 1 and 1000000")
+	if err := decoder.Decode(&settings); err != nil {
+		fail(w, http.StatusBadRequest, 400, "invalid daily check-in rewards")
+		return
+	}
+	if err := settings.Validate(); err != nil {
+		fail(w, http.StatusBadRequest, 400, err.Error())
 		return
 	}
 	if err := s.App.Store.SavePointsSettings(settings); err != nil {

@@ -13,6 +13,8 @@ import (
 
 func TestDailyCheckInCycleResetAndBeijingMidnight(t *testing.T) {
 	st := storetest.Open(t)
+	rewards := []int64{10, 25, 12, 40, 15, 7, 9}
+	require.NoError(t, st.SavePointsSettings(store.PointsSettings{DailyCheckInRewards: rewards}))
 	start := time.Date(2026, 12, 27, 16, 0, 0, 0, time.UTC) // Beijing Dec 28, crossing into a new year below.
 	var total int64
 	for day := 1; day <= 8; day++ {
@@ -21,10 +23,8 @@ func TestDailyCheckInCycleResetAndBeijingMidnight(t *testing.T) {
 		require.NoError(t, err)
 		require.False(t, status.Claimed)
 		require.Equal(t, (day-1)%7+1, status.Day)
-		reward := int64(10)
-		if day == 6 || day == 7 {
-			reward = 20
-		}
+		reward := rewards[(day-1)%7]
+		require.Equal(t, rewards, status.Rewards)
 		status, balance, granted, err := st.ClaimDailyCheckIn(2, now)
 		total += reward
 		require.NoError(t, err)
@@ -91,23 +91,26 @@ func TestDailyCheckInConcurrentFirstGrant(t *testing.T) {
 
 func TestCheckInSettingsAndFailedGrantRollback(t *testing.T) {
 	st := storetest.Open(t)
-	require.Error(t, st.SavePointsSettings(store.PointsSettings{DailyCheckInPoints: 0}))
-	require.Error(t, st.SavePointsSettings(store.PointsSettings{DailyCheckInPoints: 1000001}))
-	require.NoError(t, st.SavePointsSettings(store.PointsSettings{DailyCheckInPoints: 25}))
+	for _, rewards := range [][]int64{nil, {}, {1}, {1, 2, 3, 4, 5, 6}, {1, 2, 3, 4, 5, 6, 7, 8}, {1, 2, 3, 4, 5, 6, 0}, {1, 2, 3, 4, 5, 6, -1}, {1, 2, 3, 4, 5, 6, 2000001}} {
+		require.Error(t, st.SavePointsSettings(store.PointsSettings{DailyCheckInRewards: rewards}))
+	}
+	rewards := []int64{25, 18, 45, 12, 10, 7, 9}
+	require.NoError(t, st.SavePointsSettings(store.PointsSettings{DailyCheckInRewards: rewards}))
 	now := time.Now()
 	for day := 0; day < 7; day++ {
 		status, _, _, err := st.ClaimDailyCheckIn(2, now.AddDate(0, 0, day))
 		require.NoError(t, err)
-		if day < 5 {
-			require.EqualValues(t, 25, status.TodayReward)
-		} else {
-			require.EqualValues(t, 50, status.TodayReward)
+		require.EqualValues(t, rewards[day], status.TodayReward)
+		if day == 2 {
+			updated := []int64{40, 30, 20, 19, 18, 17, 16}
+			require.NoError(t, st.SavePointsSettings(store.PointsSettings{DailyCheckInRewards: updated}))
+			copy(rewards[3:], updated[3:])
 		}
 	}
-	require.NoError(t, st.SavePointsSettings(store.PointsSettings{DailyCheckInPoints: 40}))
+	require.NoError(t, st.SavePointsSettings(store.PointsSettings{DailyCheckInRewards: []int64{40, 40, 40, 40, 40, 40, 40}}))
 	alreadyClaimed, err := st.GetDailyCheckIn(2, now.AddDate(0, 0, 6))
 	require.NoError(t, err)
-	require.EqualValues(t, 50, alreadyClaimed.TodayReward)
+	require.EqualValues(t, 16, alreadyClaimed.TodayReward)
 	require.EqualValues(t, 25, alreadyClaimed.Rewards[0])
 	newCycle, err := st.GetDailyCheckIn(2, now.AddDate(0, 0, 7))
 	require.NoError(t, err)

@@ -64,14 +64,13 @@ export default {
     checkIn: {
       title: 'Daily check-in', cycle: '7-day cycle', progress: 'Check-in progress', day: 'Day {day}',
       unavailable: 'Check-in unavailable',
-      double: 'Double', received: 'Received', today: 'Today', locked: 'Locked',
+      received: 'Received', today: 'Today', locked: 'Locked',
       streak: '{days} days in a row. Claim today’s reward.', streakDone: '{days} days in a row. See you tomorrow.',
       claim: 'Check in · +{points} points', claimed: 'Checked in today', success: 'Checked in! Earned {points} points',
       credited: 'Today’s check-in reward has been credited', encouragement: 'A little every day adds up',
-      doubleToday: 'Your reward is doubled today', doubleTodayShort: 'Double points today',
-      doubleTomorrow: 'Come back tomorrow for double points', doubleHint: 'Double rewards on days 6 and 7',
+      rewardHint: 'Check in for 7 consecutive days. Each day awards the points shown.',
       comeTomorrow: 'More points tomorrow', todayPoints: 'Claim {points} points today', newCycle: 'A new cycle starts tomorrow',
-      rules: 'Resets at 00:00 Beijing time · Miss a day to restart · Days 6 and 7 earn double',
+      rules: 'Resets at 00:00 Beijing time · Miss a day to restart · Repeats every 7 days',
       loadError: 'Check-in is temporarily unavailable. Please try again later.', claimError: 'Unable to confirm the result. Retry safely without duplicate rewards.',
     },
     pointsCatalog: {
@@ -92,8 +91,7 @@ export default {
     },
     pointsAdmin: {
       description: 'Configure daily check-in rewards. Recharge points from the user management recharge dialog.',
-      baseReward: 'Base daily check-in points', range: 'Enter a whole number from 1 to 1,000,000.',
-      normalReward: 'Days 1–5: {points} points per day', doubleReward: 'Days 6–7: {points} points per day (double)',
+      range: 'Set each day’s reward separately, from 1 to 2,000,000 whole points per day.',
       cycleTotal: 'A complete cycle earns {points} points', effectiveHint: 'Changes apply to future check-ins. Previously credited points stay the same.',
       loadError: 'Unable to load points settings. Please try again later.', saveError: 'Unable to save points settings. Please retry.',
       rechargeCategory: 'Recharge category', rechargeAmount: 'Points to add', newPoints: 'Points after recharge',
