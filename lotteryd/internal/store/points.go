@@ -22,6 +22,18 @@ var ErrInsufficientItem = errors.New("insufficient item quantity")
 // 系统中任意其它数据（如支付订单 payment_order + 订单号、抽奖活动 activity + id、
 // 兑换码 redeem_code + code 等）；ext_json 保存补充快照（金额、渠道等）。
 const pointsSchemaSQL = `
+CREATE TABLE IF NOT EXISTS points_settings (
+	id BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (id),
+	daily_checkin_points BIGINT NOT NULL DEFAULT 10 CHECK (daily_checkin_points BETWEEN 1 AND 1000000)
+);
+INSERT INTO points_settings (id) VALUES (TRUE) ON CONFLICT DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS user_checkins (
+	user_id BIGINT PRIMARY KEY,
+	last_date TEXT NOT NULL DEFAULT '',
+	cycle_day INTEGER NOT NULL DEFAULT 0 CHECK (cycle_day BETWEEN 0 AND 7)
+);
+
 CREATE TABLE IF NOT EXISTS user_points (
 	user_id BIGINT PRIMARY KEY,
 	balance BIGINT NOT NULL DEFAULT 0 CHECK (balance >= 0),

@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
-import { ref } from 'vue'
+import { defineComponent, ref } from 'vue'
 import StudioAccountMenu from '../StudioAccountMenu.vue'
 import StudioMetricChart from '../StudioMetricChart.vue'
+import UserPointsHost from '@/components/user/UserPointsHost.vue'
 
 const mocks = vi.hoisted(() => ({ balance: 286.5, simpleMode: false, logout: vi.fn(), push: vi.fn(), copy: vi.fn(), feature: vi.fn(() => false), mobile: vi.fn(), replay: vi.fn(), setTheme: vi.fn(), info: vi.fn() }))
 vi.mock('@/components/user/PointsModal.vue', () => ({ default: { props: ['show', 'userId'], emits: ['close', 'loaded'], template: '<div v-if="show" class="points-modal-stub"><button @click="$emit(\'close\')">close</button></div>' } }))
@@ -12,7 +13,7 @@ vi.mock('@/components/common/SubscriptionProgressMini.vue', () => ({ default: { 
 vi.mock('@/components/common/PushNotificationToggle.vue', () => ({ default: { template: '<button data-tour="push-notification-toggle" />' } }))
 vi.mock('../StudioLocaleMenu.vue', () => ({ default: { template: '<button aria-label="language" />' } }))
 vi.mock('../StudioPopover.vue', () => ({ default: { props: ['anchor', 'side'], template: '<div><slot /></div>' } }))
-vi.mock('vue-router', () => ({ useRouter: () => ({ push: mocks.push }) }))
+vi.mock('vue-router', () => ({ useRouter: () => ({ push: mocks.push }), useRoute: () => ({ path: '/dashboard' }) }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
 vi.mock('pinia', () => ({ storeToRefs: (store: unknown) => store }))
 vi.mock('@/stores', () => ({
@@ -26,8 +27,10 @@ vi.mock('@/composables/useTheme', () => ({ useTheme: () => ({ isDark: ref(false)
 vi.mock('@/composables/useClipboard', () => ({ useClipboard: () => ({ copyToClipboard: mocks.copy }) }))
 vi.mock('@/utils/featureFlags', () => ({ FeatureFlags: {}, isFeatureFlagEnabled: mocks.feature }))
 const wrappers: ReturnType<typeof mount>[] = []
+const Shell = defineComponent({ components: { StudioAccountMenu, UserPointsHost }, props: { expanded: Boolean }, emits: ['holdOpen'], template: '<div><StudioAccountMenu :expanded="expanded" @hold-open="$emit(\'holdOpen\', $event)" /><UserPointsHost /></div>' })
 function render(expanded = true) {
-  const wrapper = mount(StudioAccountMenu, { props: { expanded }, attachTo: document.body, global: { stubs: {
+  const wrapper = mount(Shell, { props: { expanded }, attachTo: document.body, global: { stubs: {
+    Teleport: true,
     RouterLink: { props: ['to'], template: '<a :href="to" @click.prevent><slot /></a>' }, Icon: true, QqBrandIcon: true,
     StudioPopover: { props: ['anchor', 'side'], template: '<div><slot /></div>' },
     AnnouncementBell: { template: '<button aria-label="announcements" />' },
@@ -40,6 +43,21 @@ function render(expanded = true) {
 beforeEach(() => { vi.clearAllMocks(); mocks.balance = 286.5; mocks.simpleMode = false; window.matchMedia = vi.fn().mockReturnValue({ matches: false }) })
 afterEach(() => { wrappers.forEach(wrapper => wrapper.unmount()); wrappers.length = 0 })
 describe('StudioAccountMenu', () => {
+  it('opens the shared points dialog from the daily check-in entrance', async () => {
+    const wrapper = render()
+    expect(wrapper.find('.daily-checkin-entry').exists()).toBe(false)
+    expect(wrapper.find('.studio-user-card .studio-checkin').exists()).toBe(false)
+    expect(wrapper.find('.studio-utilities + .studio-checkin + .studio-user-card').exists()).toBe(true)
+    expect(wrapper.get('.studio-checkin').classes()).toEqual(expect.arrayContaining(['btn', 'btn-primary', 'btn-sm']))
+    await wrapper.get('.studio-checkin').trigger('click')
+    expect(wrapper.findAll('.points-modal-stub')).toHaveLength(1)
+    expect(wrapper.find('.studio-checkin').exists()).toBe(true)
+    window.dispatchEvent(new CustomEvent('open-user-resource', { detail: 'points' }))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.findAll('.points-modal-stub')).toHaveLength(1)
+    await wrapper.get('.points-modal-stub button').trigger('click')
+    expect(wrapper.find('.studio-checkin').exists()).toBe(true)
+  })
   it('opens the same points dialog and item notice from the balance card values', async () => {
     const sidebar = render()
     const card = mount(StudioMetricChart, { props: { kind: 'balance', value: 75 }, global: { stubs: { RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' } } } })
@@ -112,7 +130,7 @@ describe('StudioAccountMenu', () => {
       await wrapper.find(selector).trigger('mouseenter')
       expect(wrapper.find('.studio-settings-menu').isVisible() || wrapper.find('.studio-community').exists()).toBe(true)
       const focused = document.activeElement
-      await wrapper.trigger('mouseleave')
+      await wrapper.find('.studio-account').trigger('mouseleave')
       await wrapper.setProps({ expanded: false })
       expect(wrapper.find('.studio-settings-menu').isVisible()).toBe(false)
       expect(wrapper.find('.studio-community').exists()).toBe(false)
@@ -132,12 +150,12 @@ describe('StudioAccountMenu', () => {
     await wrapper.find('.studio-settings').trigger('click')
     expect(wrapper.find('.studio-settings-menu').isVisible()).toBe(true)
     expect(wrapper.findAllComponents({ name: 'SubscriptionProgressMini' })).toHaveLength(0)
-    await wrapper.trigger('keydown', { key: 'Escape' })
+    await wrapper.find('.studio-account').trigger('keydown', { key: 'Escape' })
     expect(wrapper.find('.studio-settings-menu').isVisible()).toBe(false)
   })
   it('keeps collapsed quick access in the requested order with a single announcement entry', async () => {
     const wrapper = render(false)
-    const details = ['.studio-wallet', '.studio-points', '.studio-account-label', '.studio-settings']
+    const details = ['.studio-wallet', '.studio-points', '.studio-checkin', '.studio-account-label', '.studio-settings']
     for (const selector of details) {
       expect(wrapper.find(selector).attributes('aria-hidden')).toBe('true')
       expect(wrapper.find(selector).attributes()).toHaveProperty('inert')
@@ -158,7 +176,7 @@ describe('StudioAccountMenu', () => {
     const wrapper = render(false)
     await wrapper.find('[aria-label="加入 QQ 群"]').trigger('mouseenter')
     expect(wrapper.find('.studio-community').exists()).toBe(true)
-    await wrapper.trigger('mouseleave')
+    await wrapper.find('.studio-account').trigger('mouseleave')
     await vi.advanceTimersByTimeAsync(100)
     await wrapper.find('.studio-community').trigger('mouseenter')
     await vi.advanceTimersByTimeAsync(200)
@@ -173,7 +191,7 @@ describe('StudioAccountMenu', () => {
     expect(mocks.setTheme).toHaveBeenCalledWith('dark')
     expect(wrapper.find('.studio-settings-menu').isVisible()).toBe(false)
     expect(wrapper.find('.studio-theme-menu').exists()).toBe(false)
-    await wrapper.trigger('mouseleave')
+    await wrapper.find('.studio-account').trigger('mouseleave')
     await vi.advanceTimersByTimeAsync(200)
     await wrapper.find('.studio-announcement').trigger('mouseenter')
     expect(wrapper.find('.studio-announcement-preview').exists()).toBe(false)
@@ -217,7 +235,7 @@ describe('StudioAccountMenu', () => {
     expect(wrapper.emitted('holdOpen')).toEqual([[true]])
     expect(wrapper.find('.studio-settings-menu').isVisible()).toBe(true)
     document.body.click()
-    await wrapper.trigger('keydown', { key: 'Escape' })
+    await wrapper.find('.studio-account').trigger('keydown', { key: 'Escape' })
     expect(wrapper.find('.studio-settings-menu').isVisible()).toBe(true)
     window.dispatchEvent(new Event('push-tour-unlock'))
     document.body.click()

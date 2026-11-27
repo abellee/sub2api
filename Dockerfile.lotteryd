@@ -42,6 +42,10 @@ RUN --mount=type=cache,id=sub2api-lotteryd-gomod,target=/go/pkg/mod \
 
 FROM ${ALPINE_IMAGE}
 
+ARG VERSION=dev
+ARG COMMIT=unknown
+LABEL org.opencontainers.image.version="${VERSION}"
+LABEL org.opencontainers.image.revision="${COMMIT}"
 LABEL org.opencontainers.image.source="https://github.com/abellee/sub2api"
 LABEL org.opencontainers.image.title="sub2api-lotteryd"
 LABEL org.opencontainers.image.description="Sub2API lottery and task sidecar"

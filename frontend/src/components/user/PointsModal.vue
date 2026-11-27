@@ -2,6 +2,8 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
+import Select from '@/components/common/Select.vue'
+import DailyCheckInCard from './DailyCheckInCard.vue'
 import { fetchMyPoints, fetchMyPointsHistory, type PointsFilter, type PointsHistory, type PointsSummary } from '@/api/points'
 import { formatDateTime } from '@/utils/format'
 import pointsIcon from '@/assets/icons/points-image-color.svg'
@@ -13,6 +15,11 @@ const { t, locale } = useI18n()
 const summary = ref<PointsSummary | null>(null)
 const history = ref<PointsHistory | null>(null)
 const filter = ref<PointsFilter>('all')
+const filterOptions = computed(() => [
+  { value: 'all', label: t('common.all') },
+  { value: 'spend', label: t('common.pointsDetails.spend') },
+  { value: 'grant', label: t('common.pointsDetails.grant') }
+])
 const page = ref(1)
 const loading = ref(false)
 const error = ref(false)
@@ -59,6 +66,12 @@ watch(() => [props.show, props.userId] as const, ([show]) => {
   if (show && props.userId) void load()
 }, { immediate: true })
 onBeforeUnmount(() => { requestVersion++ })
+
+function onClaimed(points: PointsSummary) {
+  summary.value = points
+  emit('loaded', points)
+  void load()
+}
 </script>
 
 <template>
@@ -69,8 +82,9 @@ onBeforeUnmount(() => { requestVersion++ })
         <div><span>{{ t('common.pointsDetails.earned') }}</span><strong>{{ number(summary?.total_earned) }}</strong></div>
         <div><span>{{ t('common.pointsDetails.spent') }}</span><strong>{{ number(summary?.total_spent) }}</strong></div>
       </div>
+      <DailyCheckInCard :show="show" :user-id="userId" @claimed="onClaimed" />
       <div class="points-toolbar">
-        <label>{{ t('common.pointsDetails.records') }}<select v-model="filter" :disabled="loading" @change="load()"><option value="all">{{ t('common.all') }}</option><option value="spend">{{ t('common.pointsDetails.spend') }}</option><option value="grant">{{ t('common.pointsDetails.grant') }}</option></select></label>
+        <div class="points-filter"><span>{{ t('common.pointsDetails.records') }}</span><Select v-model="filter" class="points-filter-select" dropdown-class="points-filter-dropdown" :aria-label="t('common.pointsDetails.records')" :options="filterOptions" :searchable="false" :disabled="loading" @change="load()" /></div>
         <button type="button" class="points-text-button" :disabled="loading" @click="load(page)">{{ t('common.refresh') }}</button>
       </div>
       <div v-if="loading" class="points-state" role="status">{{ t('common.loading') }}</div>
@@ -91,9 +105,17 @@ onBeforeUnmount(() => { requestVersion++ })
 .points-modal{--studio-muted:var(--key-form-muted);color:var(--key-form-ink);font-size:14px}
 .points-summary{display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:12px;padding:20px;border-radius:18px;background:var(--key-form-field);font-variant-numeric:tabular-nums}
 .points-summary span{display:block;font-size:12px;color:var(--studio-muted,#8891a2)}.points-summary strong{display:flex;align-items:center;gap:8px;margin-top:8px;font-size:20px;font-weight:600;overflow-wrap:anywhere}.points-summary img{width:28px;height:28px}.points-current strong{font-size:28px}
-.points-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:24px 0 8px}.points-toolbar label{display:flex;align-items:center;gap:12px;font-weight:500}.points-toolbar select{border:1px solid var(--key-form-line);border-radius:8px;padding:5px 8px;background:var(--key-form-surface);color:inherit;font-size:12px;font-weight:400}
-.points-text-button{padding:4px 2px;border:0;background:transparent;color:var(--tf-console-active-ink,#7c73e6);cursor:pointer;font:inherit}.points-text-button:hover:not(:disabled){text-decoration:underline;text-underline-offset:3px}.points-text-button:disabled{opacity:.45;cursor:default}.points-text-button:focus-visible,.points-toolbar select:focus-visible{outline:2px solid #8796db;outline-offset:3px;border-radius:4px}
+.points-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:24px 0 8px}.points-filter{display:flex;align-items:center;gap:12px;min-width:0;font-weight:500}.points-filter-select{width:132px;font-weight:400}.points-filter-select :deep(.select-trigger){min-height:34px;padding:6px 10px;font-size:12px;background:var(--key-form-surface);color:var(--key-form-ink);border-color:var(--key-form-line)}
+.points-text-button{padding:4px 2px;border:0;background:transparent;color:var(--tf-console-active-ink,#7c73e6);cursor:pointer;font:inherit}.points-text-button:hover:not(:disabled){text-decoration:underline;text-underline-offset:3px}.points-text-button:disabled{opacity:.45;cursor:default}.points-text-button:focus-visible{outline:2px solid #8796db;outline-offset:3px;border-radius:4px}
 .points-state{min-height:180px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;color:var(--studio-muted,#8891a2);text-align:center}
 .points-records{max-height:360px;overflow:auto}.points-record{display:flex;justify-content:space-between;gap:20px;padding:16px 0;border-bottom:1px solid var(--key-form-line)}.points-record>div{min-width:0}.points-record strong{font-weight:500}.points-record p{margin:5px 0;font-size:13px;overflow-wrap:anywhere}.points-record time,.points-change small{display:block;margin-top:5px;font-size:12px;color:var(--studio-muted,#8891a2)}.points-change{text-align:right;flex-shrink:0;font-variant-numeric:tabular-nums}.is-earned{color:#16a36b}.is-spent{color:#e17b39}.points-pagination{display:flex;align-items:center;justify-content:center;gap:20px;margin-top:20px;font-size:13px}
 @media(max-width:480px){.points-summary{padding:14px;gap:10px;grid-template-columns:1fr 1fr}.points-current{grid-column:1/-1}.points-record{gap:12px}.points-change{max-width:45%;overflow-wrap:anywhere}}
+</style>
+
+<style>
+.select-dropdown-portal.points-filter-dropdown{background:var(--key-form-surface);border-color:var(--key-form-line);border-radius:10px;color:var(--key-form-ink)}
+.points-filter-dropdown .select-option{padding:9px 12px;color:var(--key-form-ink);font-size:12px}
+.points-filter-dropdown .select-option:hover,.points-filter-dropdown .select-option-focused{background:var(--key-form-field)}
+.points-filter-dropdown .select-option-selected{background:var(--key-form-haze);color:var(--tf-console-active-ink,#536eff)}
+.points-filter-dropdown .select-option svg{color:currentColor}
 </style>

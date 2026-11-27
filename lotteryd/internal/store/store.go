@@ -62,6 +62,9 @@ func (s *Store) migrate() error {
 	if _, err := s.db.Exec(pointsSchemaSQL); err != nil {
 		return err
 	}
+	if _, err := s.db.Exec(shopSchemaSQL); err != nil {
+		return err
+	}
 	return s.migrateNotify()
 }
 

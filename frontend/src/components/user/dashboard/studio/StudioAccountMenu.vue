@@ -7,6 +7,7 @@
       <a v-if="headerWidgetConfig?.telegram" :href="headerWidgetConfig.telegram.link" target="_blank" rel="noopener noreferrer" class="utility-button" title="加入 Telegram" aria-label="加入 Telegram" :aria-expanded="communityOpen === 'telegram'" @mouseenter="openOnHover('telegram', $event)"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M9.78 18.65l.28-4.23 7.68-6.92c.34-.3-.07-.45-.52-.18L7.74 13.3l-4.1-1.28c-.89-.28-.9-.89.19-1.32l16-6.17c.74-.27 1.39.18 1.15 1.32l-2.72 12.81c-.2.91-.74 1.13-1.5.7l-4.14-3.06-2 1.93c-.22.22-.41.41-.84.41z" /></svg></a>
       <StudioLocaleMenu :expanded="expanded" @opened="dismissPanels" />
     </div>
+    <button v-if="user" v-show="expanded" type="button" class="studio-checkin btn btn-primary btn-sm" :inert="expanded ? undefined : true" :aria-hidden="!expanded" aria-haspopup="dialog" :title="t('common.checkIn.doubleHint')" @click="openUserResource('points'); appStore.setMobileOpen(false)"><Icon name="calendar" size="sm" /><span>{{ checkInStatus?.claimed ? t('common.checkIn.claimed') : t('common.checkIn.title') }}</span><Icon v-if="checkInStatus?.claimed" name="check" size="sm" /></button>
     <section v-if="user" class="studio-user-card" :aria-label="t('common.userMenu')">
       <div class="studio-wallet" :inert="expanded ? undefined : true" :aria-hidden="!expanded" :title="`${t('common.availableBalance')}: ${formatMoney(availableBalance)} · ${t('common.frozenBalance')}: ${formatMoney(frozenBalance)}`">
         <div class="wallet-available"><div class="wallet-heading"><span class="wallet-label">{{ t('common.availableBalance') }}</span><router-link v-if="!authStore.isSimpleMode && availableBalance < 10" to="/purchase" class="wallet-recharge" @click="dismissPanels(); appStore.setMobileOpen(false)">{{ t('nav.recharge') }}</router-link></div><strong :class="{ 'balance-warning': availableBalance >= 5 && availableBalance < 10, 'balance-critical': availableBalance < 5 }"><StudioRollingBalance :value="availableBalance" /></strong></div>
@@ -22,7 +23,6 @@
         <button ref="settingsButton" type="button" class="studio-settings utility-button" :inert="expanded ? undefined : true" :aria-hidden="!expanded" :aria-label="t('nav.settings')" :title="t('nav.settings')" :aria-expanded="dropdownOpen" aria-controls="studio-account-menu" @mouseenter="openOnHover('settings', $event)" @click="toggleDropdown"><Icon name="cog" size="md" /></button>
       </div>
     </section>
-    <PointsModal v-if="user" :show="pointsOpen" :user-id="user.id" @close="pointsOpen = false" @loaded="updateUserPoints($event, user.id)" />
     <StudioPopover v-show="dropdownOpen" :anchor="panelAnchor" side="right" id="studio-account-menu" class="studio-flyout studio-settings-menu" :aria-label="t('common.userMenu')" @mouseenter="cancelHoverClose">
       <div class="studio-menu-section">
         <router-link to="/profile" class="studio-menu-item" @click="closeDropdown"><Icon name="user" size="sm" />{{ t('nav.profile') }}</router-link>
@@ -56,7 +56,8 @@ import { useI18n } from 'vue-i18n'
 import { CLOSE_QQ_GROUP_EVENT, OPEN_QQ_GROUP_EVENT, OPEN_USER_MENU_EVENT, PUSH_TOUR_UNLOCK_EVENT } from '@/composables/usePushNotificationTour'
 import { useLotterySocketStatus } from '@/composables/useLotterySocketStatus'
 import { OPEN_USER_RESOURCE_EVENT, openUserResource } from '@/composables/userResourceEvents'
-import { updateUserPoints, useUserPoints } from '@/composables/useUserPoints'
+import { useUserPoints } from '@/composables/useUserPoints'
+import { useDailyCheckIn } from '@/composables/useDailyCheckIn'
 import { useAppStore, useAuthStore, useOnboardingStore, useRemoteWidgetsStore } from '@/stores'
 import { useTheme } from '@/composables/useTheme'
 import { useClipboard } from '@/composables/useClipboard'
@@ -69,7 +70,6 @@ import Icon from '@/components/icons/Icon.vue'
 import QqBrandIcon from '@/components/icons/QqBrandIcon.vue'
 import pointsIcon from '@/assets/icons/points-image-color.svg'
 import itemsIcon from '@/assets/icons/props-icon.svg'
-import PointsModal from '@/components/user/PointsModal.vue'
 import StudioRollingBalance from './StudioRollingBalance.vue'
 import StudioLocaleMenu from './StudioLocaleMenu.vue'
 import StudioPopover from './StudioPopover.vue'
@@ -93,13 +93,12 @@ const avatarButton = ref<HTMLButtonElement | null>(null)
 const qqTrigger = ref<HTMLAnchorElement | null>(null)
 const panelAnchor = ref<HTMLElement | null>(null)
 const dropdownOpen = ref(false)
-const pointsOpen = ref(false)
 const { balance: pointsBalance } = useUserPoints()
+const { status: checkInStatus } = useDailyCheckIn()
 const dropdownLocked = ref(false)
 const communityOpen = ref<'qq' | 'telegram' | null>(null)
 let hoverCloseTimer: ReturnType<typeof setTimeout> | undefined
 const user = computed(() => authStore.user)
-watch(() => user.value?.id, () => { pointsOpen.value = false })
 const toolCount = computed(() => 2 + Number(!!headerWidgetConfig.value) + Number(!!headerWidgetConfig.value?.telegram) + Number(!!user.value))
 const avatarUrl = computed(() => user.value?.avatar_url?.trim() || '')
 const displayName = computed(() => user.value?.username || user.value?.email?.split('@')[0] || '')
@@ -116,7 +115,6 @@ function handleResourceOpen(event: Event) {
   if (!user.value) return
   if ((event as CustomEvent).detail === 'points') {
     dismissPanels()
-    pointsOpen.value = true
   } else if ((event as CustomEvent).detail === 'items') {
     appStore.showInfo(t('common.itemsComingSoon'))
   }
@@ -240,8 +238,8 @@ onBeforeUnmount(() => {
 .studio-points .studio-items-icon{width:20px;height:20px}
 .studio-identity{position:absolute;bottom:2px;left:8px;width:calc(var(--studio-account-width) - 24px);display:flex;align-items:center;gap:10px;height:36px;transition:left var(--studio-motion,240ms) var(--studio-ease,ease),bottom var(--studio-motion,240ms) var(--studio-ease,ease)}
 .studio-identity::before{content:'';position:absolute;top:-11px;left:0;right:0;height:1px;background:color-mix(in srgb,var(--studio-muted) 12%,transparent);opacity:0;transition:opacity .15s}
-.studio-wallet,.studio-points,.studio-account-label,.studio-settings{visibility:hidden;opacity:0;pointer-events:none;transition:opacity .12s,visibility .12s}
-.is-expanded .studio-wallet,.is-expanded .studio-points,.is-expanded .studio-account-label,.is-expanded .studio-settings{visibility:visible;opacity:1;pointer-events:auto;transition-delay:60ms}
+.studio-wallet,.studio-points,.studio-checkin,.studio-account-label,.studio-settings{visibility:hidden;opacity:0;pointer-events:none;transition:opacity .12s,visibility .12s}
+.is-expanded .studio-wallet,.is-expanded .studio-points,.is-expanded .studio-checkin,.is-expanded .studio-account-label,.is-expanded .studio-settings{visibility:visible;opacity:1;pointer-events:auto;transition-delay:60ms}
 .studio-avatar{position:relative;display:grid;place-items:center;width:36px;height:36px;flex-shrink:0;border:0;border-radius:12px;background:#6577bd;color:#fff;cursor:pointer;font-size:12px;font-weight:600}
 .studio-avatar>img{width:100%;height:100%;object-fit:cover;border-radius:inherit}
 .studio-account-label{min-width:0;flex:1}.studio-account-label strong{display:block;font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.studio-account-label small{display:block;font-size:12px;color:var(--studio-muted);margin-top:2px}
@@ -250,6 +248,7 @@ onBeforeUnmount(() => {
 .studio-account.is-expanded .studio-utilities> *{transform:translate(calc(var(--tool-index)*(var(--studio-account-width) - 36px)/(var(--studio-tool-count) - 1)),0)}
 .studio-utilities> :has(.studio-popover){z-index:3}
 .is-expanded .studio-user-card{height:154px;background:var(--studio-menu-surface,var(--tf-console-hover))}
+.studio-checkin{width:100%;min-height:38px;margin:0 0 12px}
 .wallet-available .balance-warning{color:#c65d13}.wallet-available .balance-critical{color:#dc2626}:global(.dark .wallet-available .balance-warning){color:#fb923c}:global(.dark .wallet-available .balance-critical){color:#f87171}
 .wallet-heading{display:flex;align-items:center;gap:6px;margin-bottom:4px;min-width:0}.wallet-heading .wallet-label{min-width:0;margin-bottom:0;overflow:hidden;text-overflow:ellipsis}.wallet-recharge{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;min-height:20px;padding:0 6px;border-radius:6px;background:var(--tf-console-active-ink);color:var(--studio-nav-bg);font-size:12px;font-weight:600;line-height:20px;white-space:nowrap}.wallet-recharge:hover{filter:brightness(1.1)}.wallet-recharge:focus-visible{outline:2px solid var(--tf-console-active-ink);outline-offset:2px}
 .wallet-frozen strong{color:var(--studio-muted)}

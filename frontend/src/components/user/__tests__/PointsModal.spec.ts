@@ -13,6 +13,7 @@ const rows = [{ id: '1', kind: 'spend', delta: '-30', balance_after: '70', note:
 const wrappers: ReturnType<typeof mount>[] = []
 function render(show = true) {
   const wrapper = mount(PointsModal, { props: { show, userId: 2 }, global: { stubs: {
+    DailyCheckInCard: { template: '<div />' },
     BaseDialog: { props: ['show'], template: '<div v-if="show" role="dialog"><slot /></div>' }
   } } })
   wrappers.push(wrapper)
@@ -41,7 +42,13 @@ describe('PointsModal', () => {
     await wrapper.find('.points-pagination button:last-child').trigger('click')
     await flushPromises()
     expect(api.history).toHaveBeenLastCalledWith(2, 'all')
-    await wrapper.find('select').setValue('spend')
+    expect(wrapper.find('select').exists()).toBe(false)
+    await wrapper.get('.select-trigger').trigger('click')
+    await flushPromises()
+    expect(document.querySelector('.points-filter-dropdown[role="listbox"]')).not.toBeNull()
+    const option = document.querySelector<HTMLElement>('[role="option"][aria-selected="false"]')
+    expect(option?.textContent).toContain('common.pointsDetails.spend')
+    option?.click()
     await flushPromises()
     expect(api.history).toHaveBeenLastCalledWith(1, 'spend')
     expect(wrapper.find('.points-pagination').text()).toContain('1 / 2')

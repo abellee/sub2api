@@ -389,10 +389,14 @@ type RegisteredUser struct {
 }
 
 // GetUser 拉取单个用户详情（含 created_at），注册时长条件的数据来源兜底。
-func (c *Client) GetUser(ctx context.Context, userID int64) (*RegisteredUser, error) {
+func (c *Client) GetUser(ctx context.Context, userID int64, adminBearer ...string) (*RegisteredUser, error) {
 	var u RegisteredUser
 	path := "/api/v1/admin/users/" + strconv.FormatInt(userID, 10)
-	if err := c.do(ctx, http.MethodGet, path, nil, nil, &u, ""); err != nil {
+	bearer := ""
+	if c.AdminAPIKey() == "" && len(adminBearer) > 0 {
+		bearer = adminBearer[0]
+	}
+	if err := c.do(ctx, http.MethodGet, path, nil, nil, &u, bearer); err != nil {
 		return nil, err
 	}
 	return &u, nil

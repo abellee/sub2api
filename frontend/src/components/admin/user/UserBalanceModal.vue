@@ -3,41 +3,73 @@
     <form v-if="user" id="balance-form" @submit.prevent="handleBalanceSubmit" class="space-y-5">
       <div class="flex items-center gap-3 rounded-xl bg-gray-50 p-4 dark:bg-dark-700">
         <div class="flex h-10 w-10 items-center justify-center rounded-full bg-primary-100"><span class="text-lg font-medium text-primary-700">{{ user.email.charAt(0).toUpperCase() }}</span></div>
-        <div class="flex-1"><p class="font-medium text-gray-900 dark:text-gray-100">{{ user.email }}</p><p class="text-sm text-gray-500 dark:text-gray-400">{{ t('admin.users.currentBalance') }}: ${{ formatBalance(user.balance) }}</p></div>
+        <div class="flex-1"><p class="font-medium text-gray-900 dark:text-gray-100">{{ user.email }}</p><p class="text-sm text-gray-500 dark:text-gray-400"><template v-if="pointsMode">{{ t('common.pointsDetails.current') }}: {{ pointsBalance === null ? '—' : BigInt(pointsBalance).toLocaleString(locale) }}</template><template v-else>{{ t('admin.users.currentBalance') }}: ${{ formatBalance(user.balance) }}</template></p></div>
       </div>
+      <div v-if="operation === 'add'"><label for="recharge-category" class="input-label">{{ t('common.pointsAdmin.rechargeCategory') }}</label><select id="recharge-category" v-model="category" class="input" :disabled="submitting"><option value="balance">{{ t('common.balance') }}</option><option value="points">{{ t('common.points') }}</option></select></div>
+      <div v-if="pointsMode && pointsLoadError" role="alert" class="text-sm text-red-600"><p>{{ t('common.pointsDetails.loadError') }}</p><button type="button" class="btn btn-secondary mt-2" @click="loadPoints">{{ t('common.tryAgain') }}</button></div>
       <div>
-        <label class="input-label">{{ operation === 'add' ? t('admin.users.depositAmount') : t('admin.users.withdrawAmount') }}</label>
+        <label class="input-label">{{ pointsMode ? t('common.pointsAdmin.rechargeAmount') : operation === 'add' ? t('admin.users.depositAmount') : t('admin.users.withdrawAmount') }}</label>
         <div class="relative flex gap-2">
-          <div class="relative flex-1"><div class="absolute left-3 top-1/2 -translate-y-1/2 font-medium text-gray-500">$</div><input v-model.number="form.amount" type="number" step="any" min="0" required class="input pl-8" /></div>
+          <div class="relative flex-1"><div v-if="!pointsMode" class="absolute left-3 top-1/2 -translate-y-1/2 font-medium text-gray-500">$</div><input v-model.number="form.amount" type="number" :step="pointsMode ? '1' : 'any'" :min="pointsMode ? 1 : 0" :max="pointsMode ? 1000000000000 : undefined" :disabled="submitting" required class="input" :class="{ 'pl-8': !pointsMode }" /></div>
           <button v-if="operation === 'subtract'" type="button" @click="fillAllBalance" class="btn btn-secondary whitespace-nowrap">{{ t('admin.users.withdrawAll') }}</button>
         </div>
       </div>
-      <div><label class="input-label">{{ t('admin.users.notes') }}</label><textarea v-model="form.notes" rows="3" class="input"></textarea></div>
-      <div v-if="form.amount > 0" class="rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-950"><div class="flex items-center justify-between text-sm"><span class="text-gray-700 dark:text-gray-300">{{ t('admin.users.newBalance') }}:</span><span class="font-bold text-gray-900 dark:text-gray-100">${{ formatBalance(calculateNewBalance()) }}</span></div></div>
+      <div><label class="input-label">{{ t('admin.users.notes') }}</label><textarea v-model="form.notes" rows="3" class="input" :maxlength="pointsMode ? 1000 : undefined" :disabled="submitting"></textarea></div>
+      <div v-if="form.amount > 0 && (!pointsMode || pointsBalance !== null && Number.isSafeInteger(form.amount))" class="rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-950"><div class="flex items-center justify-between text-sm"><span class="text-gray-700 dark:text-gray-300">{{ pointsMode ? t('common.pointsAdmin.newPoints') : t('admin.users.newBalance') }}:</span><span class="font-bold text-gray-900 dark:text-gray-100">{{ pointsMode ? (BigInt(pointsBalance!) + BigInt(form.amount)).toLocaleString(locale) : '$' + formatBalance(calculateNewBalance()) }}</span></div></div>
     </form>
     <template #footer>
       <div class="flex justify-end gap-3">
         <button @click="$emit('close')" class="btn btn-secondary">{{ t('common.cancel') }}</button>
-        <button type="submit" form="balance-form" :disabled="submitting || !form.amount" class="btn" :class="operation === 'add' ? 'bg-emerald-600 text-white' : 'btn-danger'">{{ submitting ? t('common.saving') : t('common.confirm') }}</button>
+        <button type="submit" form="balance-form" :disabled="submitting || !form.amount || pointsMode && (pointsLoading || pointsBalance === null)" class="btn" :class="operation === 'add' ? 'bg-emerald-600 text-white' : 'btn-danger'">{{ submitting ? t('common.saving') : t('common.confirm') }}</button>
       </div>
     </template>
   </BaseDialog>
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { adminAPI } from '@/api/admin'
 import { extractApiErrorMessage } from '@/utils/apiError'
 import type { AdminUser } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
+import { fetchAdminUserPoints, rechargeUserPoints } from '@/api/points'
+import { updateUserPoints } from '@/composables/useUserPoints'
 
 const props = defineProps<{ show: boolean, user: AdminUser | null, operation: 'add' | 'subtract' }>()
-const emit = defineEmits(['close', 'success']); const { t } = useI18n(); const appStore = useAppStore()
+const emit = defineEmits(['close', 'success']); const { t, locale } = useI18n(); const appStore = useAppStore()
 
 const submitting = ref(false); const form = reactive({ amount: 0, notes: '' })
-watch(() => props.show, (v) => { if(v) { form.amount = 0; form.notes = '' } })
+const category = ref<'balance' | 'points'>('balance')
+const pointsMode = computed(() => props.operation === 'add' && category.value === 'points')
+const pointsBalance = ref<string | null>(null)
+const pointsLoading = ref(false)
+const pointsLoadError = ref(false)
+let loadVersion = 0
+let formVersion = 0
+let requestId = ''
+let requestFingerprint = ''
+watch(() => [props.show, props.user?.id, props.operation], () => {
+  formVersion++
+  loadVersion++
+  form.amount = 0; form.notes = ''; category.value = 'balance'
+  pointsBalance.value = null; pointsLoading.value = false; pointsLoadError.value = false
+  submitting.value = false; requestId = ''; requestFingerprint = ''
+})
+watch(pointsMode, (points) => { form.amount = 0; if (points && props.show) void loadPoints() })
+async function loadPoints() {
+  if (!props.user || !props.show) return
+  const version = ++loadVersion
+  pointsBalance.value = null
+  pointsLoading.value = true
+  pointsLoadError.value = false
+  try {
+    const result = await fetchAdminUserPoints(props.user.id)
+    if (version === loadVersion) pointsBalance.value = result.balance
+  } catch { if (version === loadVersion) pointsLoadError.value = true }
+  finally { if (version === loadVersion) pointsLoading.value = false }
+}
 
 // 格式化余额：显示完整精度，去除尾部多余的0
 const formatBalance = (value: number) => {
@@ -65,23 +97,39 @@ const calculateNewBalance = () => {
   return Math.abs(result) < 1e-10 ? 0 : result
 }
 const handleBalanceSubmit = async () => {
-  if (!props.user) return
+  if (!props.user || submitting.value) return
   if (!form.amount || form.amount <= 0) {
     appStore.showError(t('admin.users.amountRequired'))
     return
   }
+  if (pointsMode.value && (!Number.isSafeInteger(form.amount) || form.amount > 1000000000000)) {
+    appStore.showError(t('common.pointsAdmin.invalidAmount'))
+    return
+  }
+  if (pointsMode.value && (pointsLoading.value || pointsBalance.value === null)) return
   // 退款时验证金额不超过实际余额
   if (props.operation === 'subtract' && form.amount > props.user.balance) {
     appStore.showError(t('admin.users.insufficientBalance'))
     return
   }
   submitting.value = true
+  const version = formVersion
+  const userId = props.user.id
   try {
-    await adminAPI.users.updateBalance(props.user.id, form.amount, props.operation, form.notes)
+    if (pointsMode.value) {
+      const fingerprint = JSON.stringify([props.user.id, form.amount, form.notes])
+      if (fingerprint !== requestFingerprint) { requestId = crypto.randomUUID(); requestFingerprint = fingerprint }
+      const result = await rechargeUserPoints(userId, String(form.amount), form.notes, requestId)
+      updateUserPoints(result.points, userId)
+    } else {
+      await adminAPI.users.updateBalance(props.user.id, form.amount, props.operation, form.notes)
+    }
+    if (version !== formVersion) return
     appStore.showSuccess(t('common.success')); emit('success'); emit('close')
   } catch (e: any) {
+    if (version !== formVersion) return
     console.error('Failed to update balance:', e)
     appStore.showError(extractApiErrorMessage(e, t('common.error')))
-  } finally { submitting.value = false }
+  } finally { if (version === formVersion) submitting.value = false }
 }
 </script>

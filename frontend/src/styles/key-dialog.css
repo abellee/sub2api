@@ -1,15 +1,17 @@
-.modal-overlay:has(.key-dialog) {
+.modal-overlay:has(.key-dialog), .points-filter-dropdown {
   --key-form-surface: #fff;
   --key-form-field: #f7f8fc;
   --key-form-ink: #20273e;
   --key-form-muted: #69748d;
   --key-form-line: #dce2f0;
   --key-form-haze: #536de512;
-  background: #080e2399;
-  backdrop-filter: blur(8px);
   color-scheme: light;
 }
-.dark .modal-overlay:has(.key-dialog) {
+.modal-overlay:has(.key-dialog) {
+  background: #080e2399;
+  backdrop-filter: blur(8px);
+}
+.dark .modal-overlay:has(.key-dialog), .dark .points-filter-dropdown {
   --key-form-surface: #1b1e32;
   --key-form-field: #15192b;
   --key-form-ink: #e9edfa;

@@ -1,0 +1,243 @@
+package store
+
+import (
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"time"
+)
+
+var beijing = time.FixedZone("Asia/Shanghai", 8*60*60)
+
+type PointsSettings struct {
+	DailyCheckInPoints int64 `json:"daily_checkin_points"`
+}
+
+type CheckInStatus struct {
+	Date          string  `json:"date"`
+	Day           int     `json:"day"`
+	CompletedDays int     `json:"completed_days"`
+	Claimed       bool    `json:"claimed"`
+	Rewards       []int64 `json:"rewards"`
+	TodayReward   int64   `json:"today_reward"`
+	NextResetAt   string  `json:"next_reset_at"`
+}
+
+func (s *Store) GetPointsSettings() (PointsSettings, error) {
+	var settings PointsSettings
+	err := s.db.QueryRow(`SELECT daily_checkin_points FROM points_settings WHERE id=TRUE`).Scan(&settings.DailyCheckInPoints)
+	return settings, err
+}
+
+func (s *Store) SavePointsSettings(settings PointsSettings) error {
+	if settings.DailyCheckInPoints < 1 || settings.DailyCheckInPoints > 1000000 {
+		return fmt.Errorf("daily check-in points must be between 1 and 1000000")
+	}
+	_, err := s.db.Exec(`UPDATE points_settings SET daily_checkin_points=$1 WHERE id=TRUE`, settings.DailyCheckInPoints)
+	return err
+}
+
+func checkInStatus(lastDate string, lastDay int, now time.Time, reward int64) CheckInStatus {
+	local := now.In(beijing)
+	today := local.Format(time.DateOnly)
+	status := CheckInStatus{Date: today, Day: 1, Rewards: []int64{reward, reward, reward, reward, reward, reward * 2, reward * 2}}
+	if lastDate == today {
+		status.Day, status.Claimed = lastDay, true
+	} else if lastDate == local.AddDate(0, 0, -1).Format(time.DateOnly) {
+		status.Day = lastDay%7 + 1
+	}
+	status.CompletedDays = status.Day - 1
+	if status.Claimed {
+		status.CompletedDays++
+	}
+	status.TodayReward = status.Rewards[status.Day-1]
+	next := time.Date(local.Year(), local.Month(), local.Day()+1, 0, 0, 0, 0, beijing)
+	status.NextResetAt = next.Format(time.RFC3339)
+	return status
+}
+
+func (s *Store) GetDailyCheckIn(userID int64, now time.Time) (CheckInStatus, error) {
+	var lastDate string
+	var lastDay int
+	err := s.db.QueryRow(`SELECT last_date, cycle_day FROM user_checkins WHERE user_id=$1`, userID).Scan(&lastDate, &lastDay)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return CheckInStatus{}, err
+	}
+	settings, err := s.GetPointsSettings()
+	if err != nil {
+		return CheckInStatus{}, err
+	}
+	status := checkInStatus(lastDate, lastDay, now, settings.DailyCheckInPoints)
+	err = loadCheckInRewards(s.db, userID, &status)
+	return status, err
+}
+
+// Preserve the amounts actually received when an admin changes the base reward mid-cycle.
+func loadCheckInRewards(q interface {
+	Query(string, ...any) (*sql.Rows, error)
+}, userID int64, status *CheckInStatus) error {
+	if status.CompletedDays == 0 {
+		return nil
+	}
+	today, err := time.Parse(time.DateOnly, status.Date)
+	if err != nil {
+		return err
+	}
+	start := today.AddDate(0, 0, 1-status.Day)
+	refs := make(map[string]int, status.CompletedDays)
+	for day := 0; day < status.CompletedDays; day++ {
+		refs[fmt.Sprintf("%d:%s", userID, start.AddDate(0, 0, day).Format(time.DateOnly))] = day
+	}
+	rows, err := q.Query(`SELECT ref_id, delta FROM points_transactions WHERE user_id=$1 AND kind='grant' AND ref_type='daily_checkin' AND ref_id >= $2 AND ref_id <= $3`,
+		userID, fmt.Sprintf("%d:%s", userID, start.Format(time.DateOnly)), fmt.Sprintf("%d:%s", userID, status.Date))
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var ref string
+		var amount int64
+		if err := rows.Scan(&ref, &amount); err != nil {
+			return err
+		}
+		if index, ok := refs[ref]; ok {
+			status.Rewards[index] = amount
+		}
+	}
+	if status.Claimed {
+		status.TodayReward = status.Rewards[status.Day-1]
+	}
+	return rows.Err()
+}
+
+func pointsBalanceInTx(tx *sql.Tx, userID int64) (PointsBalance, error) {
+	var points PointsBalance
+	err := tx.QueryRow(`SELECT balance, total_earned, total_spent FROM user_points WHERE user_id=$1`, userID).
+		Scan(&points.Balance, &points.TotalEarned, &points.TotalSpent)
+	if errors.Is(err, sql.ErrNoRows) {
+		err = nil
+	}
+	return points, err
+}
+
+// Lock a real balance row before adjusting it, including the user's first grant.
+func ensurePointsRow(tx *sql.Tx, userID int64) error {
+	_, err := tx.Exec(`INSERT INTO user_points (user_id, updated_at) VALUES ($1,$2) ON CONFLICT DO NOTHING`, userID, fmtTime(time.Now()))
+	if err != nil {
+		return err
+	}
+	var id int64
+	return tx.QueryRow(`SELECT user_id FROM user_points WHERE user_id=$1 FOR UPDATE`, userID).Scan(&id)
+}
+
+// now is supplied by the server, never by the request body.
+func (s *Store) ClaimDailyCheckIn(userID int64, now time.Time) (CheckInStatus, PointsBalance, bool, error) {
+	var status CheckInStatus
+	var points PointsBalance
+	tx, err := s.db.Begin()
+	if err != nil {
+		return status, points, false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err = tx.Exec(`INSERT INTO user_checkins (user_id) VALUES ($1) ON CONFLICT DO NOTHING`, userID); err != nil {
+		return status, points, false, err
+	}
+	var lastDate string
+	var lastDay int
+	if err = tx.QueryRow(`SELECT last_date, cycle_day FROM user_checkins WHERE user_id=$1 FOR UPDATE`, userID).Scan(&lastDate, &lastDay); err != nil {
+		return status, points, false, err
+	}
+	var reward int64
+	if err = tx.QueryRow(`SELECT daily_checkin_points FROM points_settings WHERE id=TRUE`).Scan(&reward); err != nil {
+		return status, points, false, err
+	}
+	status = checkInStatus(lastDate, lastDay, now, reward)
+	if lastDate > status.Date {
+		return status, points, false, fmt.Errorf("check-in date moved backwards")
+	}
+	if status.Claimed {
+		points, err = pointsBalanceInTx(tx, userID)
+		if err == nil {
+			err = loadCheckInRewards(tx, userID, &status)
+		}
+		return status, points, false, err
+	}
+	if err = ensurePointsRow(tx, userID); err != nil {
+		return status, points, false, err
+	}
+	points, err = s.applyPointsDelta(tx, userID, status.TodayReward)
+	if err != nil {
+		return status, points, false, err
+	}
+	note := fmt.Sprintf("每日签到 · 第 %d 天", status.Day)
+	if status.Day >= 6 {
+		note += "（双倍）"
+	}
+	ext, _ := json.Marshal(map[string]any{"date": status.Date, "day": status.Day, "base_points": reward})
+	_, err = insertPointsTxn(tx, PointsTransaction{UserID: userID, Delta: status.TodayReward, BalanceAfter: points.Balance,
+		Kind: "grant", Source: "daily_checkin", RefType: "daily_checkin", RefID: fmt.Sprintf("%d:%s", userID, status.Date),
+		Note: note, ExtJSON: string(ext), CreatedAt: fmtTime(now)})
+	if err != nil {
+		return status, points, false, err
+	}
+	if _, err = tx.Exec(`UPDATE user_checkins SET last_date=$2, cycle_day=$3 WHERE user_id=$1`, userID, status.Date, status.Day); err != nil {
+		return status, points, false, err
+	}
+	status.Claimed = true
+	status.CompletedDays = status.Day
+	if err = loadCheckInRewards(tx, userID, &status); err != nil {
+		return status, points, false, err
+	}
+	if err = tx.Commit(); err != nil {
+		return status, points, false, err
+	}
+	return status, points, true, nil
+}
+
+var ErrPointsRechargeConflict = errors.New("points recharge request already used with different values")
+
+func (s *Store) GrantAdminPoints(userID, adminID, amount int64, requestID, note string) (PointsBalance, bool, error) {
+	var points PointsBalance
+	if userID < 1 || adminID < 1 || amount < 1 || amount > 1000000000000 {
+		return points, false, fmt.Errorf("invalid points recharge")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return points, false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err = ensurePointsRow(tx, userID); err != nil {
+		return points, false, err
+	}
+	refID := fmt.Sprintf("%d:%s", adminID, requestID)
+	var existingUser, existingAmount int64
+	var existingNote string
+	err = tx.QueryRow(`SELECT user_id, delta, note FROM points_transactions WHERE kind='grant' AND ref_type='admin_points_recharge' AND ref_id=$1`, refID).
+		Scan(&existingUser, &existingAmount, &existingNote)
+	if err == nil {
+		if existingUser != userID || existingAmount != amount || existingNote != note {
+			return points, false, ErrPointsRechargeConflict
+		}
+		points, err = pointsBalanceInTx(tx, userID)
+		return points, false, err
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return points, false, err
+	}
+	points, err = s.applyPointsDelta(tx, userID, amount)
+	if err != nil {
+		return points, false, err
+	}
+	ext, _ := json.Marshal(map[string]int64{"admin_id": adminID})
+	_, err = insertPointsTxn(tx, PointsTransaction{UserID: userID, Delta: amount, BalanceAfter: points.Balance,
+		Kind: "grant", Source: "admin_recharge", RefType: "admin_points_recharge", RefID: refID,
+		Note: note, ExtJSON: string(ext), CreatedAt: fmtTime(time.Now())})
+	if err != nil {
+		return points, false, err
+	}
+	if err = tx.Commit(); err != nil {
+		return points, false, err
+	}
+	return points, true, nil
+}

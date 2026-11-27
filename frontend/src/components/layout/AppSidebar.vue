@@ -956,6 +956,8 @@ const adminNavItems = computed((): NavItem[] => {
     { path: '/admin/redeem', label: t('nav.redeemCodes'), icon: TicketIcon, hideInSimpleMode: true },
     { path: '/admin/promo-codes', label: t('nav.promoCodes'), icon: GiftIcon, hideInSimpleMode: true },
       { path: '/admin/lottery', label: t('nav.lotteryAdmin'), icon: LotteryIcon, hideInSimpleMode: true },
+      { path: '/admin/points', label: t('nav.pointsAdmin'), icon: GiftIcon, hideInSimpleMode: true },
+      { path: '/admin/items', label: t('common.pointsCatalog.items'), icon: GiftIcon, hideInSimpleMode: true },
       { path: '/admin/tasks', label: t('nav.tasksAdmin'), icon: TaskIcon, hideInSimpleMode: true },
     {
       path: '/admin/affiliates',

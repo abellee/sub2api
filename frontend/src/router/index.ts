@@ -301,7 +301,7 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/points-shop',
     name: 'PointsShop',
-    component: () => import('@/views/user/ResourceComingSoonView.vue'),
+    component: () => import('@/views/user/PointsShopView.vue'),
     meta: { requiresAuth: true, requiresAdmin: false, title: 'Points Shop', titleKey: 'nav.pointsShop' }
   },
   {
@@ -830,6 +830,18 @@ const routes: RouteRecordRaw[] = [
       title: 'Lottery Management',
       titleKey: 'nav.lotteryAdmin'
     }
+  },
+  {
+    path: '/admin/points',
+    name: 'AdminPoints',
+    component: () => import('@/views/admin/PointsSettingsView.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true, title: 'Points Settings', titleKey: 'nav.pointsAdmin' }
+  },
+  {
+    path: '/admin/items',
+    name: 'AdminItems',
+    component: () => import('@/views/admin/ItemsAdminView.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true, title: 'Item Management', titleKey: 'common.pointsCatalog.items' }
   },
   {
     path: '/admin/tasks',

@@ -107,6 +107,7 @@ describe('App navigation user refresh', () => {
           Toast: true,
           AnnouncementPopup: true,
           LotteryPromptHost: true,
+          UserPointsHost: true,
           PageNotificationStack: true,
           AdminComplianceDialog: true,
         },

@@ -9,6 +9,7 @@ import AnnouncementPopup from '@/components/common/AnnouncementPopup.vue'
 import PageNotificationStack from '@/components/common/PageNotificationStack.vue'
 import PersistentRemoteWidgets from '@/components/common/PersistentRemoteWidgets.vue'
 import LotteryPromptHost from '@/components/lottery/LotteryPromptHost.vue'
+import UserPointsHost from '@/components/user/UserPointsHost.vue'
 import { useAppStore, useAuthStore, useSubscriptionStore, useAnnouncementStore, useAdminComplianceStore, useAdminSettingsStore } from '@/stores'
 import { getSetupStatus } from '@/api/setup'
 import { updateFavicon } from '@/utils/branding'
@@ -16,6 +17,7 @@ import { FeatureFlags, isFeatureFlagEnabled } from '@/utils/featureFlags'
 import { resolveSiteBillingMode } from '@/utils/siteBillingMode'
 import { startMenuStatusPolling, stopMenuStatusPolling } from '@/composables/useMenuStatus'
 import { refreshUserPoints, setUserPointsIdentity } from '@/composables/useUserPoints'
+import { refreshDailyCheckIn, setDailyCheckInIdentity } from '@/composables/useDailyCheckIn'
 
 const router = useRouter()
 const route = useRoute()
@@ -30,6 +32,7 @@ let lastUserRefreshAt = 0
 let userRefreshInFlight: Promise<unknown> | null = null
 
 watch(() => authStore.isAuthenticated ? authStore.user?.id ?? null : null, setUserPointsIdentity, { immediate: true, flush: 'sync' })
+watch(() => authStore.isAuthenticated ? authStore.user?.id ?? null : null, setDailyCheckInIdentity, { immediate: true, flush: 'sync' })
 
 function updateDocumentTitle() {
   const customMenuItems = [
@@ -73,6 +76,7 @@ function onVisibilityChange() {
   if (document.visibilityState === 'visible' && authStore.isAuthenticated) {
     announcementStore.fetchAnnouncements()
     void refreshUserPoints()
+    void refreshDailyCheckIn()
   }
 }
 
@@ -167,6 +171,7 @@ const removeRouteAfterEach = router.afterEach(() => {
 
 onBeforeUnmount(() => {
   setUserPointsIdentity(null)
+  setDailyCheckInIdentity(null)
   stopMenuStatusPolling()
   removeRouteAfterEach()
   document.removeEventListener('visibilitychange', onVisibilityChange)
@@ -198,6 +203,7 @@ onMounted(async () => {
 <template>
   <NavigationProgress />
   <RouterView />
+  <UserPointsHost v-if="authStore.isAuthenticated" />
   <PersistentRemoteWidgets v-if="authStore.isAuthenticated" />
   <!-- 抽奖 / 任务推送连接挂在根上。菜单切换只换 RouterView，这条连接保持不动。 -->
   <LotteryPromptHost v-if="authStore.isAuthenticated" />
