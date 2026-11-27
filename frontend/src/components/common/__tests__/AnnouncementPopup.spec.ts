@@ -43,6 +43,21 @@ describe('AnnouncementPopup', () => {
     document.body.style.overflow = ''
   })
 
+  it.each([true, false])('opens popup images in a lightbox (preview: %s)', async (preview) => {
+    const imageAnnouncement = { ...announcement, content: '![Notice](/notice.png)' }
+    useAnnouncementStore().currentPopup = imageAnnouncement
+    const wrapper = mount(AnnouncementPopup, { props: { announcement: imageAnnouncement, preview } })
+    await wrapper.vm.$nextTick()
+    document.body.querySelector<HTMLImageElement>('.markdown-body img')!.click()
+    await wrapper.vm.$nextTick()
+    expect(document.body.querySelector('.library-lightbox img')?.getAttribute('src')).toContain('/notice.png')
+    document.body.querySelector<HTMLButtonElement>('.lightbox-close')!.click()
+    await wrapper.vm.$nextTick()
+    expect(document.body.querySelector('.library-lightbox')).toBeNull()
+    expect(document.body.querySelector('.markdown-body')).not.toBeNull()
+    wrapper.unmount()
+  })
+
   it('renders mixed Markdown and HTML inside the shared styled container', async () => {
     const store = useAnnouncementStore()
     store.currentPopup = {

@@ -101,7 +101,11 @@
 }
 
 .markdown-body img {
-  @apply my-5 max-w-full rounded-xl border border-gray-200 shadow-md dark:border-dark-600;
+  @apply my-5 h-auto max-w-full cursor-zoom-in rounded-xl border border-gray-200 shadow-md dark:border-dark-600;
+}
+
+.markdown-body img:focus-visible {
+  @apply outline outline-2 outline-offset-2 outline-primary-500;
 }
 
 .markdown-body strong {

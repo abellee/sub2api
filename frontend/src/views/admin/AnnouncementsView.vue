@@ -177,7 +177,7 @@
     >
       <form id="announcement-form" @submit.prevent="handleSave">
         <p v-if="pendingGroupAnnouncement" role="alert" class="mb-4 text-sm text-amber-600 dark:text-amber-400">{{ t('admin.announcements.groupNotifyPending') }}</p>
-        <fieldset :disabled="saving || !!pendingGroupAnnouncement" class="space-y-4">
+        <fieldset :disabled="saving || uploadingImage || !!pendingGroupAnnouncement" class="space-y-4">
           <div>
             <label class="input-label">{{ t('admin.announcements.form.title') }}</label>
             <input v-model="form.title" type="text" class="input" required />
@@ -185,7 +185,14 @@
 
           <div>
             <label class="input-label">{{ t('admin.announcements.form.content') }}</label>
-            <textarea v-model="form.content" rows="6" class="input" required></textarea>
+            <textarea ref="contentInput" v-model="form.content" rows="6" class="input" required></textarea>
+            <div class="mt-2 flex flex-wrap items-center gap-2">
+              <input ref="imageInput" type="file" accept="image/jpeg,image/png,image/gif,image/webp" class="hidden" @change="insertImage" />
+              <button type="button" class="btn btn-secondary" @click="imageInput?.click()">
+                {{ uploadingImage ? t('admin.announcements.uploadingImage') : t('admin.announcements.uploadImage') }}
+              </button>
+              <p class="input-hint">{{ t('admin.announcements.imageHint') }}</p>
+            </div>
           </div>
 
           <div v-if="!isEditing">
@@ -230,10 +237,10 @@
 
       <template #footer>
         <div class="flex justify-end gap-3">
-          <button type="button" @click="closeEdit" :disabled="saving" class="btn btn-secondary">
+          <button type="button" @click="closeEdit" :disabled="saving || uploadingImage" class="btn btn-secondary">
             {{ t('common.cancel') }}
           </button>
-          <button type="submit" form="announcement-form" :disabled="saving" class="btn btn-primary">
+          <button type="submit" form="announcement-form" :disabled="saving || uploadingImage" class="btn btn-primary">
             {{ saving ? t('common.saving') : pendingGroupAnnouncement ? t('admin.announcements.groupNotifyRetry') : t('common.save') }}
           </button>
         </div>
@@ -268,12 +275,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 import { adminAPI } from '@/api/admin'
-import { sendGroupNotification } from '@/api/pushNotifications'
+import { sendGroupNotification, uploadPushImage } from '@/api/pushNotifications'
 import { formatDateTime, formatDateTimeLocalInput, parseDateTimeLocalInput } from '@/utils/format'
 import type { AdminGroup, Announcement, AnnouncementTargeting } from '@/types'
 import type { Column } from '@/components/common/types'
@@ -435,6 +442,10 @@ function handleSearch() {
 // ===== Create/Edit dialog =====
 const showEditDialog = ref(false)
 const saving = ref(false)
+const uploadingImage = ref(false)
+const contentInput = ref<HTMLTextAreaElement>()
+const imageInput = ref<HTMLInputElement>()
+let disposed = false
 const editingAnnouncement = ref<Announcement | null>(null)
 const pendingGroupAnnouncement = ref<Announcement | null>(null)
 
@@ -450,6 +461,38 @@ const form = reactive({
   ends_at_str: '',
   targeting: { any_of: [] } as AnnouncementTargeting
 })
+
+async function insertImage(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file || uploadingImage.value || saving.value || pendingGroupAnnouncement.value) return
+  if (!['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(file.type)) {
+    appStore.showError(t('admin.pushNotifications.form.imageInvalid'))
+    return
+  }
+  if (file.size > 2 * 1024 * 1024) {
+    appStore.showError(t('admin.pushNotifications.form.imageTooLarge'))
+    return
+  }
+  const start = contentInput.value?.selectionStart ?? form.content.length
+  const end = contentInput.value?.selectionEnd ?? start
+  uploadingImage.value = true
+  try {
+    const url = await uploadPushImage(file)
+    if (disposed) return
+    const image = `\n\n![](${url})\n\n`
+    form.content = form.content.slice(0, start) + image + form.content.slice(end)
+    uploadingImage.value = false
+    await nextTick()
+    contentInput.value?.focus()
+    contentInput.value?.setSelectionRange(start + image.length, start + image.length)
+  } catch (error: any) {
+    if (!disposed) appStore.showError(error?.message || t('admin.announcements.imageUploadFailed'))
+  } finally {
+    uploadingImage.value = false
+  }
+}
 
 const subscriptionGroups = ref<AdminGroup[]>([])
 
@@ -502,7 +545,7 @@ function openEditDialog(row: Announcement) {
 }
 
 function closeEdit() {
-  if (saving.value) return
+  if (saving.value || uploadingImage.value) return
   showEditDialog.value = false
   editingAnnouncement.value = null
   pendingGroupAnnouncement.value = null
@@ -558,7 +601,7 @@ function groupNotificationTime(value: string) {
 }
 
 async function handleSave() {
-  if (saving.value) return
+  if (saving.value || uploadingImage.value) return
   // Frontend validation for targeting (to avoid ANNOUNCEMENT_INVALID_TARGET)
   const anyOf = form.targeting?.any_of ?? []
   if (anyOf.length > 50) {
@@ -664,6 +707,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  disposed = true
   if (searchDebounceTimer) window.clearTimeout(searchDebounceTimer)
   currentController?.abort()
 })

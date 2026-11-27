@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
 import type { MediaFile } from '@/api/mediaLibrary'
 
-const props = defineProps<{ file: MediaFile; index: number; total: number }>()
+const props = defineProps<{ file: Pick<MediaFile, 'id' | 'model' | 'download_url' | 'content_type'>; index: number; total: number }>()
 const emit = defineEmits<{ close: []; move: [direction: number] }>()
 const { t } = useI18n()
 const overlay = ref<HTMLElement>()
@@ -44,7 +44,7 @@ function drag(event: PointerEvent) {
 }
 
 function keyboard(event: KeyboardEvent) {
-  if (event.key === 'Escape') { event.preventDefault(); emit('close'); return }
+  if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); emit('close'); return }
   if (event.key === 'Tab') {
     const controls = [...(overlay.value?.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], video[controls]') || [])]
     const index = controls.indexOf(document.activeElement as HTMLElement)
@@ -64,11 +64,11 @@ onMounted(() => {
   previousFocus = document.activeElement as HTMLElement | null
   document.body.classList.add('media-lightbox-open')
   closeButton.value?.focus()
-  document.addEventListener('keydown', keyboard)
+  document.addEventListener('keydown', keyboard, true)
 })
 onUnmounted(() => {
   document.body.classList.remove('media-lightbox-open')
-  document.removeEventListener('keydown', keyboard)
+  document.removeEventListener('keydown', keyboard, true)
   if (previousFocus?.isConnected) previousFocus.focus()
 })
 </script>

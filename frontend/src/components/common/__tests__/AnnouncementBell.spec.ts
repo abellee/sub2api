@@ -20,6 +20,21 @@ beforeEach(() => {
 afterEach(() => { vi.restoreAllMocks(); document.body.style.overflow = '' })
 
 describe('announcement read confirmation', () => {
+  it('opens images in historical announcements without closing the detail on Escape', async () => {
+    useAnnouncementStore().announcements[0].content = '![Notice](/notice.png)'
+    markRead.mockResolvedValue(undefined)
+    const wrapper = mount(AnnouncementBell, { global: { stubs: { Teleport: true, Transition: true, Icon: true } } })
+    await wrapper.get('button').trigger('click')
+    await wrapper.get('.group.relative').trigger('click')
+    await flushPromises()
+    await wrapper.get('.markdown-body img').trigger('click')
+    expect(wrapper.find('.library-lightbox').exists()).toBe(true)
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('.library-lightbox').exists()).toBe(false)
+    expect(wrapper.find('.markdown-body').exists()).toBe(true)
+  })
+
   it('keeps a failed read confirmation open and only reports success after retry', async () => {
     markRead.mockRejectedValue(new Error('offline'))
     const wrapper = mount(AnnouncementBell, { global: { stubs: { Teleport: true, Transition: true, Icon: true } } })

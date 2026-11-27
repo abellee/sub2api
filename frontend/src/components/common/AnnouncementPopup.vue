@@ -53,10 +53,7 @@
             <div class="relative">
               <div class="absolute left-0 top-0 bottom-0 w-1 rounded-full bg-gradient-to-b from-primary-500 via-primary-500 to-primary-500"></div>
               <div class="pl-6">
-                <div
-                  class="markdown-body prose prose-sm max-w-none dark:prose-invert"
-                  v-html="renderedContent"
-                ></div>
+                <AnnouncementContent :content="displayedAnnouncement.content" />
               </div>
             </div>
           </div>
@@ -91,13 +88,11 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { marked } from 'marked'
-import DOMPurify from 'dompurify'
 import { useAnnouncementStore } from '@/stores/announcements'
 import { formatRelativeWithDateTime } from '@/utils/format'
 import type { Announcement, UserAnnouncement } from '@/types'
 import AnnouncementReactions from './AnnouncementReactions.vue'
-import '@/styles/announcement-markdown.css'
+import AnnouncementContent from './AnnouncementContent.vue'
 import '@/styles/announcement-theme.css'
 
 type PreviewAnnouncement = Pick<Announcement | UserAnnouncement, 'title' | 'content' | 'created_at'> & { id?: number }
@@ -120,18 +115,6 @@ const displayedAnnouncement = computed(() => (
   props.preview ? props.announcement : announcementStore.currentPopup
 ))
 const reactionAnnouncementId = computed(() => displayedAnnouncement.value?.id || 0)
-
-marked.setOptions({
-  breaks: true,
-  gfm: true,
-})
-
-const renderedContent = computed(() => {
-  const content = displayedAnnouncement.value?.content
-  if (!content) return ''
-  const html = marked.parse(content) as string
-  return DOMPurify.sanitize(html)
-})
 
 function handleDismiss() {
   if (props.preview) {
