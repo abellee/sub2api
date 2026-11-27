@@ -11,7 +11,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/iqdetectd"
+	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
 var Version = "dev"
@@ -37,6 +39,13 @@ func main() {
 		os.Exit(1)
 	}
 	defer func() { _ = store.Close() }()
+	// Gameplay reporting is optional and shares the main server's bounded sender.
+	if token := os.Getenv("LOTTERYD_GRPC_TOKEN"); token != "" {
+		if notifier := service.NewLotterydNotifier(config.LotterydConfig{GrpcAddr: os.Getenv("LOTTERYD_GRPC_ADDR"), Token: token}); notifier != nil {
+			notifier.StartEvents()
+			defer notifier.Stop()
+		}
+	}
 
 	runner := iqdetectd.NewRunner(store, *upstreamBase, *apiKey, time.Duration(*timeoutSecs)*time.Second, logger)
 	testRunner := iqdetectd.NewTestRunner(store, time.Duration(*timeoutSecs)*time.Second, logger)

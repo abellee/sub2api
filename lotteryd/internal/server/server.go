@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"lotteryd/api/events"
 	"net/http"
 	"strconv"
 	"strings"
@@ -122,7 +123,7 @@ func (s *Server) requireUser(next authedHandler) http.Handler {
 			return
 		}
 		ctx := app.WithUserUsageBearer(r.Context(), claims.UserID, strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
-		next(w, r.WithContext(ctx), claims)
+		observeAuthedEvent(w, r.WithContext(ctx), claims, next, false)
 	})
 }
 
@@ -137,7 +138,7 @@ func (s *Server) requireAdmin(next authedHandler) http.Handler {
 			fail(w, http.StatusForbidden, 403, "admin role required")
 			return
 		}
-		next(w, r, claims)
+		observeAuthedEvent(w, r, claims, next, true)
 	})
 }
 
@@ -168,6 +169,7 @@ func (s *Server) claimsFromToken(ctx context.Context, token string) (*Claims, er
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", s.handleHealth)
+	s.registerEvents(mux)
 
 	// User endpoints.
 	mux.Handle("GET /v1/activities", s.requireUser(s.handleListActivities))
@@ -941,6 +943,7 @@ func (s *Server) handleAdminCloseActivity(w http.ResponseWriter, r *http.Request
 	}
 	s.wsHub.Wake()
 	s.App.MarkDailySkip(id)
+	events.Publish("lottery.closed", 0, events.S(id), map[string]string{"activity_id": events.S(id)})
 	ok(w, map[string]any{"id": id, "status": "closed"})
 }
 

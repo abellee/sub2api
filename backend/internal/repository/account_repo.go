@@ -1558,6 +1558,7 @@ func (r *accountRepository) SetError(ctx context.Context, id int64, errorMsg str
 		logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue set error failed: account=%d err=%v", id, err)
 	}
 	r.syncSchedulerAccountSnapshot(ctx, id)
+	service.ObserveGameplayEvent(ctx, "account.availability_changed", 0, "", "account_id", id, "status", "error")
 	return nil
 }
 
@@ -1606,6 +1607,7 @@ func (r *accountRepository) SetGrokCredentialErrorIfMatch(
 		return false, err
 	}
 	r.syncSchedulerAccountSnapshotDetached(ctx, id)
+	service.ObserveGameplayEvent(ctx, "account.availability_changed", 0, "", "account_id", id, "status", "error")
 	return true, nil
 }
 
@@ -1666,6 +1668,7 @@ func (r *accountRepository) SetGrokOAuthErrorIfCredentialsUnchanged(
 		return false, nil
 	}
 	r.syncSchedulerAccountSnapshotDetached(ctx, id)
+	service.ObserveGameplayEvent(ctx, "account.availability_changed", 0, "", "account_id", id, "status", "error")
 	return true, nil
 }
 
@@ -1970,6 +1973,7 @@ func (r *accountRepository) ClearError(ctx context.Context, id int64) error {
 		logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue clear error failed: account=%d err=%v", id, err)
 	}
 	r.syncSchedulerAccountSnapshot(ctx, id)
+	service.ObserveGameplayEvent(ctx, "account.availability_changed", 0, "", "account_id", id, "status", "active")
 	return nil
 }
 
@@ -2409,6 +2413,7 @@ func (r *accountRepository) SetRateLimited(ctx context.Context, id int64, resetA
 		logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue rate limit failed: account=%d err=%v", id, err)
 	}
 	r.syncSchedulerAccountSnapshot(ctx, id)
+	service.ObserveGameplayEvent(ctx, "account.availability_changed", 0, "", "account_id", id, "status", "rate_limited", "expires_at", resetAt)
 	return nil
 }
 
@@ -2441,6 +2446,7 @@ func (r *accountRepository) SetRateLimitedIfLater(ctx context.Context, id int64,
 		logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue extended rate limit failed: account=%d err=%v", id, err)
 	}
 	r.syncSchedulerAccountSnapshot(ctx, id)
+	service.ObserveGameplayEvent(ctx, "account.availability_changed", 0, "", "account_id", id, "status", "rate_limited", "expires_at", resetAt)
 	return nil
 }
 
@@ -2470,6 +2476,7 @@ func (r *accountRepository) ClearRateLimitIfObserved(ctx context.Context, id int
 		logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue observed rate-limit clear failed: account=%d err=%v", id, err)
 	}
 	r.syncSchedulerAccountSnapshot(ctx, id)
+	service.ObserveGameplayEvent(ctx, "account.availability_changed", 0, "", "account_id", id, "status", "rate_limit_cleared")
 	return true, nil
 }
 
@@ -2525,6 +2532,7 @@ func (r *accountRepository) SetRateLimitedIfUnchanged(
 		logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue rate limit failed: account=%d err=%v", id, err)
 	}
 	r.syncSchedulerAccountSnapshot(ctx, id)
+	service.ObserveGameplayEvent(ctx, "account.availability_changed", 0, "", "account_id", id, "status", "rate_limited", "expires_at", newResetAt)
 	return true, nil
 }
 
@@ -2620,6 +2628,7 @@ func (r *accountRepository) SetTempUnschedulable(ctx context.Context, id int64, 
 		logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue temp unschedulable failed: account=%d err=%v", id, err)
 	}
 	r.syncSchedulerAccountSnapshot(ctx, id)
+	service.ObserveGameplayEvent(ctx, "account.availability_changed", 0, "", "account_id", id, "status", "temporarily_unavailable", "expires_at", until)
 	return nil
 }
 
@@ -2665,6 +2674,7 @@ func (r *accountRepository) SetGrokCredentialTempUnschedulableIfMatch(
 		return false, err
 	}
 	r.syncSchedulerAccountSnapshotDetached(ctx, id)
+	service.ObserveGameplayEvent(ctx, "account.availability_changed", 0, "", "account_id", id, "status", "temporarily_unavailable", "expires_at", until)
 	return true, nil
 }
 
@@ -2687,6 +2697,7 @@ func (r *accountRepository) ClearTempUnschedulable(ctx context.Context, id int64
 		logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue clear temp unschedulable failed: account=%d err=%v", id, err)
 	}
 	r.syncSchedulerAccountSnapshot(ctx, id)
+	service.ObserveGameplayEvent(ctx, "account.availability_changed", 0, "", "account_id", id, "status", "available")
 	return nil
 }
 
@@ -2707,6 +2718,7 @@ func (r *accountRepository) ClearRateLimit(ctx context.Context, id int64) error 
 		logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue clear rate limit failed: account=%d err=%v", id, err)
 	}
 	r.syncSchedulerAccountSnapshot(ctx, id)
+	service.ObserveGameplayEvent(ctx, "account.availability_changed", 0, "", "account_id", id, "status", "rate_limit_cleared")
 	return nil
 }
 
@@ -2865,6 +2877,7 @@ func (r *accountRepository) SetSchedulable(ctx context.Context, id int64, schedu
 	if !schedulable {
 		r.syncSchedulerAccountSnapshot(ctx, id)
 	}
+	service.ObserveGameplayEvent(ctx, "account.availability_changed", 0, "", "account_id", id, "status", "schedulability_changed", "action", schedulable)
 	return nil
 }
 
@@ -4229,6 +4242,7 @@ func (r *accountRepository) ResetQuotaUsedAndClearRateLimitCooldown(ctx context.
 		logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue quota reset failed: account=%d err=%v", id, err)
 	}
 	r.syncSchedulerAccountSnapshot(ctx, id)
+	service.ObserveGameplayEvent(ctx, "account.quota_changed", 0, "", "account_id", id, "action", "reset")
 	return nil
 }
 

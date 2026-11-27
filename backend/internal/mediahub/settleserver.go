@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"lotteryd/api/events"
 	"net/http"
 	"strings"
 	"sync"
@@ -103,6 +104,10 @@ func (s *SettleServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "invalid signature"})
 		return
 	}
+	if r.Header.Get(HeaderEvent) == "gameplay.event" {
+		s.receiveGameplay(w, body)
+		return
+	}
 
 	var ev settleEvent
 	if err := json.Unmarshal(body, &ev); err != nil {
@@ -128,6 +133,7 @@ func (s *SettleServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, 503, map[string]any{"error": "file deletion update failed"})
 			return
 		}
+		events.Publish("media.cleaned", parseID(deletion.UserID), deletion.EventID, map[string]string{"source_id": deletion.TaskID, "api_key_id": deletion.KeyID, "reason": deletion.Reason, "count": events.S(len(deletion.FileIDs))})
 		writeJSON(w, 200, map[string]any{"files_deleted": true, "event_id": deletion.EventID})
 		return
 	}
@@ -189,6 +195,34 @@ func (s *SettleServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	s.markProcessed(ev.TaskID)
 	writeJSON(w, http.StatusOK, map[string]any{"settled": true})
+}
+
+// Only authenticated media lifecycle snapshots are forwarded; task.completed keeps its billing semantics.
+func (s *SettleServer) receiveGameplay(w http.ResponseWriter, body []byte) {
+	if len(body) > 64<<10 {
+		writeJSON(w, 400, map[string]any{"error": "event too large"})
+		return
+	}
+	var e events.Event
+	if json.Unmarshal(body, &e) != nil || e.Source != "mediad" || e.UserID <= 0 || e.ID == "" || len(e.ID) > 320 || len(e.Reference) > 240 || e.OccurredAt.IsZero() || e.OccurredAt.After(time.Now().Add(5*time.Minute)) {
+		writeJSON(w, 400, map[string]any{"error": "invalid media event"})
+		return
+	}
+	switch e.Type {
+	case "media.created", "media.started", "media.succeeded", "media.failed", "media.recovery_required", "media.files_saved", "media.files_failed", "media.downloaded", "media.deleted", "media.cleaned":
+	default:
+		writeJSON(w, 400, map[string]any{"error": "unsupported media event"})
+		return
+	}
+	data := map[string]string{}
+	for _, key := range []string{"source_id", "api_key_id", "group_id", "model", "status", "image_count", "duration_ms", "quantity", "reason"} {
+		if value := e.Data[key]; len(value) <= 1024 {
+			data[key] = value
+		}
+	}
+	e.Data = data
+	events.Emit(e)
+	writeJSON(w, 200, map[string]any{"received": true})
 }
 
 func (s *SettleServer) alreadyProcessed(taskID string) bool {

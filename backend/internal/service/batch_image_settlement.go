@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"lotteryd/api/events"
 	"strconv"
 	"strings"
 	"time"
@@ -178,6 +179,7 @@ func (s *BatchImageSettlementService) Settle(ctx context.Context, batchID string
 		return nil, err
 	}
 	s.recordUsageLog(ctx, job, actualCost, result.RequestID, now)
+	publishBatchGameplayEvent("batch.completed", job, "", map[string]string{"status": BatchImageJobStatusCompleted, "actual_cost": events.Amount(actualCost)})
 
 	return result, nil
 }
@@ -246,6 +248,7 @@ func (s *BatchImageSettlementService) failExhaustedSettlement(ctx context.Contex
 	}); err != nil {
 		return err
 	}
+	publishBatchGameplayEvent("media.failed", job, "", map[string]string{"status": BatchImageJobStatusFailed, "reason": "SETTLEMENT_BILLING_RETRY_EXHAUSTED"})
 	return ErrBatchImageSettlementBillingFailed
 }
 

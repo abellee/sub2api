@@ -177,6 +177,7 @@ func (s *PaymentService) RequestRefund(ctx context.Context, oid, uid int64, reas
 		return infraerrors.Conflict("CONFLICT", "order status changed")
 	}
 	s.writeAuditLog(ctx, oid, "REFUND_REQUESTED", fmt.Sprintf("user:%d", uid), map[string]any{"amount": o.Amount, "reason": nr})
+	gameplayPayment(ctx, "payment.refund_requested", o)
 	return nil
 }
 
@@ -653,6 +654,7 @@ func (s *PaymentService) finalizeRefundFailedTx(ctx context.Context, p *RefundPl
 		return nil, fmt.Errorf("commit refund failure finalization: %w", err)
 	}
 	committed = true
+	publishGameplay(ctx, "payment.refund_failed", p.Order.UserID, gameplayValue(p.OrderID), "source_id", p.OrderID, "amount", p.RefundAmount, "status", OrderStatusRefundFailed)
 	return nil, nil
 }
 
@@ -757,7 +759,9 @@ func (s *PaymentService) handleGwFail(ctx context.Context, p *RefundPlan, gErr e
 		return &RefundResult{Success: false, Warning: "gateway failed: " + psErrMsg(gErr) + ", rolled back"}, nil
 	}
 	now := time.Now()
-	_, _ = s.entClient.PaymentOrder.UpdateOneID(p.OrderID).SetStatus(OrderStatusRefundFailed).SetFailedAt(now).SetFailedReason(psErrMsg(gErr)).Save(ctx)
+	if _, updateErr := s.entClient.PaymentOrder.UpdateOneID(p.OrderID).SetStatus(OrderStatusRefundFailed).SetFailedAt(now).SetFailedReason(psErrMsg(gErr)).Save(ctx); updateErr == nil {
+		publishGameplay(ctx, "payment.refund_failed", p.Order.UserID, gameplayValue(p.OrderID), "source_id", p.OrderID, "amount", p.RefundAmount, "status", OrderStatusRefundFailed)
+	}
 	s.writeAuditLog(ctx, p.OrderID, "REFUND_FAILED", "admin", map[string]any{"detail": psErrMsg(gErr)})
 	return nil, infraerrors.InternalServer("REFUND_FAILED", psErrMsg(gErr))
 }
@@ -773,6 +777,7 @@ func (s *PaymentService) markRefundOk(ctx context.Context, p *RefundPlan) (*Refu
 		return nil, fmt.Errorf("mark refund: %w", err)
 	}
 	s.writeAuditLog(ctx, p.OrderID, "REFUND_SUCCESS", "admin", map[string]any{"refundAmount": p.RefundAmount, "reason": p.Reason, "balanceDeducted": p.BalanceToDeduct, "force": p.Force})
+	publishGameplay(ctx, "payment.refunded", p.Order.UserID, gameplayValue(p.OrderID), "source_id", p.OrderID, "amount", p.RefundAmount, "status", fs)
 	return &RefundResult{Success: true, BalanceDeducted: p.BalanceToDeduct, SubDaysDeducted: p.SubDaysToDeduct}, nil
 }
 
@@ -798,6 +803,7 @@ func (s *PaymentService) markRefundOkTx(ctx context.Context, client *dbent.Clien
 		Save(ctx); err != nil {
 		return nil, fmt.Errorf("write refund audit: %w", err)
 	}
+	publishGameplay(ctx, "payment.refunded", p.Order.UserID, gameplayValue(p.OrderID), "source_id", p.OrderID, "amount", p.RefundAmount, "status", fs)
 	return &RefundResult{Success: true, BalanceDeducted: p.BalanceToDeduct, SubDaysDeducted: p.SubDaysToDeduct}, nil
 }
 
@@ -853,6 +859,7 @@ func (s *PaymentService) markRefundPending(ctx context.Context, p *RefundPlan, r
 	if err = tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commit mark refund pending: %w", err)
 	}
+	publishGameplay(ctx, "payment.refund_pending", p.Order.UserID, gameplayValue(p.OrderID), "source_id", p.OrderID, "amount", p.RefundAmount, "status", OrderStatusRefundPending)
 	return &RefundResult{Success: false, Warning: "gateway refund is pending confirmation"}, nil
 }
 

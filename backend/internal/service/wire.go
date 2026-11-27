@@ -1095,7 +1095,9 @@ func ProvideLotterydNotifier(cfg *config.Config) *LotterydNotifier {
 	if cfg == nil {
 		return nil
 	}
-	return NewLotterydNotifier(cfg.Lotteryd)
+	n := NewLotterydNotifier(cfg.Lotteryd)
+	n.StartEvents()
+	return n
 }
 
 // ProvidePaymentOrderExpiryService creates and starts PaymentOrderExpiryService.

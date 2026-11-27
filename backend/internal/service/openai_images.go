@@ -688,7 +688,7 @@ func normalizeOpenAIImageSizeTier(size string) string {
 	return NormalizeImageBillingTierOrDefault(size)
 }
 
-func (s *OpenAIGatewayService) ForwardImages(
+func (s *OpenAIGatewayService) forwardImagesWithGameplayObservation(
 	ctx context.Context,
 	c *gin.Context,
 	account *Account,

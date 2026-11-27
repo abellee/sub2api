@@ -135,6 +135,7 @@ vite.config.js
 docs/*
 !docs/ADMIN_ANNOUNCEMENT_READ_STATUS.md
 !docs/agent-resource-safety.md
+!docs/gameplay-events.md
 !docs/moego-json-batching.md
 !docs/admin-api-keys.md
 !docs/mcp.md

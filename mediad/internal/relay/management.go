@@ -119,6 +119,7 @@ func (h *ManagementHandler) handleCapabilities(w http.ResponseWriter, r *http.Re
 		"usage_units":      []string{UnitImage, UnitSecond, UnitToken, UnitAction},
 		"transforms":       TransformIDs(),
 		"schema_count":     h.registry.Count(),
+		"gameplay_events":  map[string]any{"started": h.tracker.gameplayStarted.Load(), "queued": len(h.tracker.gameplay), "dropped": h.tracker.gameplayDropped.Load(), "failed": h.tracker.gameplayFailed.Load()},
 		"callback": map[string]any{
 			"configured": h.tracker.CallbackSnapshot().URL != "",
 			"enabled":    h.tracker.CallbackSnapshot().Enabled,

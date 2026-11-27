@@ -68,7 +68,7 @@ func (h *UserHandler) BatchDisable(c *gin.Context) {
 		return
 	}
 
-	affected, err := h.adminService.BatchDisableUsers(c.Request.Context(), req.UserIDs)
+	affected, err := h.adminService.BatchDisableUsers(service.WithGameplayActor(c.Request.Context(), getAdminIDFromContext(c)), req.UserIDs)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return

@@ -270,6 +270,7 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 		}
 	}
 	s.postAuthUserBootstrap(ctx, user, "email", true)
+	publishGameplay(ctx, "user.registered", user.ID, gameplayValue(user.ID), "platform", "email", "registered_at", user.CreatedAt)
 	s.assignSubscriptions(ctx, user.ID, grantPlan.Subscriptions, "auto assigned by signup defaults")
 	// snapshot user × platform quota（fail-open）
 	_ = s.snapshotPlatformQuotaDefaults(ctx, user.ID, &grantPlan)
@@ -397,6 +398,7 @@ func (s *AuthService) SendVerifyCodeAsync(ctx context.Context, email string, loc
 		return nil, fmt.Errorf("enqueue verify code: %w", err)
 	}
 
+	publishGameplay(ctx, "user.verify_email_queued", 0, "", "action", "registration")
 	logger.LegacyPrintf("service.auth", "[Auth] Verify code enqueued successfully for: %s", email)
 	return &SendVerifyCodeResult{
 		Countdown: 60, // 60秒倒计时
@@ -645,6 +647,7 @@ func (s *AuthService) LoginOrRegisterOAuth(ctx context.Context, email, username 
 			} else {
 				user = newUser
 				s.postAuthUserBootstrap(ctx, user, signupSource, false)
+				publishGameplay(ctx, "user.registered", user.ID, gameplayValue(user.ID), "platform", signupSource, "registered_at", user.CreatedAt)
 				s.assignSubscriptions(ctx, user.ID, grantPlan.Subscriptions, "auto assigned by signup defaults")
 				// snapshot user × platform quota（fail-open）
 				_ = s.snapshotPlatformQuotaDefaults(ctx, user.ID, &grantPlan)
@@ -810,6 +813,7 @@ func (s *AuthService) loginOrRegisterOAuthWithTokenPair(ctx context.Context, ema
 					user = newUser
 					created = true
 					s.postAuthUserBootstrap(ctx, user, signupSource, false)
+					publishGameplay(ctx, "user.registered", user.ID, gameplayValue(user.ID), "platform", signupSource, "registered_at", user.CreatedAt)
 					s.assignSubscriptions(ctx, user.ID, grantPlan.Subscriptions, "auto assigned by signup defaults")
 					// snapshot user × platform quota（fail-open）
 					_ = s.snapshotPlatformQuotaDefaults(ctx, user.ID, &grantPlan)
@@ -831,6 +835,7 @@ func (s *AuthService) loginOrRegisterOAuthWithTokenPair(ctx context.Context, ema
 					user = newUser
 					created = true
 					s.postAuthUserBootstrap(ctx, user, signupSource, false)
+					publishGameplay(ctx, "user.registered", user.ID, gameplayValue(user.ID), "platform", signupSource, "registered_at", user.CreatedAt)
 					s.assignSubscriptions(ctx, user.ID, grantPlan.Subscriptions, "auto assigned by signup defaults")
 					// snapshot user × platform quota（fail-open）
 					_ = s.snapshotPlatformQuotaDefaults(ctx, user.ID, &grantPlan)
@@ -1694,6 +1699,7 @@ func (s *AuthService) ResetPassword(ctx context.Context, email, token, newPasswo
 	}
 
 	logger.LegacyPrintf("service.auth", "[Auth] Password reset successful for user: %s", email)
+	publishGameplay(ctx, "user.password_reset", user.ID, "")
 	return nil
 }
 
@@ -1888,6 +1894,7 @@ func (s *AuthService) RefreshTokenPair(ctx context.Context, refreshToken string)
 	if err != nil {
 		return nil, err
 	}
+	publishGameplay(ctx, "user.token_refreshed", user.ID, "")
 	return &TokenPairWithUser{
 		TokenPair: *pair,
 		UserRole:  user.Role,

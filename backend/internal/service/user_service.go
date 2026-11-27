@@ -462,6 +462,7 @@ func (s *UserService) UnbindUserAuthProviderWithResult(ctx context.Context, user
 	if err != nil {
 		return nil, false, err
 	}
+	publishGameplay(ctx, "user.identity_unbound", userID, "", "platform", provider)
 	return updatedUser, true, nil
 }
 
@@ -482,6 +483,7 @@ func (s *UserService) UpdateProfile(ctx context.Context, userID int64, req Updat
 		if s.authCacheInvalidator != nil && updated != nil && updated.Concurrency != oldConcurrency {
 			s.authCacheInvalidator.InvalidateAuthCacheByUserID(ctx, userID)
 		}
+		publishGameplay(ctx, "user.profile_updated", userID, "")
 		return updated, nil
 	}
 
@@ -492,6 +494,7 @@ func (s *UserService) UpdateProfile(ctx context.Context, userID int64, req Updat
 	if s.authCacheInvalidator != nil && updated.Concurrency != oldConcurrency {
 		s.authCacheInvalidator.InvalidateAuthCacheByUserID(ctx, userID)
 	}
+	publishGameplay(ctx, "user.profile_updated", userID, "")
 	return updated, nil
 }
 
@@ -1044,6 +1047,7 @@ func (s *UserService) ChangePassword(ctx context.Context, userID int64, req Chan
 		return fmt.Errorf("update user: %w", err)
 	}
 
+	publishGameplay(ctx, "user.password_changed", userID, "")
 	return nil
 }
 

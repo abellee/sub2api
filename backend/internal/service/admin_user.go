@@ -305,6 +305,12 @@ func (s *adminServiceImpl) UpdateUser(ctx context.Context, id int64, input *Upda
 	if err := s.userRepo.Update(ctx, user, fields); err != nil {
 		return nil, err
 	}
+	if user.Status != oldStatus {
+		publishGameplay(ctx, "user.ban_changed", user.ID, "", "actor_id", input.ActorAdminID, "status", user.Status, "previous_status", oldStatus, "action", "admin_update")
+	}
+	if user.Concurrency != oldConcurrency || user.Role != oldRole || user.RPMLimit != oldRPMLimit || user.RestrictPublicGroups != oldRestrictPublicGroups || !sameInt64Set(user.AllowedGroups, oldAllowedGroups) {
+		publishGameplay(ctx, "admin.user_limits_changed", user.ID, "", "actor_id", input.ActorAdminID, "concurrency", user.Concurrency, "rpm_limit", user.RPMLimit, "role", user.Role, "status", user.Status, "action", "admin_update")
+	}
 
 	// 角色变更属权限敏感操作，落审计日志（含操作者），便于事后追溯。
 	if user.Role != oldRole {
@@ -557,6 +563,9 @@ func (s *adminServiceImpl) UpdateUserBalance(ctx context.Context, userID int64, 
 	}
 
 	balanceDiff := change.New - change.Old
+	if balanceDiff != 0 {
+		publishGameplay(ctx, "user.balance_adjusted", userID, "", "amount", balanceDiff, "balance", change.Old, "balance_after", change.New, "action", operation)
+	}
 	if s.authCacheInvalidator != nil && balanceDiff != 0 {
 		s.authCacheInvalidator.InvalidateAuthCacheByUserID(ctx, userID)
 	}

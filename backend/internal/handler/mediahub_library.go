@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"lotteryd/api/events"
 	"net/http"
 	"regexp"
 	"time"
@@ -199,6 +200,7 @@ func (h *MediaHubController) deleteLibrary(c *gin.Context) {
 				failed = append(failed, id)
 			} else {
 				deleted = append(deleted, id)
+				events.Publish("media.deleted", userID, id, map[string]string{"source_id": records[i].TaskID, "resource": id, "reason": "manual"})
 			}
 		}
 	}

@@ -109,6 +109,7 @@ type MemoryStore struct {
 	root      string
 	deletions *deletionQueue
 	downloads map[string]map[string]*downloadProtection
+	gameplay  func(gameplayEvent)
 }
 
 // NewMemoryStore 创建内存任务表。
@@ -121,7 +122,16 @@ func NewMemoryStore(onDirty func()) *MemoryStore {
 
 func (s *MemoryStore) Create(task *Task) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	var notifications []gameplayEvent
+	sink := s.gameplay
+	defer func() {
+		s.mu.Unlock()
+		if sink != nil {
+			for _, e := range notifications {
+				sink(e)
+			}
+		}
+	}()
 	if _, exists := s.tasks[task.ID]; exists {
 		return fmt.Errorf("task already exists")
 	}
@@ -131,6 +141,9 @@ func (s *MemoryStore) Create(task *Task) error {
 	}
 	s.tasks[task.ID] = cloneTask(task)
 	s.onDirty()
+	if sink != nil {
+		notifications = taskGameplayChanges(nil, task)
+	}
 	return nil
 }
 
@@ -150,14 +163,24 @@ func (s *MemoryStore) PublicTask(id string) (*Task, bool) {
 		return nil, false
 	}
 	return &Task{ID: t.ID, Status: t.Status, CallbackState: t.CallbackState, CreatedAt: t.CreatedAt,
-		UserID: t.UserID, KeyID: t.KeyID, FilesDeletedAt: t.FilesDeletedAt,
+		UserID: t.UserID, KeyID: t.KeyID, GroupID: t.GroupID, Model: t.Model, FilesDeletedAt: t.FilesDeletedAt,
 		ErrorMessage: t.ErrorMessage, ErrorCode: t.ErrorCode, FilesAcknowledged: t.FilesAcknowledged, DownloadToken: t.DownloadToken,
 		Files: append([]ResultFile(nil), t.Files...)}, true
 }
 
 func (s *MemoryStore) Update(task *Task) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	var notifications []gameplayEvent
+	sink := s.gameplay
+	defer func() {
+		s.mu.Unlock()
+		if sink != nil {
+			for _, e := range notifications {
+				sink(e)
+			}
+		}
+	}()
+	previous := s.tasks[task.ID]
 	if prev := s.tasks[task.ID]; prev != nil && prev.ErrorCode == "recovery_expired" && task.ErrorCode != "recovery_expired" {
 		return errTaskExpired
 	}
@@ -185,6 +208,9 @@ func (s *MemoryStore) Update(task *Task) error {
 	}
 	s.tasks[task.ID] = cloneTask(task)
 	s.onDirty()
+	if sink != nil {
+		notifications = taskGameplayChanges(previous, task)
+	}
 	return nil
 }
 

@@ -657,7 +657,7 @@ func ExtractGrokVideoBillingFromStatusBody(statusBody []byte, pending *GrokVideo
 	}
 }
 
-func (s *OpenAIGatewayService) ForwardGrokMedia(
+func (s *OpenAIGatewayService) forwardGrokMediaWithGameplayObservation(
 	ctx context.Context,
 	c *gin.Context,
 	account *Account,

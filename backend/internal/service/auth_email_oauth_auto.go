@@ -215,6 +215,7 @@ func (s *AuthService) createEmailOAuthUser(ctx context.Context, email, username,
 			return nil, ErrInvitationCodeInvalid
 		}
 	}
+	publishGameplay(ctx, "user.registered", user.ID, gameplayValue(user.ID), "platform", providerType, "registered_at", user.CreatedAt)
 	return user, nil
 }
 
@@ -289,5 +290,8 @@ func (s *AuthService) ensureEmailOAuthIdentity(ctx context.Context, userID int64
 		SetProviderSubject(providerSubject).
 		SetMetadata(metadata).
 		Save(ctx)
+	if err == nil {
+		publishGameplay(ctx, "user.identity_bound", userID, "", "platform", providerType)
+	}
 	return err
 }

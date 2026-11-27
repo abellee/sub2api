@@ -292,7 +292,7 @@ func (s *BatchImagePublicService) Submit(ctx context.Context, owner BatchImageOw
 		if errors.Is(err, ErrBatchImageInsufficientBalance) {
 			code = "INSUFFICIENT_BALANCE"
 		}
-		_ = s.Repo.RecordBatchImageJobSubmitFailure(ctx, job.BatchID, code, sanitizeBatchImagePublicMessage(err.Error()), true)
+		s.recordGameplaySubmitFailure(ctx, job, code, sanitizeBatchImagePublicMessage(err.Error()))
 		s.hidePreUpstreamSubmitFailure(ctx, owner, job)
 		return nil, err
 	}
@@ -301,7 +301,7 @@ func (s *BatchImagePublicService) Submit(ctx context.Context, owner BatchImageOw
 		if releaseErr := s.releaseFailedSubmitHold(ctx, job, requestHash); releaseErr != nil {
 			return nil, releaseErr
 		}
-		_ = s.Repo.RecordBatchImageJobSubmitFailure(ctx, job.BatchID, "ITEM_CREATE_FAILED", sanitizeBatchImagePublicMessage(err.Error()), true)
+		s.recordGameplaySubmitFailure(ctx, job, "ITEM_CREATE_FAILED", sanitizeBatchImagePublicMessage(err.Error()))
 		s.hidePreUpstreamSubmitFailure(ctx, owner, job)
 		return nil, ErrBatchImageQueueFailed
 	}
@@ -340,7 +340,7 @@ func (s *BatchImagePublicService) Submit(ctx context.Context, owner BatchImageOw
 		}
 		// 并发 Cancel 等导致的非法转换：job 已处于终态，不再覆盖其状态。
 		if !errors.Is(err, ErrBatchImageInvalidTransition) {
-			_ = s.Repo.RecordBatchImageJobSubmitFailure(ctx, job.BatchID, "UPLOAD_TRANSITION_FAILED", sanitizeBatchImagePublicMessage(err.Error()), true)
+			s.recordGameplaySubmitFailure(ctx, job, "UPLOAD_TRANSITION_FAILED", sanitizeBatchImagePublicMessage(err.Error()))
 			s.hidePreUpstreamSubmitFailure(ctx, owner, job)
 		}
 		return nil, err
@@ -359,7 +359,7 @@ func (s *BatchImagePublicService) Submit(ctx context.Context, owner BatchImageOw
 		}
 		publicErr := batchImageProviderSubmitPublicError(err)
 		reason := batchImageProviderSubmitRecordCode(publicErr)
-		_ = s.Repo.RecordBatchImageJobSubmitFailure(ctx, job.BatchID, reason, sanitizeBatchImagePublicMessage(err.Error()), true)
+		s.recordGameplaySubmitFailure(ctx, job, reason, sanitizeBatchImagePublicMessage(err.Error()))
 		s.hidePreUpstreamSubmitFailure(ctx, owner, job)
 		return nil, publicErr
 	}
@@ -367,7 +367,7 @@ func (s *BatchImagePublicService) Submit(ctx context.Context, owner BatchImageOw
 		if releaseErr := s.releaseFailedSubmitHold(ctx, job, requestHash); releaseErr != nil {
 			return nil, releaseErr
 		}
-		_ = s.Repo.RecordBatchImageJobSubmitFailure(ctx, job.BatchID, "PROVIDER_SUBMIT_FAILED", "provider job name missing", true)
+		s.recordGameplaySubmitFailure(ctx, job, "PROVIDER_SUBMIT_FAILED", "provider job name missing")
 		s.hidePreUpstreamSubmitFailure(ctx, owner, job)
 		return nil, ErrBatchImageProviderSubmitFailed
 	}
@@ -398,12 +398,13 @@ func (s *BatchImagePublicService) Submit(ctx context.Context, owner BatchImageOw
 	if err != nil {
 		return nil, err
 	}
+	publishBatchGameplayEvent("batch.submitted", created, "", nil)
 	return BatchImageJobToPublic(created), nil
 }
 
 func (s *BatchImagePublicService) releaseFailedSubmitHold(ctx context.Context, job *BatchImageJob, requestHash string) error {
 	if err := releaseBatchImageBalanceHold(ctx, s.BillingRepo, job, requestHash); err != nil {
-		_ = s.Repo.RecordBatchImageJobSubmitFailure(ctx, job.BatchID, "BILLING_RELEASE_FAILED", sanitizeBatchImagePublicMessage(err.Error()), true)
+		s.recordGameplaySubmitFailure(ctx, job, "BILLING_RELEASE_FAILED", sanitizeBatchImagePublicMessage(err.Error()))
 		s.enqueueBillingRetry(ctx, job.BatchID)
 		return ErrBatchImageBillingHoldFailed
 	}
@@ -600,7 +601,11 @@ func (s *BatchImagePublicService) MarkDownloaded(ctx context.Context, owner Batc
 	if err != nil {
 		return err
 	}
-	return s.Repo.MarkBatchImageDownloaded(ctx, job.BatchID, time.Now())
+	if err := s.Repo.MarkBatchImageDownloaded(ctx, job.BatchID, time.Now()); err != nil {
+		return err
+	}
+	publishBatchGameplayEvent("media.downloaded", job, job.BatchID, nil)
+	return nil
 }
 
 func (s *BatchImagePublicService) DeleteRecord(ctx context.Context, owner BatchImageOwner, batchID string) error {
@@ -611,7 +616,11 @@ func (s *BatchImagePublicService) DeleteRecord(ctx context.Context, owner BatchI
 	if !isBatchImageProcessorDoneStatus(job.Status) {
 		return ErrBatchImageRecordDeleteNotReady
 	}
-	return s.Repo.MarkBatchImageJobUserDeleted(ctx, owner.UserID, owner.APIKeyID, job.BatchID, time.Now())
+	if err := s.Repo.MarkBatchImageJobUserDeleted(ctx, owner.UserID, owner.APIKeyID, job.BatchID, time.Now()); err != nil {
+		return err
+	}
+	publishBatchGameplayEvent("batch.record_deleted", job, "", nil)
+	return nil
 }
 
 func (s *BatchImagePublicService) ListModels(ctx context.Context, owner BatchImageOwner) (*BatchImagePublicModelsResponse, error) {
@@ -766,6 +775,7 @@ func (s *BatchImagePublicService) Cancel(ctx context.Context, owner BatchImageOw
 	if err != nil {
 		return nil, err
 	}
+	publishBatchGameplayEvent("batch.cancelled", updated, "", nil)
 	return BatchImageJobToPublic(updated), nil
 }
 

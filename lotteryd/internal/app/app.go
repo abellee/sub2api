@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"lotteryd/api/events"
 	"sort"
 	"strconv"
 	"strings"
@@ -1237,6 +1238,7 @@ func (ap *App) ensureNextDailyRound(cfg lottery.DailyConfig, now time.Time) erro
 	}
 	ap.SaveActivityNotify(id, cfg.NotifyStages, cfg.Notify, cfg.NotifyChannels)
 	slog.Info("daily activity created", "id", id, "config", cfg.ID, "name", cfg.Name, "start", start.Format(time.RFC3339))
+	events.Publish("lottery.daily_created", 0, events.S(id), map[string]string{"activity_id": events.S(id)})
 	return ap.Store.SetState(keyFor(start), strconv.FormatInt(id, 10))
 }
 
@@ -1454,11 +1456,13 @@ func (ap *App) FulfillPending(ctx context.Context, a *lottery.Activity) error {
 			if uerr := ap.Store.UpdateWinnerFulfillment(w.ID, lottery.FulfillmentFailed, code, note, errMsg); uerr != nil {
 				return uerr
 			}
+			events.Publish("lottery.reward_failed", w.UserID, events.S(w.ID), map[string]string{"activity_id": events.S(a.ID), "amount": events.Amount(w.Value), "status": "failed"})
 			continue
 		}
 		if err := ap.Store.UpdateWinnerFulfillment(w.ID, lottery.FulfillmentDone, code, note, ""); err != nil {
 			return err
 		}
+		events.Publish("lottery.reward_completed", w.UserID, events.S(w.ID), map[string]string{"activity_id": events.S(a.ID), "amount": events.Amount(w.Value), "status": "success"})
 		slog.Info("lotteryd fulfilled", "winner", w.ID, "type", w.PrizeType)
 	}
 	return nil
@@ -1473,5 +1477,9 @@ func (ap *App) RetryFulfillment(ctx context.Context, activityID int64) error {
 	if err != nil {
 		return err
 	}
-	return ap.FulfillPending(ctx, a)
+	err = ap.FulfillPending(ctx, a)
+	if err == nil {
+		events.Publish("reward.retried", 0, "", map[string]string{"activity_id": events.S(activityID)})
+	}
+	return err
 }

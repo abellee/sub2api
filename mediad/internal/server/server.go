@@ -86,6 +86,7 @@ func New(cfg config.Config, logger *log.Logger) (*Server, error) {
 }
 
 func (s *Server) Run(ctx context.Context) error {
+	s.tracker.StartGameplayEvents()
 	s.tracker.ExpireRecovery()
 	s.tracker.ResumeAll()
 	s.tracker.StartFileDeletionNotifications()

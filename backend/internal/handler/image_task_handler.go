@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"lotteryd/api/events"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
+	"github.com/tidwall/gjson"
 	"go.uber.org/zap"
 )
 
@@ -108,12 +110,20 @@ func (h *AsyncImageHandler) Submit(c *gin.Context) {
 		}
 		return
 	}
-	task, err := h.tasks.Create(c.Request.Context(), service.ImageTaskOwner{UserID: apiKey.UserID, APIKeyID: apiKey.ID})
+	owner := service.ImageTaskOwner{UserID: apiKey.UserID, APIKeyID: apiKey.ID, Platform: platform, Model: gjson.GetBytes(body, "model").String()}
+	if len(owner.Model) > 256 {
+		owner.Model = ""
+	}
+	if apiKey.GroupID != nil {
+		owner.GroupID = *apiKey.GroupID
+	}
+	task, err := h.tasks.Create(c.Request.Context(), owner)
 	if err != nil {
 		cancel()
 		imageTaskError(c, err)
 		return
 	}
+	taskCtx.Set("gameplay_model", owner.Model)
 
 	pollURL := imageTaskPollURL(c.Request.URL.Path, task.ID)
 	c.Header("Cache-Control", "no-store")
@@ -236,6 +246,13 @@ func (h *AsyncImageHandler) run(taskID, platform string, taskCtx *gin.Context, r
 		}
 	}()
 
+	if key, ok := middleware2.GetAPIKeyFromContext(taskCtx); ok && key != nil {
+		data := map[string]string{"source_id": taskID, "api_key_id": events.S(key.ID), "platform": platform, "model": taskCtx.GetString("gameplay_model")}
+		if key.GroupID != nil {
+			data["group_id"] = events.S(*key.GroupID)
+		}
+		events.Publish("media.started", key.UserID, taskID, data)
+	}
 	h.execute(platform, taskCtx)
 	body := bytes.TrimSpace(recorder.Body.Bytes())
 	if err := taskCtx.Request.Context().Err(); err != nil && len(body) == 0 {

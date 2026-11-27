@@ -686,6 +686,10 @@ func (s *ChannelMonitorService) persistCheckResults(ctx context.Context, m *Chan
 	if err := s.repo.InsertHistoryBatch(ctx, rows); err != nil {
 		slog.Error("channel_monitor: insert history failed",
 			"monitor_id", m.ID, "name", m.Name, "error", err)
+	} else {
+		for _, result := range results {
+			publishGameplay(ctx, "monitor.completed", 0, gameplayValue(m.ID)+":"+result.Model+":"+gameplayValue(result.CheckedAt), "source_id", m.ID, "model", result.Model, "status", result.Status, "duration_ms", result.LatencyMs)
+		}
 	}
 	if err := s.repo.MarkChecked(ctx, m.ID, time.Now()); err != nil {
 		slog.Error("channel_monitor: mark checked failed",

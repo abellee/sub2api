@@ -812,6 +812,7 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 			lastEventType = eventType
 		}
 		if isOpenAIWSTokenEvent(eventType) {
+			observeGameplayFirstOutput(c)
 			tokenEventCount++
 			if firstTokenMs == nil {
 				ms := int(time.Since(turnStart).Milliseconds())

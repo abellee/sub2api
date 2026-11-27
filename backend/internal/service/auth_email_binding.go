@@ -70,6 +70,7 @@ func (s *AuthService) BindEmailIdentity(
 			return nil, err
 		}
 		s.revokeEmailIdentitySessions(ctx, userID)
+		publishGameplay(ctx, "user.identity_bound", userID, "", "platform", "email")
 		return currentUser, nil
 	}
 
@@ -89,6 +90,7 @@ func (s *AuthService) BindEmailIdentity(
 	}
 
 	s.revokeEmailIdentitySessions(ctx, userID)
+	publishGameplay(ctx, "user.identity_bound", userID, "", "platform", "email")
 	return currentUser, nil
 }
 

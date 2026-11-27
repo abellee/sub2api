@@ -38,6 +38,7 @@ COPY lotteryd/go.mod lotteryd/go.sum /lotteryd/
 
 COPY backend/go.mod backend/go.sum ./
 COPY backend/audit-sdk/ ./audit-sdk/
+COPY backend/cost-guard-sdk/ ./cost-guard-sdk/
 RUN --mount=type=cache,id=sub2api-iqdetectd-gomod,target=/go/pkg/mod \
     go mod download
 

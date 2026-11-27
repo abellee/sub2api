@@ -146,6 +146,7 @@ func provideCleanup(
 	contentSafetyBilling *service.ContentSafetyBillingService,
 	pluginManager *service.PluginManager,
 	costGuard *service.CostGuardService,
+	lotterydNotifier *service.LotterydNotifier,
 ) func() {
 	return func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -447,6 +448,7 @@ func provideCleanup(
 		}
 
 		infraSteps := []cleanupStep{
+			{"LotterydNotifier", func() error { lotterydNotifier.Stop(); return nil }},
 			{"Redis", func() error {
 				if rdb == nil {
 					return nil

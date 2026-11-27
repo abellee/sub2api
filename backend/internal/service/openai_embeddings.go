@@ -17,7 +17,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func (s *OpenAIGatewayService) ForwardEmbeddings(
+func (s *OpenAIGatewayService) forwardEmbeddingsWithGameplayObservation(
 	ctx context.Context,
 	c *gin.Context,
 	account *Account,

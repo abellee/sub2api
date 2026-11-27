@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"lotteryd/api/events"
 	"os"
 	"path/filepath"
 	"strings"
@@ -398,6 +399,11 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 	}
 	result.ID = id
 	result.CreatedAt = now
+	status := "completed"
+	if result.Error != "" {
+		status = "failed"
+	}
+	events.Emit(events.Event{Type: "model.test_completed", Source: "iqdetectd", Reference: "iq-probe:" + events.S(id), Data: map[string]string{"source_id": events.S(id), "task_id": events.S(result.RunID), "model": result.Model, "status": status, "count": events.S(result.Correct), "quantity": events.S(result.Total)}})
 	return &result, nil
 }
 
@@ -785,7 +791,7 @@ func (s *Store) CompleteTestResult(ctx context.Context, id int64, result TestRes
 	if result.CandyCorrect != nil {
 		candyCorrect = boolToInt(*result.CandyCorrect)
 	}
-	_, err := s.db.ExecContext(ctx, `
+	updated, err := s.db.ExecContext(ctx, `
 UPDATE test_results SET
   status = ?, pelican_html = ?, pelican_response = ?, pelican_error = ?,
   pelican_latency_ms = ?, pelican_finished_at = ?,
@@ -796,6 +802,11 @@ WHERE id = ?`,
 		result.PelicanLatencyMS, result.PelicanFinishedAt,
 		result.CandyAnswer, result.CandyError, candyCorrect,
 		result.CandyLatencyMS, result.CandyFinishedAt, id)
+	if err == nil {
+		if n, _ := updated.RowsAffected(); n > 0 {
+			events.Emit(events.Event{Type: "model.test_completed", Source: "iqdetectd", Reference: "iq-test:" + events.S(id), Data: map[string]string{"source_id": events.S(id), "group_id": events.S(result.GroupID), "account_id": events.S(result.AccountID), "model": result.Model, "status": status, "duration_ms": events.S(result.PelicanLatencyMS + result.CandyLatencyMS)}})
+		}
+	}
 	return err
 }
 

@@ -32,6 +32,8 @@ var ErrOrderNotFound = errors.New("payment order not found")
 const paymentFulfillmentLeaseDuration = 5 * time.Minute
 
 type paymentFulfillmentLease struct {
+	userID  int64
+	orderNo string
 	version time.Time
 }
 
@@ -196,6 +198,7 @@ func (s *PaymentService) toPaid(ctx context.Context, o *dbent.PaymentOrder, trad
 	if c == 0 {
 		return s.alreadyProcessed(ctx, o)
 	}
+	publishGameplay(ctx, "payment.paid", o.UserID, o.OutTradeNo, "source_id", o.ID, "order_type", o.OrderType, "amount", o.Amount, "pay_amount", paid, "currency", PaymentOrderCurrency(o), "provider", pk, "status", OrderStatusPaid)
 	if previousStatus == OrderStatusCancelled || previousStatus == OrderStatusExpired {
 		slog.Info("order recovered from webhook payment success",
 			"orderID", o.ID,
@@ -275,6 +278,7 @@ func (s *PaymentService) rejectUnsupportedOrderType(ctx context.Context, o *dben
 		return
 	}
 	if c > 0 {
+		publishGameplay(ctx, "payment.fulfillment_failed", o.UserID, o.OutTradeNo, "source_id", o.ID, "status", OrderStatusFailed, "reason", "unsupported_order_type")
 		slog.Warn("payment order with unsupported order type not fulfilled", "orderID", o.ID, "orderType", o.OrderType)
 		s.writeAuditLog(ctx, o.ID, "FULFILLMENT_FAILED", "system", map[string]any{"reason": reason})
 	}
@@ -359,7 +363,7 @@ func (s *PaymentService) acquirePaymentFulfillmentLease(ctx context.Context, o *
 	if claimed.Status != OrderStatusRecharging {
 		return nil, infraerrors.Conflict("CONFLICT", "fulfillment lease was lost")
 	}
-	return &paymentFulfillmentLease{version: claimed.UpdatedAt}, nil
+	return &paymentFulfillmentLease{version: claimed.UpdatedAt, userID: o.UserID, orderNo: o.OutTradeNo}, nil
 }
 
 // redeemAction represents the idempotency decision for balance fulfillment.
@@ -477,6 +481,11 @@ func (s *PaymentService) markCompleted(ctx context.Context, o *dbent.PaymentOrde
 		}
 		return infraerrors.Conflict("CONFLICT", "fulfillment lease was lost before completion")
 	}
+	kind := "payment.balance_completed"
+	if o.OrderType == "subscription" {
+		kind = "payment.subscription_completed"
+	}
+	gameplayPayment(ctx, kind, o)
 	if !s.hasAuditLog(ctx, o.ID, auditAction) {
 		s.writeAuditLog(ctx, o.ID, auditAction, "system", map[string]any{
 			"rechargeCode":   o.RechargeCode,
@@ -946,6 +955,7 @@ func (s *PaymentService) markFailed(ctx context.Context, oid int64, lease *payme
 		slog.Error("mark FAILED", "orderID", oid, "error", e)
 	}
 	if c > 0 {
+		publishGameplay(ctx, "payment.fulfillment_failed", lease.userID, lease.orderNo+":"+gameplayValue(lease.version), "source_id", oid, "status", OrderStatusFailed)
 		s.writeAuditLog(ctx, oid, "FULFILLMENT_FAILED", "system", map[string]any{"reason": r})
 	}
 }

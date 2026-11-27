@@ -810,10 +810,12 @@ func (h *AuthHandler) CompleteDingTalkOAuthRegistration(c *gin.Context) {
 			h.syncDingTalkIdentityFromClaims(ctx, completionCfg, dtClient, user.ID, claims, true)
 		})
 	}
+	c.Set(gameplayLoginUserKey, user.ID)
 	h.authService.RecordSuccessfulLogin(c.Request.Context(), user.ID)
 	clearOAuthPendingSessionCookie(c, secureCookie)
 	clearOAuthPendingBrowserCookie(c, secureCookie)
 
+	recordGameplayLoginResponse(c)
 	c.JSON(http.StatusOK, gin.H{
 		"access_token":  tokenPair.AccessToken,
 		"refresh_token": tokenPair.RefreshToken,

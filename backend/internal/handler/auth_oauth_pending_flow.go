@@ -858,9 +858,13 @@ func ensurePendingOAuthIdentityForUser(ctx context.Context, tx *dbent.Tx, sessio
 			if activeOwner != nil {
 				return nil, infraerrors.Conflict("AUTH_IDENTITY_OWNERSHIP_CONFLICT", "auth identity already belongs to another user")
 			}
-			return client.AuthIdentity.UpdateOneID(identity.ID).
+			updated, err := client.AuthIdentity.UpdateOneID(identity.ID).
 				SetUserID(userID).
 				Save(ctx)
+			if err == nil {
+				service.ObserveGameplayEvent(ctx, "user.identity_bound", userID, fmt.Sprintf("%d:%d", userID, updated.ID), "platform", session.ProviderType, "source_id", updated.ID)
+			}
+			return updated, err
 		}
 		return identity, nil
 	}
@@ -874,7 +878,11 @@ func ensurePendingOAuthIdentityForUser(ctx context.Context, tx *dbent.Tx, sessio
 	if issuer := oauthIdentityIssuer(session); issuer != nil {
 		create = create.SetIssuer(strings.TrimSpace(*issuer))
 	}
-	return create.Save(ctx)
+	created, err := create.Save(ctx)
+	if err == nil {
+		service.ObserveGameplayEvent(ctx, "user.identity_bound", userID, fmt.Sprintf("%d:%d", userID, created.ID), "platform", session.ProviderType, "source_id", created.ID)
+	}
+	return created, err
 }
 
 func ensurePendingWeChatOAuthIdentityForUser(ctx context.Context, tx *dbent.Tx, session *dbent.PendingAuthSession, userID int64) (*dbent.AuthIdentity, error) {
@@ -921,6 +929,7 @@ func ensurePendingWeChatOAuthIdentityForUser(ctx context.Context, tx *dbent.Tx, 
 		}
 	}
 
+	newGameplayBinding := (identity == nil && legacyOpenIDIdentity == nil) || (identity != nil && identity.UserID != userID)
 	switch {
 	case identity != nil:
 		update := client.AuthIdentity.UpdateOneID(identity.ID).
@@ -966,6 +975,9 @@ func ensurePendingWeChatOAuthIdentityForUser(ctx context.Context, tx *dbent.Tx, 
 		}
 	}
 
+	if newGameplayBinding {
+		service.ObserveGameplayEvent(ctx, "user.identity_bound", userID, fmt.Sprintf("%d:%d", userID, identity.ID), "platform", session.ProviderType, "source_id", identity.ID)
+	}
 	if channel == "" || channelAppID == "" || channelSubject == "" {
 		return identity, nil
 	}
@@ -1612,6 +1624,7 @@ func (h *AuthHandler) transitionPendingOAuthAccountToChoiceState(
 }
 
 func writeOAuthTokenPairResponse(c *gin.Context, tokenPair *service.TokenPair) {
+	recordGameplayLoginResponse(c)
 	c.JSON(http.StatusOK, gin.H{
 		"access_token":  tokenPair.AccessToken,
 		"refresh_token": tokenPair.RefreshToken,
@@ -1679,6 +1692,8 @@ func (h *AuthHandler) bindPendingOAuthLogin(c *gin.Context, provider string) {
 		respondPendingOAuthBindingApplyError(c, err)
 		return
 	}
+
+	c.Set(gameplayLoginUserKey, user.ID)
 
 	h.authService.RecordSuccessfulLogin(c.Request.Context(), user.ID)
 	// bindPendingOAuthLogin = 绑定已有账户登录，不动 users.username（用户已有自己的名字）
@@ -1886,6 +1901,7 @@ func (h *AuthHandler) createPendingOAuthAccount(c *gin.Context, provider string)
 	}
 
 	h.authService.ApplyOAuthSignupPromoCode(c.Request.Context(), user.ID, pendingOAuthPromoCode(session))
+	c.Set(gameplayLoginUserKey, user.ID)
 	h.authService.RecordSuccessfulLogin(c.Request.Context(), user.ID)
 	// createPendingOAuthAccount = 注册新账户，需要把钉钉昵称同步到 users.username 作为初始值
 	h.maybeSyncDingTalkAfterRegistration(c.Request.Context(), session, user.ID)
@@ -2054,7 +2070,9 @@ func (h *AuthHandler) ExchangePendingOAuthCompletion(c *gin.Context) {
 			response.InternalError(c, "Failed to generate token pair")
 			return
 		}
+		c.Set(gameplayLoginUserKey, loginUser.ID)
 		h.authService.RecordSuccessfulLogin(c.Request.Context(), loginUser.ID)
+		recordGameplayLogin(c, loginUser.ID)
 		payload["access_token"] = tokenPair.AccessToken
 		payload["refresh_token"] = tokenPair.RefreshToken
 		payload["expires_in"] = tokenPair.ExpiresIn

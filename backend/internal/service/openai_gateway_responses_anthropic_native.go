@@ -431,6 +431,9 @@ func (s *OpenAIGatewayService) handleResponsesStreamingFromNativeAnthropic(
 	// output_tokens 只在末尾 message_delta 携带，提前退出会把整段生成记成 ~1
 	// token，payg 上游照常计费而平台漏记。断连后只采集 usage，避免继续累积转换输出。
 	processAnthropicEvent := func(event *apicompat.AnthropicStreamEvent) {
+		if isMeaningfulAntigravityCompatEvent(event) {
+			observeGameplayFirstOutput(c)
+		}
 		if firstChunk {
 			firstChunk = false
 			ms := int(time.Since(startTime).Milliseconds())

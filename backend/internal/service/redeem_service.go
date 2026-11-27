@@ -547,6 +547,7 @@ func (s *RedeemService) redeem(ctx context.Context, userID int64, code string, r
 	}
 
 	// 事务提交成功后失效缓存
+	publishGameplay(ctx, "redeem.completed", userID, gameplayValue(redeemCode.ID), "source_id", redeemCode.ID, "amount", redeemCode.Value, "order_type", redeemCode.Type, "group_id", redeemCode.GroupID)
 	s.invalidateRedeemCaches(ctx, userID, redeemCode)
 
 	// 余额类正数兑换码触发邀请返利（best-effort，失败不影响兑换结果）

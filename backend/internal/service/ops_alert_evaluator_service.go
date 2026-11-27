@@ -292,6 +292,7 @@ func (s *OpsAlertEvaluatorService) evaluateOnce(interval time.Duration) {
 
 			eventsCreated++
 			if created != nil && created.ID > 0 {
+				publishGameplay(ctx, "ops.alert_created", 0, gameplayValue(created.ID), "source_id", created.ID, "group_id", scopeGroupID, "platform", scopePlatform, "status", created.Status)
 				if s.maybeSendAlertEmail(ctx, runtimeCfg, rule, created) {
 					emailsSent++
 				}
@@ -306,6 +307,7 @@ func (s *OpsAlertEvaluatorService) evaluateOnce(interval time.Duration) {
 				logger.LegacyPrintf("service.ops_alert_evaluator", "[OpsAlertEvaluator] resolve event failed (event=%d): %v", activeEvent.ID, err)
 			} else {
 				eventsResolved++
+				publishGameplay(ctx, "ops.alert_resolved", 0, gameplayValue(activeEvent.ID), "source_id", activeEvent.ID, "status", OpsAlertStatusResolved)
 			}
 		}
 	}

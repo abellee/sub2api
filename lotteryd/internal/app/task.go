@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"lotteryd/api/events"
 	"math"
 	"sort"
 	"time"
@@ -627,6 +628,7 @@ func (ap *App) settleTaskUser(ctx context.Context, t *lottery.Task, date string,
 	} else if !inserted {
 		return nil // 幂等：该日该用户已有记录
 	}
+	events.Publish("task.reward_created", u.UserID, events.S(reward.ID), map[string]string{"task_id": events.S(t.ID), "quantity": events.S(units), "amount": events.Amount(t.RewardValue)})
 	ap.fulfillTaskReward(ctx, t, reward)
 	return nil
 }
@@ -654,12 +656,14 @@ func (ap *App) fulfillTaskReward(ctx context.Context, t *lottery.Task, reward *l
 		if uerr := ap.Store.UpdateTaskReward(reward.ID, lottery.FulfillmentFailed, nil, note, err.Error()); uerr != nil {
 			slog.Error("task fulfill update failed", "reward", reward.ID, "err", uerr)
 		}
+		events.Publish("task.reward_failed", reward.UserID, events.S(reward.ID), map[string]string{"task_id": events.S(t.ID), "status": "failed"})
 		return
 	}
 	if uerr := ap.Store.UpdateTaskReward(reward.ID, lottery.FulfillmentDone, codes, note, ""); uerr != nil {
 		slog.Error("task fulfill update failed", "reward", reward.ID, "err", uerr)
 		return
 	}
+	events.Publish("task.reward_completed", reward.UserID, events.S(reward.ID), map[string]string{"task_id": events.S(t.ID), "quantity": events.S(reward.Units), "amount": events.Amount(float64(reward.Units) * t.RewardValue), "status": "success"})
 	slog.Info("task fulfilled", "task", t.ID, "user", reward.UserID, "units", reward.Units, "type", t.RewardType)
 }
 
@@ -679,5 +683,6 @@ func (ap *App) RetryTaskFulfillment(ctx context.Context, taskID int64) error {
 	for i := range rewards {
 		ap.fulfillTaskReward(ctx, t, &rewards[i])
 	}
+	events.Publish("reward.retried", 0, "", map[string]string{"task_id": events.S(taskID)})
 	return nil
 }

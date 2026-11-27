@@ -28,7 +28,7 @@ import (
 //
 // The method follows the same pattern as OpenAIGatewayService.ForwardAsAnthropic
 // but in reverse direction: Responses → Anthropic upstream → Responses.
-func (s *GatewayService) ForwardAsResponses(
+func (s *GatewayService) forwardResponsesWithGameplayObservation(
 	ctx context.Context,
 	c *gin.Context,
 	account *Account,
@@ -688,6 +688,9 @@ func (s *GatewayService) handleResponsesStreamingResponse(
 
 	// processEvent handles a single parsed Anthropic SSE event.
 	processEvent := func(event *apicompat.AnthropicStreamEvent) {
+		if isMeaningfulAntigravityCompatEvent(event) {
+			observeGameplayFirstOutput(c)
+		}
 		if firstChunk {
 			firstChunk = false
 			ms := int(time.Since(startTime).Milliseconds())

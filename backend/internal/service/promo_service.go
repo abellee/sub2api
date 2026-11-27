@@ -159,6 +159,7 @@ func (s *PromoService) ApplyPromoCode(ctx context.Context, userID int64, code st
 		}()
 	}
 
+	publishGameplay(ctx, "promo.applied", userID, gameplayValue(promoCode.ID)+":"+gameplayValue(userID), "source_id", promoCode.ID, "amount", promoCode.BonusAmount)
 	return nil
 }
 

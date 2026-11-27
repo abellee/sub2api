@@ -14,6 +14,8 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"lotteryd/api/eventrpc"
+	"lotteryd/api/events"
 	rewardsv1 "lotteryd/api/gen/lotteryd/v1"
 )
 
@@ -24,8 +26,43 @@ type LotterydNotifier struct {
 	token   string
 	timeout time.Duration
 
-	mu   sync.Mutex
-	conn *grpc.ClientConn
+	mu     sync.Mutex
+	conn   *grpc.ClientConn
+	events *events.Dispatcher
+}
+
+func (n *LotterydNotifier) StartEvents() {
+	if n == nil || n.token == "" {
+		return
+	}
+	n.events = events.NewDispatcher("sub2api", 4, 4096, func(ctx context.Context, e events.Event) error {
+		if n.token == "" {
+			return fmt.Errorf("event delivery requires lotteryd.token")
+		}
+		if _, _, err := n.client(); err != nil {
+			return err
+		}
+		n.mu.Lock()
+		conn := n.conn
+		n.mu.Unlock()
+		ctx = metadata.AppendToOutgoingContext(ctx, "x-internal-token", n.token)
+		return eventrpc.Send(ctx, conn, e)
+	})
+	events.SetSink(n.events.Submit)
+}
+func (n *LotterydNotifier) Stop() {
+	if n == nil {
+		return
+	}
+	events.SetSink(nil)
+	if n.events != nil {
+		n.events.Stop()
+	}
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.conn != nil {
+		_ = n.conn.Close()
+	}
 }
 
 // NewLotterydNotifier 根据配置构造通知器；grpc_addr 为空时返回 nil（未启用）。

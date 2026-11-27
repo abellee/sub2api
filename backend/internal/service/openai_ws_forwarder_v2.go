@@ -644,6 +644,7 @@ readLoop:
 			terminalEventCount++
 		}
 		if firstTokenMs == nil && isTokenEvent {
+			observeGameplayFirstOutput(c)
 			latencyAttempt.Mark("first_semantic_output")
 			ms := int(time.Since(startTime).Milliseconds())
 			firstTokenMs = &ms

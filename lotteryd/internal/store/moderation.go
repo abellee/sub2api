@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"lotteryd/api/events"
 	"math/rand"
 	"time"
 
@@ -62,7 +63,11 @@ func (s *Store) RemoveParticipant(activityID, userID int64) error {
 	if n == 0 {
 		return ErrNotFound
 	}
-	return s.changed(tx.Commit())
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	events.Publish("lottery.participant_removed", userID, events.S(activityID)+":"+events.S(userID), map[string]string{"activity_id": events.S(activityID)})
+	return s.changed(nil)
 }
 
 func (s *Store) SetUndrawnActivityBlacklist(configID int64, emails []string) error {
@@ -124,6 +129,19 @@ func (s *Store) DrawActivity(id int64) (*lottery.Activity, error) {
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
+	}
+	events.Publish("lottery.drawn", 0, events.S(id), map[string]string{"activity_id": events.S(id), "count": events.S(len(drafts))})
+	won := make(map[int64]bool, len(drafts))
+	for _, d := range drafts {
+		won[d.UserID] = true
+		events.Publish("lottery.won", d.UserID, events.S(id)+":"+events.S(d.UserID), map[string]string{"activity_id": events.S(id), "amount": events.Amount(d.Prize.Value)})
+	}
+	for _, p := range participants {
+		status := "lost"
+		if won[p.UserID] {
+			status = "won"
+		}
+		events.Publish("lottery.loss_streak_updated", p.UserID, events.S(id)+":"+events.S(p.UserID), map[string]string{"activity_id": events.S(id), "status": status})
 	}
 	return a, s.changed(nil)
 }

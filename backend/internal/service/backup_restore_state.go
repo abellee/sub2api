@@ -41,7 +41,12 @@ func (s *BackupService) beginBackupRestore(ctx context.Context, id string) (*Bac
 // Failed/panicked restores must not resurrect a removed record. A successful
 // full database restore may itself roll back settings and remove its own record,
 // so that completion keeps the existing explicit re-registration behavior.
-func (s *BackupService) saveRestoreRecord(ctx context.Context, record *BackupRecord) error {
+func (s *BackupService) saveRestoreRecord(ctx context.Context, record *BackupRecord) (eventErr error) {
+	defer func() {
+		if eventErr == nil && (record.RestoreStatus == "completed" || record.RestoreStatus == "failed") {
+			publishGameplay(ctx, "backup.restore_completed", 0, record.ID+":"+record.RestoreStartedAt+":"+record.RestoreStatus, "source_id", record.ID, "status", record.RestoreStatus)
+		}
+	}()
 	ctx, release, err := s.lockBackupRecordUpdates(ctx)
 	if err != nil {
 		return err

@@ -1361,6 +1361,7 @@ func (s *ContentModerationService) UnbanUser(ctx context.Context, userID int64) 
 		if err := s.userRepo.Update(ctx, user, UserUpdateFields{Status: true}); err != nil {
 			return nil, fmt.Errorf("update content moderation unban user: %w", err)
 		}
+		publishGameplay(ctx, "user.ban_changed", userID, "", "status", StatusActive, "action", "unban")
 	}
 	if s.authCacheInvalidator != nil {
 		s.authCacheInvalidator.InvalidateAuthCacheByUserID(ctx, userID)
@@ -2002,6 +2003,7 @@ func (s *ContentModerationService) applyFlaggedAccountSideEffects(ctx context.Co
 				s.authCacheInvalidator.InvalidateAuthCacheByUserID(ctx, *log.UserID)
 			}
 			autoBanJustApplied = true
+			publishGameplay(ctx, "user.ban_changed", *log.UserID, "", "status", StatusDisabled, "action", "automatic_ban")
 		}
 		log.AutoBanned = true
 	}

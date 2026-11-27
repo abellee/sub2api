@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"lotteryd/api/events"
 	"net/http"
 	"net/url"
 	"path"
@@ -239,6 +240,7 @@ func (s *OpenAIGatewayService) CreateLiveCall(
 			return nil, fmt.Errorf("save live call mapping: %w", saveErr)
 		}
 		created.Account = account
+		events.Publish("request.realtime_started", record.UserID, record.CallHash, map[string]string{"api_key_id": events.S(record.APIKeyID), "account_id": events.S(record.AccountID), "model": record.Model, "platform": "openai"})
 		go s.observeLiveCall(record)
 		return created, nil
 	}
@@ -813,6 +815,7 @@ func (s *OpenAIGatewayService) finalizeLiveCall(record *LiveCallRecord) {
 		return
 	}
 	s.releaseLiveLease(record.AccountID, record.UserID, record.APIKeyID, record.LeaseID)
+	events.Publish("request.realtime_ended", record.UserID, record.CallHash, map[string]string{"api_key_id": events.S(record.APIKeyID), "account_id": events.S(record.AccountID), "model": record.Model, "platform": "openai", "duration_ms": events.S(time.Since(record.CreatedAt).Milliseconds())})
 	if s.usageLogRepo == nil {
 		return
 	}

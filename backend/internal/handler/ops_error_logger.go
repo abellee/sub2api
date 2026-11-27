@@ -469,6 +469,16 @@ func setOpsSelectedAccount(c *gin.Context, accountID int64, platform ...string) 
 	if c == nil || accountID <= 0 {
 		return
 	}
+	previous := c.GetInt64(opsAccountIDKey)
+	c.Set("gameplay_attempt", c.GetInt("gameplay_attempt")+1)
+	if previous > 0 {
+		kind := "request.failover"
+		if previous == accountID {
+			kind = "request.retried"
+		}
+		emitGatewayEvent(c, kind, accountID)
+	}
+	emitGatewayEvent(c, "request.forwarding", accountID)
 	service.ClearOpsUpstreamModel(c)
 	c.Set(opsAccountIDKey, accountID)
 	if c.Request != nil {

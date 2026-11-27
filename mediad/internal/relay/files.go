@@ -117,7 +117,11 @@ func (h *RelayHandler) handleDownload(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Cache-Control", "private, no-store")
 			w.Header().Set("Referrer-Policy", "no-referrer")
 			w.Header().Set("X-Content-Type-Options", "nosniff")
-			http.ServeContent(w, r, downloadFilename(meta), info.ModTime(), files[0])
+			writer := &gameplayDownloadWriter{ResponseWriter: w}
+			http.ServeContent(writer, r, downloadFilename(meta), info.ModTime(), files[0])
+			if r.Method == http.MethodGet && !writer.failed && (writer.status == 200 || writer.status == 206) {
+				h.tracker.queueGameplay(taskGameplayEvent("media.downloaded", task, task.ID+":"+meta.ID))
+			}
 			return
 		}
 	}

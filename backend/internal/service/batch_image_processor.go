@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"lotteryd/api/events"
 	"net/http"
 	"sort"
 	"strconv"
@@ -123,6 +124,7 @@ func (p *BatchImageProviderProcessor) Process(ctx context.Context, batchID strin
 				return BatchImageProcessResult{}, err
 			}
 			job.Status = BatchImageJobStatusRunning
+			publishBatchGameplayEvent("media.started", job, "", nil)
 		}
 		return BatchImageProcessResult{RequeueAfter: p.requeueDelay(status.SuggestedRequeueAfter)}, nil
 	case BatchProviderStateSucceeded:
@@ -154,6 +156,7 @@ func (p *BatchImageProviderProcessor) Process(ctx context.Context, batchID strin
 			return BatchImageProcessResult{}, err
 		}
 		job.Status = BatchImageJobStatusFailed
+		publishBatchGameplayEvent("media.failed", job, "", map[string]string{"reason": code})
 		if err := p.releaseTerminalHold(ctx, job); err != nil {
 			return BatchImageProcessResult{}, err
 		}
@@ -166,6 +169,7 @@ func (p *BatchImageProviderProcessor) Process(ctx context.Context, batchID strin
 			return BatchImageProcessResult{}, err
 		}
 		job.Status = BatchImageJobStatusCancelled
+		publishBatchGameplayEvent("batch.cancelled", job, "", nil)
 		if err := p.releaseTerminalHold(ctx, job); err != nil {
 			return BatchImageProcessResult{}, err
 		}
@@ -209,6 +213,7 @@ func (p *BatchImageProviderProcessor) indexAndSettle(ctx context.Context, job *B
 			return BatchImageProcessResult{}, transitionErr
 		}
 		job.Status = BatchImageJobStatusFailed
+		publishBatchGameplayEvent("media.failed", job, "", map[string]string{"reason": code})
 		if err := p.releaseTerminalHold(ctx, job); err != nil {
 			return BatchImageProcessResult{}, err
 		}
@@ -415,6 +420,9 @@ func (i *BatchImageResultIndexer) Index(ctx context.Context, job *BatchImageJob,
 		FailCount:    result.FailCount,
 	}); err != nil {
 		return nil, err
+	}
+	for _, item := range items {
+		publishBatchGameplayEvent("batch.item_completed", job, job.BatchID+":"+item.CustomID, map[string]string{"source_id": item.CustomID, "status": item.Status, "image_count": events.S(item.ImageCount)})
 	}
 	return result, nil
 }

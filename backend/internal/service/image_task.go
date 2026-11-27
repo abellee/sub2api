@@ -35,6 +35,9 @@ type ImageTaskRecord struct {
 	ID          string          `json:"id"`
 	UserID      int64           `json:"user_id"`
 	APIKeyID    int64           `json:"api_key_id"`
+	GroupID     int64           `json:"group_id,omitempty"`
+	Model       string          `json:"model,omitempty"`
+	Platform    string          `json:"platform,omitempty"`
 	Status      string          `json:"status"`
 	HTTPStatus  int             `json:"http_status,omitempty"`
 	Result      json.RawMessage `json:"result,omitempty"`
@@ -62,6 +65,9 @@ type ImageTask struct {
 type ImageTaskOwner struct {
 	UserID   int64
 	APIKeyID int64
+	GroupID  int64
+	Model    string
+	Platform string
 }
 
 type ImageTaskStore interface {
@@ -155,10 +161,15 @@ func (s *ImageTaskService) Create(ctx context.Context, owner ImageTaskOwner) (*I
 		return nil, ErrImageTaskUnavailable
 	}
 	now := time.Now().UTC()
+	eventModel := owner.Model
+	if len(eventModel) > 256 {
+		eventModel = ""
+	}
 	task := &ImageTaskRecord{
-		ID:        "imgtask_" + strings.ReplaceAll(uuid.NewString(), "-", ""),
-		UserID:    owner.UserID,
-		APIKeyID:  owner.APIKeyID,
+		ID:       "imgtask_" + strings.ReplaceAll(uuid.NewString(), "-", ""),
+		UserID:   owner.UserID,
+		APIKeyID: owner.APIKeyID,
+		GroupID:  owner.GroupID, Model: eventModel, Platform: owner.Platform,
 		Status:    ImageTaskStatusProcessing,
 		CreatedAt: now.Unix(),
 		ExpiresAt: now.Add(s.ttl).Unix(),
@@ -166,6 +177,7 @@ func (s *ImageTaskService) Create(ctx context.Context, owner ImageTaskOwner) (*I
 	if err := s.store.Save(ctx, task, s.ttl); err != nil {
 		return nil, ErrImageTaskUnavailable.WithCause(err)
 	}
+	publishImageTaskEvent("media.created", task)
 	return imageTaskToPublic(task), nil
 }
 
@@ -191,6 +203,7 @@ func (s *ImageTaskService) Complete(ctx context.Context, id string, statusCode i
 	if !json.Valid(result) {
 		return s.Fail(ctx, id, http.StatusBadGateway, imageTaskErrorJSON("api_error", "upstream returned a non-JSON image response"))
 	}
+	filesSaved := false
 	if uploader, _ := s.current(); uploader != nil {
 		rewritten, err := uploader.Rewrite(ctx, id, result)
 		if err != nil {
@@ -199,18 +212,19 @@ func (s *ImageTaskService) Complete(ctx context.Context, id string, statusCode i
 			return s.Fail(ctx, id, http.StatusBadGateway, imageTaskErrorJSON("api_error", "failed to store generated image to object storage"))
 		}
 		result = rewritten
+		filesSaved = true
 	}
-	return s.finish(ctx, id, ImageTaskStatusCompleted, statusCode, result, nil)
+	return s.finish(ctx, id, ImageTaskStatusCompleted, statusCode, result, nil, filesSaved)
 }
 
 func (s *ImageTaskService) Fail(ctx context.Context, id string, statusCode int, taskErr json.RawMessage) error {
 	if !json.Valid(taskErr) {
 		taskErr = imageTaskErrorJSON("api_error", "image generation failed")
 	}
-	return s.finish(ctx, id, ImageTaskStatusFailed, statusCode, nil, taskErr)
+	return s.finish(ctx, id, ImageTaskStatusFailed, statusCode, nil, taskErr, false)
 }
 
-func (s *ImageTaskService) finish(ctx context.Context, id, status string, statusCode int, result, taskErr json.RawMessage) error {
+func (s *ImageTaskService) finish(ctx context.Context, id, status string, statusCode int, result, taskErr json.RawMessage, filesSaved bool) error {
 	if s == nil || s.store == nil {
 		return ErrImageTaskUnavailable
 	}
@@ -221,6 +235,7 @@ func (s *ImageTaskService) finish(ctx context.Context, id, status string, status
 		}
 		return ErrImageTaskUnavailable.WithCause(err)
 	}
+	previousStatus := task.Status
 	now := time.Now().UTC()
 	completedAt := now.Unix()
 	task.Status = status
@@ -231,6 +246,19 @@ func (s *ImageTaskService) finish(ctx context.Context, id, status string, status
 	task.ExpiresAt = now.Add(s.ttl).Unix()
 	if err := s.store.Save(ctx, task, s.ttl); err != nil {
 		return ErrImageTaskUnavailable.WithCause(err)
+	}
+	if previousStatus != status {
+		if status == ImageTaskStatusCompleted {
+			publishImageTaskEvent("media.succeeded", task)
+			if filesSaved {
+				publishImageTaskEvent("media.files_saved", task)
+			}
+		} else if status == ImageTaskStatusFailed {
+			publishImageTaskEvent("media.failed", task)
+			if strings.Contains(string(taskErr), "failed to store generated image to object storage") {
+				publishImageTaskEvent("media.files_failed", task)
+			}
+		}
 	}
 	return nil
 }

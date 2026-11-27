@@ -16,7 +16,16 @@ var errTaskExpired = errors.New("task verification window expired")
 
 func (s *MemoryStore) ExpireRecovery(now time.Time, resultRoot string, logger *log.Logger) ([]string, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	var notifications []gameplayEvent
+	sink := s.gameplay
+	defer func() {
+		s.mu.Unlock()
+		if sink != nil {
+			for _, e := range notifications {
+				sink(e)
+			}
+		}
+	}()
 	var expired []string
 	for id, prev := range s.tasks {
 		if prev.ErrorCode == "recovery_expired" {
@@ -76,6 +85,9 @@ func (s *MemoryStore) ExpireRecovery(now time.Time, resultRoot string, logger *l
 			return expired, err
 		}
 		s.tasks[id] = task
+		if sink != nil {
+			notifications = append(notifications, taskGameplayChanges(prev, task)...)
+		}
 		expired = append(expired, id)
 		if logger != nil {
 			logger.Printf("[mediad] recovery expired task=%s user=%s group=%s model=%s upstream_status=%d recovery_since=%s", id, prev.UserID, prev.GroupID, prev.Model, prev.ResponseStatus, since.UTC().Format(time.RFC3339))

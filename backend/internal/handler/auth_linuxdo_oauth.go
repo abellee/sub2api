@@ -365,6 +365,7 @@ func (h *AuthHandler) LinuxDoOAuthCallback(c *gin.Context) {
 				redirectOAuthError(c, frontendCallback, "session_error", "failed to bind oauth identity", "")
 				return
 			}
+			c.Set(gameplayLoginUserKey, user.ID)
 			h.authService.RecordSuccessfulLogin(c.Request.Context(), user.ID)
 			clearOAuthPendingSessionCookie(c, secureCookie)
 			clearOAuthPendingBrowserCookie(c, secureCookie)
@@ -604,10 +605,12 @@ func (h *AuthHandler) CompleteLinuxDoOAuthRegistration(c *gin.Context) {
 		respondPendingOAuthBindingApplyError(c, err)
 		return
 	}
+	c.Set(gameplayLoginUserKey, user.ID)
 	h.authService.RecordSuccessfulLogin(c.Request.Context(), user.ID)
 	clearOAuthPendingSessionCookie(c, secureCookie)
 	clearOAuthPendingBrowserCookie(c, secureCookie)
 
+	recordGameplayLoginResponse(c)
 	c.JSON(http.StatusOK, gin.H{
 		"access_token":  tokenPair.AccessToken,
 		"refresh_token": tokenPair.RefreshToken,
@@ -820,6 +823,9 @@ func redirectOAuthError(c *gin.Context, frontendCallback string, code string, me
 }
 
 func redirectOAuthTokenPair(c *gin.Context, frontendCallback string, tokenPair *service.TokenPair, redirectTo string) {
+	if tokenPair != nil {
+		recordGameplayLoginResponse(c)
+	}
 	fragment := url.Values{}
 	if tokenPair != nil {
 		fragment.Set("access_token", truncateFragmentValue(tokenPair.AccessToken))

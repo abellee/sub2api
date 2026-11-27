@@ -603,6 +603,7 @@ func (s *APIKeyService) Create(ctx context.Context, userID int64, req CreateAPIK
 	s.InvalidateAuthCacheByKey(ctx, apiKey.Key)
 	s.compileAPIKeyIPRules(apiKey)
 
+	publishGameplay(ctx, "key.created", userID, gameplayValue(apiKey.ID), "api_key_id", apiKey.ID, "group_id", apiKey.GroupID, "expires_at", apiKey.ExpiresAt, "status", apiKey.Status)
 	return apiKey, nil
 }
 
@@ -832,6 +833,7 @@ func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req 
 	// 下面若干分支会顺带把 Status 改回 active（配额扩容、清除过期等），
 	// 所以用原始值比对来决定是否写 status，而不是只看 req.Status。
 	originalStatus := apiKey.Status
+	originalGroup := gameplayValue(apiKey.GroupID)
 
 	// 更新字段
 	if req.Name != nil {
@@ -948,6 +950,13 @@ func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req 
 		_ = s.rateLimitCacheInvalid.InvalidateAPIKeyRateLimit(ctx, apiKey.ID)
 	}
 
+	publishGameplay(ctx, "key.updated", userID, "", "api_key_id", apiKey.ID, "group_id", apiKey.GroupID, "expires_at", apiKey.ExpiresAt, "status", apiKey.Status)
+	if apiKey.Status != originalStatus {
+		publishGameplay(ctx, "key.status_changed", userID, "", "api_key_id", apiKey.ID, "status", apiKey.Status, "previous_status", originalStatus)
+	}
+	if gameplayValue(apiKey.GroupID) != originalGroup {
+		publishGameplay(ctx, "key.group_changed", userID, "", "api_key_id", apiKey.ID, "group_id", apiKey.GroupID)
+	}
 	return apiKey, nil
 }
 
@@ -973,6 +982,7 @@ func (s *APIKeyService) Delete(ctx context.Context, id int64, userID int64) erro
 	s.InvalidateAuthCacheByKey(ctx, key)
 	s.lastUsedTouchL1.Delete(id)
 
+	publishGameplay(ctx, "key.deleted", userID, gameplayValue(id), "api_key_id", id)
 	return nil
 }
 
@@ -1210,6 +1220,7 @@ func (s *APIKeyService) GetGroupUsageTierProgress(ctx context.Context, userID in
 func (s *APIKeyService) CheckAPIKeyQuotaAndExpiry(apiKey *APIKey) error {
 	// Check expiration
 	if apiKey.IsExpired() {
+		publishGameplay(context.Background(), "key.expired_detected", apiKey.UserID, gameplayValue(apiKey.ID)+":"+gameplayValue(apiKey.ExpiresAt), "api_key_id", apiKey.ID, "expires_at", apiKey.ExpiresAt)
 		return ErrAPIKeyExpired
 	}
 

@@ -838,6 +838,12 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true, requiresAdmin: true, title: 'Points Settings', titleKey: 'nav.pointsAdmin' }
   },
   {
+    path: '/admin/events',
+    name: 'AdminEvents',
+    component: () => import('@/views/admin/EventsAdminView.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true, title: 'Event Configuration', titleKey: 'common.events.title' }
+  },
+  {
     path: '/admin/items',
     name: 'AdminItems',
     component: () => import('@/views/admin/ItemsAdminView.vue'),

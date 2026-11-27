@@ -152,6 +152,7 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 			c.Set(string(ContextKeyUserRole), apiKey.User.Role)
 			setGroupContext(c, apiKey.Group)
 			_ = apiKeyService.TouchLastUsed(c.Request.Context(), apiKey.ID)
+			markGameplayAdmission(c, apiKey)
 			c.Next()
 			return
 		}
@@ -225,6 +226,7 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 		c.Set(string(ContextKeyUserRole), apiKey.User.Role)
 		setGroupContext(c, apiKey.Group)
 		_ = apiKeyService.TouchLastUsed(c.Request.Context(), apiKey.ID)
+		markGameplayAdmission(c, apiKey)
 		c.Next()
 	}
 }
@@ -269,6 +271,16 @@ func allowGoogleQueryKey(path string) bool {
 }
 
 func abortWithGoogleError(c *gin.Context, status int, message string) {
+	code := ""
+	lower := strings.ToLower(message)
+	if strings.Contains(lower, "balance") {
+		code = "INSUFFICIENT_BALANCE"
+	} else if strings.Contains(lower, "limit") || strings.Contains(lower, "quota") {
+		code = "INSUFFICIENT_QUOTA"
+	} else if strings.Contains(lower, "subscription") {
+		code = "SUBSCRIPTION_LIMIT"
+	}
+	recordGameplayRejection(c, status, code)
 	c.JSON(status, gin.H{
 		"error": gin.H{
 			"code":    status,

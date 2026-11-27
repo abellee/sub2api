@@ -9,6 +9,7 @@ export interface ManagedItem {
   active_asset: string
   expired_asset: string
   animation_asset: string
+  effect?: { kind: 'none' | 'grant_points' | 'grant_item'; points?: number; item_id?: number; quantity?: number }
 }
 export interface ShopProduct {
   id: number

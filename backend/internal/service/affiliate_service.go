@@ -332,6 +332,7 @@ func (s *AffiliateService) BindInviterByCode(ctx context.Context, userID int64, 
 	if !bound {
 		return ErrAffiliateAlreadyBound
 	}
+	publishGameplay(ctx, "affiliate.bound", inviterSummary.UserID, gameplayValue(userID), "inviter_id", inviterSummary.UserID, "invitee_id", userID)
 	return nil
 }
 
@@ -407,6 +408,11 @@ func (s *AffiliateService) AccrueInviteRebateForOrder(ctx context.Context, invit
 	if !applied {
 		return 0, nil
 	}
+	reference := ""
+	if sourceOrderID != nil {
+		reference = gameplayValue(*sourceOrderID)
+	}
+	publishGameplay(ctx, "affiliate.accrued", *inviteeSummary.InviterID, reference, "inviter_id", *inviteeSummary.InviterID, "invitee_id", inviteeUserID, "amount", rebate, "source_id", sourceOrderID)
 	return rebate, nil
 }
 
@@ -442,6 +448,7 @@ func (s *AffiliateService) TransferAffiliateQuota(ctx context.Context, userID in
 		return 0, 0, err
 	}
 	if transferred > 0 {
+		publishGameplay(ctx, "affiliate.transferred", userID, "", "amount", transferred, "balance_after", balance)
 		s.invalidateAffiliateCaches(ctx, userID)
 	}
 	return transferred, balance, nil
@@ -541,7 +548,11 @@ func (s *AffiliateService) AdminUpdateUserAffCode(ctx context.Context, userID in
 	if !isValidAffiliateCodeFormat(code) {
 		return ErrAffiliateCodeInvalid
 	}
-	return s.repo.UpdateUserAffCode(ctx, userID, code)
+	if err := s.repo.UpdateUserAffCode(ctx, userID, code); err != nil {
+		return err
+	}
+	publishGameplay(ctx, "affiliate.code_changed", userID, "")
+	return nil
 }
 
 // AdminResetUserAffCode 重置用户邀请码为系统随机码。
@@ -549,7 +560,11 @@ func (s *AffiliateService) AdminResetUserAffCode(ctx context.Context, userID int
 	if s == nil || s.repo == nil {
 		return "", infraerrors.ServiceUnavailable("SERVICE_UNAVAILABLE", "affiliate service unavailable")
 	}
-	return s.repo.ResetUserAffCode(ctx, userID)
+	code, err := s.repo.ResetUserAffCode(ctx, userID)
+	if err == nil {
+		publishGameplay(ctx, "affiliate.code_changed", userID, "")
+	}
+	return code, err
 }
 
 // AdminSetUserRebateRate 设置/清除用户专属返利比例。ratePercent==nil 表示清除。
@@ -560,7 +575,11 @@ func (s *AffiliateService) AdminSetUserRebateRate(ctx context.Context, userID in
 	if err := validateExclusiveRate(ratePercent); err != nil {
 		return err
 	}
-	return s.repo.SetUserRebateRate(ctx, userID, ratePercent)
+	if err := s.repo.SetUserRebateRate(ctx, userID, ratePercent); err != nil {
+		return err
+	}
+	publishGameplay(ctx, "affiliate.rate_changed", userID, "", "amount", ratePercent)
+	return nil
 }
 
 // AdminBatchSetUserRebateRate 批量设置/清除用户专属返利比例。
@@ -580,7 +599,13 @@ func (s *AffiliateService) AdminBatchSetUserRebateRate(ctx context.Context, user
 	if len(cleaned) == 0 {
 		return nil
 	}
-	return s.repo.BatchSetUserRebateRate(ctx, cleaned, ratePercent)
+	if err := s.repo.BatchSetUserRebateRate(ctx, cleaned, ratePercent); err != nil {
+		return err
+	}
+	for _, id := range cleaned {
+		publishGameplay(ctx, "affiliate.rate_changed", id, "", "amount", ratePercent)
+	}
+	return nil
 }
 
 // AdminWithdrawQuota 登记一笔已在站外打款的线下提现：从用户可提取返利额度
@@ -610,7 +635,11 @@ func (s *AffiliateService) AdminWithdrawQuota(ctx context.Context, userID int64,
 	if amount <= 0 || math.IsInf(amount, 0) {
 		return nil, ErrAffiliateWithdrawAmountInvalid
 	}
-	return s.repo.WithdrawQuota(ctx, userID, amount, affiliateWithdrawOperationID(key))
+	result, err := s.repo.WithdrawQuota(ctx, userID, amount, affiliateWithdrawOperationID(key))
+	if err == nil {
+		publishGameplay(ctx, "affiliate.withdrawn", userID, affiliateWithdrawOperationID(key), "amount", amount)
+	}
+	return result, err
 }
 
 // affiliateWithdrawOperationID 把线下提现登记的幂等键映射为流水的 operation_id，

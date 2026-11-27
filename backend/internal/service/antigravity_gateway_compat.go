@@ -54,7 +54,7 @@ type antigravityCompatUpstreamCall struct {
 }
 
 // ForwardAsChatCompletions 使用 Antigravity 原生 OAuth 账号转发 Chat Completions 请求。
-func (s *AntigravityGatewayService) ForwardAsChatCompletions(
+func (s *AntigravityGatewayService) forwardChatCompletionsWithGameplayObservation(
 	ctx context.Context,
 	c *gin.Context,
 	account *Account,
@@ -101,7 +101,7 @@ func (s *AntigravityGatewayService) ForwardAsChatCompletions(
 }
 
 // ForwardAsResponses 使用 Antigravity 原生 OAuth 账号转发 Responses 请求。
-func (s *AntigravityGatewayService) ForwardAsResponses(
+func (s *AntigravityGatewayService) forwardResponsesWithGameplayObservation(
 	ctx context.Context,
 	c *gin.Context,
 	account *Account,

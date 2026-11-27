@@ -209,6 +209,9 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 			if !billingInfoRequest {
 				_ = apiKeyService.TouchLastUsed(c.Request.Context(), apiKey.ID)
 			}
+			if !skipBilling {
+				markGameplayAdmission(c, apiKey)
+			}
 			c.Next()
 			return
 		}
@@ -306,6 +309,9 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 		setGroupContext(c, apiKey.Group)
 		if !billingInfoRequest {
 			_ = apiKeyService.TouchLastUsed(c.Request.Context(), apiKey.ID)
+		}
+		if !skipBilling {
+			markGameplayAdmission(c, apiKey)
 		}
 
 		c.Next()

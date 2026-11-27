@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"lotteryd/api/events"
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
@@ -66,11 +67,15 @@ func reserveBatchImageBalanceHold(ctx context.Context, repo UsageBillingReposito
 	if cmd.HoldAmount <= 0 {
 		return nil
 	}
-	if _, err := repo.ReserveBatchImageBalance(ctx, cmd); err != nil {
+	result, err := repo.ReserveBatchImageBalance(ctx, cmd)
+	if err != nil {
 		if errors.Is(err, ErrBatchImageInsufficientBalance) {
 			return ErrBatchImageInsufficientBalance
 		}
 		return ErrBatchImageBillingHoldFailed.WithCause(err)
+	}
+	if result != nil && result.Applied {
+		publishBatchGameplayEvent("billing.held", job, cmd.RequestID, map[string]string{"amount": events.Amount(cmd.HoldAmount)})
 	}
 	return nil
 }
@@ -83,8 +88,12 @@ func captureBatchImageBalanceHold(ctx context.Context, repo UsageBillingReposito
 	if err != nil {
 		return err
 	}
-	if _, err := repo.CaptureBatchImageBalance(ctx, cmd); err != nil {
+	result, err := repo.CaptureBatchImageBalance(ctx, cmd)
+	if err != nil {
 		return ErrBatchImageSettlementBillingFailed.WithCause(err)
+	}
+	if result != nil && result.Applied {
+		publishBatchGameplayEvent("billing.captured", job, cmd.RequestID, map[string]string{"amount": events.Amount(cmd.ActualAmount), "actual_cost": events.Amount(cmd.ActualAmount)})
 	}
 	return nil
 }
@@ -100,7 +109,8 @@ func releaseBatchImageBalanceHold(ctx context.Context, repo UsageBillingReposito
 	if cmd.HoldAmount <= 0 {
 		return nil
 	}
-	if _, err := repo.ReleaseBatchImageBalance(ctx, cmd); err != nil {
+	result, err := repo.ReleaseBatchImageBalance(ctx, cmd)
+	if err != nil {
 		// 同一 release request id 出现指纹冲突，说明此前已有一次携带不同
 		// payloadHash 的释放成功提交（资金已归还）。视为幂等成功，
 		// 避免历史指纹不一致的 job 永远卡在释放失败的毒消息循环里。
@@ -111,6 +121,9 @@ func releaseBatchImageBalanceHold(ctx context.Context, repo UsageBillingReposito
 			return nil
 		}
 		return ErrBatchImageBillingHoldFailed.WithCause(err)
+	}
+	if result != nil && result.Applied {
+		publishBatchGameplayEvent("billing.released", job, cmd.RequestID, map[string]string{"amount": events.Amount(cmd.HoldAmount)})
 	}
 	return nil
 }

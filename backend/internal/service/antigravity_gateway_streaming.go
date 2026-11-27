@@ -35,6 +35,7 @@ func (s *AntigravityGatewayService) observeAntigravityGeminiSSELine(c *gin.Conte
 	if payload == "" || payload == "[DONE]" {
 		return
 	}
+	observeGameplayGeminiOutput(c, []byte(payload))
 	// Observe the original payload: ObserveGemini supports both the v1internal
 	// wrapper and direct Gemini response shapes. The main stream handler will
 	// unwrap the same line for business processing, so unwrapping here would be

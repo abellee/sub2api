@@ -132,6 +132,11 @@ func (s *PaymentService) cancelCore(ctx context.Context, o *dbent.PaymentOrder, 
 		return "", fmt.Errorf("update order status: %w", err)
 	}
 	if c > 0 {
+		kind := "payment.cancelled"
+		if fs == OrderStatusExpired {
+			kind = "payment.expired"
+		}
+		gameplayPayment(ctx, kind, o)
 		auditAction := "ORDER_CANCELLED"
 		if fs == OrderStatusExpired {
 			auditAction = "ORDER_EXPIRED"

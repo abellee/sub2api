@@ -76,12 +76,14 @@ func NewErrorResponse(code, message string) ErrorResponse {
 
 // AbortWithError 中断请求并返回JSON错误
 func AbortWithError(c *gin.Context, statusCode int, code, message string) {
+	recordGameplayRejection(c, statusCode, code)
 	c.JSON(statusCode, NewErrorResponse(code, message))
 	c.Abort()
 }
 
 // abortWithOpenAIQuotaError writes the OpenAI-compatible insufficient quota response.
 func abortWithOpenAIQuotaError(c *gin.Context, statusCode int, message string) {
+	recordGameplayRejection(c, statusCode, "INSUFFICIENT_QUOTA")
 	c.JSON(statusCode, gin.H{
 		"error": gin.H{
 			"message": message,

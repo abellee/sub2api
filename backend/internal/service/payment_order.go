@@ -232,6 +232,7 @@ func (s *PaymentService) createOrderInTx(ctx context.Context, req CreateOrderReq
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commit order transaction: %w", err)
 	}
+	gameplayPayment(ctx, "payment.created", order)
 	return order, nil
 }
 

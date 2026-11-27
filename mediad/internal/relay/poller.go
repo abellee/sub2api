@@ -13,6 +13,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"mediad/internal/config"
@@ -32,28 +33,33 @@ type CallbackConfig struct {
 // 每个任务一个 goroutine;服务重启后由 ResumeAll 恢复仍在
 // processing 的任务,保证"弃单也会被轮询到终态并回调"。
 type Tracker struct {
-	store            *MemoryStore
-	schemas          func(id string) (*Schema, bool)
-	client           *http.Client
-	cbMu             sync.RWMutex
-	cb               CallbackConfig
-	ctx              context.Context
-	cancel           context.CancelFunc
-	now              func() time.Time
-	logger           *log.Logger
-	maxPoll          time.Duration // 全局轮询上限兜底
-	interval         time.Duration // 全局轮询间隔兜底
-	stager           *ResultStager
-	configPath       string
-	activeMu         sync.Mutex
-	active           map[string]bool
-	slots            taskSlots
-	wg               sync.WaitGroup
-	createTimeout    time.Duration
-	downloadAttempts int
-	runtimeSettings  *config.SettingsStore
-	settingsMu       sync.Mutex
-	downloadBase     string
+	store              *MemoryStore
+	schemas            func(id string) (*Schema, bool)
+	client             *http.Client
+	cbMu               sync.RWMutex
+	cb                 CallbackConfig
+	ctx                context.Context
+	cancel             context.CancelFunc
+	now                func() time.Time
+	logger             *log.Logger
+	maxPoll            time.Duration // 全局轮询上限兜底
+	interval           time.Duration // 全局轮询间隔兜底
+	stager             *ResultStager
+	configPath         string
+	activeMu           sync.Mutex
+	active             map[string]bool
+	slots              taskSlots
+	wg                 sync.WaitGroup
+	createTimeout      time.Duration
+	downloadAttempts   int
+	runtimeSettings    *config.SettingsStore
+	settingsMu         sync.Mutex
+	downloadBase       string
+	gameplay           chan gameplayEvent
+	gameplayDropped    atomic.Uint64
+	gameplayFailed     atomic.Uint64
+	gameplayStarted    atomic.Bool
+	gameplayConfigured atomic.Bool
 }
 
 // ConfigureRuntime is called before serving requests or resuming tasks.
@@ -76,7 +82,7 @@ func NewTracker(store *MemoryStore, schemas func(id string) (*Schema, bool), cli
 		logger = log.Default()
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Tracker{
+	t := &Tracker{
 		store:    store,
 		schemas:  schemas,
 		client:   client,
@@ -87,7 +93,12 @@ func NewTracker(store *MemoryStore, schemas func(id string) (*Schema, bool), cli
 		maxPoll:  30 * time.Minute,
 		interval: 5 * time.Second,
 		active:   map[string]bool{},
+		gameplay: make(chan gameplayEvent, 2048),
 	}
+	store.mu.Lock()
+	store.gameplay = t.queueGameplay
+	store.mu.Unlock()
+	return t
 }
 
 // Stop 停止全部轮询(进程退出时调用)。
@@ -107,6 +118,7 @@ func (t *Tracker) SetCallback(cfg CallbackConfig) error {
 		}
 	}
 	t.cb = cfg
+	t.gameplayConfigured.Store(cfg.Enabled && cfg.URL != "")
 	return nil
 }
 
@@ -123,7 +135,11 @@ func (t *Tracker) LoadCallback(path string) error {
 	if err != nil {
 		return err
 	}
-	return json.Unmarshal(buf, &t.cb)
+	if err := json.Unmarshal(buf, &t.cb); err != nil {
+		return err
+	}
+	t.gameplayConfigured.Store(t.cb.Enabled && t.cb.URL != "")
+	return nil
 }
 
 // CallbackSnapshot 返回当前回调配置(脱敏:不含 secret)。

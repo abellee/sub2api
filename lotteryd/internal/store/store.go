@@ -65,6 +65,12 @@ func (s *Store) migrate() error {
 	if _, err := s.db.Exec(shopSchemaSQL); err != nil {
 		return err
 	}
+	if _, err := s.db.Exec(eventSchemaSQL); err != nil {
+		return err
+	}
+	if err := s.initializeEventSecret(); err != nil {
+		return err
+	}
 	return s.migrateNotify()
 }
 

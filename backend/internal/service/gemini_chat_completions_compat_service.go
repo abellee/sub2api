@@ -22,7 +22,7 @@ import (
 // ForwardAsChatCompletions serves OpenAI Chat Completions clients through
 // Gemini accounts. It keeps the client-facing response in Chat Completions
 // format while routing the upstream call through Gemini native endpoints.
-func (s *GeminiMessagesCompatService) ForwardAsChatCompletions(
+func (s *GeminiMessagesCompatService) forwardChatWithGameplayObservation(
 	ctx context.Context,
 	c *gin.Context,
 	account *Account,
@@ -682,6 +682,7 @@ func (s *GeminiMessagesCompatService) handleChatCompletionsStreamingResponseFrom
 						sawRejection = true
 					}
 					observeGeminiSearch(c, rawBytes)
+					observeGameplayGeminiOutput(c, rawBytes)
 					var geminiResp map[string]any
 					if err := json.Unmarshal(rawBytes, &geminiResp); err == nil {
 						if firstChunk {

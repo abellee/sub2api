@@ -70,6 +70,7 @@ func (s *BatchImageBillingRecoveryService) ReleaseStaleUnsubmittedOnce(ctx conte
 			continue
 		}
 		job.Status = BatchImageJobStatusFailed
+		publishBatchGameplayEvent("media.failed", job, "", map[string]string{"reason": "SUBMIT_STALE_BEFORE_PROVIDER"})
 		if err := releaseBatchImageBalanceHold(ctx, s.Billing, job, batchImageDerefString(job.RequestHash)); err != nil {
 			// job 已转 failed、不会再进入 stale 列表：必须给释放失败留下
 			// 自动重试路径（入队后由 worker 的 releaseTerminalHold 兜底），

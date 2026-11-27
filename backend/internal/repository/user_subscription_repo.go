@@ -2,6 +2,9 @@ package repository
 
 import (
 	"context"
+	entsql "entgo.io/ent/dialect/sql"
+	"lotteryd/api/events"
+	"strconv"
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
@@ -504,6 +507,32 @@ func (r *userSubscriptionRepository) IncrementUsage(ctx context.Context, id int6
 
 func (r *userSubscriptionRepository) BatchUpdateExpiredStatus(ctx context.Context) (int64, error) {
 	client := clientFromContext(ctx, r.client)
+	if events.Enabled() {
+		var rows entsql.Rows
+		if err := client.Driver().Query(ctx, `UPDATE user_subscriptions SET status=$1,updated_at=NOW() WHERE status=$2 AND expires_at <= $3 RETURNING id,user_id,group_id,expires_at`, []any{service.SubscriptionStatusExpired, service.SubscriptionStatusActive, time.Now()}, &rows); err != nil {
+			return 0, err
+		}
+		defer rows.Close()
+		type expired struct {
+			id, userID, groupID int64
+			expiresAt           time.Time
+		}
+		var changed []expired
+		for rows.Next() {
+			var sub expired
+			if err := rows.Scan(&sub.id, &sub.userID, &sub.groupID, &sub.expiresAt); err != nil {
+				return int64(len(changed)), err
+			}
+			changed = append(changed, sub)
+		}
+		if err := rows.Err(); err != nil {
+			return int64(len(changed)), err
+		}
+		for _, sub := range changed {
+			service.ObserveGameplayEvent(ctx, "subscription.expired", sub.userID, strconv.FormatInt(sub.id, 10)+":"+sub.expiresAt.UTC().Format(time.RFC3339Nano), "subscription_id", sub.id, "group_id", sub.groupID, "expires_at", sub.expiresAt, "status", service.SubscriptionStatusExpired)
+		}
+		return int64(len(changed)), nil
+	}
 	n, err := client.UserSubscription.Update().
 		Where(
 			usersubscription.StatusEQ(service.SubscriptionStatusActive),

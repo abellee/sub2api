@@ -385,9 +385,11 @@ func applyUsageBilling(ctx context.Context, requestID string, usageLog *UsageLog
 	}
 
 	applyCtx, cancelApply := detachedBillingContext(ctx)
+	emitBillingEvent("billing.calculated", cmd, p, nil)
 	result, err := repo.Apply(applyCtx, cmd)
 	cancelApply()
 	if err != nil {
+		emitBillingEvent("billing.failed", cmd, p, nil)
 		return false, err
 	}
 
@@ -395,6 +397,7 @@ func applyUsageBilling(ctx context.Context, requestID string, usageLog *UsageLog
 		deps.deferredService.ScheduleLastUsedUpdate(p.Account.ID)
 		return false, nil
 	}
+	emitBillingEvent("billing.completed", cmd, p, result)
 
 	// Apply 可能在按用户合并的结算通道中排队，结算后的缓存同步使用独立的超时。
 	billingCtx, cancel := detachedBillingContext(ctx)

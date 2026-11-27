@@ -328,6 +328,7 @@ func (s *SubscriptionService) updateExistingSubscriptionTerm(
 			if err := s.userSubRepo.Update(txCtx, renewed); err != nil {
 				return fmt.Errorf("renew expired subscription: %w", err)
 			}
+			gameplaySubscription(txCtx, "subscription.extended", renewed, gameplayValue(renewed.ID)+":"+gameplayValue(newExpiresAt))
 			return nil
 		}
 
@@ -350,6 +351,7 @@ func (s *SubscriptionService) updateExistingSubscriptionTerm(
 			}
 		}
 
+		publishGameplay(txCtx, "subscription.extended", existingSub.UserID, gameplayValue(existingSub.ID)+":"+gameplayValue(newExpiresAt), "subscription_id", existingSub.ID, "group_id", existingSub.GroupID, "expires_at", newExpiresAt)
 		return nil
 	})
 }
@@ -443,6 +445,7 @@ func (s *SubscriptionService) createSubscription(ctx context.Context, input *Ass
 		return nil, err
 	}
 
+	gameplaySubscription(ctx, "subscription.assigned", sub, gameplayValue(sub.ID))
 	// 重新获取完整订阅信息（包含关联）
 	return s.userSubRepo.GetByID(ctx, sub.ID)
 }
@@ -608,6 +611,7 @@ func (s *SubscriptionService) RevokeSubscription(ctx context.Context, subscripti
 		return err
 	}
 
+	gameplaySubscription(ctx, "subscription.revoked", sub, "")
 	if err := s.invalidateSubscriptionCaches(sub.UserID, sub.GroupID); err != nil {
 		return err
 	}
@@ -644,6 +648,7 @@ func (s *SubscriptionService) RestoreSubscription(ctx context.Context, subscript
 		return nil, err
 	}
 
+	gameplaySubscription(ctx, "subscription.restored", restored, "")
 	if err := s.invalidateSubscriptionCaches(restored.UserID, restored.GroupID); err != nil {
 		return nil, err
 	}
@@ -731,6 +736,13 @@ func (s *SubscriptionService) ExtendSubscription(ctx context.Context, subscripti
 		}()
 	}
 
+	if days != 0 {
+		kind := "subscription.extended"
+		if days < 0 {
+			kind = "subscription.shortened"
+		}
+		gameplaySubscription(ctx, kind, sub, gameplayValue(sub.ID)+":"+gameplayValue(sub.ExpiresAt))
+	}
 	return sub, nil
 }
 
@@ -880,7 +892,11 @@ func (s *SubscriptionService) checkAndActivateWindowAt(ctx context.Context, sub 
 
 	// 日窗口锚定当天 0 点（日历日语义）；周/月窗口锚定首次使用时刻（期限对齐语义，
 	// 锚点不得早于 StartsAt，否则最后一个不完整周期会重复发放额度，见 issue #5051）。
-	return s.userSubRepo.ActivateWindows(ctx, sub.ID, timezone.StartOfDay(now), now)
+	if err := s.userSubRepo.ActivateWindows(ctx, sub.ID, timezone.StartOfDay(now), now); err != nil {
+		return err
+	}
+	gameplaySubscription(ctx, "subscription.window_activated", sub, gameplayValue(sub.ID)+":"+gameplayValue(sub.StartsAt))
+	return nil
 }
 
 // AdminResetQuota manually resets the daily, weekly, and/or monthly usage windows.
@@ -898,6 +914,7 @@ func (s *SubscriptionService) AdminResetQuota(ctx context.Context, subscriptionI
 	if err := s.userSubRepo.ResetUsageWindows(ctx, sub.ID, resetDaily, resetWeekly, resetMonthly, timezone.StartOfDay(now), now); err != nil {
 		return nil, err
 	}
+	gameplaySubscription(ctx, "subscription.quota_reset", sub, "")
 	// Invalidate L1 ristretto cache. Ristretto's Del() is asynchronous by design,
 	// so call Wait() immediately after to flush pending operations and guarantee
 	// the deleted key is not returned on the very next Get() call.
@@ -949,6 +966,7 @@ func (s *SubscriptionService) CheckAndResetWindows(ctx context.Context, sub *Use
 
 	// 如果有窗口被重置，失效缓存以保持一致性
 	if needsInvalidateCache {
+		gameplaySubscription(ctx, "subscription.window_reset", sub, gameplayValue(sub.ID)+":"+gameplayValue(sub.DailyWindowStart)+":"+gameplayValue(sub.WeeklyWindowStart)+":"+gameplayValue(sub.MonthlyWindowStart))
 		s.InvalidateSubCache(sub.UserID, sub.GroupID)
 		if s.billingCacheService != nil {
 			_ = s.billingCacheService.InvalidateSubscription(ctx, sub.UserID, sub.GroupID)
@@ -988,12 +1006,15 @@ func (s *SubscriptionService) EnsureWindowMaintenance(ctx context.Context, sub *
 // 用于中间件的快速预检查，additionalCost 通常为 0
 func (s *SubscriptionService) CheckUsageLimits(ctx context.Context, sub *UserSubscription, group *Group, additionalCost float64) error {
 	if !sub.CheckDailyLimit(group, additionalCost) {
+		publishGameplay(ctx, "subscription.limit_detected", sub.UserID, "", "subscription_id", sub.ID, "group_id", sub.GroupID, "reason", "daily")
 		return ErrDailyLimitExceeded
 	}
 	if !sub.CheckWeeklyLimit(group, additionalCost) {
+		publishGameplay(ctx, "subscription.limit_detected", sub.UserID, "", "subscription_id", sub.ID, "group_id", sub.GroupID, "reason", "weekly")
 		return ErrWeeklyLimitExceeded
 	}
 	if !sub.CheckMonthlyLimit(group, additionalCost) {
+		publishGameplay(ctx, "subscription.limit_detected", sub.UserID, "", "subscription_id", sub.ID, "group_id", sub.GroupID, "reason", "monthly")
 		return ErrMonthlyLimitExceeded
 	}
 	return nil
@@ -1035,12 +1056,15 @@ func (s *SubscriptionService) ValidateAndCheckLimits(sub *UserSubscription, grou
 
 	// 3. 检查用量限额
 	if !sub.CheckDailyLimit(group, 0) {
+		publishGameplay(context.Background(), "subscription.limit_detected", sub.UserID, "", "subscription_id", sub.ID, "group_id", sub.GroupID, "reason", "daily")
 		return needsMaintenance, ErrDailyLimitExceeded
 	}
 	if !sub.CheckWeeklyLimit(group, 0) {
+		publishGameplay(context.Background(), "subscription.limit_detected", sub.UserID, "", "subscription_id", sub.ID, "group_id", sub.GroupID, "reason", "weekly")
 		return needsMaintenance, ErrWeeklyLimitExceeded
 	}
 	if !sub.CheckMonthlyLimit(group, 0) {
+		publishGameplay(context.Background(), "subscription.limit_detected", sub.UserID, "", "subscription_id", sub.ID, "group_id", sub.GroupID, "reason", "monthly")
 		return needsMaintenance, ErrMonthlyLimitExceeded
 	}
 

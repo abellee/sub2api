@@ -308,6 +308,7 @@ func (s *AnnouncementService) MarkRead(ctx context.Context, userID, announcement
 	if err := s.readRepo.MarkRead(ctx, announcementID, userID, time.Now()); err != nil {
 		return fmt.Errorf("mark read: %w", err)
 	}
+	publishGameplay(ctx, "announcement.read", userID, gameplayValue(userID)+":"+gameplayValue(announcementID), "source_id", announcementID)
 	return nil
 }
 

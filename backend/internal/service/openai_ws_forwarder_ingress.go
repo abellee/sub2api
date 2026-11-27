@@ -1194,6 +1194,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				terminalEventCount++
 			}
 			if firstTokenMs == nil && isTokenEvent {
+				observeGameplayFirstOutput(c)
 				latencyAttempt.Mark("first_semantic_output")
 				ms := int(time.Since(turnStart).Milliseconds())
 				firstTokenMs = &ms

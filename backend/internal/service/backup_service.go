@@ -1405,7 +1405,12 @@ func (s *BackupService) saveRecord(ctx context.Context, record *BackupRecord) er
 	return s.saveRecordWithArchive(ctx, record, nil)
 }
 
-func (s *BackupService) saveRecordWithArchive(ctx context.Context, record *BackupRecord, schedule *BackupScheduleConfig) error {
+func (s *BackupService) saveRecordWithArchive(ctx context.Context, record *BackupRecord, schedule *BackupScheduleConfig) (eventErr error) {
+	defer func() {
+		if eventErr == nil && (record.Status == "completed" || record.Status == "failed") {
+			publishGameplay(ctx, "backup.completed", 0, record.ID+":"+record.Status, "source_id", record.ID, "status", record.Status, "action", record.TriggeredBy)
+		}
+	}()
 	ctx, release, err := s.lockBackupRecordUpdates(ctx)
 	if err != nil {
 		return err

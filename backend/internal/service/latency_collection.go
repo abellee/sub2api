@@ -9,6 +9,9 @@ func markLatencyStreamEvent(c *gin.Context, semantic bool) {
 	if c == nil || c.Request == nil {
 		return
 	}
+	if semantic {
+		observeGameplayFirstOutput(c)
+	}
 	trace := latencytrace.From(c.Request.Context())
 	if trace == nil {
 		return

@@ -299,6 +299,7 @@ func (s *AuthService) FinalizeOAuthEmailAccount(
 	// snapshot user × platform quota（fail-open）
 	_ = s.snapshotPlatformQuotaDefaults(ctx, user.ID, &grantPlan)
 	s.bindOAuthAffiliate(ctx, user.ID, affiliateCode)
+	publishGameplay(ctx, "user.registered", user.ID, gameplayValue(user.ID), "platform", signupSource, "registered_at", user.CreatedAt)
 	return nil
 }
 

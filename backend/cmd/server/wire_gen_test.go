@@ -107,6 +107,7 @@ func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
 		nil, // contentSafetyBilling
 		nil, // pluginManager
 		nil, // costGuard
+		nil, // lotterydNotifier
 	)
 
 	require.NotPanics(t, func() {

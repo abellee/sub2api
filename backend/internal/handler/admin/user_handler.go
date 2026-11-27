@@ -626,7 +626,7 @@ func (h *UserHandler) BatchUpdateConcurrency(c *gin.Context) {
 		return
 	}
 
-	affected, err := h.adminService.BatchUpdateConcurrency(c.Request.Context(), userIDs, req.Concurrency, req.Mode)
+	affected, err := h.adminService.BatchUpdateConcurrency(service.WithGameplayActor(c.Request.Context(), getAdminIDFromContext(c)), userIDs, req.Concurrency, req.Mode)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -689,7 +689,7 @@ func (h *UserHandler) BatchUpdateLimits(c *gin.Context) {
 	}
 
 	affected, err := h.adminService.BatchUpdateLimits(
-		c.Request.Context(),
+		service.WithGameplayActor(c.Request.Context(), getAdminIDFromContext(c)),
 		userIDs,
 		req.Concurrency,
 		req.RPMLimit,

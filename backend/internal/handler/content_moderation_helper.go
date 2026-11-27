@@ -65,6 +65,9 @@ func runContentModeration(c *gin.Context, reqLog *zap.Logger, svc *service.Conte
 		}
 		return nil
 	}
+	if decision != nil && decision.Blocked {
+		emitGatewayEvent(c, "request.safety_blocked", 0)
+	}
 	if reqLog != nil && decision != nil {
 		reqLog.Info("content_moderation.gateway_check_done",
 			zap.String("request_id", input.RequestID),

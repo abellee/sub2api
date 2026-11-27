@@ -571,6 +571,7 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 			for _, line := range lines {
 				if data, ok := extractAnthropicSSEDataLine(line); ok {
 					trimmed := strings.TrimSpace(data)
+					observeGameplayAnthropicOutput(c, trimmed)
 					observer.ObserveAnthropic([]byte(trimmed))
 					if anthropicStreamEventIsTerminal("", trimmed) {
 						sawTerminalEvent = true

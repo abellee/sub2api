@@ -24,6 +24,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/lib/pq"
+	"lotteryd/api/events"
 
 	entsql "entgo.io/ent/dialect/sql"
 )
@@ -1094,6 +1095,9 @@ func (r *userRepository) BatchSetConcurrency(ctx context.Context, userIDs []int6
 	if value < 0 {
 		value = 0
 	}
+	if events.Enabled() {
+		return r.updateLimitsWithGameplay(ctx, "UPDATE users SET concurrency = $1, updated_at = NOW() WHERE id = ANY($2) AND deleted_at IS NULL", "set_concurrency", value, pq.Array(userIDs))
+	}
 	res, err := r.sql.ExecContext(ctx,
 		"UPDATE users SET concurrency = $1, updated_at = NOW() WHERE id = ANY($2) AND deleted_at IS NULL",
 		value, pq.Array(userIDs))
@@ -1107,6 +1111,9 @@ func (r *userRepository) BatchSetConcurrency(ctx context.Context, userIDs []int6
 func (r *userRepository) BatchAddConcurrency(ctx context.Context, userIDs []int64, delta int) (int, error) {
 	if len(userIDs) == 0 {
 		return 0, nil
+	}
+	if events.Enabled() {
+		return r.updateLimitsWithGameplay(ctx, "UPDATE users SET concurrency = GREATEST(concurrency + $1, 0), updated_at = NOW() WHERE id = ANY($2) AND deleted_at IS NULL", "add_concurrency", delta, pq.Array(userIDs))
 	}
 	res, err := r.sql.ExecContext(ctx,
 		"UPDATE users SET concurrency = GREATEST(concurrency + $1, 0), updated_at = NOW() WHERE id = ANY($2) AND deleted_at IS NULL",
@@ -1143,12 +1150,44 @@ func (r *userRepository) BatchUpdateLimits(ctx context.Context, userIDs []int64,
 		strings.Join(setClauses, ", "),
 		len(args),
 	)
+	if events.Enabled() {
+		return r.updateLimitsWithGameplay(ctx, query, "set_limits", args...)
+	}
 	res, err := r.sql.ExecContext(ctx, query, args...)
 	if err != nil {
 		return 0, fmt.Errorf("batch update user limits: %w", err)
 	}
 	affected, _ := res.RowsAffected()
 	return int(affected), nil
+}
+
+// RETURNING observes only rows the original update actually changed, without a readback query.
+func (r *userRepository) updateLimitsWithGameplay(ctx context.Context, query, operation string, args ...any) (int, error) {
+	rows, err := r.sql.QueryContext(ctx, query+" RETURNING id,concurrency,rpm_limit,status", args...)
+	if err != nil {
+		return 0, fmt.Errorf("batch update user limits: %w", err)
+	}
+	defer rows.Close()
+	type snapshot struct {
+		id               int64
+		concurrency, rpm int
+		status           string
+	}
+	var changed []snapshot
+	for rows.Next() {
+		var user snapshot
+		if err := rows.Scan(&user.id, &user.concurrency, &user.rpm, &user.status); err != nil {
+			return len(changed), err
+		}
+		changed = append(changed, user)
+	}
+	if err := rows.Err(); err != nil {
+		return len(changed), err
+	}
+	for _, user := range changed {
+		service.ObserveGameplayEvent(ctx, "admin.user_limits_changed", user.id, "", "concurrency", user.concurrency, "rpm_limit", user.rpm, "status", user.status, "action", operation)
+	}
+	return len(changed), nil
 }
 
 func (r *userRepository) ExistsByEmail(ctx context.Context, email string) (bool, error) {

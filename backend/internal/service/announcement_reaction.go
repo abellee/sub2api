@@ -34,5 +34,10 @@ func (s *AnnouncementService) SetReaction(ctx context.Context, userID, announcem
 	if err := s.reactionRepo.Set(ctx, announcementID, userID, emojiID); err != nil {
 		return nil, err
 	}
+	kind := "announcement.reacted"
+	if emojiID == 0 {
+		kind = "announcement.reaction_removed"
+	}
+	publishGameplay(ctx, kind, userID, "", "source_id", announcementID, "quantity", emojiID)
 	return s.reactionRepo.List(ctx, announcementID, userID)
 }

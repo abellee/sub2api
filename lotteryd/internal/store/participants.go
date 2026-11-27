@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"lotteryd/api/events"
 	"strings"
 	"time"
 
@@ -88,7 +89,11 @@ func (s *Store) AddParticipant(activityID, userID int64, email string, weight fl
 	if err != nil {
 		return err
 	}
-	return s.changed(tx.Commit())
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	events.Publish("lottery.participated", userID, fmt.Sprintf("%d:%d", activityID, userID), map[string]string{"activity_id": events.S(activityID)})
+	return s.changed(nil)
 }
 
 // ListParticipants returns all participants of an activity.

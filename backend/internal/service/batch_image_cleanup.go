@@ -225,7 +225,14 @@ func (s *BatchImageCleanupService) cleanupJob(ctx context.Context, job *BatchIma
 	if target == CleanupTargetInput {
 		return s.Repo.MarkBatchImageInputDeleted(ctx, job.BatchID, deletedAt)
 	}
-	return s.Repo.MarkBatchImageOutputDeleted(ctx, job.BatchID, deletedAt)
+	if err := s.Repo.MarkBatchImageOutputDeleted(ctx, job.BatchID, deletedAt); err != nil {
+		return err
+	}
+	publishBatchGameplayEvent("batch.outputs_deleted", job, "", map[string]string{"reason": reason})
+	if reason != "manual" {
+		publishBatchGameplayEvent("media.cleaned", job, "", map[string]string{"reason": reason})
+	}
+	return nil
 }
 
 func (s *BatchImageCleanupService) callProviderCleanup(ctx context.Context, job *BatchImageJob, target CleanupTarget) error {

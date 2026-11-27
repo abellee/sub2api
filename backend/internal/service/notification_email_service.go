@@ -421,8 +421,10 @@ func (s *NotificationEmailService) Send(ctx context.Context, input NotificationE
 		return notificationEmailConfigErr(errors.New("email service is not configured"))
 	}
 	if err := s.emailService.SendEmail(ctx, recipient, rendered.Subject, rendered.HTML); err != nil {
+		publishGameplay(ctx, "email.completed", input.UserID, "", "status", "failed", "action", normalizedEvent)
 		return notificationEmailDeliveryErr(err)
 	}
+	publishGameplay(ctx, "email.completed", input.UserID, deliveryKey, "status", "sent", "action", normalizedEvent)
 	if deliveryKey != "" {
 		if err := s.settingRepo.Set(ctx, deliveryKey, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
 			return err

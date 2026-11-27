@@ -130,6 +130,7 @@ func respondWithTokenPair(c *gin.Context, authService *service.AuthService, user
 			response.InternalError(c, "Failed to generate token")
 			return
 		}
+		recordGameplayLogin(c, user.ID)
 		response.Success(c, AuthResponse{
 			AccessToken: token,
 			TokenType:   "Bearer",
@@ -137,6 +138,7 @@ func respondWithTokenPair(c *gin.Context, authService *service.AuthService, user
 		})
 		return
 	}
+	recordGameplayLogin(c, user.ID)
 	response.Success(c, AuthResponse{
 		AccessToken:  tokenPair.AccessToken,
 		RefreshToken: tokenPair.RefreshToken,
@@ -278,6 +280,8 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
+	c.Set(gameplayLoginUserKey, user.ID)
+
 	h.authService.RecordSuccessfulLogin(c.Request.Context(), user.ID)
 
 	h.respondWithTokenPair(c, user)
@@ -400,6 +404,7 @@ func (h *AuthHandler) Login2FA(c *gin.Context) {
 		secureCookie := isRequestHTTPS(c)
 		clearOAuthPendingSessionCookie(c, secureCookie)
 		clearOAuthPendingBrowserCookie(c, secureCookie)
+		c.Set(gameplayLoginUserKey, user.ID)
 		h.authService.RecordSuccessfulLogin(c.Request.Context(), user.ID)
 
 		user, err = h.userService.GetByID(c.Request.Context(), session.UserID)
@@ -413,6 +418,7 @@ func (h *AuthHandler) Login2FA(c *gin.Context) {
 	_ = h.totpService.DeleteLoginSession(c.Request.Context(), req.TempToken)
 
 	if session.PendingOAuthBind == nil {
+		c.Set(gameplayLoginUserKey, user.ID)
 		h.authService.RecordSuccessfulLogin(c.Request.Context(), user.ID)
 	}
 

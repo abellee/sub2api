@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -48,17 +49,18 @@ func (s *Store) GetPointsAsset(id string) (PointsAsset, error) {
 }
 
 type ManagedItem struct {
-	ID             int64  `json:"id"`
-	Code           string `json:"code"`
-	Name           string `json:"name"`
-	Description    string `json:"description"`
-	CoverAsset     string `json:"cover_asset"`
-	ActiveAsset    string `json:"active_asset"`
-	ExpiredAsset   string `json:"expired_asset"`
-	AnimationAsset string `json:"animation_asset"`
+	ID             int64        `json:"id"`
+	Code           string       `json:"code"`
+	Name           string       `json:"name"`
+	Description    string       `json:"description"`
+	CoverAsset     string       `json:"cover_asset"`
+	ActiveAsset    string       `json:"active_asset"`
+	ExpiredAsset   string       `json:"expired_asset"`
+	AnimationAsset string       `json:"animation_asset"`
+	Effect         *EventAction `json:"effect,omitempty"`
 }
 
-const managedItemColumns = `id,code,name,description,cover_asset,active_asset,expired_asset,animation_asset`
+const managedItemColumns = `id,code,name,description,cover_asset,active_asset,expired_asset,animation_asset,kind,params_json`
 
 func (s *Store) ListManagedItems() ([]ManagedItem, error) {
 	rows, err := s.db.Query(`SELECT ` + managedItemColumns + ` FROM items ORDER BY id DESC`)
@@ -69,8 +71,17 @@ func (s *Store) ListManagedItems() ([]ManagedItem, error) {
 	items := make([]ManagedItem, 0)
 	for rows.Next() {
 		var it ManagedItem
-		if err := rows.Scan(&it.ID, &it.Code, &it.Name, &it.Description, &it.CoverAsset, &it.ActiveAsset, &it.ExpiredAsset, &it.AnimationAsset); err != nil {
+		var kind, params string
+		if err := rows.Scan(&it.ID, &it.Code, &it.Name, &it.Description, &it.CoverAsset, &it.ActiveAsset, &it.ExpiredAsset, &it.AnimationAsset, &kind, &params); err != nil {
 			return nil, err
+		}
+		if kind == "grant_points" || kind == "grant_item" {
+			var effect EventAction
+			if err := json.Unmarshal([]byte(params), &effect); err != nil {
+				return nil, err
+			}
+			effect.Kind = kind
+			it.Effect = &effect
 		}
 		items = append(items, it)
 	}
@@ -130,6 +141,48 @@ func (s *Store) SaveManagedItem(it ManagedItem) (ManagedItem, error) {
 	}
 	if err != nil {
 		return it, err
+	}
+	if it.Effect != nil {
+		var existingKind string
+		if err = tx.QueryRow(`SELECT kind FROM items WHERE id=$1 FOR UPDATE`, it.ID).Scan(&existingKind); err != nil {
+			return it, err
+		}
+		if existingKind != "" && existingKind != "grant_points" && existingKind != "grant_item" {
+			return it, fmt.Errorf("%w: item effect is managed by another handler", ErrInvalidShopData)
+		}
+		effect := *it.Effect
+		switch effect.Kind {
+		case "none":
+			effect = EventAction{}
+		case "grant_points":
+			if effect.Points < 1 || effect.Points > 1000000000000 {
+				return it, ErrInvalidShopData
+			}
+			effect = EventAction{Kind: "grant_points", Points: effect.Points}
+		case "grant_item":
+			if effect.ItemID < 1 || effect.Quantity < 1 || effect.Quantity > 1000000 {
+				return it, ErrInvalidShopData
+			}
+			var targetID int64
+			if err = tx.QueryRow(`SELECT id FROM items WHERE id=$1 AND status='active'`, effect.ItemID).Scan(&targetID); err != nil {
+				return it, ErrInvalidShopData
+			}
+			effect = EventAction{Kind: "grant_item", ItemID: effect.ItemID, Quantity: effect.Quantity}
+		default:
+			return it, ErrInvalidShopData
+		}
+		params, marshalErr := json.Marshal(effect)
+		if marshalErr != nil {
+			return it, marshalErr
+		}
+		if _, err = tx.Exec(`UPDATE items SET kind=$2,params_json=$3 WHERE id=$1`, it.ID, effect.Kind, string(params)); err != nil {
+			return it, err
+		}
+		if effect.Kind == "" {
+			it.Effect = nil
+		} else {
+			it.Effect = &effect
+		}
 	}
 	return it, tx.Commit()
 }

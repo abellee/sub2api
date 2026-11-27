@@ -99,6 +99,9 @@ func (s *adminServiceImpl) BatchDisableUsers(ctx context.Context, userIDs []int6
 	if err != nil {
 		return 0, err
 	}
+	for _, userID := range disabled {
+		publishGameplay(ctx, "user.ban_changed", userID, "", "status", StatusDisabled, "action", "batch_disable")
+	}
 	if s.authCacheInvalidator != nil {
 		// 状态已落库，缓存失效不随请求取消中断，否则未清到的用户在缓存 TTL 内仍能用 API Key。
 		invalidateCtx := context.WithoutCancel(ctx)

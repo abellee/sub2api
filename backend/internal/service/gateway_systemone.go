@@ -31,7 +31,7 @@ func (e *SystemOneUpstreamError) Error() string {
 	return fmt.Sprintf("typesafe upstream rejected request with status %d", e.StatusCode)
 }
 
-func (s *GatewayService) ForwardSystemOne(ctx context.Context, c *gin.Context, account *Account, body []byte) (*SystemOneForwardResult, error) {
+func (s *GatewayService) forwardSystemOneWithGameplayObservation(ctx context.Context, c *gin.Context, account *Account, body []byte) (*SystemOneForwardResult, error) {
 	started := time.Now()
 	if account == nil || !account.IsTypeSafe() || account.Type != AccountTypeAPIKey {
 		return nil, errors.New("invalid typesafe account")

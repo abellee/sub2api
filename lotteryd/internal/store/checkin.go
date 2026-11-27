@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"lotteryd/api/events"
 	"time"
 )
 
@@ -254,6 +255,10 @@ func (s *Store) ClaimDailyCheckIn(userID int64, now time.Time) (CheckInStatus, P
 	if err = tx.Commit(); err != nil {
 		return status, points, false, err
 	}
+	data := map[string]string{"day": events.S(status.Day), "multiplier": events.S(status.Multipliers[status.Day-1]), "reward_points": events.S(status.TodayReward), "balance_after": events.S(points.Balance)}
+	ref := fmt.Sprintf("%d:%s", userID, status.Date)
+	events.Publish("checkin.completed", userID, ref, data)
+	events.Publish("points.granted", userID, "daily_checkin:"+ref, data)
 	return status, points, true, nil
 }
 
@@ -301,5 +306,8 @@ func (s *Store) GrantAdminPoints(userID, adminID, amount int64, requestID, note 
 	if err = tx.Commit(); err != nil {
 		return points, false, err
 	}
+	data := map[string]string{"actor_id": events.S(adminID), "amount": events.S(amount), "balance_after": events.S(points.Balance)}
+	events.Publish("points.admin_granted", userID, refID, data)
+	events.Publish("points.granted", userID, "admin_points_recharge:"+refID, data)
 	return points, true, nil
 }

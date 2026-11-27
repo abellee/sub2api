@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"lotteryd/api/events"
 	"slices"
 	"strconv"
 	"time"
@@ -203,6 +204,17 @@ func (r *userGroupRateRepository) GetUsageTierProgress(ctx context.Context, user
 	}
 	if err = tx.Commit(); err != nil {
 		return nil, err
+	}
+	if events.Enabled() {
+		for _, items := range out {
+			for _, p := range items {
+				data := map[string]string{"group_id": events.S(p.SourceGroupID), "stage": events.S(p.Stage), "streak": events.S(p.Streak)}
+				if p.RateMultiplier != nil {
+					data["rate_multiplier"] = events.Amount(*p.RateMultiplier)
+				}
+				events.Publish("usage.tier_observed", userID, events.S(userID)+":"+events.S(p.SourceGroupID)+":"+events.S(p.Stage)+":"+today, data)
+			}
+		}
 	}
 	return out, nil
 }

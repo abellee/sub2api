@@ -101,9 +101,15 @@ func (s *ScheduledTestService) ListResults(ctx context.Context, planID int64, li
 // SaveResult inserts a result and prunes old entries beyond maxResults.
 func (s *ScheduledTestService) SaveResult(ctx context.Context, planID int64, maxResults int, result *ScheduledTestResult) error {
 	result.PlanID = planID
-	if _, err := s.resultRepo.Create(ctx, result); err != nil {
+	created, err := s.resultRepo.Create(ctx, result)
+	if err != nil {
 		return err
 	}
+	reference := gameplayValue(planID) + ":" + gameplayValue(result.StartedAt)
+	if created != nil && created.ID > 0 {
+		reference = gameplayValue(created.ID)
+	}
+	publishGameplay(ctx, "model.test_completed", 0, reference, "task_id", planID, "status", result.Status, "duration_ms", result.LatencyMs)
 	return s.resultRepo.PruneOldResults(ctx, planID, maxResults)
 }
 

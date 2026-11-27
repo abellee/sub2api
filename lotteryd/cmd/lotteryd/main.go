@@ -153,6 +153,7 @@ func main() {
 
 	// WebSocket 推送循环：资格变化时实时通知在线用户。
 	go srv.RunWSHub(ctx)
+	go ap.RunEvents(ctx)
 
 	// gRPC 奖励服务：主站充值回调的异步通知入口。
 	grpcServer := rpc.NewGRPCServer(st, strings.TrimSpace(*grpcToken))

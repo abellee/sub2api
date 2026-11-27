@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"lotteryd/api/events"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
@@ -260,6 +261,9 @@ func (s *Store) GrantPoints(userID, amount int64, source, refType, refID, note s
 	if err := tx.Commit(); err != nil {
 		return 0, false, err
 	}
+	if source != "event_reward" {
+		events.Publish("points.granted", userID, pointEventReference(refType, refID), map[string]string{"amount": events.S(amount), "balance_after": events.S(b.Balance), "resource": source})
+	}
 	return b.Balance, true, nil
 }
 
@@ -286,6 +290,9 @@ func (s *Store) SpendPoints(userID, amount int64, source, refType, refID, note s
 
 	b, err := s.applyPointsDelta(tx, userID, -amount)
 	if err != nil {
+		if errors.Is(err, ErrInsufficientPoints) {
+			events.Publish("points.insufficient", userID, "", map[string]string{"amount": events.S(amount), "resource": source})
+		}
 		return 0, err
 	}
 	extJSON, _ := json.Marshal(ext)
@@ -298,6 +305,9 @@ func (s *Store) SpendPoints(userID, amount int64, source, refType, refID, note s
 	}
 	if err := tx.Commit(); err != nil {
 		return 0, err
+	}
+	if source != "event_reward" {
+		events.Publish("points.spent", userID, pointEventReference(refType, refID), map[string]string{"amount": events.S(amount), "balance_after": events.S(b.Balance), "resource": source})
 	}
 	return b.Balance, nil
 }
@@ -392,6 +402,9 @@ func (s *Store) AddUserItems(userID, itemID int64, quantity int) error {
 			quantity = user_items.quantity + $3, updated_at = $4`,
 		userID, itemID, quantity, now,
 	)
+	if err == nil {
+		events.Publish("item.granted", userID, "", map[string]string{"item_id": events.S(itemID), "quantity": events.S(quantity)})
+	}
 	return err
 }
 
@@ -426,5 +439,9 @@ func (s *Store) UseUserItem(userID, itemID int64, quantity int, refType, refID, 
 	); err != nil {
 		return err
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	events.Publish("item.used", userID, pointEventReference(refType, refID), map[string]string{"item_id": events.S(itemID), "quantity": events.S(quantity)})
+	return nil
 }

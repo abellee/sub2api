@@ -17,6 +17,8 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
+	"lotteryd/api/eventrpc"
+	"lotteryd/api/events"
 	rewardsv1 "lotteryd/api/gen/lotteryd/v1"
 	"lotteryd/internal/store"
 )
@@ -41,11 +43,15 @@ func NewGRPCServer(st *store.Store, token string) *grpc.Server {
 	impl := NewServer(st, token)
 	s := grpc.NewServer(grpc.ChainUnaryInterceptor(impl.authInterceptor()))
 	rewardsv1.RegisterRewardServiceServer(s, impl)
+	eventrpc.Register(s, impl)
 	return s
 }
 
 func (s *Server) authInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+		if info.FullMethod == eventrpc.Method && s.token == "" {
+			return nil, status.Error(codes.Unavailable, "event receiver requires an internal token")
+		}
 		if s.token != "" {
 			md, _ := metadata.FromIncomingContext(ctx)
 			if join(md.Get(MetaToken)) != s.token {
@@ -54,6 +60,13 @@ func (s *Server) authInterceptor() grpc.UnaryServerInterceptor {
 		}
 		return handler(ctx, req)
 	}
+}
+
+func (s *Server) ReceiveEvent(ctx context.Context, e events.Event) error {
+	if err := s.st.ReceiveEvent(ctx, e); err != nil {
+		return status.Error(codes.InvalidArgument, err.Error())
+	}
+	return nil
 }
 
 func join(vals []string) string {

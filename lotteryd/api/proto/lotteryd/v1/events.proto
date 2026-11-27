@@ -1,0 +1,11 @@
+syntax = "proto3";
+package lotteryd.v1;
+import "google/protobuf/wrappers.proto";
+import "google/protobuf/empty.proto";
+option go_package = "lotteryd/api/eventrpc";
+
+// BytesValue carries the bounded JSON Event snapshot from lotteryd/api/events.
+// The manual adapter in api/eventrpc uses standard protobuf messages only.
+service EventService {
+  rpc Emit(google.protobuf.BytesValue) returns (google.protobuf.Empty);
+}

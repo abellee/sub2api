@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"lotteryd/api/events"
 	"net/http"
 	"strconv"
 	"strings"
@@ -143,6 +144,11 @@ func (h *OpenAIGatewayHandler) GrokRealtime(c *gin.Context) {
 	defer func() { _ = conn.CloseNow() }()
 
 	started := time.Now()
+	sessionEventID := service.StableGrokRealtimeBillingRequestID("")
+	events.Publish("request.realtime_started", apiKey.UserID, sessionEventID, map[string]string{"api_key_id": events.S(apiKey.ID), "account_id": events.S(selection.Account.ID), "model": model, "platform": "grok"})
+	defer func() {
+		events.Publish("request.realtime_ended", apiKey.UserID, sessionEventID, map[string]string{"api_key_id": events.S(apiKey.ID), "account_id": events.S(selection.Account.ID), "model": model, "platform": "grok", "duration_ms": events.S(time.Since(started).Milliseconds())})
+	}()
 	audioObserved, proxyErr := h.gatewayService.ProxyGrokRealtimeConn(c.Request.Context(), c, conn, upstream)
 	elapsed := time.Since(started)
 	if proxyErr != nil {
