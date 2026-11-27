@@ -53,7 +53,7 @@ async function submit() {
     <header class="checkin-heading"><div><h4><Icon name="calendar" size="sm" />{{ t('common.checkIn.title') }}</h4><p>{{ status ? subtitle : t('common.checkIn.rewardHint') }}</p></div><span class="checkin-cycle">{{ t('common.checkIn.cycle') }}</span></header>
       <div class="checkin-days" :aria-label="t('common.checkIn.progress')">
         <div v-for="(reward, index) in rewards" :key="index" class="checkin-day" :class="{ 'is-today': index + 1 === status?.day, 'is-complete': index < (status?.completed_days ?? 0), 'has-multiplier': multiplier(index) > 1 }">
-          <span v-if="multiplier(index) > 1" class="checkin-multiplier">{{ t(`common.checkIn.multiplierLabels.${multiplier(index)}`) }}</span>
+          <span v-if="multiplier(index) > 1" class="checkin-multiplier"><span class="checkin-multiplier-prefix">x</span>{{ multiplier(index) }}</span>
           <span class="checkin-day-label">{{ t('common.checkIn.day', { day: index + 1 }) }}</span><img class="checkin-points-icon" :src="pointsIcon" alt="" /><strong>{{ reward === null ? '—' : '+' + number(reward) }}</strong>
           <span class="checkin-day-state"><Icon v-if="index < (status?.completed_days ?? 0)" name="check" size="xs" />{{ !status ? '—' : index < status.completed_days ? t('common.checkIn.received') : index + 1 === status.day ? t('common.checkIn.today') : t('common.checkIn.locked') }}</span>
         </div>
@@ -68,7 +68,8 @@ async function submit() {
 <style scoped>
 .checkin-points-icon{width:22px;height:22px;object-fit:contain}
 .checkin-day strong{max-width:100%;text-align:center}
-.checkin-multiplier{position:absolute;top:-10px;padding:1px 7px;border-radius:5px;background:var(--checkin-ink);color:var(--key-form-surface);font-size:11px;white-space:nowrap}
+.checkin-multiplier{position:absolute;z-index:1;top:-21px;left:50%;color:#ffd568;font-family:Impact,'Arial Black',sans-serif;font-size:32px;font-style:italic;font-weight:900;line-height:1;letter-spacing:-1px;-webkit-text-stroke:.6px #95551b;paint-order:stroke fill;text-shadow:1px 2px 0 #a5641b,2px 3px 0 #61380f;transform:translateX(-50%) rotate(-9deg) skewX(-8deg);white-space:nowrap;pointer-events:none}
+.checkin-multiplier-prefix{margin-right:1px;font-size:23px}
 .checkin-card{--checkin-accent:#536eff;--checkin-ink:#4359dc;--checkin-haze:#f0f3ff;--checkin-positive:#238268;margin-top:22px;padding:20px;border:1px solid var(--key-form-line);border-radius:16px;background:var(--key-form-surface)}
 .checkin-retry{align-self:flex-start;padding:0;border:0;background:transparent;color:var(--checkin-ink);font:inherit;font-size:12px;cursor:pointer}.checkin-retry:hover{text-decoration:underline;text-underline-offset:3px}
 :global(.dark .checkin-card){--checkin-accent:#9aabff;--checkin-ink:#c1ccff;--checkin-haze:#252d4b;--checkin-positive:#8bd5b7}

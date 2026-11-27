@@ -43,8 +43,8 @@ it('reconciles with the server after a lost response and never invents a success
 })
 
 it.each([
-  { multipliers: [1, 2, 3, 4, 5, 6, 7], labels: ['双倍', '三倍', '四倍', '五倍', '六倍', '七倍'] },
-  { multipliers: [8, 9, 10, 1, 1, 1, 1], labels: ['八倍', '九倍', '十倍'] }
+  { multipliers: [1, 2, 3, 4, 5, 6, 7], labels: ['x2', 'x3', 'x4', 'x5', 'x6', 'x7'] },
+  { multipliers: [8, 9, 10, 1, 1, 1, 1], labels: ['x8', 'x9', 'x10'] }
 ])('shows the saved multiplier labels and server-calculated final points: $labels', ({ multipliers, labels }) => {
   const rewards = multipliers.map(value => 10 * value)
   status.value = { ...initial, multipliers, rewards, today_reward: rewards[5] }
