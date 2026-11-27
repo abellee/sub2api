@@ -44,6 +44,7 @@ class ConfigurationTests(unittest.TestCase):
 
     def test_build_pins_source_and_does_not_deploy(self):
         text = read(".github/workflows/build-split.yml")
+        self.assertIn("github.repository == 'abellee/sub2api'", text)
         self.assertIn("github.event.repository.private", text)
         self.assertIn("sha-${GITHUB_SHA}", text)
         self.assertNotRegex(text, r"(?im)^\s*(ssh |scp |.*docker compose .*up)")

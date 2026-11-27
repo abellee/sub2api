@@ -19,7 +19,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   validate:
-    if: ${{ github.event.repository.private }}
+    if: ${{ github.repository == 'abellee/sub2api' || github.event.repository.private }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6

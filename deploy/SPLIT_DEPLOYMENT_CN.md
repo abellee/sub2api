@@ -6,7 +6,7 @@
 
 ## 构建
 
-私有仓库的 Build split images 工作流支持分别发布 frontend/backend，镜像使用 sha-完整提交号固定版本。audit SDK 沿用生产固定 gitlink 和校验包；cost-guard SDK 沿用生产已跟踪源码。禁止使用本地其他未发布改动。
+主站公开仓库的 Build split images 工作流支持分别发布 frontend/backend，私有仓库仍可使用同一流程。镜像使用 sha-完整提交号固定版本。audit SDK 通过私有构建包恢复固定 gitlink 对应的源码并核验；cost-guard SDK 沿用生产已跟踪源码。禁止使用本地其他未发布改动。
 
 ## 网页兼容
 
