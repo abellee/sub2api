@@ -10,10 +10,10 @@ it('reads points and paginated usage for the authenticated user without acceptin
   client.get.mockResolvedValueOnce({ data: { code: 0, data: summary } })
   expect(await fetchMyPoints()).toEqual(summary)
   expect(client.get).toHaveBeenNthCalledWith(1, '/v1/me/points')
-  const history = { items: [], total: 0, page: 2, page_size: 10 }
+  const history = { items: [], total: 0, page: 2, page_size: 20 }
   client.get.mockResolvedValueOnce({ data: { code: 0, data: history } })
   expect(await fetchMyPointsHistory(2, 'spend')).toEqual(history)
-  expect(client.get).toHaveBeenNthCalledWith(2, '/v1/me/points/transactions', { params: { page: 2, page_size: 10, kind: 'spend' } })
+  expect(client.get).toHaveBeenNthCalledWith(2, '/v1/me/points/transactions', { params: { page: 2, page_size: 20, kind: 'spend' } })
 })
 
 it('uses server-owned check-in state and admin-only points configuration and recharge endpoints', async () => {

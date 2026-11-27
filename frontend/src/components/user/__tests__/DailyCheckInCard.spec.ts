@@ -27,7 +27,7 @@ it('shows the configured rewards without fixed double days, then claims and upda
   expect(wrapper.text()).not.toContain('common.checkIn.double')
   await wrapper.get('.checkin-claim').trigger('click')
   await flushPromises()
-  expect(wrapper.emitted('claimed')?.[0]).toEqual([points])
+  expect(wrapper.emitted('claimed')?.[0]).toEqual([points, { multiplier: 1, reward: 7 }])
   expect(wrapper.get('.checkin-claim').attributes('disabled')).toBeDefined()
   expect(wrapper.findAll('.is-complete')).toHaveLength(6)
 })

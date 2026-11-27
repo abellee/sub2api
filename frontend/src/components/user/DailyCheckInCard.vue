@@ -8,7 +8,9 @@ import pointsIcon from '@/assets/icons/points-image-color.svg'
 import { refreshUserPoints } from '@/composables/useUserPoints'
 
 const props = defineProps<{ show: boolean; userId: number }>()
-const emit = defineEmits<{ claimed: [points: PointsSummary] }>()
+const emit = defineEmits<{
+  claimed: [points: PointsSummary, bonus?: { multiplier: number; reward: number }]
+}>()
 const { t, locale } = useI18n()
 const { status, loading, claiming, error, refresh, claim } = useDailyCheckIn()
 const claimError = ref(false)
@@ -33,7 +35,9 @@ async function submit() {
     const result = await claim()
     if (!result || current !== version) return
     earned.value = result.granted ? result.status.today_reward : null
-    emit('claimed', result.points)
+    const rewardMultiplier = result.status.multipliers?.[result.status.day - 1] ?? 1
+    if (result.granted) emit('claimed', result.points, { multiplier: rewardMultiplier, reward: result.status.today_reward })
+    else emit('claimed', result.points)
   } catch {
     if (current === version) {
       claimError.value = true

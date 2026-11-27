@@ -721,6 +721,9 @@ export default {
       useDepositWithdrawButtons: 'Please use deposit/withdraw buttons to adjust balance',
       // Balance History
       balanceHistory: 'Recharge History',
+      pointsBalance: 'Points',
+      pointsHistory: 'Points Spending History',
+      pointsHistoryTitle: 'Points Spending History · User {id}',
       balanceHistoryTip: 'Click to open recharge history',
       columnAlwaysVisible: 'This column is always visible',
       // Per-platform usage breakdown (hover tooltip)

@@ -32,6 +32,19 @@ type pointsTransactionView struct {
 }
 
 func (s *Server) handleMyPointsTransactions(w http.ResponseWriter, r *http.Request, claims *Claims) {
+	s.writePointsTransactions(w, r, claims.UserID)
+}
+
+func (s *Server) handleAdminUserPointsTransactions(w http.ResponseWriter, r *http.Request, _ *Claims) {
+	w.Header().Set("Cache-Control", "no-store")
+	userID, valid := s.pointsTarget(w, r)
+	if !valid {
+		return
+	}
+	s.writePointsTransactions(w, r, userID)
+}
+
+func (s *Server) writePointsTransactions(w http.ResponseWriter, r *http.Request, userID int64) {
 	w.Header().Set("Cache-Control", "no-store")
 	page, size := 1, 10
 	for key, target := range map[string]*int{"page": &page, "page_size": &size} {
@@ -52,9 +65,9 @@ func (s *Server) handleMyPointsTransactions(w http.ResponseWriter, r *http.Reque
 		fail(w, http.StatusBadRequest, 400, "invalid points filter")
 		return
 	}
-	records, total, err := s.App.Store.ListPointsTransactions(claims.UserID, kind, size, (page-1)*size)
+	records, total, err := s.App.Store.ListPointsTransactions(userID, kind, size, (page-1)*size)
 	if err != nil {
-		slog.Error("list user points transactions", "user", claims.UserID, "err", err)
+		slog.Error("list user points transactions", "user", userID, "err", err)
 		fail(w, http.StatusInternalServerError, 500, "unable to load points records")
 		return
 	}

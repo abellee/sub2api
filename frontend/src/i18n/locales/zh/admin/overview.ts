@@ -722,6 +722,9 @@ export default {
       useDepositWithdrawButtons: '请使用充值/退款按钮调整余额',
       // 余额变动记录
       balanceHistory: '充值记录',
+      pointsBalance: '积分',
+      pointsHistory: '积分消费记录',
+      pointsHistoryTitle: '积分消费记录 · 用户 {id}',
       balanceHistoryTip: '点击查看充值记录',
       columnAlwaysVisible: '该列固定显示，不可隐藏',
       // 平台用量明细（悬浮显示）

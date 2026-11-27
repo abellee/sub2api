@@ -22,7 +22,7 @@ function render(show = true) {
 beforeEach(() => {
   vi.resetAllMocks()
   api.summary.mockResolvedValue(summary)
-  api.history.mockResolvedValue({ items: rows, total: 11, page: 1, page_size: 10 })
+  api.history.mockResolvedValue({ items: rows, total: 21, page: 1, page_size: 20 })
 })
 afterEach(() => { wrappers.forEach(wrapper => wrapper.unmount()); wrappers.length = 0 })
 
@@ -62,7 +62,7 @@ describe('PointsModal', () => {
     expect(wrapper.find('.points-current strong').text()).toBe('—')
     expect(wrapper.find('.points-record').exists()).toBe(false)
     api.summary.mockResolvedValue({ balance: '0', total_earned: '0', total_spent: '0' })
-    api.history.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 10 })
+    api.history.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20 })
     await wrapper.find('[role="alert"] button').trigger('click')
     await flushPromises()
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)

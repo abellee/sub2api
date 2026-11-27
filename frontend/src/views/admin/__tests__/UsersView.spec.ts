@@ -26,6 +26,8 @@ const {
   getBatchUserAttributes: vi.fn()
 }))
 
+vi.mock('@/api/points', () => ({ fetchAdminUserPoints: vi.fn().mockResolvedValue({ balance: '0', total_earned: '0', total_spent: '0' }) }))
+
 vi.mock('@/api/admin', () => ({
   adminAPI: {
     users: {

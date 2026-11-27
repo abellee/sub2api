@@ -187,6 +187,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /v1/admin/points/settings", s.requireAdmin(s.handleGetPointsSettings))
 	mux.Handle("PUT /v1/admin/points/settings", s.requireAdmin(s.handleSavePointsSettings))
 	mux.Handle("GET /v1/admin/users/{userID}/points", s.requireAdmin(s.handleAdminUserPoints))
+	mux.Handle("GET /v1/admin/users/{userID}/points/transactions", s.requireAdmin(s.handleAdminUserPointsTransactions))
 	mux.Handle("POST /v1/admin/users/{userID}/points", s.requireAdmin(s.handleAdminRechargePoints))
 	mux.Handle("POST /v1/admin/points/assets", s.requireAdmin(s.handleUploadPointsAsset))
 	mux.HandleFunc("GET /v1/points/assets/{id}", s.handlePointsAsset)

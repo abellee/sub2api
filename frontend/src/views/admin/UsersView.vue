@@ -433,26 +433,32 @@
           </template>
 
           <template #cell-balance="{ value, row }">
-            <div class="flex items-center gap-2">
-              <div class="group relative">
-                <button
-                  class="font-medium text-gray-900 underline decoration-dashed decoration-gray-300 underline-offset-4 transition-colors hover:text-primary-600 dark:text-white dark:decoration-dark-500 dark:hover:text-primary-400"
-                  @click="handleBalanceHistory(row)"
-                >
-                  ${{ value.toFixed(2) }}
-                </button>
-                <!-- Instant tooltip -->
-                <div class="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded bg-gray-900 px-2 py-1 text-xs text-white opacity-0 shadow-lg transition-opacity duration-75 group-hover:opacity-100 dark:bg-dark-600">
-                  {{ t('admin.users.balanceHistoryTip') }}
-                  <div class="absolute left-1/2 top-full -translate-x-1/2 border-4 border-transparent border-t-gray-900 dark:border-t-dark-600"></div>
+            <div class="space-y-1">
+              <div class="flex items-center gap-2">
+                <div class="group relative">
+                  <button
+                    class="font-medium text-gray-900 underline decoration-dashed decoration-gray-300 underline-offset-4 transition-colors hover:text-primary-600 dark:text-white dark:decoration-dark-500 dark:hover:text-primary-400"
+                    @click="handleBalanceHistory(row)"
+                  >
+                    ${{ value.toFixed(2) }}
+                  </button>
+                  <!-- Instant tooltip -->
+                  <div class="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded bg-gray-900 px-2 py-1 text-xs text-white opacity-0 shadow-lg transition-opacity duration-75 group-hover:opacity-100 dark:bg-dark-600">
+                    {{ t('admin.users.balanceHistoryTip') }}
+                    <div class="absolute left-1/2 top-full -translate-x-1/2 border-4 border-transparent border-t-gray-900 dark:border-t-dark-600"></div>
+                  </div>
                 </div>
+                <button
+                  @click.stop="handleDeposit(row)"
+                  class="rounded px-2 py-0.5 text-xs font-medium text-emerald-600 transition-colors hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-900/20"
+                  :title="t('admin.users.deposit')"
+                >
+                  {{ t('admin.users.deposit') }}
+                </button>
               </div>
-              <button
-                @click.stop="handleDeposit(row)"
-                class="rounded px-2 py-0.5 text-xs font-medium text-emerald-600 transition-colors hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-900/20"
-                :title="t('admin.users.deposit')"
-              >
-                {{ t('admin.users.deposit') }}
+              <button type="button" class="flex items-center gap-1 text-xs text-gray-500 hover:text-primary-600 dark:text-gray-400 dark:hover:text-primary-400" :data-test="`points-balance-${row.id}`" @click="handlePointsHistory(row)">
+                <img :src="pointsIcon" alt="" class="h-3.5 w-3.5" />
+                {{ t('admin.users.pointsBalance') }} {{ formatPoints(userPoints[row.id]?.balance) }}
               </button>
             </div>
           </template>
@@ -677,7 +683,7 @@
     <Teleport to="body">
       <div
         v-if="activeMenuId !== null && menuPosition"
-        class="action-menu-content fixed z-[9999] w-48 overflow-hidden rounded-xl bg-white shadow-lg ring-1 ring-black/5 dark:bg-dark-800 dark:ring-white/10"
+        class="action-menu-content fixed z-[9999] max-h-[calc(100dvh-16px)] w-48 overflow-y-auto rounded-xl bg-white shadow-lg ring-1 ring-black/5 dark:bg-dark-800 dark:ring-white/10"
         :style="{ top: menuPosition.top + 'px', left: menuPosition.left + 'px' }"
       >
         <div class="py-1">
@@ -741,6 +747,14 @@
                 {{ t('admin.users.balanceHistory') }}
               </button>
 
+              <button
+                @click="handlePointsHistory(user); closeActionMenu()"
+                class="flex w-full items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-dark-700"
+              >
+                <img :src="pointsIcon" alt="" class="h-4 w-4" />
+                {{ t('admin.users.pointsHistory') }}
+              </button>
+
               <div class="my-1 border-t border-gray-100 dark:border-dark-700"></div>
 
               <!-- Delete (not for admin) -->
@@ -786,6 +800,7 @@
     <UserAllowedGroupsModal :show="showAllowedGroupsModal" :user="allowedGroupsUser" @close="closeAllowedGroupsModal" @success="loadUsers" />
     <UserBalanceModal :show="showBalanceModal" :user="balanceUser" :operation="balanceOperation" @close="closeBalanceModal" @success="loadUsers" />
     <UserBalanceHistoryModal :show="showBalanceHistoryModal" :user="balanceHistoryUser" @close="closeBalanceHistoryModal" @deposit="handleDepositFromHistory" @withdraw="handleWithdrawFromHistory" />
+    <PointsModal v-if="pointsHistoryUser" :show="true" :user-id="pointsHistoryUser.id" admin @close="pointsHistoryUser = null" @loaded="userPoints[pointsHistoryUser.id] = $event" />
     <GroupReplaceModal :show="showGroupReplaceModal" :user="groupReplaceUser" :old-group="groupReplaceOldGroup" :all-groups="allGroups" @close="closeGroupReplaceModal" @success="loadUsers" />
     <UserAttributesConfigModal :show="showAttributesModal" @close="handleAttributesModalClose" />
   </AppLayout>
@@ -800,8 +815,11 @@ import { useTableSelection } from '@/composables/useTableSelection'
 import { formatDateTime } from '@/utils/format'
 import Icon from '@/components/icons/Icon.vue'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 import { adminAPI } from '@/api/admin'
+import { fetchAdminUserPoints, type PointsSummary } from '@/api/points'
+import pointsIcon from '@/assets/icons/points-image-color.svg'
+import PointsModal from '@/components/user/PointsModal.vue'
 import type { AdminUser, AdminGroup, UserAttributeDefinition } from '@/types'
 import type { BatchUserUsageStats } from '@/api/admin/dashboard'
 import type { PlatformQuotaItem } from '@/api/admin/users'
@@ -997,7 +1015,7 @@ const toggleColumn = (key: string) => {
     hiddenColumns.add(key)
   }
   saveColumnsToStorage()
-  if (wasHidden && (key === 'usage' || key.startsWith('usage_') || key.startsWith('attr_') || key === 'balance_platform_quota')) {
+  if (wasHidden && (key === 'balance' || key === 'usage' || key.startsWith('usage_') || key.startsWith('attr_') || key === 'balance_platform_quota')) {
     refreshCurrentPageSecondaryData()
   }
   if (key === 'subscriptions') {
@@ -1374,6 +1392,23 @@ const loadUsersSecondaryData = async (
 
   const tasks: Promise<void>[] = []
 
+  if (!hiddenColumns.has('balance')) {
+    tasks.push((async () => {
+      for (let offset = 0; offset < userIds.length; offset += 6) {
+        if (signal?.aborted || (expectedSeq !== undefined && expectedSeq !== secondaryDataSeq)) return
+        const chunk = userIds.slice(offset, offset + 6)
+        const results = await Promise.allSettled(chunk.map(id => fetchAdminUserPoints(id)))
+        if (signal?.aborted || (expectedSeq !== undefined && expectedSeq !== secondaryDataSeq)) return
+        const values = { ...userPoints.value }
+        results.forEach((result, index) => {
+          if (result.status === 'fulfilled') values[chunk[index]] = result.value
+          else delete values[chunk[index]]
+        })
+        userPoints.value = values
+      }
+    })())
+  }
+
   if (hasVisibleUsageColumn.value) {
     tasks.push(
       (async () => {
@@ -1465,7 +1500,7 @@ const openActionMenu = (user: AdminUser, e: MouseEvent) => {
 
     const rect = target.getBoundingClientRect()
     const menuWidth = 200
-    const menuHeight = 240
+    const menuHeight = Math.min(320, window.innerHeight - 16)
     const padding = 8
     const viewportWidth = window.innerWidth
     const viewportHeight = window.innerHeight
@@ -1558,6 +1593,10 @@ const balanceOperation = ref<'add' | 'subtract'>('add')
 // Balance History modal state
 const showBalanceHistoryModal = ref(false)
 const balanceHistoryUser = ref<AdminUser | null>(null)
+const pointsHistoryUser = ref<AdminUser | null>(null)
+const userPoints = ref<Record<number, PointsSummary>>({})
+const formatPoints = (value?: string) => value == null ? '—' : BigInt(value).toLocaleString(locale.value)
+const handlePointsHistory = (user: AdminUser) => { pointsHistoryUser.value = user }
 
 // 计算剩余天数
 const getDaysRemaining = (expiresAt: string): number => {
@@ -1623,6 +1662,7 @@ const loadUsers = async () => {
     usageStats.value = {}
     userAttributeValues.value = {}
     platformQuotaStats.value = {}
+    userPoints.value = {}
 
     // Defer heavy secondary data so table can render first.
     if (response.items.length > 0) {

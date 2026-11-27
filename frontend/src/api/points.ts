@@ -31,7 +31,7 @@ export function fetchMyPoints(): Promise<PointsSummary> {
 }
 
 export function fetchMyPointsHistory(page: number, kind: PointsFilter): Promise<PointsHistory> {
-  return unwrap(client.http.get('/v1/me/points/transactions', { params: { page, page_size: 10, kind } }))
+  return unwrap(client.http.get('/v1/me/points/transactions', { params: { page, page_size: 20, kind } }))
 }
 
 export interface CheckInStatus {
@@ -74,6 +74,10 @@ export function savePointsSettings(settings: PointsSettings): Promise<PointsSett
 
 export function fetchAdminUserPoints(userId: number): Promise<PointsSummary> {
   return unwrap(client.http.get(`/v1/admin/users/${userId}/points`))
+}
+
+export function fetchAdminUserPointsHistory(userId: number, page: number, kind: PointsFilter): Promise<PointsHistory> {
+  return unwrap(client.http.get(`/v1/admin/users/${userId}/points/transactions`, { params: { page, page_size: 20, kind } }))
 }
 
 export function rechargeUserPoints(userId: number, amount: string, notes: string, requestId: string): Promise<{ points: PointsSummary; granted: boolean }> {
