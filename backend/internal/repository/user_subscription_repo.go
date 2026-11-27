@@ -512,7 +512,7 @@ func (r *userSubscriptionRepository) BatchUpdateExpiredStatus(ctx context.Contex
 		if err := client.Driver().Query(ctx, `UPDATE user_subscriptions SET status=$1,updated_at=NOW() WHERE status=$2 AND expires_at <= $3 RETURNING id,user_id,group_id,expires_at`, []any{service.SubscriptionStatusExpired, service.SubscriptionStatusActive, time.Now()}, &rows); err != nil {
 			return 0, err
 		}
-		defer rows.Close()
+		defer func() { _ = rows.Close() }()
 		type expired struct {
 			id, userID, groupID int64
 			expiresAt           time.Time

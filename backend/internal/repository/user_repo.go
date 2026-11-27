@@ -1167,7 +1167,7 @@ func (r *userRepository) updateLimitsWithGameplay(ctx context.Context, query, op
 	if err != nil {
 		return 0, fmt.Errorf("batch update user limits: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	type snapshot struct {
 		id               int64
 		concurrency, rpm int

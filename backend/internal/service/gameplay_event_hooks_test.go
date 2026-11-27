@@ -16,7 +16,7 @@ func TestGameplayHookPublishesOnlyAfterTransactionCommit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	client := dbent.NewClient(dbent.Driver(entsql.OpenDB(dialect.Postgres, db)))
 	queue := make(chan events.Event, 2)
 	events.SetSink(func(e events.Event) { queue <- e })
@@ -54,7 +54,7 @@ func TestGameplayHookRollbackAndSenderFailureDoNotAffectBusiness(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	client := dbent.NewClient(dbent.Driver(entsql.OpenDB(dialect.Postgres, db)))
 	count := 0
 	events.SetSink(func(events.Event) { count++ })

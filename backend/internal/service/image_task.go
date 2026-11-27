@@ -248,12 +248,13 @@ func (s *ImageTaskService) finish(ctx context.Context, id, status string, status
 		return ErrImageTaskUnavailable.WithCause(err)
 	}
 	if previousStatus != status {
-		if status == ImageTaskStatusCompleted {
+		switch status {
+		case ImageTaskStatusCompleted:
 			publishImageTaskEvent("media.succeeded", task)
 			if filesSaved {
 				publishImageTaskEvent("media.files_saved", task)
 			}
-		} else if status == ImageTaskStatusFailed {
+		case ImageTaskStatusFailed:
 			publishImageTaskEvent("media.failed", task)
 			if strings.Contains(string(taskErr), "failed to store generated image to object storage") {
 				publishImageTaskEvent("media.files_failed", task)
