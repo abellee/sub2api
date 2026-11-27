@@ -11,8 +11,9 @@ The tab supports manual messages (rewritten using the current bot persona), a re
 Admin endpoints under `/push-api/v1` (existing admin authentication):
 
 - `GET/PUT /admin/group-notifications/config`: `{enabled,baseURL,apiKey?,platformID,groupIDs,configID}`; responses replace `apiKey` with `keyConfigured`.
-- `POST /admin/group-notifications/send`: `{title,body,requestID}`; reuse the same request ID when retrying unchanged content to avoid duplicate deliveries.
+- `POST /admin/group-notifications/send`: `{title,body,requestID}`; persists a background job and returns HTTP 202 with `job` and `group.queued:true`. This acknowledges submission, not delivery. Reuse the same request ID to avoid duplicate deliveries. A completed request returns its recorded result.
 - `GET /admin/group-notifications/messages`: per-group delivery status.
+- `GET /admin/group-notifications/jobs` and `GET /admin/group-notifications/jobs/<encoded-id>`: administrator-only job state and final delivery counts. States are `queued`, `generating`, `sending`, `sent`, `failed`, and `uncertain`; saved keys and configuration are never returned.
 
 `POST /internal/notify` optionally accepts `groupNotification: {body,generate?}` and `browserNotification` (default true). Omit `groupNotification` for private messages such as task rewards. Lottery creation/editing has independent browser/group checkboxes, both selected by default, alongside the existing four stages. The selection is persisted for manual and daily activities, including explicitly empty channel selections. Old records default to both channels. Browser recipients, private results copy, and browser links remain unchanged. Group-only delivery does not query browser recipient eligibility. Already recorded stages are not replayed.
 
@@ -22,7 +23,9 @@ When creating an announcement, the optional **Group notification** checkbox is a
 
 Lottery delivery requires `LOTTERY_PUSH_URL` to reach this service and `LOTTERY_PUSH_TOKEN` to match `PUSH_NOTIFY_TOKEN`. Enable and save the group settings before future stages become due. A disabled group channel is skipped.
 
-Successful destinations are retained across retries and restarts. Explicit rejections can be retried; interrupted or ambiguous sends are recorded as `uncertain` (or `sending` if the process stopped) and are **not resent automatically**. Check the group before manually composing another message. A group failure returns HTTP 502 without repeating successful browser or group deliveries on retry. Different groups send in parallel within a 15-second request timeout. Model generation has a 60-second timeout; lottery calls that request generation allow 90 seconds overall.
+Manual/announcement group notices and internal notices with `generate:true` run as durable background jobs. Generation may take up to five minutes; closing the page or an HTTP proxy timeout does not cancel the job. Generated text is saved before sending, and destinations/configuration are fixed when the job is submitted. Pending jobs resume after service restart; old failed notices are not imported or automatically replayed. Up to 100 jobs may be pending, processed one at a time. Finished job history retains up to 5000 entries. Browser notifications and internal group messages that do not need generation keep their existing synchronous behavior.
+
+Successful destinations are retained across retries and restarts. Explicit rejections or generation failures can be retried by submitting the same request ID; saved generated copy is reused. Interrupted or ambiguous sends are recorded as `uncertain` (or `sending` if the process stopped) and are **not resent automatically**. Check the group before manually composing another message. Different groups send in parallel within a 15-second request timeout. The existing frontend can submit without an update; its immediate delivery counts are not final. Refresh the group delivery history for the final result; pending jobs appear there as `sending`. Automatic polling and detailed job labels require a separate frontend update.
 
 ## Local development
 

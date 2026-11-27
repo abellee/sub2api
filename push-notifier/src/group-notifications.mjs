@@ -60,7 +60,7 @@ export function validateGroupNotification(payload, generatedAllowed = false) {
 // Use AstrBot's own model/persona configuration, in a fresh conversation per notice.
 async function generateNotice(config, notification, fetchImpl) {
   const response = await fetchImpl(`${config.baseURL}/api/v1/chat`, {
-    method: 'POST', redirect: 'error', signal: AbortSignal.timeout(60_000),
+    method: 'POST', redirect: 'error', signal: AbortSignal.timeout(300_000),
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
     body: JSON.stringify({ username: 'tokenfree-notifications', session_id: crypto.randomUUID(), config_id: config.configID,
       enable_streaming: false, flags: { enable_streaming: false, enable_reasoning: false, enable_inline_genui: false, enable_default_system_prompt: true },
@@ -92,8 +92,8 @@ async function generateNotice(config, notification, fetchImpl) {
 
 // All callers use the same sender. Receipts belong to each destination, so a
 // retry of one failed group cannot repeat successful browser or group sends.
-export async function deliverGroupNotification({ store, notification, dedupeKey, fetchImpl = fetch }) {
-  const config = groupConfig(store)
+export async function deliverGroupNotification({ store, notification, dedupeKey, fetchImpl = fetch,
+  config = groupConfig(store), generatedText, onGenerated = async () => {}, onSending = async () => {} }) {
   if (!config.enabled) return { delivered: 0, failed: 0, skipped: true }
   const eventKey = dedupeKey || crypto.randomUUID()
   const prefix = `${eventKey}:${config.platformID}:`
@@ -104,12 +104,16 @@ export async function deliverGroupNotification({ store, notification, dedupeKey,
   let text = [notification.title, notification.body].filter(Boolean).join('\n')
   if (notification.generate && pendingGroups.length) {
     const saved = store.state.groupNotifies.find(item => item.key.startsWith(prefix) && item.generated)
-    try { text = saved?.body || await generateNotice(config, notification, fetchImpl) }
+    try {
+      text = generatedText || saved?.body || await generateNotice(config, notification, fetchImpl)
+      await onGenerated(text)
+    }
     catch {
       const sent = config.groupIDs.filter(id => store.state.groupNotifies.some(item => item.key === `${prefix}${id}` && item.status === 'sent')).length
       return { delivered: sent, failed: config.groupIDs.length - sent, uncertain: config.groupIDs.length - sent - pendingGroups.length, generationFailed: true }
     }
   }
+  await onSending()
   const result = { delivered: 0, failed: 0, uncertain: 0 }
   await Promise.all(config.groupIDs.map(async groupID => {
     const key = `${eventKey}:${config.platformID}:${groupID}`

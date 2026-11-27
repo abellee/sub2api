@@ -13,6 +13,7 @@ const EMPTY_STATE = Object.freeze({
   pageNotices: [],
   groupNotificationConfig: null,
   groupNotifies: [],
+  groupJobs: [],
 })
 
 function cloneEmptyState() {
@@ -107,6 +108,7 @@ export class PushStore {
         pageNotices: Array.isArray(parsed.pageNotices) ? parsed.pageNotices : [],
         groupNotificationConfig: parsed.groupNotificationConfig || null,
         groupNotifies: Array.isArray(parsed.groupNotifies) ? parsed.groupNotifies : [],
+        groupJobs: Array.isArray(parsed.groupJobs) ? parsed.groupJobs : [],
       }
     } catch (error) {
       if (error?.code !== 'ENOENT') throw error
@@ -296,6 +298,33 @@ export class PushStore {
 
   async saveGroupConfig(config) {
     return this.mutate(() => { this.state.groupNotificationConfig = { ...config } })
+  }
+
+  async enqueueGroupJob(id, notification, config) {
+    return this.mutate(() => {
+      const previous = this.state.groupJobs.find(job => job.id === id)
+      if (previous && previous.status !== 'failed') return { ...previous }
+      if (this.state.groupJobs.filter(job => ['queued', 'generating', 'sending'].includes(job.status)).length >= 100) {
+        throw Object.assign(new Error('群通知任务已满，请稍后重试'), { status: 503 })
+      }
+      const now = new Date().toISOString()
+      const job = previous || { id, notification: { ...notification }, config: structuredClone(config), createdAt: now }
+      Object.assign(job, { status: 'queued', updatedAt: now, result: null, error: '' })
+      if (!previous) this.state.groupJobs.unshift(job)
+      // Keep pending work even when the completed history reaches its limit.
+      const finished = this.state.groupJobs.filter(item => !['queued', 'generating', 'sending'].includes(item.status))
+      const expired = new Set(finished.slice(5000).map(item => item.id))
+      this.state.groupJobs = this.state.groupJobs.filter(item => !expired.has(item.id))
+      return { ...job }
+    })
+  }
+
+  async updateGroupJob(id, changes) {
+    return this.mutate(() => {
+      const job = this.state.groupJobs.find(item => item.id === id)
+      if (!job) throw new Error('group notification job not found')
+      Object.assign(job, changes, { updatedAt: new Date().toISOString() })
+    })
   }
 
   async saveGroupReceipt(receipt) {

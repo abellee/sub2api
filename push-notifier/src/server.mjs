@@ -5,6 +5,7 @@ import path from 'node:path'
 import webpush from 'web-push'
 import { normalizeClientID } from './store.mjs'
 import { deliverGroupNotification, groupConfig, validateGroupConfig, validateGroupNotification } from './group-notifications.mjs'
+import { createGroupJobs, groupJobMessages, groupJobResult, publicGroupJob } from './group-jobs.mjs'
 
 const API_PREFIX = '/push-api/v1'
 const MAX_BODY_BYTES = 32 * 1024
@@ -368,7 +369,8 @@ export function createServer({
   logger = console,
   groupFetch,
 }) {
-  return http.createServer(async (request, response) => {
+  const groupJobs = createGroupJobs({ store, groupFetch, logger })
+  const server = http.createServer(async (request, response) => {
     const requestURL = new URL(request.url || '/', 'http://localhost')
     try {
       if (request.method === 'GET' && requestURL.pathname === '/health') {
@@ -447,23 +449,28 @@ export function createServer({
           groupNotification = validateGroupNotification({ title: payload.title, ...payload.groupNotification }, true)
           if (groupNotification.error) return sendJSON(response, 400, { message: groupNotification.error })
         }
+        const job = groupNotification?.generate && groupConfig(store).enabled
+          ? await groupJobs.enqueue(groupNotification, dedupeKey || undefined) : null
         const result = await deliverNotification({
           store,
           validation: { ...validation, dedupeKey },
           userIDs: userIDs.ids,
           vapidSubject,
           sender,
-          groupNotification,
+          // Model generation and group sends are durable background work.
+          groupNotification: job ? undefined : groupNotification,
           browserEnabled: payload.browserNotification !== false,
           groupFetch,
         })
-        if (result.group?.failed) return sendJSON(response, 502, { message: result.group.generationFailed ? '群通知文案生成失败，请检查 AstrBot 模型、人设配置及密钥的 chat 权限' : result.group.uncertain ? '群通知结果不确定，请核对群消息后处理，系统不会自动重发' : '群通知发送失败，请检查机器人连接和权限', group: result.group })
-        return sendJSON(response, 200, {
+        const group = job ? groupJobResult(job) : result.group
+        if (group?.failed) return sendJSON(response, 502, { message: job?.error || '群通知发送失败，请核对群消息和机器人连接', group })
+        return sendJSON(response, job && group.queued ? 202 : 200, {
           notified: result.notified || 0,
           delivered: result.delivered || 0,
           failed: result.failed || 0,
           deduped: Boolean(result.deduped),
-          ...(result.group ? { group: result.group } : {}),
+          ...(group ? { group } : {}),
+          ...(job ? { job: publicGroupJob(job) } : {}),
         })
       }
 
@@ -479,7 +486,16 @@ export function createServer({
           return sendJSON(response, 200, groupConfig(store, true))
         }
         if (request.method === 'GET' && requestURL.pathname === `${API_PREFIX}/admin/group-notifications/messages`) {
-          return sendJSON(response, 200, { messages: store.state.groupNotifies.slice(0, 100) })
+          return sendJSON(response, 200, { messages: groupJobMessages(store) })
+        }
+        const jobPrefix = `${API_PREFIX}/admin/group-notifications/jobs`
+        if (request.method === 'GET' && requestURL.pathname === jobPrefix) {
+          return sendJSON(response, 200, { jobs: store.state.groupJobs.slice(0, 100).map(publicGroupJob) })
+        }
+        if (request.method === 'GET' && requestURL.pathname.startsWith(jobPrefix + '/')) {
+          const id = decodeURIComponent(requestURL.pathname.slice(jobPrefix.length + 1))
+          const job = store.state.groupJobs.find(item => item.id === id)
+          return job ? sendJSON(response, 200, { job: publicGroupJob(job) }) : sendJSON(response, 404, { message: 'job not found' })
         }
         if (request.method === 'POST' && requestURL.pathname === `${API_PREFIX}/admin/group-notifications/send`) {
           const payload = await readJSON(request)
@@ -490,10 +506,10 @@ export function createServer({
           }
           validation.dedupeKey = `manual-group:${payload.requestID}`
           if (!groupConfig(store).enabled) return sendJSON(response, 400, { message: '请先保存并启用群通知配置' })
-          const result = await deliverNotification({ store, validation, groupNotification: validation, browserEnabled: false, groupFetch })
-          return sendJSON(response, result.group.failed ? 502 : 200, {
-            ...result,
-            message: result.group.failed ? (result.group.generationFailed ? '群通知文案生成失败，请检查 AstrBot 模型、人设配置及密钥的 chat 权限' : result.group.uncertain ? '发送结果不确定，请先核对群消息，不要重复点击发送' : '群通知发送失败，请检查机器人连接和权限') : undefined,
+          const job = await groupJobs.enqueue(validation, validation.dedupeKey)
+          return sendJSON(response, groupJobResult(job).queued ? 202 : job.status === 'uncertain' ? 502 : 200, {
+            group: groupJobResult(job), job: publicGroupJob(job),
+            message: groupJobResult(job).queued ? '群通知已提交，后台将继续生成并发送' : job.error || undefined,
           })
         }
 
@@ -558,4 +574,8 @@ export function createServer({
       })
     }
   })
+  server.groupJobs = groupJobs
+  server.once('listening', () => groupJobs.start())
+  server.once('close', () => { void groupJobs.stop() })
+  return server
 }

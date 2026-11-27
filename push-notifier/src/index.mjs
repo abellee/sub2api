@@ -49,14 +49,17 @@ async function runDueSchedules() {
 const scheduleTimer = setInterval(() => { void runDueSchedules() }, 5000)
 void runDueSchedules()
 
-function shutdown() {
+async function shutdown() {
   clearInterval(scheduleTimer)
+  // Queued jobs survive restart; allow the current send to finish cleanly.
+  const draining = server.groupJobs.stop()
   server.close((error) => {
     if (error) {
       console.error(error)
       process.exitCode = 1
     }
   })
+  await draining
 }
 
 process.on('SIGINT', shutdown)

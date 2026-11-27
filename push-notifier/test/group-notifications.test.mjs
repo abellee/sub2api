@@ -21,8 +21,9 @@ async function fixture(run, groupFetch = async () => ok(), sender = async () => 
     method, headers: { 'Content-Type': 'application/json', ...(admin ? { Authorization: 'Bearer admin' } : {}) },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   })
-  try { await run({ store, base, request }) }
+  try { await run({ store, base, request, finish: () => server.groupJobs.run() }) }
   finally {
+    await server.groupJobs.stop()
     await new Promise(resolve => server.close(resolve))
     await rm(directory, { recursive: true, force: true })
   }
@@ -118,10 +119,11 @@ test('shared internal endpoint retries only failed groups, retaining successful 
 
 test('manual sends share dispatch, retain uncertain receipts and do not resend successful groups on retry', async () => {
   const attempts = []
-  await fixture(async ({ store, request }) => {
+  await fixture(async ({ store, request, finish }) => {
     await store.saveGroupConfig(config)
     const input = { title: '活动提醒', body: '双11充值活动0点结束。需要的抓紧。', requestID: 'manual-unique-001' }
-    assert.equal((await request('/admin/group-notifications/send', input)).status, 502)
+    assert.equal((await request('/admin/group-notifications/send', input)).status, 202)
+    await finish()
     assert.equal((await request('/admin/group-notifications/send', input)).status, 502)
     assert.equal(attempts.length, 2)
     const restored = await new PushStore(store.filePath).init()
@@ -172,10 +174,11 @@ function chatResponse(text, complete = true) {
 
 test('announcement and manual notices always use the persona model and dedupe across retries', async () => {
   const chatCalls = [], messages = []
-  await fixture(async ({ store, request }) => {
+  await fixture(async ({ store, request, finish }) => {
     await store.saveGroupConfig(config)
     const input = { title: '群通知', body: JSON.stringify({ 类型: '公告', 标题: '维护公告', 内容: '凌晨维护，请提前保存。' }), requestID: 'announcement-42', generate: false }
-    assert.equal((await request('/admin/group-notifications/send', input)).status, 200)
+    assert.equal((await request('/admin/group-notifications/send', input)).status, 202)
+    await finish()
     assert.equal((await request('/admin/group-notifications/send', input)).status, 200)
     assert.equal(chatCalls.length, 1)
     assert.match(chatCalls[0].message, /当前的人设/)
@@ -192,11 +195,14 @@ test('announcement and manual notices always use the persona model and dedupe ac
 })
 
 test('announcement generation failure reports an error and never sends the raw announcement', async () => {
-  await fixture(async ({ store, request }) => {
+  await fixture(async ({ store, request, finish }) => {
     await store.saveGroupConfig(config)
     const response = await request('/admin/group-notifications/send', { title: '公告', body: '维护事项', requestID: 'announcement-43' })
-    assert.equal(response.status, 502)
-    assert.match((await response.json()).message, /文案生成失败/)
+    assert.equal(response.status, 202)
+    await finish()
+    const job = store.state.groupJobs[0]
+    assert.equal(job.status, 'failed')
+    assert.match(job.error, /文案生成失败/)
     assert.equal(store.state.groupNotifies.length, 0)
   }, async url => {
     assert.ok(url.endsWith('/chat'))
@@ -206,13 +212,17 @@ test('announcement generation failure reports an error and never sends the raw a
 
 test('model creates persona copy once; retries reuse generated copy and never append activity links', async () => {
   let generated = 0, sent = 0, pushes = 0
-  await fixture(async ({ store, base }) => {
+  await fixture(async ({ store, base, finish }) => {
     await store.saveGroupConfig(config)
     await store.upsertSubscription({ endpoint: 'https://push.example.test/persona', keys: { p256dh: 'pk', auth: 'ak' }, user: { id: 7, username: 'tester' } })
     const input = { title: '即将开奖', body: 'Browser stays unchanged', url: '/lottery', userIDs: [7], dedupeKey: 'lottery:9:before_draw', groupNotification: { body: JSON.stringify({ 活动名称: '双11', 阶段: '开奖前5分钟', 奖品: '余额5美元' }), generate: true } }
     const notify = () => fetch(base + '/internal/notify', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Push-Token': 'internal-test' }, body: JSON.stringify(input) })
-    assert.equal((await notify()).status, 502)
-    assert.equal((await notify()).status, 200)
+    assert.equal((await notify()).status, 202)
+    await finish()
+    assert.equal(store.state.groupJobs[0].status, 'failed')
+    assert.equal((await notify()).status, 202)
+    await finish()
+    assert.equal(store.state.groupJobs[0].status, 'sent')
     assert.equal(generated, 1)
     assert.equal(sent, 3)
     assert.equal(pushes, 1)
