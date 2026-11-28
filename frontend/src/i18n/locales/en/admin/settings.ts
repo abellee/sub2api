@@ -539,8 +539,8 @@ export default {
       },
       gatewayForwarding: {
         accountErrorFailover: 'Retry and switch accounts on errors',
-        accountErrorFailoverTimeout: 'Conversation attempt timeout (seconds)',
-        accountErrorFailoverTimeoutHint: '1–3600 seconds, default 60. Applies to each HTTP conversation attempt. Images, video, audio, background generation tasks and persistent WebSocket connections are excluded.',
+        accountErrorFailoverTimeout: 'Response wait after switching accounts (seconds)',
+        accountErrorFailoverTimeoutHint: '1–3600 seconds, default 60. Starts only after an error causes an account switch. Answer, reasoning or tool-call output stops the timer and further account switching; heartbeats do not. Images, video, audio, background generation tasks and persistent WebSocket connections are excluded.',
         accountErrorFailoverBillingHint: 'On timeout, switch accounts immediately and let the prior request finish in the background. Reported usage is billed normally, so one request may incur multiple charges. Late output is not shown.',
         accountErrorFailoverHint: 'Requires both system and group switches and multiple available accounts. Prefer different API hosts, then different keys; try each account at most once without disabling accounts or adding cooldowns. Local balance, input and content errors are not retried. Existing rules apply with one account.',
         title: 'Request Forwarding',

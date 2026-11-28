@@ -17,6 +17,16 @@ import (
 
 type conversationAttemptKey struct{}
 
+const conversationOutputStartedKey = "conversation_output_started"
+
+func conversationWriter(c *gin.Context) *conversationAttemptWriter {
+	if c == nil || c.Request == nil {
+		return nil
+	}
+	writer, _ := c.Request.Context().Value(conversationAttemptKey{}).(*conversationAttemptWriter)
+	return writer
+}
+
 func ConversationBackgroundBillingEnabled(ctx context.Context) bool {
 	trace, _ := ctx.Value(requestAccountFailoverTraceKey{}).(*RequestAccountFailoverTrace)
 	return trace != nil && trace.timeout > 0
@@ -65,8 +75,9 @@ func ForwardConversationWithAccountRetries[T any](ctx context.Context, c *gin.Co
 		return ForwardWithAccountRetries(ctx, c, func() (*T, error) { return forward(ctx, c) })
 	}
 	return ForwardWithAccountRetries(ctx, c, func() (*T, error) {
+		writer := newConversationAttemptWriter(c.Writer)
 		base := context.WithoutCancel(ctx)
-		attemptCtx, cancel := context.WithCancel(context.WithValue(base, conversationAttemptKey{}, true))
+		attemptCtx, cancel := context.WithCancel(context.WithValue(base, conversationAttemptKey{}, writer))
 		attemptC := c.Copy()
 		attemptC.Request = c.Request.Clone(attemptCtx)
 		if events, ok := c.Get(OpsUpstreamErrorsKey); ok {
@@ -74,7 +85,6 @@ func ForwardConversationWithAccountRetries[T any](ctx context.Context, c *gin.Co
 				attemptC.Set(OpsUpstreamErrorsKey, append([]*OpsUpstreamErrorEvent(nil), events...))
 			}
 		}
-		writer := newConversationAttemptWriter(c.Writer)
 		attemptC.Writer = writer
 		finished := make(chan struct{})
 		accountID, _ := c.Request.Context().Value(ctxkey.AccountID).(int64)
@@ -124,46 +134,74 @@ func ForwardConversationWithAccountRetries[T any](ctx context.Context, c *gin.Co
 		}()
 		timer := time.NewTimer(trace.timeout)
 		defer timer.Stop()
+		timeoutCh := timer.C
+		trace.mu.Lock()
+		retrying := len(trace.FailedAccountIDs) > 0
+		trace.mu.Unlock()
+		if !retrying {
+			timer.Stop()
+			timeoutCh = nil
+		}
+		outputCh := writer.firstOutput
 		complete := func(completed outcome) (*T, error) {
 			for key, value := range attemptC.Keys {
 				c.Set(key, value)
 			}
+			if writer.outputStarted() {
+				c.Set(conversationOutputStartedKey, true)
+			}
 			return completed.result, completed.err
 		}
-		select {
-		case completed := <-done:
-			writer.detach()
-			return complete(completed)
-		case <-ctx.Done():
-			writer.detach()
-			cancel()
-			// Preserve completed upstream events/usage on disconnect, while the
-			// same attempt deadline still bounds how long the handler waits.
+		for {
 			select {
+			case <-outputCh:
+				timer.Stop()
+				timeoutCh, outputCh = nil, nil
 			case completed := <-done:
+				writer.detach()
 				return complete(completed)
-			case <-timer.C:
+			case <-ctx.Done():
+				writer.detach()
+				cancel()
+				// A stopped response timer must not block disconnect cleanup.
+				timer.Reset(trace.timeout)
+				select {
+				case completed := <-done:
+					return complete(completed)
+				case <-timer.C:
+					finishInBackground()
+					return nil, ctx.Err()
+				}
+			case <-timeoutCh:
+				select {
+				case completed := <-done:
+					writer.detach()
+					return complete(completed)
+				default:
+				}
+				// Arbitrate output and expiry under the writer lock, so a ready
+				// timer cannot cut off an answer that has already started.
+				if !writer.detachBeforeOutput() {
+					timeoutCh, outputCh = nil, nil
+					continue
+				}
+				if ctx.Err() != nil {
+					finishInBackground()
+					return nil, ctx.Err()
+				}
 				finishInBackground()
-				return nil, ctx.Err()
-			}
-		case <-timer.C:
-			writer.detach()
-			if ctx.Err() != nil {
-				finishInBackground()
-				return nil, ctx.Err()
-			}
-			finishInBackground()
-			message := "Upstream conversation attempt timed out"
-			setOpsUpstreamError(c, http.StatusGatewayTimeout, message, "")
-			accountID, _ := ctx.Value(ctxkey.AccountID).(int64)
-			if selected, ok := c.Request.Context().Value(ctxkey.AccountID).(int64); ok {
-				accountID = selected
-			}
-			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{AccountID: accountID, Kind: "failover", UpstreamStatusCode: http.StatusGatewayTimeout, Message: message})
-			return nil, &UpstreamFailoverError{
-				Cause: context.DeadlineExceeded, StatusCode: http.StatusGatewayTimeout,
-				ClientStatusCode: http.StatusGatewayTimeout, ClientMessage: message,
-				NextAccountAction: NextAccountRetry, SkipAccountCooldown: true, SafeToFailoverAfterWrite: true,
+				message := "Upstream conversation attempt timed out"
+				setOpsUpstreamError(c, http.StatusGatewayTimeout, message, "")
+				accountID, _ := ctx.Value(ctxkey.AccountID).(int64)
+				if selected, ok := c.Request.Context().Value(ctxkey.AccountID).(int64); ok {
+					accountID = selected
+				}
+				appendOpsUpstreamError(c, OpsUpstreamErrorEvent{AccountID: accountID, Kind: "failover", UpstreamStatusCode: http.StatusGatewayTimeout, Message: message})
+				return nil, &UpstreamFailoverError{
+					Cause: context.DeadlineExceeded, StatusCode: http.StatusGatewayTimeout,
+					ClientStatusCode: http.StatusGatewayTimeout, ClientMessage: message,
+					NextAccountAction: NextAccountRetry, SkipAccountCooldown: true, SafeToFailoverAfterWrite: true,
+				}
 			}
 		}
 	})
@@ -192,15 +230,46 @@ func ReleaseAfterConversationAttempt(ctx context.Context, release func()) {
 
 type conversationAttemptWriter struct {
 	gin.ResponseWriter
-	mu       sync.Mutex
-	header   http.Header
-	detached bool
-	status   int
-	size     int
+	mu          sync.Mutex
+	header      http.Header
+	detached    bool
+	status      int
+	size        int
+	firstOutput chan struct{}
+	responded   bool
 }
 
 func newConversationAttemptWriter(target gin.ResponseWriter) *conversationAttemptWriter {
-	return &conversationAttemptWriter{ResponseWriter: target, header: target.Header().Clone(), status: target.Status(), size: target.Size()}
+	return &conversationAttemptWriter{ResponseWriter: target, header: target.Header().Clone(), status: target.Status(), size: target.Size(), firstOutput: make(chan struct{})}
+}
+
+func (w *conversationAttemptWriter) markOutput() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.markOutputLocked()
+}
+
+func (w *conversationAttemptWriter) markOutputLocked() {
+	if !w.detached && !w.responded {
+		w.responded = true
+		close(w.firstOutput)
+	}
+}
+
+func (w *conversationAttemptWriter) outputStarted() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.responded
+}
+
+func (w *conversationAttemptWriter) detachBeforeOutput() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.responded {
+		return false
+	}
+	w.detached = true
+	return true
 }
 
 func (w *conversationAttemptWriter) detach()             { w.mu.Lock(); w.detached = true; w.mu.Unlock() }
@@ -236,6 +305,9 @@ func (w *conversationAttemptWriter) Write(body []byte) (int, error) {
 	n, err := len(body), error(nil)
 	if !w.detached {
 		n, err = w.ResponseWriter.Write(body)
+		if n > 0 && err == nil && w.status >= 200 && w.status < 300 && !strings.HasPrefix(w.header.Get("Content-Type"), "text/event-stream") {
+			w.markOutputLocked()
+		}
 	}
 	w.size += n
 	return n, err

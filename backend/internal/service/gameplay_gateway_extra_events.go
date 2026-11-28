@@ -12,6 +12,9 @@ import (
 
 // Called at existing semantic-output observations; never reads or changes stream bytes.
 func observeGameplayFirstOutput(c *gin.Context) {
+	if writer := conversationWriter(c); writer != nil {
+		writer.markOutput()
+	}
 	defer func() { _ = recover() }()
 	if !events.Enabled() || c == nil || c.Request == nil || c.GetBool("gameplay_first_output") {
 		return
@@ -37,7 +40,7 @@ func observeGameplayFirstOutput(c *gin.Context) {
 }
 
 func observeGameplayAnthropicOutput(c *gin.Context, payload string) {
-	if !events.Enabled() || c == nil || c.GetBool("gameplay_first_output") {
+	if c == nil || (!events.Enabled() && conversationWriter(c) == nil) || c.GetBool("gameplay_first_output") {
 		return
 	}
 	for _, field := range []string{"delta.text", "delta.thinking", "delta.partial_json", "content_block.text", "content_block.thinking", "content_block.source"} {
@@ -52,7 +55,7 @@ func observeGameplayAnthropicOutput(c *gin.Context, payload string) {
 }
 
 func observeGameplayChatOutput(c *gin.Context, payload string) {
-	if !events.Enabled() || c == nil || c.GetBool("gameplay_first_output") {
+	if c == nil || (!events.Enabled() && conversationWriter(c) == nil) || c.GetBool("gameplay_first_output") {
 		return
 	}
 	for _, field := range []string{"choices.0.delta.content", "choices.0.delta.reasoning_content", "choices.0.delta.tool_calls.0", "choices.0.delta.function_call"} {
@@ -64,7 +67,7 @@ func observeGameplayChatOutput(c *gin.Context, payload string) {
 }
 
 func observeGameplayGeminiOutput(c *gin.Context, payload []byte) {
-	if !events.Enabled() || c == nil || c.GetBool("gameplay_first_output") {
+	if c == nil || (!events.Enabled() && conversationWriter(c) == nil) || c.GetBool("gameplay_first_output") {
 		return
 	}
 	for _, field := range []string{"candidates.0.content.parts", "response.candidates.0.content.parts"} {

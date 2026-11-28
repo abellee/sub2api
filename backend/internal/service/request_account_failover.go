@@ -331,6 +331,12 @@ func ForwardWithAccountRetries[T any](ctx context.Context, c *gin.Context, forwa
 		c.Set(OpsAccountFailoverResultKey, "success")
 	}
 	var failure *UpstreamFailoverError
+	if c != nil && c.GetBool(conversationOutputStartedKey) && errors.As(err, &failure) {
+		copy := *failure
+		copy.NextAccountAction = NextAccountStop
+		copy.SafeToFailoverAfterWrite = false
+		err = &copy
+	}
 	if RequestAccountFailoverEnabled(ctx) && errors.As(err, &failure) && failure.ShouldRetryNextAccount() {
 		copy := *failure
 		copy.RetryableOnSameAccount = false

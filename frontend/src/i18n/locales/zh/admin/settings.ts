@@ -532,8 +532,8 @@ export default {
       },
       gatewayForwarding: {
         accountErrorFailover: '账号报错自动重试换号',
-        accountErrorFailoverTimeout: '对话单次尝试时长（秒）',
-        accountErrorFailoverTimeoutHint: '1–3600 秒，默认 60 秒。仅 HTTP 对话生效，每次尝试重新计时；图片、视频、音频、后台生成任务和 WebSocket 长连接不受影响。',
+        accountErrorFailoverTimeout: '报错换号后等待返回的时长（秒）',
+        accountErrorFailoverTimeoutHint: '1–3600 秒，默认 60 秒。首次请求不计时，报错换号后才开始计时；收到回答、思考或工具调用内容后停止计时，不再换号。心跳不算有效返回。图片、视频、音频、后台生成任务和 WebSocket 长连接不受影响。',
         accountErrorFailoverBillingHint: '超时后立即换号，旧请求在后台继续等待。返回的有效用量仍正常计费，同一请求可能扣费多次。旧请求后续内容不再显示。',
         accountErrorFailoverHint: '系统和分组开关都开启且有多个可用账号时生效。优先不同 API 地址，再优先不同 Key；每个账号最多试一次，不停号、不加冷却。本站用户余额不足、参数或内容错误不重试。只有一个可用账号时保持原有逻辑。',
         title: '请求转发行为',

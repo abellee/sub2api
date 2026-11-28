@@ -13,6 +13,7 @@ import (
 
 func TestConversationFailoverLateSuccessBillsOriginalAccount(t *testing.T) {
 	ctx, c, _ := conversationFailoverTestContext(t)
+	MarkRequestAccountFailoverAction(ctx, "switch_account", 3)
 	usageRepo := &openAIRecordUsageLogRepoStub{}
 	userRepo := &openAIRecordUsageUserRepoStub{}
 	svc := newGatewayRecordUsageServiceForTest(usageRepo, userRepo, &openAIRecordUsageSubRepoStub{})

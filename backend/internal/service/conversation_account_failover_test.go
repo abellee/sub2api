@@ -37,6 +37,7 @@ func awaitConversationSignal(t *testing.T, signal <-chan struct{}) {
 
 func TestConversationFailoverBillingKeepsWorkerAndAccountSlot(t *testing.T) {
 	ctx, c, recorder := conversationFailoverTestContext(t)
+	MarkRequestAccountFailoverAction(ctx, "switch_account", 3)
 	allowLate := make(chan struct{})
 	defer func() {
 		select {
@@ -93,6 +94,7 @@ func TestConversationFailoverBillingKeepsWorkerAndAccountSlot(t *testing.T) {
 
 func TestConversationFailoverBillingKeepsReportedUsageAfterError(t *testing.T) {
 	ctx, c, _ := conversationFailoverTestContext(t)
+	MarkRequestAccountFailoverAction(ctx, "switch_account", 3)
 	allowLate := make(chan struct{})
 	billed := make(chan struct{}, 1)
 	_, _ = ForwardConversationWithAccountRetries(ctx, c, nil, "gpt-5", func(context.Context, *gin.Context) (*OpenAIForwardResult, error) {
@@ -152,4 +154,129 @@ func TestConversationFailoverCancellationRemainsCancellation(t *testing.T) {
 		return nil, context.Canceled
 	}, nil)
 	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestConversationFailoverFirstAttemptHasNoResponseDeadline(t *testing.T) {
+	ctx, c, recorder := conversationFailoverTestContext(t)
+	result, err := ForwardConversationWithAccountRetries(ctx, c, nil, "gpt-5", func(_ context.Context, attemptC *gin.Context) (*ForwardResult, error) {
+		<-time.After(80 * time.Millisecond)
+		_, _ = attemptC.Writer.WriteString("first answer")
+		return &ForwardResult{}, nil
+	}, func(context.Context, *ForwardResult) { t.Error("initial attempt must finish in the foreground") })
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "first answer", recorder.Body.String())
+}
+
+func TestConversationFailoverDeadlineStartsAfterErrorAndSwitch(t *testing.T) {
+	ctx, c, _ := conversationFailoverTestContext(t)
+	_, err := ForwardConversationWithAccountRetries(ctx, c, nil, "gpt-5", func(context.Context, *gin.Context) (*ForwardResult, error) {
+		return nil, &UpstreamFailoverError{StatusCode: http.StatusServiceUnavailable}
+	}, nil)
+	require.Error(t, err)
+	MarkRequestAccountFailoverAction(ctx, "switch_account", 1)
+	nextCtx := context.WithValue(ctx, ctxkey.AccountID, int64(2))
+	c.Request = c.Request.WithContext(nextCtx)
+	finish := make(chan struct{})
+	defer close(finish)
+	_, err = ForwardConversationWithAccountRetries(nextCtx, c, nil, "gpt-5", func(context.Context, *gin.Context) (*ForwardResult, error) {
+		<-finish
+		return nil, errors.New("late error")
+	}, nil)
+	var failure *UpstreamFailoverError
+	require.ErrorAs(t, err, &failure)
+	require.Equal(t, http.StatusGatewayTimeout, failure.StatusCode)
+	require.True(t, failure.ShouldRetryNextAccount())
+}
+
+func TestConversationFailoverOutputStopsDeadline(t *testing.T) {
+	for _, protocol := range []string{"responses", "chat", "anthropic", "gemini", "json"} {
+		t.Run(protocol, func(t *testing.T) {
+			ctx, c, recorder := conversationFailoverTestContext(t)
+			MarkRequestAccountFailoverAction(ctx, "switch_account", 3)
+			result, err := ForwardConversationWithAccountRetries(ctx, c, nil, "gpt-5", func(_ context.Context, attemptC *gin.Context) (*ForwardResult, error) {
+				attemptC.Header("Content-Type", "text/event-stream")
+				switch protocol {
+				case "responses":
+					markLatencyStreamEvent(attemptC, true)
+				case "chat":
+					observeGameplayChatOutput(attemptC, `{"choices":[{"delta":{"content":"answer"}}]}`)
+				case "anthropic":
+					observeGameplayAnthropicOutput(attemptC, `{"delta":{"thinking":"thinking"}}`)
+				case "gemini":
+					observeGameplayGeminiOutput(attemptC, []byte(`{"candidates":[{"content":{"parts":[{"functionCall":{"name":"tool"}}]}}]}`))
+				case "json":
+					attemptC.Header("Content-Type", "application/json")
+				}
+				_, _ = attemptC.Writer.WriteString("answer")
+				attemptC.Writer.Flush()
+				<-time.After(80 * time.Millisecond)
+				_, _ = attemptC.Writer.WriteString(" finished")
+				return &ForwardResult{}, nil
+			}, func(context.Context, *ForwardResult) {
+				t.Error("responding attempt must not become a background attempt")
+			})
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			require.Equal(t, "answer finished", recorder.Body.String())
+		})
+	}
+}
+
+func TestConversationFailoverHeartbeatsDoNotStopDeadline(t *testing.T) {
+	ctx, c, recorder := conversationFailoverTestContext(t)
+	MarkRequestAccountFailoverAction(ctx, "switch_account", 3)
+	finish := make(chan struct{})
+	finished := make(chan struct{})
+	_, err := ForwardConversationWithAccountRetries(ctx, c, nil, "gpt-5", func(_ context.Context, attemptC *gin.Context) (*ForwardResult, error) {
+		defer close(finished)
+		attemptC.Header("Content-Type", "text/event-stream")
+		attemptC.Writer.WriteHeaderNow()
+		_, _ = attemptC.Writer.WriteString(": ping\n\n")
+		observeGameplayAnthropicOutput(attemptC, `{"type":"ping"}`)
+		observeGameplayChatOutput(attemptC, `{"choices":[{"delta":{"role":"assistant"}}]}`)
+		observeGameplayGeminiOutput(attemptC, []byte(`{"usageMetadata":{"promptTokenCount":1}}`))
+		markLatencyStreamEvent(attemptC, false)
+		<-finish
+		observeGameplayFirstOutput(attemptC)
+		_, _ = attemptC.Writer.WriteString("late answer")
+		return &ForwardResult{}, nil
+	}, nil)
+	close(finish)
+	awaitConversationSignal(t, finished)
+	var failure *UpstreamFailoverError
+	require.ErrorAs(t, err, &failure)
+	require.Equal(t, http.StatusGatewayTimeout, failure.StatusCode)
+	require.Equal(t, ": ping\n\n", recorder.Body.String())
+	require.False(t, c.GetBool(conversationOutputStartedKey))
+}
+
+func TestConversationFailoverDoesNotSwitchAfterOutputError(t *testing.T) {
+	for _, retrying := range []bool{false, true} {
+		t.Run(map[bool]string{false: "initial", true: "retry"}[retrying], func(t *testing.T) {
+			ctx, c, recorder := conversationFailoverTestContext(t)
+			if retrying {
+				MarkRequestAccountFailoverAction(ctx, "switch_account", 3)
+			}
+			_, err := ForwardConversationWithAccountRetries(ctx, c, nil, "gpt-5", func(_ context.Context, attemptC *gin.Context) (*ForwardResult, error) {
+				_, _ = attemptC.Writer.WriteString("partial answer")
+				return &ForwardResult{Usage: ClaudeUsage{OutputTokens: 2}}, upstreamStreamReadError(errors.New("connection reset"))
+			}, nil)
+			var failure *UpstreamFailoverError
+			require.ErrorAs(t, err, &failure)
+			require.False(t, failure.ShouldRetryNextAccount())
+			require.False(t, failure.SafeToFailoverAfterWrite)
+			require.Equal(t, "failed", RequestAccountFailoverResult(c))
+			require.Equal(t, "partial answer", recorder.Body.String())
+		})
+	}
+}
+
+func TestConversationFailoverOutputWinsAtDeadline(t *testing.T) {
+	_, c, _ := conversationFailoverTestContext(t)
+	w := newConversationAttemptWriter(c.Writer)
+	w.markOutput()
+	require.False(t, w.detachBeforeOutput())
+	require.False(t, w.detached)
+	require.True(t, w.outputStarted())
 }
