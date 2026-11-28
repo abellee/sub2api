@@ -28,8 +28,13 @@
           </div>
         </div>
 
-        <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-900">
-          <div class="text-xs font-bold uppercase tracking-wider text-gray-400">{{ t('admin.ops.errorDetail.user') }}</div>
+        <div
+          v-if="!isUpstreamError(detail) || (errorType !== 'upstream' && (detail.user_email || detail.user_id != null))"
+          class="rounded-xl bg-gray-50 p-4 dark:bg-dark-900"
+        >
+          <div class="text-xs font-bold uppercase tracking-wider text-gray-400">
+            {{ t('admin.ops.errorDetail.user') }}
+          </div>
           <div class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
             {{ detail.user_email || (detail.user_id != null ? String(detail.user_id) : '—') }}
           </div>

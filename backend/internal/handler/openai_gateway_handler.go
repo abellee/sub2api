@@ -3707,6 +3707,12 @@ func (h *OpenAIGatewayHandler) handleConcurrencyError(c *gin.Context, err error,
 }
 
 func (h *OpenAIGatewayHandler) handleFailoverExhausted(c *gin.Context, failoverErr *service.UpstreamFailoverError, streamStarted bool) {
+	if failoverErr != nil && failoverErr.Reason == service.OpenAIResponsesToolsUnsupportedReason {
+		// No upstream request was sent for this local capability mismatch. Keep
+		// the original client error without attributing it to upstream health.
+		h.handleStreamingAwareError(c, failoverErr.ClientStatusCode, "invalid_request_error", failoverErr.ClientMessage, streamStarted)
+		return
+	}
 	status, errType, message := failoverClientResponse(c, h.errorPassthroughService, failoverErr, service.PlatformOpenAI)
 	h.handleStreamingAwareError(c, status, errType, message, streamStarted)
 }
