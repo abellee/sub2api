@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -18,9 +19,11 @@ import (
 
 // Store wraps the PostgreSQL database.
 type Store struct {
-	db       *sql.DB
-	cache    *cache.Cache
-	revision atomic.Uint64
+	db        *sql.DB
+	cache     *cache.Cache
+	revision  atomic.Uint64
+	eventMu   sync.Mutex
+	eventSubs *eventSubscriptions
 }
 
 // Open connects to the PostgreSQL database at dsn (and applies the schema).

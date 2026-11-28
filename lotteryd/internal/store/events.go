@@ -254,6 +254,7 @@ func (s *Store) SaveEventRule(ctx context.Context, r EventRule) (EventRule, erro
 		err = s.db.QueryRowContext(ctx, `UPDATE gameplay_rules SET event_type=$2,enabled=$3,config=$4,version=version+1,updated_at=NOW() WHERE id=$1 RETURNING version`, r.ID, r.EventType, r.Enabled, raw).Scan(&r.Version)
 	}
 	if err == nil {
+		s.invalidateEventSubscriptions()
 		err = s.db.QueryRowContext(ctx, `SELECT total_triggered FROM gameplay_rules WHERE id=$1`, r.ID).Scan(&r.TotalTriggered)
 	}
 	return r, err
@@ -267,6 +268,7 @@ func (s *Store) DisableEventRule(ctx context.Context, id int64) error {
 	if n == 0 {
 		return sql.ErrNoRows
 	}
+	s.invalidateEventSubscriptions()
 	return nil
 }
 
@@ -287,17 +289,25 @@ func (s *Store) ReceiveEvent(ctx context.Context, e events.Event) error {
 	if err := validateEvent(e); err != nil {
 		return err
 	}
+	subs, err := s.eventSubscriptions(ctx)
+	if err != nil || !subs.needed[e.Type] {
+		return err
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	if err = insertGameplayEvent(ctx, tx, e); err != nil {
+	if err = s.insertGameplayEvent(ctx, tx, e); err != nil {
 		return err
 	}
 	return tx.Commit()
 }
-func insertGameplayEvent(ctx context.Context, tx *sql.Tx, e events.Event) error {
+func (s *Store) insertGameplayEvent(ctx context.Context, tx *sql.Tx, e events.Event) error {
+	subs, err := s.eventSubscriptions(ctx)
+	if err != nil || !subs.needed[e.Type] {
+		return err
+	}
 	rows, err := tx.QueryContext(ctx, `SELECT id,version,config FROM gameplay_rules WHERE event_type=$1 AND enabled ORDER BY id`, e.Type)
 	if err != nil {
 		return err
@@ -436,6 +446,10 @@ func (s *Store) initializeEventSecret() error {
 
 // ProcessNextEvent claims durable work. Rewards, limits and execution receipts commit together.
 func (s *Store) ProcessNextEvent(ctx context.Context) (_ bool, err error) {
+	subs, err := s.eventSubscriptions(ctx)
+	if err != nil {
+		return false, err
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return false, err
@@ -471,11 +485,20 @@ func (s *Store) ProcessNextEvent(ctx context.Context) (_ bool, err error) {
 		return true, err
 	}
 	eventID = e.ID
+	if len(rules) == 0 && !subs.needed[e.Type] {
+		_, err = tx.ExecContext(ctx, `UPDATE gameplay_events SET status='skipped',processed_at=NOW(),last_error='没有已启用的触发规则' WHERE id=$1`, e.ID)
+		if err != nil {
+			return true, err
+		}
+		return true, tx.Commit()
+	}
 	if e.Data == nil {
 		e.Data = map[string]string{}
 	}
-	if err = s.updateEventMetrics(ctx, tx, &e); err != nil {
-		return true, err
+	if subs.needed[e.Type] {
+		if err = s.updateEventMetrics(ctx, tx, &e, subs.active); err != nil {
+			return true, err
+		}
 	}
 	var secret, enabled string
 	if err = tx.QueryRowContext(ctx, `SELECT value FROM sync_state WHERE key='gameplay_random_secret'`).Scan(&secret); err != nil {

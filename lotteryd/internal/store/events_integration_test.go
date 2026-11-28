@@ -30,8 +30,8 @@ func TestGameplayDerivedCountersAndClockUseReceivedFacts(t *testing.T) {
 	}
 	wantGameplayPoints(t, st, 3)
 	page, err := st.EventLogs(context.Background(), "usage.tokens_updated", "", 1, 20, false)
-	if err != nil || page.Total != 2 {
-		t.Fatalf("derived token events: %#v %v", page, err)
+	if err != nil || page.Total != 0 {
+		t.Fatalf("unconfigured token events were retained: %#v %v", page, err)
 	}
 	rule = gameplayRule("注册天数", 7)
 	rule.EventType = "user.age_updated"

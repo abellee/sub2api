@@ -18,7 +18,7 @@ func derivedEventID(parent, kind string) string {
 }
 
 // Metrics begin when event collection is enabled. They never claim to be historical totals.
-func (s *Store) updateEventMetrics(ctx context.Context, tx *sql.Tx, e *events.Event) error {
+func (s *Store) updateEventMetrics(ctx context.Context, tx *sql.Tx, e *events.Event, active map[string]bool) error {
 	if e.UserID <= 0 {
 		return nil
 	}
@@ -65,9 +65,9 @@ func (s *Store) updateEventMetrics(ctx context.Context, tx *sql.Tx, e *events.Ev
 		return nil
 	}
 	resource, sourceID := "", ""
-	if strings.HasPrefix(e.Type, "key.") {
+	if active["schedule.upcoming"] && strings.HasPrefix(e.Type, "key.") {
 		resource, sourceID = "key", e.Data["api_key_id"]
-	} else if strings.HasPrefix(e.Type, "subscription.") {
+	} else if active["schedule.upcoming"] && strings.HasPrefix(e.Type, "subscription.") {
 		resource, sourceID = "subscription", e.Data["subscription_id"]
 	}
 	if resource != "" && sourceID != "" {
@@ -82,6 +82,9 @@ func (s *Store) updateEventMetrics(ctx context.Context, tx *sql.Tx, e *events.Ev
 		}
 	}
 	derive := func(kind string, data map[string]string) error {
+		if !active[kind] {
+			return nil
+		}
 		copy := make(map[string]string, len(e.Data)+len(data))
 		for k, v := range e.Data {
 			copy[k] = v
@@ -90,10 +93,13 @@ func (s *Store) updateEventMetrics(ctx context.Context, tx *sql.Tx, e *events.Ev
 			copy[k] = v
 		}
 		copy["source_id"] = e.ID
-		return insertGameplayEvent(ctx, tx, events.Event{ID: derivedEventID(e.ID, kind), Type: kind, Source: "derived", UserID: e.UserID, Reference: e.ID, OccurredAt: e.OccurredAt, Data: copy})
+		return s.insertGameplayEvent(ctx, tx, events.Event{ID: derivedEventID(e.ID, kind), Type: kind, Source: "derived", UserID: e.UserID, Reference: e.ID, OccurredAt: e.OccurredAt, Data: copy})
 	}
 	switch e.Type {
 	case "user.registered":
+		if !active["user.age_updated"] {
+			break
+		}
 		if registered, parseErr := time.Parse(time.RFC3339, e.Data["registered_at"]); parseErr == nil {
 			if _, err = tx.ExecContext(ctx, `INSERT INTO user_registered(user_id,email,registered_at) VALUES($1,'',$2) ON CONFLICT DO NOTHING`, e.UserID, fmtTime(registered)); err != nil {
 				return err
@@ -133,6 +139,9 @@ func (s *Store) updateEventMetrics(ctx context.Context, tx *sql.Tx, e *events.Ev
 		if err = derive("usage.requests_updated", map[string]string{"count": events.S(count)}); err != nil {
 			return err
 		}
+		if !active["request.streak_updated"] {
+			break
+		}
 		if e.Data["status"] != "success" && e.Data["status"] != "failed" && e.Data["status"] != "200" {
 			break
 		}
@@ -162,49 +171,55 @@ func (s *Store) updateEventMetrics(ctx context.Context, tx *sql.Tx, e *events.Ev
 			return err
 		}
 	case "billing.completed", "billing.captured":
-		var spendTotal string
-		var spendDaily int64
-		if err = tx.QueryRowContext(ctx, `INSERT INTO gameplay_metrics(user_id,event_type,total,day,daily_count) VALUES($1,'__spending',$2::numeric,$3,1) ON CONFLICT(user_id,event_type) DO UPDATE SET total=gameplay_metrics.total+EXCLUDED.total,daily_count=CASE WHEN gameplay_metrics.day=EXCLUDED.day THEN gameplay_metrics.daily_count+1 WHEN gameplay_metrics.day<EXCLUDED.day THEN 1 ELSE gameplay_metrics.daily_count END,day=GREATEST(gameplay_metrics.day,EXCLUDED.day) RETURNING total::text,daily_count`, e.UserID, amount, day).Scan(&spendTotal, &spendDaily); err != nil {
-			return err
-		}
-		if err = derive("usage.cost_updated", map[string]string{"total_amount": spendTotal}); err != nil {
-			return err
-		}
-		if spendDaily == 1 {
-			if err = derive("user.daily_spend", nil); err != nil {
+		if active["usage.cost_updated"] || active["user.daily_spend"] {
+			var spendTotal string
+			var spendDaily int64
+			if err = tx.QueryRowContext(ctx, `INSERT INTO gameplay_metrics(user_id,event_type,total,day,daily_count) VALUES($1,'__spending',$2::numeric,$3,1) ON CONFLICT(user_id,event_type) DO UPDATE SET total=gameplay_metrics.total+EXCLUDED.total,daily_count=CASE WHEN gameplay_metrics.day=EXCLUDED.day THEN gameplay_metrics.daily_count+1 WHEN gameplay_metrics.day<EXCLUDED.day THEN 1 ELSE gameplay_metrics.daily_count END,day=GREATEST(gameplay_metrics.day,EXCLUDED.day) RETURNING total::text,daily_count`, e.UserID, amount, day).Scan(&spendTotal, &spendDaily); err != nil {
 				return err
 			}
-		}
-		var tokens int64
-		for _, f := range []string{"input_tokens", "output_tokens"} {
-			n, _ := strconv.ParseInt(e.Data[f], 10, 64)
-			if n > 0 {
-				tokens += n
+			if err = derive("usage.cost_updated", map[string]string{"total_amount": spendTotal}); err != nil {
+				return err
 			}
-		}
-		if _, err = tx.ExecContext(ctx, `INSERT INTO gameplay_metrics(user_id,event_type,count) VALUES($1,'__tokens',$2) ON CONFLICT(user_id,event_type) DO UPDATE SET count=gameplay_metrics.count+EXCLUDED.count`, e.UserID, tokens); err != nil {
-			return err
-		}
-		var allTokens int64
-		if err = tx.QueryRowContext(ctx, `SELECT count FROM gameplay_metrics WHERE user_id=$1 AND event_type='__tokens'`, e.UserID).Scan(&allTokens); err != nil {
-			return err
-		}
-		if err = derive("usage.tokens_updated", map[string]string{"total_tokens_used": events.S(allTokens)}); err != nil {
-			return err
-		}
-		for _, field := range []string{"model", "group_id"} {
-			if value := e.Data[field]; value != "" {
-				if _, err = tx.ExecContext(ctx, `INSERT INTO gameplay_distinct(user_id,kind,value) VALUES($1,$2,$3) ON CONFLICT DO NOTHING`, e.UserID, field, value); err != nil {
+			if spendDaily == 1 {
+				if err = derive("user.daily_spend", nil); err != nil {
 					return err
 				}
 			}
 		}
-		var models, groups int64
-		if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FILTER(WHERE kind='model'),COUNT(*) FILTER(WHERE kind='group_id') FROM gameplay_distinct WHERE user_id=$1`, e.UserID).Scan(&models, &groups); err != nil {
-			return err
+		if active["usage.tokens_updated"] {
+			var tokens int64
+			for _, f := range []string{"input_tokens", "output_tokens"} {
+				n, _ := strconv.ParseInt(e.Data[f], 10, 64)
+				if n > 0 {
+					tokens += n
+				}
+			}
+			if _, err = tx.ExecContext(ctx, `INSERT INTO gameplay_metrics(user_id,event_type,count) VALUES($1,'__tokens',$2) ON CONFLICT(user_id,event_type) DO UPDATE SET count=gameplay_metrics.count+EXCLUDED.count`, e.UserID, tokens); err != nil {
+				return err
+			}
+			var allTokens int64
+			if err = tx.QueryRowContext(ctx, `SELECT count FROM gameplay_metrics WHERE user_id=$1 AND event_type='__tokens'`, e.UserID).Scan(&allTokens); err != nil {
+				return err
+			}
+			if err = derive("usage.tokens_updated", map[string]string{"total_tokens_used": events.S(allTokens)}); err != nil {
+				return err
+			}
 		}
-		if err = derive("usage.models_updated", map[string]string{"unique_models": events.S(models), "unique_groups": events.S(groups)}); err != nil {
-			return err
+		if active["usage.models_updated"] {
+			for _, field := range []string{"model", "group_id"} {
+				if value := e.Data[field]; value != "" {
+					if _, err = tx.ExecContext(ctx, `INSERT INTO gameplay_distinct(user_id,kind,value) VALUES($1,$2,$3) ON CONFLICT DO NOTHING`, e.UserID, field, value); err != nil {
+						return err
+					}
+				}
+			}
+			var models, groups int64
+			if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FILTER(WHERE kind='model'),COUNT(*) FILTER(WHERE kind='group_id') FROM gameplay_distinct WHERE user_id=$1`, e.UserID).Scan(&models, &groups); err != nil {
+				return err
+			}
+			if err = derive("usage.models_updated", map[string]string{"unique_models": events.S(models), "unique_groups": events.S(groups)}); err != nil {
+				return err
+			}
 		}
 	case "affiliate.bound":
 		if err = derive("affiliate.count_updated", map[string]string{"count": events.S(count)}); err != nil {
@@ -235,7 +250,8 @@ func (s *Store) updateEventMetrics(ctx context.Context, tx *sql.Tx, e *events.Ev
 		}
 	}
 	// Only user activity counts. Background rewards, mail, retries and admin work cannot create active days.
-	if e.Type == "user.logged_in" || e.Type == "request.completed" || e.Type == "checkin.completed" || strings.HasPrefix(e.Type, "content.") {
+	if (active["user.daily_active"] || active["user.active_streak"] || active["user.returned"]) &&
+		(e.Type == "user.logged_in" || e.Type == "request.completed" || e.Type == "checkin.completed" || strings.HasPrefix(e.Type, "content.")) {
 		var oldDay string
 		var oldStreak int64
 		var oldAt sql.NullTime

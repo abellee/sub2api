@@ -24,6 +24,13 @@ func (ap *App) RunEvents(ctx context.Context) {
 		if ap.Cfg.DisableSettlement {
 			continue
 		}
+		cleanupCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		err := ap.Store.SkipUnconfiguredEvents(cleanupCtx)
+		cancel()
+		if err != nil {
+			slog.Warn("gameplay unconfigured event cleanup failed", "error", err)
+			continue
+		}
 		if time.Now().After(nextClock) {
 			clockCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 			if err := ap.Store.EmitEventClock(clockCtx, time.Now()); err != nil {
