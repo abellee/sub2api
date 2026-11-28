@@ -28,7 +28,11 @@ header_filter_by_lua_block {
         if not keep then ngx.header[name] = nil end
     end
     ngx.header.content_length = nil
-    if handled or ngx.ctx.cn_text_only_error then return end
+    if handled then return end
+    if ngx.ctx.cn_text_only_error then
+        ngx.header.content_type = "application/json; charset=utf-8"
+        return
+    end
     ngx.header.content_encoding = nil
     ngx.ctx.sub2api_fixed_error = true
     ngx.header.content_type = "application/json; charset=utf-8"
