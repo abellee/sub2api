@@ -492,6 +492,8 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 	if RequestAccountFailoverEnabled(ctx) {
 		failoverEvents = &anthropicFailoverEvents{maxBytes: maxLineSize}
 	}
+	var privateErrorEvent []string
+	privateErrorBytes := 0
 	resetKeepaliveTimer := func() {
 		if keepaliveTimer == nil {
 			return
@@ -513,7 +515,7 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 			if ok {
 				queueBudget.release(len(ev.line))
 			}
-			if !ok && failoverEvents != nil && len(failoverEvents.lines) > 0 {
+			if !ok && ((failoverEvents != nil && len(failoverEvents.lines) > 0) || privateErrorEvent != nil) {
 				// An EOF can delimit the final event, including message_stop.
 				ok, ev = true, scanEvent{line: ""}
 			}
@@ -555,6 +557,41 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 				return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, upstreamStreamReadError(ev.err)
 			}
 
+			if failoverEvents == nil {
+				if strings.TrimSpace(ev.line) == "event: error" || privateErrorEvent != nil {
+					privateErrorBytes += len(ev.line)
+					if privateErrorBytes > maxLineSize {
+						return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, upstreamStreamReadError(bufio.ErrTooLong)
+					}
+					privateErrorEvent = append(privateErrorEvent, ev.line)
+					if ev.line != "" {
+						continue
+					}
+				}
+				raw := ""
+				if privateErrorEvent != nil {
+					var parts []string
+					for _, line := range privateErrorEvent {
+						if value, ok := extractAnthropicSSEDataLine(line); ok {
+							parts = append(parts, value)
+						}
+					}
+					raw = strings.Join(parts, "\n")
+				} else if value, ok := extractAnthropicSSEDataLine(ev.line); ok && (gjson.Get(value, "type").String() == "error" || gjson.Get(value, "error").IsObject()) {
+					raw = value
+				}
+				if raw != "" || privateErrorEvent != nil {
+					failure := s.sseStreamErrorEventFailover(ctx, c, account, resp, raw, model, c.Writer.Written())
+					if !c.Writer.Written() {
+						return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, failure
+					}
+					_, kind, message := ResolveUpstreamClientError(c, account.Platform, failure.StatusCode, []byte(raw))
+					writeSSE(w, "error", gin.H{"type": "error", "error": gin.H{"type": kind, "message": message}})
+					flusher.Flush()
+					MarkResponseCommitted(c)
+					return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, fmt.Errorf("upstream stream failed: %s", message)
+				}
+			}
 			lines := []string{ev.line}
 			if failoverEvents != nil {
 				// Account for usage even when a failed preamble is withheld.

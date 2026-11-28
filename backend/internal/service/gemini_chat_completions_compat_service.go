@@ -678,6 +678,18 @@ func (s *GeminiMessagesCompatService) handleChatCompletionsStreamingResponseFrom
 						}
 					}
 
+					if _, _, message, failed := publicGeminiStreamError(c, PlatformGemini, rawBytes); failed {
+						if u := extractGeminiUsage(rawBytes); u != nil {
+							usage = *u
+						}
+						setOpsUpstreamError(c, openAIStreamFailedEventSemanticStatus(rawBytes, ""), extractUpstreamErrorMessage(rawBytes), truncateString(string(rawBytes), 2048))
+						body, _ := json.Marshal(gin.H{"error": gin.H{"type": "upstream_error", "message": message}})
+						_, _ = fmt.Fprintf(c.Writer, "data: %s\n\n", body)
+						_, _ = io.WriteString(c.Writer, "data: [DONE]\n\n")
+						flusher.Flush()
+						MarkResponseCommitted(c)
+						return streamResult(), fmt.Errorf("gemini stream failed: %s", message)
+					}
 					if sig, ok := detectGeminiResponseSignal(rawBytes); ok && (sig.Kind == geminiSignalPromptBlocked || sig.Kind == geminiSignalError) {
 						sawRejection = true
 					}

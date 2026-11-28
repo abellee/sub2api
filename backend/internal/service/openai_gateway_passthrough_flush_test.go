@@ -185,8 +185,10 @@ func TestOpenAIStreamingPassthroughNonRetryableFailedBeforeOutputFlushesAtBounda
 	var failoverErr *UpstreamFailoverError
 	require.False(t, errors.As(err, &failoverErr))
 	require.NotNil(t, result)
-	require.Equal(t, upstream, recorder.Body.String())
-	require.Equal(t, []int{len(upstream)}, writer.flushBodyLengths)
+	require.Contains(t, recorder.Body.String(), UpstreamClientErrorMessage)
+	require.NotContains(t, recorder.Body.String(), "request blocked by policy")
+	require.NotContains(t, recorder.Body.String(), "upstream processing failed")
+	require.Equal(t, []int{recorder.Body.Len()}, writer.flushBodyLengths)
 	require.Equal(t, 6, result.usage.InputTokens)
 	require.Zero(t, result.usage.OutputTokens)
 }
@@ -245,8 +247,11 @@ func TestOpenAIStreamingPassthroughFailedAfterOutputFlushesAtBoundaryAndKeepsUsa
 	var failoverErr *UpstreamFailoverError
 	require.False(t, errors.As(err, &failoverErr))
 	require.NotNil(t, result)
-	require.Equal(t, upstream, recorder.Body.String())
-	require.Equal(t, []int{len(firstOutput), len(upstream)}, writer.flushBodyLengths)
+	require.True(t, strings.HasPrefix(recorder.Body.String(), firstOutput))
+	require.Contains(t, recorder.Body.String(), UpstreamClientErrorMessage)
+	require.NotContains(t, recorder.Body.String(), "request blocked by policy")
+	require.NotContains(t, recorder.Body.String(), "upstream processing failed")
+	require.Equal(t, []int{len(firstOutput), recorder.Body.Len()}, writer.flushBodyLengths)
 	require.Equal(t, 7, result.usage.InputTokens)
 	require.Equal(t, 2, result.usage.OutputTokens)
 }

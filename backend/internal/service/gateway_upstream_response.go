@@ -881,6 +881,8 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 			return
 		}
 		errorEventSent = true
+		raw, _ := json.Marshal(gin.H{"error": gin.H{"type": reason, "message": message}})
+		_, _, message = ResolveUpstreamClientError(c, account.Platform, http.StatusBadGateway, raw)
 		if message == "" {
 			message = reason
 		}

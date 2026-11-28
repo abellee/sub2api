@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/rand"
@@ -2343,6 +2344,16 @@ func (s *GeminiMessagesCompatService) handleStreamingResponse(c *gin.Context, re
 		if err != nil {
 			continue
 		}
+		if _, _, message, failed := publicGeminiStreamError(c, PlatformGemini, unwrappedBytes); failed {
+			if u := extractGeminiUsage(unwrappedBytes); u != nil {
+				usage = *u
+			}
+			setOpsUpstreamError(c, openAIStreamFailedEventSemanticStatus(unwrappedBytes, ""), extractUpstreamErrorMessage(unwrappedBytes), truncateString(string(unwrappedBytes), 2048))
+			writeSSE(c.Writer, "error", gin.H{"type": "error", "error": gin.H{"type": "upstream_error", "message": message}})
+			flusher.Flush()
+			MarkResponseCommitted(c)
+			return &geminiStreamResult{usage: &usage, firstTokenMs: firstTokenMs}, fmt.Errorf("gemini stream failed: %s", message)
+		}
 		observer := upstreamResponseModelObserverFromContext(c)
 		if observer == nil {
 			observer = beginUpstreamResponseModelObservation(c)
@@ -3021,34 +3032,52 @@ func (s *GeminiMessagesCompatService) handleNativeStreamingResponse(c *gin.Conte
 	for {
 		line, err := reader.ReadLineString()
 		wireLine := line
-		if requestAccountFailoverEnabled(c) {
-			// Hold one bounded event so multiline errors never reach the client before retry.
-			_, _ = pending.WriteString(line)
-			if err == nil && strings.TrimSpace(line) != "" {
-				continue
+		// Inspect one complete event; never rescan growing response chunks.
+		maxEventBytes := defaultMaxLineSize
+		if s.cfg != nil && s.cfg.Gateway.MaxLineSize > 0 {
+			maxEventBytes = s.cfg.Gateway.MaxLineSize
+		}
+		if pending.Len()+len(line) > maxEventBytes {
+			return &geminiNativeStreamResult{usage: usage, firstTokenMs: firstTokenMs}, upstreamStreamReadError(bufio.ErrTooLong)
+		}
+		_, _ = pending.WriteString(line)
+		if err == nil && strings.TrimSpace(line) != "" {
+			continue
+		}
+		wireLine = pending.String()
+		pending.Reset()
+		var data []string
+		for _, part := range strings.Split(wireLine, "\n") {
+			if strings.HasPrefix(part, "data:") {
+				data = append(data, strings.TrimSpace(strings.TrimPrefix(part, "data:")))
 			}
-			wireLine = pending.String()
-			pending.Reset()
-			var data []string
-			for _, part := range strings.Split(wireLine, "\n") {
-				if strings.HasPrefix(part, "data:") {
-					data = append(data, strings.TrimSpace(strings.TrimPrefix(part, "data:")))
-				}
-			}
-			line = wireLine
-			if len(data) > 0 {
-				line = "data: " + strings.Join(data, "\n") + "\n\n"
-			} else if err == nil || errors.Is(err, io.EOF) {
-				// Some providers return JSON despite alt=sse. Inspect before committing it.
-				raw := []byte(wireLine)
-				if sig, ok := detectGeminiResponseSignalInBody(raw); ok {
-					if failure := s.geminiResponseSignalFailover(c, account, sig, true, upstreamRequestID); failure != nil {
-						if u := extractGeminiUsage(raw); u != nil {
-							usage = u
-						}
-						return &geminiNativeStreamResult{usage: usage, firstTokenMs: firstTokenMs}, failure
+		}
+		line = wireLine
+		if len(data) > 0 {
+			line = "data: " + strings.Join(data, "\n") + "\n\n"
+		} else if err == nil || errors.Is(err, io.EOF) {
+			// Some providers return JSON despite alt=sse. Inspect before committing it.
+			raw := []byte(wireLine)
+
+			if sig, ok := detectGeminiResponseSignalInBody(raw); ok {
+				if failure := s.geminiResponseSignalFailover(c, account, sig, true, upstreamRequestID); failure != nil {
+					if u := extractGeminiUsage(raw); u != nil {
+						usage = u
 					}
+					return &geminiNativeStreamResult{usage: usage, firstTokenMs: firstTokenMs}, failure
 				}
+			}
+			if public, status, message, failed := publicGeminiStreamError(c, account.Platform, raw); failed {
+				sig, _ := detectGeminiResponseSignal(raw)
+				s.markGeminiResponseSignal(c, account, sig, true, upstreamRequestID)
+				if !c.Writer.Written() {
+					c.Data(status, "application/json", public)
+				} else {
+					_, _ = fmt.Fprintf(c.Writer, "data: %s\n\n", public)
+					flusher.Flush()
+				}
+				MarkResponseCommitted(c)
+				return &geminiNativeStreamResult{usage: usage, firstTokenMs: firstTokenMs}, fmt.Errorf("gemini stream failed: %s", message)
 			}
 		}
 		// 读错误时 line 是未以换行结尾的残行，不透传也不参与用量统计；EOF 时的末行完整有效。
@@ -3087,6 +3116,18 @@ func (s *GeminiMessagesCompatService) handleNativeStreamingResponse(c *gin.Conte
 					}
 					if failure := s.geminiResponseSignalFailover(c, account, best, true, upstreamRequestID); failure != nil {
 						return &geminiNativeStreamResult{usage: usage, firstTokenMs: firstTokenMs}, failure
+					}
+					if public, status, message, failed := publicGeminiStreamError(c, account.Platform, rawBytes); failed {
+						s.markGeminiResponseSignal(c, account, best, true, upstreamRequestID)
+						if !c.Writer.Written() {
+							c.Header("Content-Type", "application/json")
+							c.Data(status, "application/json", public)
+						} else {
+							_, _ = fmt.Fprintf(c.Writer, "data: %s\n\n", public)
+							flusher.Flush()
+						}
+						MarkResponseCommitted(c)
+						return &geminiNativeStreamResult{usage: usage, firstTokenMs: firstTokenMs}, fmt.Errorf("gemini stream failed: %s", message)
 					}
 					observer.ObserveGemini(rawBytes)
 					observeGeminiSearch(c, rawBytes)

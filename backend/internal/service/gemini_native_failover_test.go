@@ -108,6 +108,9 @@ func TestGeminiNativeSignalOutcomeAndGates(t *testing.T) {
 				require.NotContains(t, rec.Body.String(), `"error"`)
 			} else if tc.cancel {
 				require.ErrorIs(t, err, context.Canceled)
+			} else if strings.Contains(tc.body, `"error"`) {
+				require.ErrorContains(t, err, "gemini stream failed")
+				require.Contains(t, rec.Body.String(), UpstreamClientErrorMessage)
 			} else {
 				require.NoError(t, err)
 			}

@@ -217,7 +217,8 @@ func TestGatewayCompatibilityHandlers_UpstreamErrorEventAfterOutputIsNotBilled(t
 			require.Contains(t, out, "partial")
 			require.Equal(t, 1, strings.Count(out, failureMarker), "exactly one terminal event")
 			require.NotContains(t, out, `data: {"type":"error"`, "the handler must not append a fallback frame")
-			require.Contains(t, out, "Overloaded")
+			require.Contains(t, out, service.UpstreamClientErrorMessage)
+			require.NotContains(t, out, "Overloaded")
 			require.NotContains(t, out, successMarker)
 
 			run.billingRepo.mu.Lock()

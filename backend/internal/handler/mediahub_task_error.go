@@ -131,6 +131,7 @@ func (h *MediaHubRelayHandler) applyTaskFailureRule(c *gin.Context, upstreamStat
 			matchStatus = status
 		} // No HTTP response: match the gateway failure without attributing its code to the provider.
 		if rule := h.oai.errorPassthroughService.MatchRule(platform, matchStatus, []byte(original)); rule != nil {
+			service.MarkUpstreamClientErrorHandled(c)
 			if rule.PassthroughCode && upstreamStatus >= 400 && upstreamStatus <= 599 {
 				status = upstreamStatus
 			} else if rule.ResponseCode != nil && *rule.ResponseCode >= 400 && *rule.ResponseCode <= 599 {

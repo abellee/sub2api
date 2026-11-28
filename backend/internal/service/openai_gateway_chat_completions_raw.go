@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -334,6 +335,7 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 	pendingLines := make([]string, 0, 8)
 	refusalDetector := newOpenAIChatSilentRefusalDetector(requestBodyLen)
 	var terminal openAIRawStreamTerminalState
+	var streamFailure error
 
 	writeLine := func(line string) {
 		if clientDisconnected {
@@ -375,6 +377,29 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 				return nil, errContentSafetyRejected
 			}
 			trimmedPayload := strings.TrimSpace(payload)
+			errorField := gjson.Get(payload, "error")
+			if errorField.IsObject() || (errorField.Type == gjson.String && strings.TrimSpace(errorField.String()) != "") || gjson.Get(payload, "type").String() == "error" {
+				if u := extractCCStreamUsage(payload); u != nil {
+					usage = *u
+				}
+				raw := []byte(payload)
+				message := extractOpenAISSEErrorMessage(raw)
+				if !clientOutputStarted && openAIStreamErrorEventShouldFailover(raw, message, accountFailoverContext(c)) {
+					return nil, s.newOpenAIStreamFailoverError(c, account, true, requestID, raw, message, resp.Header)
+				}
+				s.recordOpenAIStreamUpstreamError(c, account, true, requestID, "stream_failed", raw, message)
+				status, kind, message := ResolveUpstreamClientError(c, account.Platform, openAIStreamFailedEventSemanticStatus(raw, message), raw)
+				if !clientOutputStarted {
+					writeChatCompletionsError(c, status, kind, message)
+				} else if !clientDisconnected {
+					body, _ := json.Marshal(gin.H{"error": gin.H{"type": kind, "message": message}})
+					_, _ = fmt.Fprintf(c.Writer, "data: %s\n\ndata: [DONE]\n\n", body)
+					c.Writer.Flush()
+				}
+				MarkResponseCommitted(c)
+				streamFailure = fmt.Errorf("upstream chat stream failed: %s", message)
+				break
+			}
 			terminal.ObserveDataLine(trimmedPayload)
 			if trimmedPayload != "[DONE]" {
 				observeGameplayChatOutput(c, payload)
@@ -418,6 +443,9 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 		}
 	}
 
+	if streamFailure != nil {
+		return resultWithUsage(), streamFailure
+	}
 	scanErr := scanner.Err()
 	if terminal.IsTruncated(clientOutputStarted) && scanErr != nil && !clientDisconnected {
 		if retry := requestAccountStreamFailover(c, account, resp, upstreamStreamReadError(scanErr)); retry != nil {

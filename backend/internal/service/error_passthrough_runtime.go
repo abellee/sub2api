@@ -102,6 +102,7 @@ func applyErrorPassthroughRuleDetailed(
 	if rule == nil {
 		return status, errType, errMsg, nil, false
 	}
+	MarkUpstreamClientErrorHandled(c)
 
 	status = upstreamStatus
 	if !rule.PassthroughCode && rule.ResponseCode != nil {

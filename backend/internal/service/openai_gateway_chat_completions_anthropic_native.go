@@ -41,6 +41,7 @@ func (s *OpenAIGatewayService) forwardChatCompletionsViaNativeAnthropic(
 	body []byte,
 	defaultMappedModel string,
 ) (*OpenAIForwardResult, error) {
+	c.Set("upstream_client_error_platform", account.Platform)
 	startTime := time.Now()
 	SetActualOpenAIUpstreamEndpoint(c, "/v1/messages")
 

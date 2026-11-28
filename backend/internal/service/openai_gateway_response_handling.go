@@ -321,6 +321,8 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			return
 		}
 		errorEventSent = true
+		body, _ := json.Marshal(gin.H{"error": gin.H{"code": code, "message": message}})
+		_, _, message = ResolveUpstreamClientError(c, account.Platform, http.StatusBadGateway, body)
 		// Responses error events use top-level code/message/param fields. A nested
 		// Chat Completions error envelope loses the classification in strict clients.
 		payload := `{"type":"error","sequence_number":0,"code":` + strconv.Quote(code) + `,"message":` + strconv.Quote(message) + `,"param":null}`
@@ -386,7 +388,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		}
 		if codexFailureTerminal && sawBareError && !sawResponseFailed && !clientDisconnected {
 			applyAttemptResponseHeaders()
-			if _, err := writePendingString(buildOpenAIResponseFailedSSE(responseID, originalModel, createdAtStamper.Value(), bareErrorPayload, failedMessage)); err != nil {
+			if _, err := writePendingString(publicOpenAIResponseFailedSSE(c, account.Platform, responseID, originalModel, createdAtStamper.Value(), bareErrorPayload, failedMessage)); err != nil {
 				handlePendingWriteError(err)
 			} else {
 				failureDelivered = true
@@ -719,6 +721,11 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			); sanitized {
 				dataBytes = sanitizedData
 				data = string(sanitizedData)
+				line = "data: " + data
+			}
+			if eventType == "error" || eventType == "response.failed" {
+				dataBytes = publicOpenAIStreamError(c, account.Platform, dataBytes, eventType)
+				data = string(dataBytes)
 				line = "data: " + data
 			}
 			if stampedData, stamped := createdAtStamper.Stamp(dataBytes, eventType); stamped {

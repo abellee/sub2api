@@ -31,6 +31,7 @@ func failoverClientResponse(c *gin.Context, rules *service.ErrorPassthroughServi
 			ruleBody = failure.StreamFailedFrame.Payload
 		}
 		if rule := rules.MatchRule(platform, status, ruleBody); rule != nil {
+			service.MarkUpstreamClientErrorHandled(c)
 			// Never fall back to upstream text, even on an old body-passthrough rule.
 			if rule.CustomMessage != nil {
 				message = *rule.CustomMessage

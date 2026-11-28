@@ -427,7 +427,7 @@ func (h *MediaHubRelayHandler) copyMediaEvents(c *gin.Context, ctx context.Conte
 				code = 502
 				recordMediaDiagnostic(c, 0, raw, raw)
 			}
-			msg := publicMediaFailureMessage(body, raw, code)
+			msg := service.UpstreamClientErrorMessage
 			status, msg, _ := h.applyTaskFailureRule(c, code, raw, 502, msg)
 			return writeMediaStreamError(c, w, id, status, msg, gjson.GetBytes(body, "error.code").String())
 		}

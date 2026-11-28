@@ -107,6 +107,8 @@ type antigravityCompatScanEvent struct {
 }
 
 type antigravityCompatStreamSession struct {
+	c                           *gin.Context
+	failure                     error
 	processor                   *antigravity.StreamingProcessor
 	adapter                     antigravityCompatStreamAdapter
 	writer                      *antigravityClientWriter
@@ -143,6 +145,19 @@ func newAntigravityCompatStreamSession(
 }
 
 func (s *antigravityCompatStreamSession) consume(line string) {
+	if s.failure != nil {
+		return
+	}
+	if strings.HasPrefix(strings.TrimSpace(line), "data:") {
+		payload := []byte(strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "data:")))
+		if _, status, message, failed := publicGeminiStreamError(s.c, PlatformAntigravity, payload); failed {
+			setOpsUpstreamError(s.c, status, extractUpstreamErrorMessage(payload), truncateString(string(payload), 2048))
+			s.adapter.WriteError(s.writer, message)
+			MarkResponseCommitted(s.c)
+			s.failure = fmt.Errorf("antigravity stream failed: %s", message)
+			return
+		}
+	}
 	claudeEvents := s.processor.ProcessLine(strings.TrimRight(line, "\r\n"))
 	if len(claudeEvents) == 0 {
 		return
@@ -166,12 +181,15 @@ func (s *antigravityCompatStreamSession) writePreContentKeepalive(now time.Time)
 }
 
 func (s *antigravityCompatStreamSession) finish() (*antigravityStreamResult, error) {
+	if s.failure != nil {
+		return s.collectResult(s.writer.Disconnected()), s.failure
+	}
 	finalEvents, usage := s.processor.Finish()
 	mergeAntigravityCompatUsage(s.usage, usage)
 	s.consumeClaudeEvents(finalEvents)
 	if !s.hasMeaningfulData() && !s.writer.Disconnected() {
 		if s.preContentKeepaliveSent {
-			s.adapter.WriteError(s.writer, "empty_stream")
+			writeAntigravityCompatStreamError(s.c, s.adapter, s.writer, "empty_stream")
 			return s.result(false), newAntigravityCompatCommittedNoContentError("empty Antigravity compatibility stream after keepalive")
 		}
 		return nil, antigravityCompatEmptyStreamError()
@@ -347,6 +365,7 @@ func (s *AntigravityGatewayService) handleAntigravityCompatStreamWithTiming(
 		c.Status(http.StatusOK)
 	}
 	session := newAntigravityCompatStreamSession(originalModel, startTime, adapter, writer)
+	session.c = c
 	session.firstOutput = func() { observeGameplayFirstOutput(c) }
 	session.preContentKeepaliveSent = IsResponseCommitted(c) && c.Writer.Written()
 	session.preContentKeepaliveInterval = interval
@@ -411,6 +430,9 @@ func (s *AntigravityGatewayService) handleAntigravityCompatStreamWithTiming(
 			resetAntigravityCompatTimer(timeoutTimer, timeout)
 			s.observeAntigravityGeminiSSELine(c, event.line)
 			session.consume(event.line)
+			if session.failure != nil {
+				return session.collectResult(writer.Disconnected()), session.failure
+			}
 
 		case <-timeoutCh:
 			if writer.Disconnected() {
@@ -586,7 +608,9 @@ func writeAntigravityCompatStreamError(
 	writer *antigravityClientWriter,
 	reason string,
 ) {
-	adapter.WriteError(writer, reason)
+	body, _ := json.Marshal(gin.H{"error": gin.H{"message": reason}})
+	_, _, message := ResolveUpstreamClientError(c, PlatformAntigravity, http.StatusBadGateway, body)
+	adapter.WriteError(writer, message)
 	MarkResponseCommitted(c)
 }
 

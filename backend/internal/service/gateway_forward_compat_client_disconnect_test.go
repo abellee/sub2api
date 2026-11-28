@@ -425,7 +425,8 @@ func TestAnthropicCompatStreaming_UpstreamErrorEventEndsStreamWithoutWaiting(t *
 					require.ErrorAs(t, got.err, &sseErr)
 					require.Nil(t, got.result, "an upstream error event is not billed while the client is online")
 					require.Equal(t, 1, strings.Count(writer.Body.String(), compatStreamFailureMarkers[name]))
-					require.Contains(t, writer.Body.String(), "Overloaded")
+					require.Contains(t, writer.Body.String(), UpstreamClientErrorMessage)
+					require.NotContains(t, writer.Body.String(), "Overloaded")
 				}
 				_, werr := io.WriteString(pw, "event: ping\n")
 				require.Error(t, werr, "upstream body must be closed after an upstream error event")
@@ -476,7 +477,8 @@ func TestAnthropicCompatStreaming_UpstreamErrorEventMessageIsSanitized(t *testin
 			_, err := handle(&GatewayService{}, &http.Response{Header: http.Header{}, Body: io.NopCloser(strings.NewReader(stream))}, c)
 
 			require.Error(t, err)
-			require.Contains(t, rec.Body.String(), "key=***")
+			require.Contains(t, rec.Body.String(), UpstreamClientErrorMessage)
+			require.NotContains(t, rec.Body.String(), "example.test")
 			require.NotContains(t, rec.Body.String(), "SECRET")
 		})
 	}

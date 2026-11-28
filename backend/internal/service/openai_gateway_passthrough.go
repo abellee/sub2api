@@ -1837,15 +1837,7 @@ func applyOpenAIStreamFailedErrorPassthroughRule(
 ) (status int, errType string, errMsg string, matched bool) {
 	ruleBody := openAIStreamFailedEventPassthroughBody(payload, failedMessage)
 	upstreamStatus := openAIStreamFailedEventSemanticStatus(payload, failedMessage)
-	return applyErrorPassthroughRule(
-		c,
-		platform,
-		upstreamStatus,
-		ruleBody,
-		http.StatusBadGateway,
-		"upstream_error",
-		"Upstream request failed",
-	)
+	return applyErrorPassthroughRule(c, platform, upstreamStatus, ruleBody, http.StatusBadGateway, "upstream_error", UpstreamClientErrorMessage)
 }
 
 // OpenAIStreamFailedFrame is the in-stream failed or error frame behind a
@@ -2322,7 +2314,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 		if clientDisconnected || !writePendingLines() {
 			return
 		}
-		if _, err := fmt.Fprint(w, buildOpenAIResponseFailedSSE(responseID, originalModel, createdAtTracker.Value(), bareErrorPayload, failedMessage)); err != nil {
+		if _, err := fmt.Fprint(w, publicOpenAIResponseFailedSSE(c, account.Platform, responseID, originalModel, createdAtTracker.Value(), bareErrorPayload, failedMessage)); err != nil {
 			clientDisconnected = true
 			return
 		}
@@ -2519,6 +2511,11 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 				dataBytes = sanitizedData
 				trimmedData = strings.TrimSpace(string(sanitizedData))
 				line = "data: " + string(sanitizedData)
+			}
+			if eventType == "error" || eventType == "response.failed" {
+				dataBytes = publicOpenAIStreamError(c, account.Platform, dataBytes, eventType)
+				trimmedData = string(dataBytes)
+				line = "data: " + trimmedData
 			}
 			lineStartsClientOutput = forceFlushFailedEvent || openAIStreamDataStartsRequestOutput(ctx, trimmedData, eventType)
 			if lineStartsClientOutput && trimmedData != "[DONE]" && !openAIStreamEventTypeIsTerminal(eventType) {

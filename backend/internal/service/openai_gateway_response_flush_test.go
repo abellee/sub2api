@@ -380,9 +380,10 @@ func TestOpenAIResponseFlush_FailedAndErrorEventsFlushAtBoundaries(t *testing.T)
 		require.NotNil(t, result)
 		require.Equal(t, 3, result.usage.InputTokens)
 		gotBody, flushes := recorder.snapshot()
-		expectedBody := "data: {\"type\":\"response.output_text.delta\",\"delta\":\"a\"}\n\n" +
-			"data: {\"type\":\"response.failed\",\"response\":{\"created_at\":1700000000,\"error\":{\"code\":\"safety_error\",\"message\":\"blocked\"}}}\n"
-		require.Equal(t, expectedBody, gotBody)
+		require.True(t, strings.HasPrefix(gotBody, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"a\"}\n\n"))
+		require.Contains(t, gotBody, UpstreamClientErrorMessage)
+		require.NotContains(t, gotBody, `"message":"blocked"`)
+		require.Equal(t, gotBody, flushes[len(flushes)-1])
 		require.Len(t, flushes, 2)
 		require.Contains(t, flushes[1], "response.failed")
 	})

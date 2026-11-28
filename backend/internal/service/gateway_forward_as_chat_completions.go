@@ -33,6 +33,7 @@ func (s *GatewayService) forwardChatCompletionsWithGameplayObservation(
 	body []byte,
 	parsed *ParsedRequest,
 ) (*ForwardResult, error) {
+	c.Set("upstream_client_error_platform", account.Platform)
 	startTime := time.Now()
 
 	// 1. Parse Chat Completions request

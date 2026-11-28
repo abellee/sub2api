@@ -229,7 +229,9 @@ func (s *AntigravityGatewayService) handleGeminiStreamingResponse(c *gin.Context
 			return
 		}
 		errorEventSent = true
-		_, _ = fmt.Fprintf(c.Writer, "event: error\ndata: {\"error\":\"%s\"}\n\n", reason)
+		body, _ := json.Marshal(gin.H{"error": gin.H{"message": reason}})
+		_, kind, message := ResolveUpstreamClientError(c, PlatformAntigravity, http.StatusBadGateway, body)
+		writeSSE(c.Writer, "error", gin.H{"type": "error", "error": gin.H{"type": kind, "message": message}})
 		flusher.Flush()
 	}
 
@@ -284,6 +286,12 @@ func (s *AntigravityGatewayService) handleGeminiStreamingResponse(c *gin.Context
 					payload = string(inner)
 				}
 
+				if public, status, message, failed := publicGeminiStreamError(c, PlatformAntigravity, []byte(payload)); failed {
+					setOpsUpstreamError(c, status, extractUpstreamErrorMessage([]byte(payload)), truncateString(payload, 2048))
+					cw.Fprintf("data: %s\n\n", public)
+					MarkResponseCommitted(c)
+					return &antigravityStreamResult{usage: usage, firstTokenMs: firstTokenMs}, fmt.Errorf("antigravity stream failed: %s", message)
+				}
 				// 解析 usage
 				if u := extractGeminiUsage(inner); u != nil {
 					usage = u
@@ -1119,7 +1127,9 @@ func (s *AntigravityGatewayService) handleClaudeStreamingResponse(c *gin.Context
 			return
 		}
 		errorEventSent = true
-		_, _ = fmt.Fprintf(c.Writer, "event: error\ndata: {\"error\":\"%s\"}\n\n", reason)
+		body, _ := json.Marshal(gin.H{"error": gin.H{"message": reason}})
+		_, kind, message := ResolveUpstreamClientError(c, PlatformAntigravity, http.StatusBadGateway, body)
+		writeSSE(c.Writer, "error", gin.H{"type": "error", "error": gin.H{"type": kind, "message": message}})
 		flusher.Flush()
 	}
 
@@ -1171,6 +1181,16 @@ func (s *AntigravityGatewayService) handleClaudeStreamingResponse(c *gin.Context
 			lastDataAt = time.Now()
 			s.observeAntigravityGeminiSSELine(c, ev.line)
 
+			if strings.HasPrefix(strings.TrimSpace(ev.line), "data:") {
+				payload := []byte(strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(ev.line), "data:")))
+				if _, status, message, failed := publicGeminiStreamError(c, PlatformAntigravity, payload); failed {
+					setOpsUpstreamError(c, status, extractUpstreamErrorMessage(payload), truncateString(string(payload), 2048))
+					body, _ := json.Marshal(gin.H{"type": "error", "error": gin.H{"type": "upstream_error", "message": message}})
+					cw.Fprintf("event: error\ndata: %s\n\n", body)
+					MarkResponseCommitted(c)
+					return &antigravityStreamResult{usage: finishUsage(), firstTokenMs: firstTokenMs}, fmt.Errorf("antigravity stream failed: %s", message)
+				}
+			}
 			// 处理 SSE 行，转换为 Claude 格式
 			claudeEvents := processor.ProcessLine(strings.TrimRight(ev.line, "\r\n"))
 			if len(claudeEvents) > 0 {

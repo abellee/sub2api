@@ -1122,7 +1122,7 @@ func TestForwardAsChatCompletions_StreamContextWindowResponseFailedReturnsErrorW
 	require.True(t, c.Writer.Written())
 	require.Equal(t, http.StatusBadGateway, rec.Code)
 	require.Contains(t, rec.Header().Get("Content-Type"), "application/json")
-	require.Contains(t, rec.Body.String(), "input exceeds the context window")
+	require.Contains(t, rec.Body.String(), UpstreamClientErrorMessage)
 	require.NotContains(t, rec.Body.String(), "[DONE]")
 }
 
@@ -1162,7 +1162,7 @@ func TestForwardAsChatCompletions_StreamBareErrorAfterOutputDoesNotFailOver(t *t
 	var failoverErr *UpstreamFailoverError
 	require.False(t, errors.As(err, &failoverErr))
 	require.Contains(t, rec.Body.String(), "partial")
-	require.Contains(t, rec.Body.String(), "temporary upstream failure")
+	require.Contains(t, rec.Body.String(), UpstreamClientErrorMessage)
 	require.NotContains(t, rec.Body.String(), "[DONE]")
 }
 

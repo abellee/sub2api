@@ -1290,7 +1290,8 @@ func TestAntigravityCompatHandlerErrorsAfterPreContentPing(t *testing.T) {
 				newAntigravityResponsesStreamAdapter("gemini-3.1-pro"), "test", 10*time.Millisecond, tc.wait)
 			require.Error(t, err)
 			require.Contains(t, recorder.Body.String(), ": ping\n\n")
-			require.Contains(t, recorder.Body.String(), tc.want)
+			require.Contains(t, recorder.Body.String(), UpstreamClientErrorMessage)
+			require.NotContains(t, recorder.Body.String(), "unexpected EOF")
 			require.True(t, IsResponseCommitted(c))
 		})
 	}

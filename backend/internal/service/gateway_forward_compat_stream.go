@@ -251,6 +251,7 @@ func finishAnthropicCompatStreamFailure(c *gin.Context, writerSizeBeforeStream i
 // writeAnthropicCompatCCStreamFailure 向 Chat Completions 流写出终止错误帧，
 // 并标记响应已提交，handler 不再追加兜底错误。
 func writeAnthropicCompatCCStreamFailure(c *gin.Context, failure *anthropicCompatStreamFailure) {
+	failure = publicAnthropicCompatStreamFailure(c, failure)
 	payload, _ := json.Marshal(map[string]any{
 		"error": map[string]string{
 			"type":    failure.errType,
@@ -264,6 +265,7 @@ func writeAnthropicCompatCCStreamFailure(c *gin.Context, failure *anthropicCompa
 // 终止事件，沿用流内的 response id；sequence_number 经 restorer 与已写出的事件
 // 保持连续。写出后标记响应已提交。
 func writeAnthropicCompatResponsesStreamFailure(c *gin.Context, state *apicompat.AnthropicEventToResponsesState, restorer *apicompat.ResponsesClientToolStreamRestorer, failure *anthropicCompatStreamFailure) {
+	failure = publicAnthropicCompatStreamFailure(c, failure)
 	responseID := state.ResponseID
 	if responseID == "" {
 		responseID = "resp_" + strings.ReplaceAll(uuid.NewString(), "-", "")
@@ -304,4 +306,26 @@ func commitAnthropicCompatStreamFailure(c *gin.Context, failure *anthropicCompat
 		return
 	}
 	c.Writer.Flush()
+}
+
+func publicAnthropicCompatStreamFailure(c *gin.Context, failure *anthropicCompatStreamFailure) *anthropicCompatStreamFailure {
+	setOpsUpstreamError(c, http.StatusBadGateway, failure.message, "")
+	body, _ := json.Marshal(gin.H{"error": gin.H{"type": failure.errType, "message": failure.message}})
+	var event *sseStreamErrorEventError
+	if errors.As(failure.err, &event) {
+		body = []byte(event.RawData)
+	}
+	platform := c.GetString("upstream_client_error_platform")
+	if platform == "" {
+		platform = PlatformAnthropic
+	}
+	_, kind, message := ResolveUpstreamClientError(c, platform, openAIStreamFailedEventSemanticStatus(body, failure.message), body)
+	public := *failure
+	public.errType = kind
+	switch failure.errType {
+	case "stream_timeout", "stream_read_error", "response_too_large", "stream_incomplete", "overloaded_error", "invalid_request_error", "api_error":
+		public.errType = failure.errType
+	}
+	public.message = message
+	return &public
 }

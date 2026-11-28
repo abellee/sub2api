@@ -111,11 +111,11 @@ func TestForwardAsAnthropic_StreamingBareErrorAfterOutputIsVisible(t *testing.T)
 	_, err := svc.ForwardAsAnthropic(context.Background(), c, account, body, "", "")
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "upstream response failed: mixed tools failed")
+	require.Contains(t, err.Error(), "upstream response failed: "+UpstreamClientErrorMessage)
 	clientStream := rec.Body.String()
 	require.Contains(t, clientStream, `"text":"partial"`)
 	require.Contains(t, clientStream, "event: error")
-	require.Contains(t, clientStream, "mixed tools failed")
+	require.Contains(t, clientStream, UpstreamClientErrorMessage)
 	require.NotContains(t, clientStream, "event: message_stop")
 	require.NotContains(t, err.Error(), "missing terminal event")
 }
@@ -179,7 +179,7 @@ func TestForwardAsAnthropic_StreamingGenericBareErrorBeforeOutputIsNotHiddenByFa
 	require.Error(t, err)
 	var failoverErr *UpstreamFailoverError
 	require.False(t, errors.As(err, &failoverErr))
-	require.Contains(t, rec.Body.String(), "mixed tools failed")
+	require.Contains(t, rec.Body.String(), UpstreamClientErrorMessage)
 }
 
 func TestForwardAsAnthropic_BufferedResponseFailed_Failover(t *testing.T) {

@@ -2118,10 +2118,10 @@ func TestOpenAIStreamingResponseFailedAfterOutputSanitizesVerboseResponseForClie
 	require.Contains(t, body, "event: response.failed")
 	require.Contains(t, body, "context_length_exceeded")
 	require.Contains(t, body, `"type":"invalid_request_error"`)
-	require.Contains(t, body, "Your input exceeds the context window")
+	require.Contains(t, body, UpstreamClientErrorMessage)
 	require.NotContains(t, body, "You are GPT-5.1 running in the Codex CLI")
 	require.NotContains(t, body, `"instructions"`)
-	require.NotContains(t, body, `"output"`)
+	require.Contains(t, body, `"output":[]`)
 	require.NotContains(t, body, `"usage"`)
 }
 
@@ -2160,7 +2160,7 @@ func TestOpenAIStreamingContextWindowResponseFailedBeforeOutputPassesThrough(t *
 	require.True(t, c.Writer.Written())
 	require.Contains(t, rec.Body.String(), "response.failed")
 	require.Contains(t, rec.Body.String(), `"type":"upstream_error"`)
-	require.Contains(t, rec.Body.String(), "Your input exceeds the context window")
+	require.Contains(t, rec.Body.String(), UpstreamClientErrorMessage)
 }
 
 func TestOpenAIStreamingContextWindowResponseFailedBeforeOutputAppliesPassthroughRule(t *testing.T) {
@@ -2411,7 +2411,7 @@ func TestOpenAIStreamingPolicyResponseFailedBeforeOutputPassesThrough(t *testing
 	require.False(t, errors.As(err, &failoverErr))
 	require.True(t, c.Writer.Written())
 	require.Contains(t, rec.Body.String(), "response.failed")
-	require.Contains(t, rec.Body.String(), "high-risk cyber activity")
+	require.Contains(t, rec.Body.String(), UpstreamClientErrorMessage)
 }
 
 func TestOpenAIStreamingClientDisconnectDrainsUpstreamUsage(t *testing.T) {
@@ -2683,7 +2683,7 @@ func TestOpenAIStreamingPassthroughContextWindowResponseFailedBeforeOutputWithou
 	body := rec.Body.String()
 	require.Contains(t, body, "event: response.failed")
 	require.Contains(t, body, "context_length_exceeded")
-	require.Contains(t, body, "Your input exceeds the context window")
+	require.Contains(t, body, UpstreamClientErrorMessage)
 }
 
 func TestOpenAIStreamingPassthroughResponseFailedAfterOutputSanitizesVerboseResponseForClient(t *testing.T) {
@@ -2727,10 +2727,10 @@ func TestOpenAIStreamingPassthroughResponseFailedAfterOutputSanitizesVerboseResp
 	require.Contains(t, body, "event: response.failed")
 	require.Contains(t, body, "context_length_exceeded")
 	require.Contains(t, body, `"type":"invalid_request_error"`)
-	require.Contains(t, body, "Your input exceeds the context window")
+	require.Contains(t, body, UpstreamClientErrorMessage)
 	require.NotContains(t, body, "You are GPT-5.1 running in the Codex CLI")
 	require.NotContains(t, body, `"instructions"`)
-	require.NotContains(t, body, `"output"`)
+	require.Contains(t, body, `"output":[]`)
 	require.NotContains(t, body, `"usage"`)
 }
 

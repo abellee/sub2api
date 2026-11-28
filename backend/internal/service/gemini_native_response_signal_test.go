@@ -128,9 +128,10 @@ data: {"error":{"code":429,"message":"Resource has been exhausted (e.g. check qu
 
 	result, err := svc.ForwardNative(context.Background(), c, geminiSignalTestAccount(),
 		"gemini-3.7-flash", "streamGenerateContent", true, geminiSignalTestRequest())
-	require.NoError(t, err)
+	require.ErrorContains(t, err, "gemini stream failed")
 	require.NotNil(t, result)
-	require.Equal(t, body, rec.Body.String(), "错误信封也原样透传，交给 SDK 客户端按错误处理")
+	require.Contains(t, rec.Body.String(), UpstreamClientErrorMessage)
+	require.NotContains(t, rec.Body.String(), "Resource has been exhausted")
 	require.Equal(t, 10, result.Usage.InputTokens)
 	require.Equal(t, 2, result.Usage.OutputTokens)
 
@@ -308,8 +309,9 @@ data: {"error":{"code":503,"message":"The model is overloaded. Please try again 
 
 	_, err := svc.ForwardNative(context.Background(), c, geminiSignalTestAccount(),
 		"gemini-3.7-flash", "streamGenerateContent", true, geminiSignalTestRequest())
-	require.NoError(t, err)
-	require.Equal(t, body, rec.Body.String())
+	require.ErrorContains(t, err, "gemini stream failed")
+	require.Contains(t, rec.Body.String(), UpstreamClientErrorMessage)
+	require.NotContains(t, rec.Body.String(), "The model is overloaded")
 
 	streamErrs := GetOpsStreamErrors(c)
 	require.Len(t, streamErrs, 1)
@@ -350,7 +352,7 @@ func TestGeminiForwardNative_StreamNonSSEJSONBodyIsInspected(t *testing.T) {
 		c, _ := newGeminiNativeTestContext(t)
 		_, err := svc.ForwardNative(context.Background(), c, geminiSignalTestAccount(),
 			"gemini-3.7-flash", "streamGenerateContent", true, geminiSignalTestRequest())
-		require.NoError(t, err)
+		require.ErrorContains(t, err, "gemini stream failed")
 		streamErrs := GetOpsStreamErrors(c)
 		require.Len(t, streamErrs, 1)
 		require.Equal(t, "RESOURCE_EXHAUSTED", streamErrs[0].Code)

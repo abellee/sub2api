@@ -35,6 +35,7 @@ func (s *GatewayService) forwardResponsesWithGameplayObservation(
 	body []byte,
 	parsed *ParsedRequest,
 ) (*ForwardResult, error) {
+	c.Set("upstream_client_error_platform", account.Platform)
 	startTime := time.Now()
 
 	normalizedBody, normalized, err := normalizeOpenAIResponsesLegacyIngressWithConfig(s.cfg, body)
