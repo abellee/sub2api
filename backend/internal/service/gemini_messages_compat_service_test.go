@@ -1329,7 +1329,7 @@ func TestGeminiStreamsRetainUsageAfterEmptyMetadata(t *testing.T) {
 			})
 			t.Run("Gemini native", func(t *testing.T) {
 				rec := httptest.NewRecorder()
-				result, err := svc.handleNativeStreamingResponse(newContext(rec), newResponse(), time.Now(), false, nil, "")
+				result, err := svc.handleNativeStreamingResponse(newContext(rec), newResponse(), time.Now(), false, &Account{ID: 1, Platform: PlatformGemini}, "")
 				require.NoError(t, err)
 				require.Equal(t, &want, result.usage)
 				require.Equal(t, stream, rec.Body.String())
