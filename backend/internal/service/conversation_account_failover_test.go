@@ -17,7 +17,8 @@ func conversationFailoverTestContext(t *testing.T) (context.Context, *gin.Contex
 	t.Helper()
 	ctx := withRequestAccountFailoverCount(t.Context(), 3)
 	ctx = context.WithValue(ctx, ctxkey.AccountID, int64(1))
-	trace := ctx.Value(requestAccountFailoverTraceKey{}).(*RequestAccountFailoverTrace)
+	trace, ok := ctx.Value(requestAccountFailoverTraceKey{}).(*RequestAccountFailoverTrace)
+	require.True(t, ok)
 	trace.timeout = 20 * time.Millisecond
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
