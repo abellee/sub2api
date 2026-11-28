@@ -170,6 +170,10 @@ func TestGameplayDuplicateEventAppliesMultipleIndependentRulesOnce(t *testing.T)
 
 func TestGameplayEventIdentityConflictIsRejected(t *testing.T) {
 	st := storetest.Open(t)
+	saveGameplayRule(t, st, gameplayRule("read", 1))
+	rule := gameplayRule("logout", 1)
+	rule.EventType = "user.logged_out"
+	saveGameplayRule(t, st, rule)
 	event := gameplayEvent("conflicting-id")
 	receiveGameplayEvent(t, st, event)
 	event.Type = "user.logged_out"
