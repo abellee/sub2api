@@ -749,9 +749,9 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 		}
 		// 账号槽位/等待计数需要在超时或断开时安全回收
 		if account.Platform != service.PlatformGemini || !stream {
-			accountReleaseFunc = wrapReleaseOnDone(c.Request.Context(), accountReleaseFunc)
+			accountReleaseFunc = wrapAccountReleaseOnDone(c.Request.Context(), accountReleaseFunc)
 		} else {
-			accountReleaseFunc = wrapReleaseOnDone(context.WithoutCancel(c.Request.Context()), accountReleaseFunc)
+			accountReleaseFunc = wrapAccountReleaseOnDone(context.WithoutCancel(c.Request.Context()), accountReleaseFunc)
 			if accountReleaseFunc != nil {
 				defer accountReleaseFunc()
 			}
@@ -765,7 +765,7 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 		}
 		sessionGroupID := derefGroupID(apiKey.GroupID)
 		if account.Platform == service.PlatformAntigravity && account.Type != service.AccountTypeAPIKey {
-			result, err = service.ForwardWithAccountRetries(requestCtx, c, func() (*service.ForwardResult, error) {
+			result, err = service.ForwardConversationWithAccountRetries(requestCtx, c, body, conversationForwardModel(account, channelMapping, reqModel), func(requestCtx context.Context, c *gin.Context) (*service.ForwardResult, error) {
 				return h.antigravityGatewayService.ForwardGemini(
 					requestCtx,
 					c,
@@ -777,11 +777,11 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 					hasBoundSession,
 					service.WithForwardGeminiSession(sessionGroupID, sessionKey),
 				)
-			})
+			}, lateGatewayConversationBilling(c, h.gatewayService, h.apiKeyService, apiKey, account, subscription, body, pricingAt, clientRequestedUsageFields(c, channelMapping, reqModel, ""), fs.ForceCacheBilling))
 		} else {
-			result, err = service.ForwardWithAccountRetries(requestCtx, c, func() (*service.ForwardResult, error) {
+			result, err = service.ForwardConversationWithAccountRetries(requestCtx, c, body, conversationForwardModel(account, channelMapping, reqModel), func(requestCtx context.Context, c *gin.Context) (*service.ForwardResult, error) {
 				return h.geminiCompatService.ForwardNative(requestCtx, c, account, modelName, action, stream, body)
-			})
+			}, lateGatewayConversationBilling(c, h.gatewayService, h.apiKeyService, apiKey, account, subscription, body, pricingAt, clientRequestedUsageFields(c, channelMapping, reqModel, ""), fs.ForceCacheBilling))
 		}
 		if accountReleaseFunc != nil {
 			accountReleaseFunc()

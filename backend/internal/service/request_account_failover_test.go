@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -170,6 +172,23 @@ func TestRequestAccountFailoverSwitchSavedAndRefreshed(t *testing.T) {
 	require.False(t, settings.IsAccountErrorFailoverEnabled(context.Background()))
 	settings.refreshCachedSettings(&SystemSettings{AccountErrorFailoverEnabled: true})
 	require.True(t, settings.IsAccountErrorFailoverEnabled(context.Background()))
+}
+
+func TestRequestAccountFailoverPolicyLoadedAndRefreshed(t *testing.T) {
+	settings := NewSettingService(&gatewayTTLSettingRepo{data: map[string]string{
+		SettingKeyAccountErrorFailoverEnabled:        "true",
+		SettingKeyAccountErrorFailoverTimeoutSeconds: "5",
+	}}, &config.Config{})
+	require.True(t, settings.IsAccountErrorFailoverEnabled(t.Context()))
+	ctx := settings.withRequestAccountFailoverPolicy(withRequestAccountFailoverCount(t.Context(), 2))
+	trace := ctx.Value(requestAccountFailoverTraceKey{}).(*RequestAccountFailoverTrace)
+	require.Equal(t, 5*time.Second, trace.timeout)
+	settings.refreshCachedSettings(&SystemSettings{AccountErrorFailoverEnabled: true, AccountErrorFailoverTimeoutSeconds: 8})
+	ctx = settings.withRequestAccountFailoverPolicy(withRequestAccountFailoverCount(t.Context(), 2))
+	trace = ctx.Value(requestAccountFailoverTraceKey{}).(*RequestAccountFailoverTrace)
+	require.Equal(t, 8*time.Second, trace.timeout)
+	defaults := settings.parseSettings(map[string]string{})
+	require.Equal(t, 60, defaults.AccountErrorFailoverTimeoutSeconds)
 }
 
 type requestAccountFailoverAccountRepo struct {

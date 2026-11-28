@@ -266,6 +266,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		DefaultBalance:                                         settings.DefaultBalance,
 		RiskControlEnabled:                                     settings.RiskControlEnabled,
 		AccountErrorFailoverEnabled:                            settings.AccountErrorFailoverEnabled,
+		AccountErrorFailoverTimeoutSeconds:                     settings.AccountErrorFailoverTimeoutSeconds,
 		CostGuardEnabled:                                       settings.CostGuardEnabled,
 		CostGuardErrorStatusCode:                               settings.CostGuardErrorStatusCode,
 		CostGuardErrorMessage:                                  settings.CostGuardErrorMessage,

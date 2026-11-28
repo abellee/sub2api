@@ -290,9 +290,9 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 		// Gemini keeps a dispatched upstream alive to collect billing usage.
 		// Hold its account slot until Forward returns, including bounded draining.
 		if account.Platform != service.PlatformGemini || !reqStream {
-			accountReleaseFunc = wrapReleaseOnDone(c.Request.Context(), accountReleaseFunc)
+			accountReleaseFunc = wrapAccountReleaseOnDone(c.Request.Context(), accountReleaseFunc)
 		} else {
-			accountReleaseFunc = wrapReleaseOnDone(context.WithoutCancel(c.Request.Context()), accountReleaseFunc)
+			accountReleaseFunc = wrapAccountReleaseOnDone(context.WithoutCancel(c.Request.Context()), accountReleaseFunc)
 			if accountReleaseFunc != nil {
 				defer accountReleaseFunc()
 			}
@@ -322,9 +322,9 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 				}
 				return
 			}
-			result, err = service.ForwardWithAccountRetries(c.Request.Context(), c, func() (*service.ForwardResult, error) {
+			result, err = service.ForwardConversationWithAccountRetries(c.Request.Context(), c, body, conversationForwardModel(account, channelMapping, reqModel), func(attemptCtx context.Context, c *gin.Context) (*service.ForwardResult, error) {
 				return h.geminiCompatService.ForwardAsChatCompletions(c.Request.Context(), c, account, forwardBody)
-			})
+			}, lateGatewayConversationBilling(c, h.gatewayService, h.apiKeyService, apiKey, account, subscription, body, pricingAt, clientRequestedUsageFields(c, channelMapping, reqModel, ""), fs.ForceCacheBilling))
 		} else if shouldUseAntigravityCompat(account) {
 			if h.antigravityGatewayService == nil {
 				h.chatCompletionsErrorResponse(c, http.StatusBadGateway, "upstream_error", "Antigravity compatibility service is not configured")
@@ -334,13 +334,13 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 				return
 			}
 			setActualUpstreamEndpoint(c, EndpointAntigravityGenerateContent)
-			result, err = service.ForwardWithAccountRetries(c.Request.Context(), c, func() (*service.ForwardResult, error) {
+			result, err = service.ForwardConversationWithAccountRetries(c.Request.Context(), c, body, conversationForwardModel(account, channelMapping, reqModel), func(attemptCtx context.Context, c *gin.Context) (*service.ForwardResult, error) {
 				return h.antigravityGatewayService.ForwardAsChatCompletions(c.Request.Context(), c, account, forwardBody, parsedReq)
-			})
+			}, lateGatewayConversationBilling(c, h.gatewayService, h.apiKeyService, apiKey, account, subscription, body, pricingAt, clientRequestedUsageFields(c, channelMapping, reqModel, ""), fs.ForceCacheBilling))
 		} else {
-			result, err = service.ForwardWithAccountRetries(c.Request.Context(), c, func() (*service.ForwardResult, error) {
+			result, err = service.ForwardConversationWithAccountRetries(c.Request.Context(), c, body, conversationForwardModel(account, channelMapping, reqModel), func(attemptCtx context.Context, c *gin.Context) (*service.ForwardResult, error) {
 				return h.gatewayService.ForwardAsChatCompletions(c.Request.Context(), c, account, forwardBody, parsedReq)
-			})
+			}, lateGatewayConversationBilling(c, h.gatewayService, h.apiKeyService, apiKey, account, subscription, body, pricingAt, clientRequestedUsageFields(c, channelMapping, reqModel, ""), fs.ForceCacheBilling))
 		}
 
 		if accountReleaseFunc != nil {

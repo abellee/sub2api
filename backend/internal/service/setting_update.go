@@ -452,6 +452,11 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	// 风控中心功能开关
 	updates[SettingKeyRiskControlEnabled] = strconv.FormatBool(settings.RiskControlEnabled)
 	updates[SettingKeyAccountErrorFailoverEnabled] = strconv.FormatBool(settings.AccountErrorFailoverEnabled)
+	if settings.AccountErrorFailoverTimeoutSeconds < 0 || settings.AccountErrorFailoverTimeoutSeconds > 3600 {
+		return nil, infraerrors.BadRequest("INVALID_ACCOUNT_FAILOVER_TIMEOUT", "account failover timeout must be between 1 and 3600 seconds")
+	}
+	settings.AccountErrorFailoverTimeoutSeconds = parseAccountFailoverTimeout(strconv.Itoa(settings.AccountErrorFailoverTimeoutSeconds))
+	updates[SettingKeyAccountErrorFailoverTimeoutSeconds] = strconv.Itoa(settings.AccountErrorFailoverTimeoutSeconds)
 	updates[SettingKeyCostGuardEnabled] = strconv.FormatBool(settings.CostGuardEnabled)
 	if settings.CostGuardErrorStatusCode != 0 && (settings.CostGuardErrorStatusCode < 400 || settings.CostGuardErrorStatusCode > 599) {
 		return nil, infraerrors.BadRequest("INVALID_COST_GUARD_STATUS", "cost precheck HTTP status code must be between 400 and 599")
@@ -720,6 +725,7 @@ func (s *SettingService) refreshCachedSettings(settings *SystemSettings) {
 	}
 	s.accountErrorFailoverMu.Lock()
 	s.accountErrorFailoverEnabled = settings.AccountErrorFailoverEnabled
+	s.accountErrorFailoverTimeout = time.Duration(parseAccountFailoverTimeout(strconv.Itoa(settings.AccountErrorFailoverTimeoutSeconds))) * time.Second
 	s.accountErrorFailoverExpiresAt = time.Now().Add(gatewayForwardingCacheTTL)
 	s.accountErrorFailoverMu.Unlock()
 	s.costGuardMu.Lock()

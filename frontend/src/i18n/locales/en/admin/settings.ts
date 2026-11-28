@@ -539,7 +539,10 @@ export default {
       },
       gatewayForwarding: {
         accountErrorFailover: 'Retry and switch accounts on errors',
-        accountErrorFailoverHint: 'With both switches enabled and multiple available accounts, upstream errors switch accounts immediately, including 404 and provider account credit failures. Try each available account once, without a six-attempt cap, disabling accounts, or cooldowns. Local user balance, invalid input, and content refusals are not retried. Stop when the client disconnects or the request times out. With one account or a disabled switch, existing rules apply.',
+        accountErrorFailoverTimeout: 'Conversation attempt timeout (seconds)',
+        accountErrorFailoverTimeoutHint: '1–3600 seconds, default 60. Applies to each HTTP conversation attempt. Images, video, audio, background generation tasks and persistent WebSocket connections are excluded.',
+        accountErrorFailoverBillingHint: 'On timeout, switch accounts immediately and let the prior request finish in the background. Reported usage is billed normally, so one request may incur multiple charges. Late output is not shown.',
+        accountErrorFailoverHint: 'Requires both system and group switches and multiple available accounts. Prefer different API hosts, then different keys; try each account at most once without disabling accounts or adding cooldowns. Local balance, input and content errors are not retried. Existing rules apply with one account.',
         title: 'Request Forwarding',
         description: 'Control how requests are forwarded to upstream OAuth accounts',
         grokDefaultTextModel: 'Default Grok text model',

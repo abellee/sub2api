@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -13,6 +14,15 @@ import (
 )
 
 const SettingKeyAccountErrorFailoverEnabled = "account_error_failover_enabled"
+const SettingKeyAccountErrorFailoverTimeoutSeconds = "account_error_failover_timeout_seconds"
+
+func parseAccountFailoverTimeout(value string) int {
+	seconds, err := strconv.Atoi(value)
+	if err != nil || seconds < 1 || seconds > 3600 {
+		return 60
+	}
+	return seconds
+}
 
 const OpsAccountFailoverResultKey = "ops_account_failover_result"
 
@@ -30,6 +40,8 @@ func (s *SettingService) IsAccountErrorFailoverEnabled(ctx context.Context) bool
 	defer cancel()
 	value, err := s.settingRepo.GetValue(dbCtx, SettingKeyAccountErrorFailoverEnabled)
 	s.accountErrorFailoverEnabled = err == nil && value == "true"
+	timeout, _ := s.settingRepo.GetValue(dbCtx, SettingKeyAccountErrorFailoverTimeoutSeconds)
+	s.accountErrorFailoverTimeout = time.Duration(parseAccountFailoverTimeout(timeout)) * time.Second
 	ttl := gatewayForwardingCacheTTL
 	if err != nil {
 		ttl = gatewayForwardingErrorTTL
@@ -47,7 +59,10 @@ type RequestAccountFailoverTrace struct {
 	FailedAccountIDs []int64
 	Attempts         []AccountFailoverAttempt
 	upstreams        map[int64]string
+	credentials      map[int64]string
 	finalAccountID   int64
+	timeout          time.Duration
+	pending          map[int64]<-chan struct{}
 }
 
 type AccountFailoverAttempt struct {
@@ -224,7 +239,7 @@ func (s *GatewayService) PrepareRequestAccountFailover(ctx context.Context, grou
 			eligible = append(eligible, *a)
 		}
 	}
-	return withRequestAccountFailoverAccounts(ctx, eligible)
+	return s.settingService.withRequestAccountFailoverPolicy(withRequestAccountFailoverAccounts(ctx, eligible))
 }
 
 func (s *OpenAIGatewayService) PrepareRequestAccountFailover(ctx context.Context, groupID *int64, group *Group, model, platform string, capabilities ...OpenAIEndpointCapability) context.Context {
@@ -251,7 +266,17 @@ func (s *OpenAIGatewayService) PrepareRequestAccountFailover(ctx context.Context
 			eligible = append(eligible, accounts[i])
 		}
 	}
-	return withRequestAccountFailoverAccounts(ctx, eligible)
+	return s.settingService.withRequestAccountFailoverPolicy(withRequestAccountFailoverAccounts(ctx, eligible))
+}
+
+func (s *SettingService) withRequestAccountFailoverPolicy(ctx context.Context) context.Context {
+	trace, _ := ctx.Value(requestAccountFailoverTraceKey{}).(*RequestAccountFailoverTrace)
+	if trace != nil {
+		s.accountErrorFailoverMu.Lock()
+		trace.timeout = s.accountErrorFailoverTimeout
+		s.accountErrorFailoverMu.Unlock()
+	}
+	return ctx
 }
 
 // ForwardWithAccountRetries leaves retries to the handler's account-selection

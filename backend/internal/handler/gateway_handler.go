@@ -495,9 +495,9 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			// Gemini retains its account slot while collecting usage after a
 			// client disconnect; Forward bounds this billing drain.
 			if account.Platform != service.PlatformGemini || !reqStream {
-				accountReleaseFunc = wrapReleaseOnDone(c.Request.Context(), accountReleaseFunc)
+				accountReleaseFunc = wrapAccountReleaseOnDone(c.Request.Context(), accountReleaseFunc)
 			} else {
-				accountReleaseFunc = wrapReleaseOnDone(context.WithoutCancel(c.Request.Context()), accountReleaseFunc)
+				accountReleaseFunc = wrapAccountReleaseOnDone(context.WithoutCancel(c.Request.Context()), accountReleaseFunc)
 				if accountReleaseFunc != nil {
 					defer accountReleaseFunc()
 				}
@@ -512,7 +512,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			// 记录 Forward 前已写入字节数，Forward 后若增加则说明 SSE 内容已发，禁止 failover
 			writerSizeBeforeForward := c.Writer.Size()
 			if account.Platform == service.PlatformAntigravity {
-				result, err = service.ForwardWithAccountRetries(requestCtx, c, func() (*service.ForwardResult, error) {
+				result, err = service.ForwardConversationWithAccountRetries(requestCtx, c, body, conversationForwardModel(account, channelMapping, reqModel), func(requestCtx context.Context, c *gin.Context) (*service.ForwardResult, error) {
 					return h.antigravityGatewayService.ForwardGemini(
 						requestCtx,
 						c,
@@ -524,11 +524,11 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 						hasBoundSession,
 						service.WithForwardGeminiSession(derefGroupID(apiKey.GroupID), sessionKey),
 					)
-				})
+				}, lateGatewayConversationBilling(c, h.gatewayService, h.apiKeyService, apiKey, account, subscription, body, pricingAt, clientRequestedUsageFields(c, channelMapping, reqModel, ""), fs.ForceCacheBilling))
 			} else {
-				result, err = service.ForwardWithAccountRetries(requestCtx, c, func() (*service.ForwardResult, error) {
+				result, err = service.ForwardConversationWithAccountRetries(requestCtx, c, body, conversationForwardModel(account, channelMapping, reqModel), func(requestCtx context.Context, c *gin.Context) (*service.ForwardResult, error) {
 					return h.geminiCompatService.Forward(requestCtx, c, account, body)
-				})
+				}, lateGatewayConversationBilling(c, h.gatewayService, h.apiKeyService, apiKey, account, subscription, body, pricingAt, clientRequestedUsageFields(c, channelMapping, reqModel, ""), fs.ForceCacheBilling))
 			}
 			if accountReleaseFunc != nil {
 				accountReleaseFunc()
@@ -866,7 +866,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				}
 			}
 			// 账号槽位/等待计数需要在超时或断开时安全回收
-			accountReleaseFunc = wrapReleaseOnDone(c.Request.Context(), accountReleaseFunc)
+			accountReleaseFunc = wrapAccountReleaseOnDone(c.Request.Context(), accountReleaseFunc)
 
 			// ===== 用户消息串行队列 START =====
 			var queueRelease func()
@@ -952,21 +952,20 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			// 记录 Forward 前已写入字节数，Forward 后若增加则说明 SSE 内容已发，禁止 failover
 			writerSizeBeforeForward := c.Writer.Size()
 			if account.Platform == service.PlatformAntigravity && account.Type != service.AccountTypeAPIKey {
-				result, err = service.ForwardWithAccountRetries(requestCtx, c, func() (*service.ForwardResult, error) {
+				result, err = service.ForwardConversationWithAccountRetries(requestCtx, c, body, conversationForwardModel(account, channelMapping, reqModel), func(requestCtx context.Context, c *gin.Context) (*service.ForwardResult, error) {
 					return h.antigravityGatewayService.Forward(requestCtx, c, account, attemptBody, hasBoundSession)
-				})
+				}, lateGatewayConversationBilling(c, h.gatewayService, h.apiKeyService, currentAPIKey, account, subscription, body, pricingAt, clientRequestedUsageFields(c, channelMapping, reqModel, ""), fs.ForceCacheBilling))
 			} else {
-				result, err = service.ForwardWithAccountRetries(requestCtx, c, func() (*service.ForwardResult, error) {
+				result, err = service.ForwardConversationWithAccountRetries(requestCtx, c, body, conversationForwardModel(account, channelMapping, reqModel), func(requestCtx context.Context, c *gin.Context) (*service.ForwardResult, error) {
+					defer func() { attemptParsedReq.OnUpstreamAccepted = nil }()
 					return h.gatewayService.Forward(requestCtx, c, account, attemptParsedReq)
-				})
+				}, lateGatewayConversationBilling(c, h.gatewayService, h.apiKeyService, currentAPIKey, account, subscription, body, pricingAt, clientRequestedUsageFields(c, channelMapping, reqModel, ""), fs.ForceCacheBilling))
 			}
 
 			// 兜底释放串行锁（正常情况已通过回调提前释放）
 			if queueRelease != nil {
 				queueRelease()
 			}
-			// 清理回调引用，防止 failover 重试时旧回调被错误调用
-			attemptParsedReq.OnUpstreamAccepted = nil
 
 			if accountReleaseFunc != nil {
 				accountReleaseFunc()

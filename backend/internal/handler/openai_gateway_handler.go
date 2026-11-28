@@ -827,9 +827,9 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					accountReleaseFunc()
 				}
 			}()
-			return service.ForwardWithAccountRetries(c.Request.Context(), c, func() (*service.OpenAIForwardResult, error) {
+			return service.ForwardConversationWithAccountRetries(c.Request.Context(), c, body, conversationForwardModel(account, channelMapping, reqModel), func(attemptCtx context.Context, c *gin.Context) (*service.OpenAIForwardResult, error) {
 				return h.gatewayService.Forward(c.Request.Context(), c, account, attemptBody)
-			})
+			}, lateOpenAIConversationBilling(c, h.gatewayService, h.apiKeyService, apiKey, account, subscription, body, pricingAt, clientRequestedUsageFields(c, channelMapping, reqModel, "")))
 		}()
 		if h.handleForwardRequestBodyMemoryOverload(c, err, streamStarted) {
 			return
@@ -1439,9 +1439,9 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 					accountReleaseFunc()
 				}
 			}()
-			return service.ForwardWithAccountRetries(c.Request.Context(), c, func() (*service.OpenAIForwardResult, error) {
+			return service.ForwardConversationWithAccountRetries(c.Request.Context(), c, body, conversationForwardModel(account, channelMappingMsg, reqModel), func(attemptCtx context.Context, c *gin.Context) (*service.OpenAIForwardResult, error) {
 				return h.gatewayService.ForwardAsAnthropic(c.Request.Context(), c, account, forwardBody, promptCacheKey, defaultMappedModel)
-			})
+			}, lateOpenAIConversationBilling(c, h.gatewayService, h.apiKeyService, apiKey, account, subscription, body, pricingAt, clientRequestedUsageFields(c, channelMappingMsg, reqModel, "")))
 		}()
 		var cyberBlockBodyMsg []byte
 		if service.GetOpsCyberPolicy(c) != nil {
@@ -2400,7 +2400,7 @@ func (h *OpenAIGatewayHandler) acquireOpenAIAccountSlot(
 				reqLog.Warn("openai.bind_sticky_session_after_profit_admission_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 			}
 		}
-		return wrapReleaseOnDone(ctx, selection.ReleaseFunc), openAISlotAcquireOK
+		return wrapAccountReleaseOnDone(ctx, selection.ReleaseFunc), openAISlotAcquireOK
 	}
 	if selection.WaitPlan == nil {
 		markOpsRoutingCapacityLimited(c)
@@ -2435,7 +2435,7 @@ func (h *OpenAIGatewayHandler) acquireOpenAIAccountSlot(
 		if err := h.gatewayService.BindStickySessionAfterProfitAdmission(ctx, groupID, sessionHash, account.ID); err != nil {
 			reqLog.Warn("openai.bind_sticky_session_after_profit_admission_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 		}
-		return wrapReleaseOnDone(ctx, fastReleaseFunc), openAISlotAcquireOK
+		return wrapAccountReleaseOnDone(ctx, fastReleaseFunc), openAISlotAcquireOK
 	}
 
 	canWait, waitErr := h.concurrencyHelper.IncrementAccountWaitCount(ctx, account.ID, selection.WaitPlan.MaxWaiting)
@@ -2491,7 +2491,7 @@ func (h *OpenAIGatewayHandler) acquireOpenAIAccountSlot(
 	if err := h.gatewayService.BindStickySessionAfterProfitAdmission(ctx, groupID, sessionHash, account.ID); err != nil {
 		reqLog.Warn("openai.bind_sticky_session_after_profit_admission_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 	}
-	return wrapReleaseOnDone(ctx, accountReleaseFunc), openAISlotAcquireOK
+	return wrapAccountReleaseOnDone(ctx, accountReleaseFunc), openAISlotAcquireOK
 }
 
 // ResponsesWebSocket handles OpenAI Responses API WebSocket ingress endpoint
@@ -3025,7 +3025,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		// Account selection starts a fresh upstream attempt. Clear any model
 		// captured by the previous failover account before credential lookup.
 		setOpsSelectedAccount(c, account.ID, account.Platform)
-		currentAccountRelease = wrapReleaseOnDone(ctx, accountReleaseFunc)
+		currentAccountRelease = wrapAccountReleaseOnDone(ctx, accountReleaseFunc)
 		if err := h.gatewayService.BindStickySessionAfterProfitAdmission(ctx, apiKey.GroupID, sessionHash, account.ID); err != nil {
 			reqLog.Warn("openai.websocket_bind_sticky_session_after_profit_admission_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 		}
@@ -3245,7 +3245,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 					return service.NewOpenAIWSClientCloseError(coderws.StatusTryAgainLater, "account is busy, please retry later", nil)
 				}
 				currentUserRelease = wrapReleaseOnDone(ctx, userReleaseFunc)
-				currentAccountRelease = wrapReleaseOnDone(ctx, accountReleaseFunc)
+				currentAccountRelease = wrapAccountReleaseOnDone(ctx, accountReleaseFunc)
 				return checkSimpleModeTurnBilling()
 			},
 			AfterTurn: func(turn int, result *service.OpenAIForwardResult, turnErr error) {
@@ -3435,7 +3435,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 							closeOpenAIClientWS(wsConn, coderws.StatusTryAgainLater, "account is busy, please retry later")
 							return
 						}
-						currentAccountRelease = wrapReleaseOnDone(ctx, accountRelease)
+						currentAccountRelease = wrapAccountReleaseOnDone(ctx, accountRelease)
 					}
 					wsFirstMessage = wsAttemptMessage
 					continue

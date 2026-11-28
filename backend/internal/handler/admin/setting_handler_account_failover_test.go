@@ -36,3 +36,22 @@ func TestSettingsAccountFailoverSwitchPersistsAndPreservesOmission(t *testing.T)
 		require.Contains(t, get.Body.String(), `"account_error_failover_enabled":`+want)
 	}
 }
+
+func TestSettingsConversationFailoverTimeoutPersists(t *testing.T) {
+	h, repo := newStepUpSwitchTestHandler(t, map[string]string{})
+	rec := doUpdateSettings(t, h, map[string]any{"account_error_failover_enabled": true, "account_error_failover_timeout_seconds": 5}, nil)
+	require.Equal(t, 200, rec.Code, rec.Body.String())
+	require.Equal(t, "5", repo.values[service.SettingKeyAccountErrorFailoverTimeoutSeconds])
+	require.Contains(t, rec.Body.String(), "\"account_error_failover_timeout_seconds\":5")
+	rec = doUpdateSettings(t, h, map[string]any{"site_name": "preserve"}, nil)
+	require.Equal(t, 200, rec.Code, rec.Body.String())
+	require.Equal(t, "5", repo.values[service.SettingKeyAccountErrorFailoverTimeoutSeconds])
+	settings, err := h.settingService.GetAllSettings(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, 5, settings.AccountErrorFailoverTimeoutSeconds)
+	for _, timeout := range []int{0, -1, 3601} {
+		rec := doUpdateSettings(t, h, map[string]any{"account_error_failover_timeout_seconds": timeout}, nil)
+		require.Equal(t, 400, rec.Code, rec.Body.String())
+		require.Equal(t, "5", repo.values[service.SettingKeyAccountErrorFailoverTimeoutSeconds])
+	}
+}

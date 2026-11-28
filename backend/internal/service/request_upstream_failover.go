@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"net"
 	"net/url"
@@ -63,11 +65,22 @@ func withRequestAccountFailoverAccounts(ctx context.Context, accounts []Account)
 	trace, _ := ctx.Value(requestAccountFailoverTraceKey{}).(*RequestAccountFailoverTrace)
 	if trace != nil {
 		trace.upstreams = make(map[int64]string, len(accounts))
+		trace.credentials = make(map[int64]string, len(accounts))
 		for i := range accounts {
 			trace.upstreams[accounts[i].ID] = accountFailoverUpstream(&accounts[i])
+			trace.credentials[accounts[i].ID] = accountFailoverCredential(&accounts[i])
 		}
 	}
 	return ctx
+}
+
+// Keep only fingerprints in the request trace, never the credentials themselves.
+func accountFailoverCredential(account *Account) string {
+	if key := strings.TrimSpace(account.GetCredential("api_key")); key != "" {
+		hash := sha256.Sum256([]byte(key))
+		return hex.EncodeToString(hash[:])
+	}
+	return ""
 }
 
 func requestAccountFailoverFinalAttempt(ctx context.Context, accountID int64) bool {
@@ -109,10 +122,16 @@ func selectAccountByFailoverUpstream(ctx context.Context, excluded map[int64]str
 		return nil, ErrNoAvailableAccounts
 	}
 	counts := make(map[string]int)
+	credentialCounts := make(map[string]int)
+	credentials := make(map[int64]string, len(trace.credentials))
+	for id, key := range trace.credentials {
+		credentials[id] = key
+	}
 	remaining := make(map[int64]string, len(trace.upstreams))
 	for id, upstream := range trace.upstreams {
 		if _, ok := failed[id]; ok {
 			counts[upstream]++
+			credentialCounts[upstream+"/"+credentials[id]]++
 			continue
 		}
 		if _, ok := excluded[id]; !ok {
@@ -127,14 +146,21 @@ func selectAccountByFailoverUpstream(ctx context.Context, excluded map[int64]str
 			return nil, err
 		}
 		upstreams := make(map[string]struct{})
+		keys := make(map[string]struct{})
+		minimumCredentialCounts := make(map[string]int)
 		minimum := int(^uint(0) >> 1)
-		for _, upstream := range remaining {
+		for id, upstream := range remaining {
 			upstreams[upstream] = struct{}{}
+			keys[credentials[id]] = struct{}{}
 			minimum = min(minimum, counts[upstream])
+			count := credentialCounts[upstream+"/"+credentials[id]]
+			if previous, ok := minimumCredentialCounts[upstream]; !ok || count < previous {
+				minimumCredentialCounts[upstream] = count
+			}
 		}
 		preferred := make(map[int64]struct{})
 		for id, upstream := range remaining {
-			if counts[upstream] == minimum {
+			if counts[upstream] == minimum && credentialCounts[upstream+"/"+credentials[id]] == minimumCredentialCounts[upstream] {
 				preferred[id] = struct{}{}
 			}
 		}
@@ -154,10 +180,11 @@ func selectAccountByFailoverUpstream(ctx context.Context, excluded map[int64]str
 			trace.mu.Lock()
 			trace.finalAccountID = 0
 			upstream, known := remaining[selection.Account.ID]
-			if known && len(upstreams) == 1 && counts[upstream] > 0 {
+			if known && len(upstreams) == 1 && len(keys) == 1 && credentialCounts[upstream+"/"+credentials[selection.Account.ID]] > 0 {
 				trace.finalAccountID = selection.Account.ID
 			}
 			trace.upstreams[selection.Account.ID] = accountFailoverUpstream(selection.Account)
+			trace.credentials[selection.Account.ID] = accountFailoverCredential(selection.Account)
 			trace.mu.Unlock()
 			return selection, nil
 		}

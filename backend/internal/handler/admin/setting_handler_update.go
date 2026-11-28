@@ -22,10 +22,11 @@ import (
 
 // UpdateSettingsRequest 更新设置请求
 type UpdateSettingsRequest struct {
-	AccountErrorFailoverEnabled *bool   `json:"account_error_failover_enabled"`
-	CostGuardEnabled            *bool   `json:"cost_guard_enabled"`
-	CostGuardErrorStatusCode    *int    `json:"cost_guard_error_status_code" binding:"omitempty,gte=400,lte=599"`
-	CostGuardErrorMessage       *string `json:"cost_guard_error_message" binding:"omitempty,max=2000"`
+	AccountErrorFailoverEnabled        *bool   `json:"account_error_failover_enabled"`
+	AccountErrorFailoverTimeoutSeconds *int    `json:"account_error_failover_timeout_seconds" binding:"omitempty,gte=1,lte=3600"`
+	CostGuardEnabled                   *bool   `json:"cost_guard_enabled"`
+	CostGuardErrorStatusCode           *int    `json:"cost_guard_error_status_code" binding:"omitempty,gte=400,lte=599"`
+	CostGuardErrorMessage              *string `json:"cost_guard_error_message" binding:"omitempty,max=2000"`
 	// 注册设置
 	RegistrationEnabled                 bool                         `json:"registration_enabled"`
 	EmailVerifyEnabled                  bool                         `json:"email_verify_enabled"`
@@ -2058,6 +2059,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.AccountErrorFailoverEnabled
 		}(),
+		AccountErrorFailoverTimeoutSeconds: func() int {
+			if req.AccountErrorFailoverTimeoutSeconds != nil {
+				return *req.AccountErrorFailoverTimeoutSeconds
+			}
+			return previousSettings.AccountErrorFailoverTimeoutSeconds
+		}(),
 		CostGuardEnabled: func() bool {
 			if req.CostGuardEnabled != nil {
 				return *req.CostGuardEnabled
@@ -2511,16 +2518,17 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 
 		AffiliateEnabled: updatedSettings.AffiliateEnabled,
 
-		RiskControlEnabled:          updatedSettings.RiskControlEnabled,
-		AccountErrorFailoverEnabled: updatedSettings.AccountErrorFailoverEnabled,
-		CostGuardEnabled:            updatedSettings.CostGuardEnabled,
-		CostGuardErrorStatusCode:    updatedSettings.CostGuardErrorStatusCode,
-		CostGuardErrorMessage:       updatedSettings.CostGuardErrorMessage,
-		CyberSessionBlockEnabled:    updatedSettings.CyberSessionBlockEnabled,
-		CyberPolicyUserAllowlist:    updatedSettings.CyberPolicyUserAllowlist,
-		CyberSessionBlockTTLSeconds: updatedSettings.CyberSessionBlockTTLSeconds,
-		AccountSchedulingThresholds: updatedSettings.AccountSchedulingThresholds,
-		AllowUserViewErrorRequests:  updatedSettings.AllowUserViewErrorRequests,
+		RiskControlEnabled:                 updatedSettings.RiskControlEnabled,
+		AccountErrorFailoverEnabled:        updatedSettings.AccountErrorFailoverEnabled,
+		AccountErrorFailoverTimeoutSeconds: updatedSettings.AccountErrorFailoverTimeoutSeconds,
+		CostGuardEnabled:                   updatedSettings.CostGuardEnabled,
+		CostGuardErrorStatusCode:           updatedSettings.CostGuardErrorStatusCode,
+		CostGuardErrorMessage:              updatedSettings.CostGuardErrorMessage,
+		CyberSessionBlockEnabled:           updatedSettings.CyberSessionBlockEnabled,
+		CyberPolicyUserAllowlist:           updatedSettings.CyberPolicyUserAllowlist,
+		CyberSessionBlockTTLSeconds:        updatedSettings.CyberSessionBlockTTLSeconds,
+		AccountSchedulingThresholds:        updatedSettings.AccountSchedulingThresholds,
+		AllowUserViewErrorRequests:         updatedSettings.AllowUserViewErrorRequests,
 	}
 	if fastPolicy, err := h.settingService.GetOpenAIFastPolicySettings(c.Request.Context()); err != nil {
 		slog.Error("openai_fast_policy_settings_get_failed", "error", err)

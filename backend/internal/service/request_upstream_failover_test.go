@@ -162,6 +162,54 @@ func TestUpstreamFailoverIdentity(t *testing.T) {
 	require.Equal(t, key(1, "https://relay.example"), accountFailoverUpstream(&Account{Platform: PlatformAnthropic, Type: AccountTypeOAuth, Extra: map[string]any{"custom_base_url_enabled": true, "custom_base_url": "https://relay.example"}}))
 }
 
+func TestUpstreamFailoverPrefersDifferentCredentials(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		pool []int
+		keys []string
+		want []int64
+	}{
+		{"different keys before duplicate keys", []int{1, 1, 1, 1, 1}, []string{"a", "a", "b", "b", "c"}, []int64{1, 3, 5, 2, 4}},
+		{"stop after final duplicate key", []int{1, 1, 1, 1, 1}, []string{"a", "a", "a", "b", "c"}, []int64{1, 4, 5, 2}},
+		{"different upstream before different key", []int{1, 1, 1, 2, 2}, []string{"a", "b", "a", "a", "a"}, []int64{1, 4, 2, 5, 3}},
+		{"same key retains stop rule", []int{1, 1, 1}, []string{"a", "a", "a"}, []int64{1, 2}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			accounts := upstreamFailoverAccounts(tt.pool...)
+			for i := range accounts {
+				accounts[i].Credentials["api_key"] = tt.keys[i]
+			}
+			ctx := withRequestAccountFailoverAccounts(t.Context(), accounts)
+			excluded := map[int64]struct{}{}
+			var got []int64
+			for range len(accounts) + 1 {
+				selection, err := selectAccountByFailoverUpstream(ctx, excluded, upstreamFailoverFirstAvailable(accounts))
+				if err != nil {
+					require.ErrorIs(t, err, ErrNoAvailableAccounts)
+					break
+				}
+				id := selection.Account.ID
+				require.NotContains(t, excluded, id)
+				got = append(got, id)
+				excluded[id] = struct{}{}
+				MarkRequestAccountFailoverAction(ctx, "switch_account", id)
+			}
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestAccountFailoverCredentialFingerprint(t *testing.T) {
+	key := func(credentials map[string]any) string {
+		return accountFailoverCredential(&Account{Credentials: credentials})
+	}
+	require.Equal(t, key(map[string]any{"api_key": "secret"}), key(map[string]any{"api_key": " secret "}))
+	require.NotEqual(t, "secret", key(map[string]any{"api_key": "secret"}))
+	require.NotEqual(t, key(map[string]any{"api_key": "first"}), key(map[string]any{"api_key": "second"}))
+	require.Empty(t, key(map[string]any{"access_token": "oauth-token"}), "OAuth tokens do not introduce API-key priority")
+	require.Empty(t, key(nil))
+}
+
 type upstreamFailoverSchedulerRepo struct{ schedulerTestOpenAIAccountRepo }
 
 func (r upstreamFailoverSchedulerRepo) ListSchedulableByGroupIDAndPlatforms(_ context.Context, _ int64, _ []string) ([]Account, error) {

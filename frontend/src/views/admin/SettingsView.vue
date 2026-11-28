@@ -5352,6 +5352,13 @@
                 <Toggle id="account-error-failover-enabled" v-model="form.account_error_failover_enabled" data-testid="account-error-failover-enabled" />
               </div>
 
+              <div v-if="form.account_error_failover_enabled">
+                <label for="account-error-failover-timeout" class="input-label">{{ t("admin.settings.gatewayForwarding.accountErrorFailoverTimeout") }}</label>
+                <input id="account-error-failover-timeout" v-model.number="form.account_error_failover_timeout_seconds" type="number" min="1" max="3600" step="1" required class="input" data-testid="account-error-failover-timeout" />
+                <p class="input-hint">{{ t("admin.settings.gatewayForwarding.accountErrorFailoverTimeoutHint") }}</p>
+                <p class="input-hint">{{ t("admin.settings.gatewayForwarding.accountErrorFailoverBillingHint") }}</p>
+              </div>
+
               <!-- Fingerprint Unification -->
               <div class="flex items-center justify-between">
                 <div>
@@ -9848,6 +9855,7 @@ const form = reactive<SettingsForm>({
   payment_enabled: false,
   risk_control_enabled: false,
   account_error_failover_enabled: false,
+  account_error_failover_timeout_seconds: 60,
   cost_guard_enabled: false,
   cost_guard_error_status_code: 403,
   cost_guard_error_message: "Insufficient balance for the estimated request cost.",
@@ -11737,6 +11745,7 @@ async function saveSettings() {
       payment_enabled: form.payment_enabled,
       risk_control_enabled: form.risk_control_enabled,
       account_error_failover_enabled: form.account_error_failover_enabled,
+      account_error_failover_timeout_seconds: form.account_error_failover_timeout_seconds,
       cost_guard_enabled: form.cost_guard_enabled,
       cost_guard_error_status_code: Number(form.cost_guard_error_status_code),
       cost_guard_error_message: form.cost_guard_error_message,

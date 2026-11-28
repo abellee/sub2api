@@ -120,6 +120,7 @@ type WebSearchManagerBuilder func(cfg *WebSearchEmulationConfig, proxyURLs map[i
 type SettingService struct {
 	accountErrorFailoverMu        sync.Mutex
 	accountErrorFailoverEnabled   bool
+	accountErrorFailoverTimeout   time.Duration
 	accountErrorFailoverExpiresAt time.Time
 	costGuardEnabled              atomic.Bool
 	costGuardErrorResponse        atomic.Pointer[costGuardErrorResponse]

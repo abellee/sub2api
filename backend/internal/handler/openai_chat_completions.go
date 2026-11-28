@@ -261,9 +261,9 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 					accountReleaseFunc()
 				}
 			}()
-			return service.ForwardWithAccountRetries(c.Request.Context(), c, func() (*service.OpenAIForwardResult, error) {
+			return service.ForwardConversationWithAccountRetries(c.Request.Context(), c, body, conversationForwardModel(account, channelMapping, reqModel), func(attemptCtx context.Context, c *gin.Context) (*service.OpenAIForwardResult, error) {
 				return h.gatewayService.ForwardAsChatCompletions(c.Request.Context(), c, account, forwardBody, promptCacheKey, "")
-			})
+			}, lateOpenAIConversationBilling(c, h.gatewayService, h.apiKeyService, apiKey, account, subscription, body, pricingAt, clientRequestedUsageFields(c, channelMapping, reqModel, "")))
 		}()
 		var cyberBlockBodyChat []byte
 		if service.GetOpsCyberPolicy(c) != nil {

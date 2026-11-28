@@ -203,6 +203,13 @@ func wrapReleaseOnDone(ctx context.Context, releaseFunc func()) func() {
 	}
 }
 
+func wrapAccountReleaseOnDone(ctx context.Context, releaseFunc func()) func() {
+	if releaseFunc == nil {
+		return nil
+	}
+	return wrapReleaseOnDone(ctx, func() { service.ReleaseAfterConversationAttempt(ctx, releaseFunc) })
+}
+
 // IncrementWaitCount increments the wait count for a user
 func (h *ConcurrencyHelper) IncrementWaitCount(ctx context.Context, userID int64, maxWait int) (bool, error) {
 	return h.concurrencyService.IncrementWaitCount(ctx, userID, maxWait)

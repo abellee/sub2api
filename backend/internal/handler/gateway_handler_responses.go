@@ -290,7 +290,7 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 				reqLog.Warn("gateway.responses.bind_sticky_session_after_profit_admission_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 			}
 		}
-		accountReleaseFunc = wrapReleaseOnDone(c.Request.Context(), accountReleaseFunc)
+		accountReleaseFunc = wrapAccountReleaseOnDone(c.Request.Context(), accountReleaseFunc)
 
 		// 5. Forward request
 		writerSizeBeforeForward := c.Writer.Size()
@@ -309,13 +309,13 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 				return
 			}
 			setActualUpstreamEndpoint(c, EndpointAntigravityGenerateContent)
-			result, err = service.ForwardWithAccountRetries(requestCtx, c, func() (*service.ForwardResult, error) {
+			result, err = service.ForwardConversationWithAccountRetries(requestCtx, c, body, conversationForwardModel(account, channelMapping, reqModel), func(requestCtx context.Context, c *gin.Context) (*service.ForwardResult, error) {
 				return h.antigravityGatewayService.ForwardAsResponses(requestCtx, c, account, forwardBody, parsedReq)
-			})
+			}, lateGatewayConversationBilling(c, h.gatewayService, h.apiKeyService, apiKey, account, subscription, body, pricingAt, clientRequestedUsageFields(c, channelMapping, reqModel, ""), fs.ForceCacheBilling))
 		} else {
-			result, err = service.ForwardWithAccountRetries(requestCtx, c, func() (*service.ForwardResult, error) {
+			result, err = service.ForwardConversationWithAccountRetries(requestCtx, c, body, conversationForwardModel(account, channelMapping, reqModel), func(requestCtx context.Context, c *gin.Context) (*service.ForwardResult, error) {
 				return h.gatewayService.ForwardAsResponses(requestCtx, c, account, forwardBody, parsedReq)
-			})
+			}, lateGatewayConversationBilling(c, h.gatewayService, h.apiKeyService, apiKey, account, subscription, body, pricingAt, clientRequestedUsageFields(c, channelMapping, reqModel, ""), fs.ForceCacheBilling))
 		}
 
 		if accountReleaseFunc != nil {
