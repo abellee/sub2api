@@ -402,6 +402,13 @@ const title = computed(() => {
 
 const emptyText = computed(() => t('admin.ops.errorDetail.noErrorSelected'))
 
+function isUpstreamError(d: OpsErrorDetail | null): boolean {
+  if (!d) return false
+  const phase = String(d.phase || '').toLowerCase()
+  const owner = String(d.error_owner || '').toLowerCase()
+  return phase === 'upstream' && owner === 'provider'
+}
+
 function formatRequestTypeLabel(type: number | null | undefined): string {
   switch (type) {
     case 1: return t('admin.ops.errorDetail.requestTypeSync')

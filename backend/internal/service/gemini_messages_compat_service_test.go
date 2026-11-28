@@ -1335,7 +1335,7 @@ func TestGeminiStreamsRetainUsageAfterEmptyMetadata(t *testing.T) {
 				require.Equal(t, stream, rec.Body.String())
 			})
 			t.Run("collected stream", func(t *testing.T) {
-				_, usage, err := collectGeminiSSE(nil, strings.NewReader(stream), false)
+				_, usage, _, err := collectGeminiSSEObserved(nil, strings.NewReader(stream), false, nil)
 				require.NoError(t, err)
 				require.Equal(t, &want, usage)
 			})
