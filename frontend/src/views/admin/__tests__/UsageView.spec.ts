@@ -557,6 +557,7 @@ describe('admin UsageView request ID column visibility', () => {
     const usageTable = wrapper.findComponent(UsageTableStub)
     expect(usageTable.props('columns').map((column: { key: string }) => column.key)).toEqual([
       'user',
+      'username',
       'model',
       'reasoning_effort',
       'account',
