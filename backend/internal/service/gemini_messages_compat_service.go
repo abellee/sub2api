@@ -3031,7 +3031,6 @@ func (s *GeminiMessagesCompatService) handleNativeStreamingResponse(c *gin.Conte
 
 	for {
 		line, err := reader.ReadLineString()
-		wireLine := line
 		// Inspect one complete event; never rescan growing response chunks.
 		maxEventBytes := defaultMaxLineSize
 		if s.cfg != nil && s.cfg.Gateway.MaxLineSize > 0 {
@@ -3044,7 +3043,7 @@ func (s *GeminiMessagesCompatService) handleNativeStreamingResponse(c *gin.Conte
 		if err == nil && strings.TrimSpace(line) != "" {
 			continue
 		}
-		wireLine = pending.String()
+		wireLine := pending.String()
 		pending.Reset()
 		var data []string
 		for _, part := range strings.Split(wireLine, "\n") {
